@@ -1,0 +1,73 @@
+// Isolated synthetic reproductions: no live database, mail or application writes.
+const fs = require('node:fs');
+const path = require('node:path');
+const root = path.resolve(__dirname, '../../..');
+process.env.NODE_ENV = 'production';
+delete process.env.PERF_TEST;
+delete process.env.APP_URL;
+process.env.JWT_SECRET = 'synthetic-audit-secret-no-live-account';
+process.env.ENCRYPTION_KEY = 'a'.repeat(64);
+process.env.BLIND_INDEX_KEY = 'synthetic-blind-index-key-no-live-data';
+const auditPath = require.resolve(path.join(root, 'backend/src/services/auditService'));
+require.cache[auditPath] = { id: auditPath, filename: auditPath, loaded: true, exports: { logAction: async () => {} } };
+const loggerPath = require.resolve(path.join(root, 'backend/src/config/logger'));
+require.cache[loggerPath] = { id: loggerPath, filename: loggerPath, loaded: true, exports: { warn() {}, info() {}, error() {}, debug() {} } };
+let mailOrigin;
+const notifyPath = require.resolve(path.join(root, 'backend/src/services/notificationService'));
+require.cache[notifyPath] = { id: notifyPath, filename: notifyPath, loaded: true, exports: { sendEmail: async (_email, _subject, body) => { mailOrigin = new URL(body.match(/https?:\/\/\S+\/login\?\S+/)[0]).origin; } } };
+const backupPath = require.resolve(path.join(root, 'backend/src/services/postgresBackupService'));
+require.cache[backupPath] = { id: backupPath, filename: backupPath, loaded: true, exports: { createPostgresBackup: async () => { throw new Error('Synthetic backup failure'); } } };
+const { forgotPassword, resetPassword } = require(path.join(root, 'backend/src/controllers/authController'));
+const express = require(path.join(root, 'backend/node_modules/express'));
+const request = require(path.join(root, 'backend/node_modules/supertest'));
+const { apiLimiter, authLimiter, pacsWebhookLimiter } = require(path.join(root, 'backend/src/middleware/rateLimiters'));
+const { verifyUpdatePackage, applySystemUpdate, CURRENT_VERSION } = require(path.join(root, 'backend/src/services/systemUpdateService'));
+const AdmZip = require(path.join(root, 'backend/node_modules/adm-zip'));
+const result = {};
+const response = () => ({ code: 200, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; } });
+async function main() {
+    const db = { query: async sql => ({ rows: sql.includes('SELECT user_id') ? [{ user_id: 'synthetic-user', full_name: 'Audit Fixture', email: 'fixture@example.test', is_active: true }] : [] }) };
+    const mailRes = response();
+    await forgotPassword(db)({ body: { email: 'fixture@example.test' }, headers: {}, protocol: 'http', get: () => 'untrusted-host.example.test', ip: '127.0.0.1' }, mailRes, error => { throw error; });
+    result.resetOrigin = { mailOrigin, acceptedUntrustedHost: mailOrigin === 'http://untrusted-host.example.test', status: mailRes.code };
+    let selections = 0, updates = 0, releaseSelections;
+    const selectionsReady = new Promise(resolve => { releaseSelections = resolve; });
+    const raceDb = { query: async sql => {
+        if (sql.includes('SELECT user_id')) {
+            selections++;
+            if (selections === 2) releaseSelections();
+            await selectionsReady;
+            return { rows: [{ user_id: 'synthetic-user', full_name: 'Audit Fixture', email: 'fixture@example.test', is_active: true, password_reset_expires: new Date(Date.now() + 60000) }] };
+        }
+        if (sql.includes('UPDATE users')) updates++;
+        return { rows: [], rowCount: 1 };
+    } };
+    const raceResponses = [response(), response()];
+    await Promise.all(raceResponses.map((res, i) => resetPassword(raceDb)({ body: { token: 'same-synthetic-token', email: 'fixture@example.test', newPassword: `SyntheticPassword${i + 1}!` }, ip: '127.0.0.1' }, res, e => { throw e; })));
+    result.resetRace = { simultaneousUses: 2, statuses: raceResponses.map(r => r.code), successfulPasswordUpdates: updates, atomicConsumption: updates === 1 };
+    const apiApp = express(); apiApp.use(apiLimiter); apiApp.get('/', (_req, res) => res.sendStatus(200));
+    const apiStatuses = [];
+    for (let i = 0; i < 101; i++) apiStatuses.push((await request(apiApp).get('/')).status);
+    const authApp = express(); authApp.use(authLimiter); authApp.post('/', (_req, res) => res.sendStatus(200));
+    const authStatuses = [];
+    for (let i = 0; i < 6; i++) authStatuses.push((await request(authApp).post('/')).status);
+    result.productionLimits = { apiRequests: apiStatuses.length, apiSuccesses: apiStatuses.filter(s => s === 200).length, apiLastStatus: apiStatuses.at(-1), successfulLoginsThenBlocked: authStatuses };
+    const hookApp = express(); hookApp.use(pacsWebhookLimiter); hookApp.post('/', (_req, res) => res.sendStatus(200));
+    const hookStatuses = [];
+    for (let i = 0; i < 65; i++) hookStatuses.push((await request(hookApp).post('/')).status);
+    result.webhookLimits = { requests: 65, accepted: hookStatuses.filter(s => s === 200).length, lastStatus: hookStatuses.at(-1), declaredLimit: 60 };
+    const archivePath = path.join(__dirname, 'synthetic-unsigned-update.zip');
+    const archive = new AdmZip();
+    archive.addFile('manifest.json', Buffer.from(JSON.stringify({ version: '99.0.0', min_version: '99.0.0' })));
+    archive.writeZip(archivePath);
+    const verification = await verifyUpdatePackage(archivePath);
+    result.unsignedUpdate = { valid: verification.valid, signatureVerified: verification.signatureVerified, targetVersion: verification.targetVersion };
+    const sqls = [];
+    const client = { query: async sql => { sqls.push(sql.trim()); return { rows: [] }; }, release() {} };
+    const updatePool = { query: async sql => { sqls.push(sql.trim()); return { rows: sql.includes('RETURNING update_id') ? [{ update_id: 'synthetic-update' }] : [] }; }, connect: async () => client };
+    const update = await applySystemUpdate(updatePool, { packagePath: archivePath, targetVersion: '99.0.0', autoBackup: true });
+    result.updateExecution = { success: update.success, backupFile: update.backupFile, fromVersion: CURRENT_VERSION, reportedVersion: update.toVersion, migrationsExecuted: sqls.some(sql => /ALTER TABLE|CREATE TABLE|runMigrations/.test(sql)), backupFailureIgnored: update.logs.some(log => /backup failed/i.test(log.message)) };
+    fs.writeFileSync(path.join(__dirname, 'security-repros.json'), JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(result, null, 2));
+}
+main().catch(error => { console.error(error.stack); process.exitCode = 1; });

@@ -99,7 +99,7 @@ export const clinicalApi = api.injectEndpoints({
         }),
         markAiReportDraftApplied: builder.mutation({
             query: ({ examId, draftId, mode }) => ({
-                url: `/exams/${examId}/ai-drafts/${draftId}/applied`,
+                url: `/exams/${examId}/ai-drafts/${draftId}/apply`,
                 method: 'POST',
                 body: { mode },
             }),

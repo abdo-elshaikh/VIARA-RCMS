@@ -3,8 +3,19 @@ const path = require('path');
 const fs = require('fs');
 const rootEnvPath = path.resolve(__dirname, '../../.env');
 const backendEnvPath = path.resolve(__dirname, '../.env');
-const dotenvPath = fs.existsSync(rootEnvPath) ? rootEnvPath : backendEnvPath;
-const result = require('dotenv').config({ path: dotenvPath });
+
+const savedNodeEnv = process.env.NODE_ENV;
+
+// Load root .env first for workspace defaults, then override with backend-specific .env
+if (fs.existsSync(rootEnvPath)) {
+    require('dotenv').config({ path: rootEnvPath });
+}
+if (fs.existsSync(backendEnvPath)) {
+    require('dotenv').config({ path: backendEnvPath, override: true });
+}
+if (savedNodeEnv) {
+    process.env.NODE_ENV = savedNodeEnv;
+}
 
 if (!process.env.DATABASE_URL && process.env.POSTGRES_PASSWORD) {
     const user = encodeURIComponent(process.env.POSTGRES_USER || 'VIARA');
@@ -15,8 +26,8 @@ if (!process.env.DATABASE_URL && process.env.POSTGRES_PASSWORD) {
 }
 process.env.PORT ||= '3000';
 
-if (result.error) {
-    console.warn('⚠︝  No root or backend .env file found — relying on environment variables');
+if (!fs.existsSync(rootEnvPath) && !fs.existsSync(backendEnvPath)) {
+    console.warn('⚠️ No root or backend .env file found — relying on environment variables');
 }
 
 // NOTE: minor no-op change to trigger nodemon reload when env files are updated
@@ -45,6 +56,7 @@ try {
 }
 
 const express = require('express');
+const compression = require('compression');
 const helmet = require('helmet');
 const {
     patientDataLimiter, invoiceLimiter, sensitiveOpLimiter, notificationLimiter, publicCaseStatusLimiter
@@ -59,6 +71,7 @@ const auditLogger = require('./middleware/auditLogger');
 const auditRead = require('./middleware/auditRead');
 const { authenticateToken, authorizeRole, configureAuthDatabase } = require('./middleware/authMiddleware');
 const { authLimiter, apiLimiter, strictLimiter } = require('./middleware/rateLimiter');
+const { authAccountLimiter, passwordResetRequestLimiter } = require('./middleware/rateLimiters');
 const sanitizeInput = require('./middleware/sanitize');
 const { csrfProtection } = require('./middleware/csrf');
 const { validateRequest, validateQuery } = require('./middleware/validateRequest');
@@ -136,7 +149,7 @@ const { updateProfileSchema, changePasswordSchema, profilePreferencesSchema } = 
 const { doctorLoginSchema } = require('./schemas/doctorPortalSchema');
 
 // Controllers
-const { login, register, refresh, logout, setup2FA, enable2FA, verify2FA, changePortalPassword } = require('./controllers/authController');
+const { login, register, refresh, logout, setup2FA, enable2FA, verify2FA, changePortalPassword, forgotPassword, resetPassword } = require('./controllers/authController');
 const passkeyController = require('./controllers/passkeyController');
 const { getReportPdf } = require('./controllers/examController');
 const { patientLogin } = require('./controllers/portalController');
@@ -164,7 +177,8 @@ const realtimeService = require('./services/realtimeService');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.set('trust proxy', 1);
+// Trust named proxy networks, never a hop count that clients can shorten.
+app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
 
 const RETRYABLE_DATABASE_ERROR_CODES = new Set([
     'ECONNREFUSED',
@@ -219,7 +233,7 @@ const connectionString = process.env.DATABASE_URL;
 const pool = new Pool({
     connectionString,
     min: Number(process.env.DB_POOL_MIN || 5),
-    max: Number(process.env.DB_POOL_MAX || 50),
+    max: Number(process.env.DB_POOL_MAX || 20),
     idleTimeoutMillis: Number(process.env.DB_POOL_IDLE_TIMEOUT || 30000),
     connectionTimeoutMillis: Number(process.env.DB_POOL_TIMEOUT || 5000),
     statement_timeout: 30000,
@@ -236,6 +250,7 @@ const lifecycle = createServerLifecycle({
     logger,
     shutdownTimeoutMs: Number(process.env.SHUTDOWN_TIMEOUT_MS || 30000)
 });
+lifecycle.addStopCallback(require('./services/rateLimitStore').closeRateLimitStore);
 
 const auditService = new AuditService(pool);
 
@@ -280,7 +295,14 @@ const checkClamAv = async () => {
 // Test database connection
 if (process.env.NODE_ENV !== 'test') {
     waitForDatabaseConnection(pool)
-        .then((client) => {
+        .then(async (client) => {
+            try {
+                await client.query('SELECT password_reset_token, password_reset_expires FROM users LIMIT 0');
+                await require('./services/rateLimitStore').initializeRateLimitStore();
+            } catch (error) {
+                client.release();
+                throw error;
+            }
             logger.info('✅ Successfully connected to PostgreSQL Database');
 
             // Initialize global settings cache
@@ -491,6 +513,14 @@ app.use((req, res, next) => {
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
 app.use('/api/webhooks/twilio', express.raw({ type: 'application/x-www-form-urlencoded' }));
 
+app.use(compression({
+    threshold: 1024,
+    filter: (req, res) => {
+        if (req.headers['x-no-compression']) return false;
+        return compression.filter(req, res);
+    }
+}));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -612,6 +642,10 @@ app.post('/api/auth/refresh', refresh(pool));
 app.post('/api/auth/logout', logout(pool));
 app.post('/api/portal/auth/refresh', refresh(pool));
 app.post('/api/portal/auth/logout', logout(pool));
+
+// Password Reset (public – no auth required)
+app.post('/api/auth/forgot-password', authLimiter, passwordResetRequestLimiter, forgotPassword(pool));
+app.post('/api/auth/reset-password',  authLimiter, resetPassword(pool));
 
 // 2FA Routes (Protected & Public)
 app.post('/api/auth/setup-2fa', authenticateToken, setup2FA(pool));

@@ -13,6 +13,7 @@ const AuthService = require('../services/authService');
 const { attachActiveEmergencyClaims } = require('../services/emergencyAccessService');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 const { assertQuota, withQuotaTransaction } = require('../services/quotaService');
+const { getStaffOrigin } = require('../config/publicOrigin');
 
 // 12 rounds per current OWASP guidance for medical systems; existing hashes
 // embed their own cost factor so verification of old hashes is unaffected.
@@ -814,6 +815,191 @@ const changePortalPassword = (db) => async (req, res, next) => {
     }
 };
 
+// ─── Forgot Password ─────────────────────────────────────────────────────────
+
+/**
+ * POST /api/auth/forgot-password
+ * Accepts an email address and, if a matching active staff account exists,
+ * sends a one-time password-reset link valid for 1 hour.
+ *
+ * Always returns HTTP 200 with the same JSON body regardless of whether the
+ * email was found – this prevents account-enumeration attacks.
+ */
+const forgotPassword = (db) => async (req, res, next) => {
+    try {
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ message: 'Invalid email address.' });
+        }
+
+        // Look up active staff account (patients / doctors have separate flows)
+        const { rows } = await db.query(
+            `SELECT user_id, full_name, email, is_active FROM users WHERE email = $1 LIMIT 1`,
+            [email]
+        );
+        const user = rows[0];
+
+        // Always respond the same way to prevent account enumeration
+        const safeResponse = () => res.json({
+            message: 'If an account with that email exists, a reset link has been sent.'
+        });
+
+        if (!user || !user.is_active) return safeResponse();
+
+        // Generate a cryptographically secure token (32 bytes → 64 hex chars)
+        const rawToken = crypto.randomBytes(32).toString('hex');
+        // Store its SHA-256 hash to avoid leaking the plaintext token in DB
+        const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+        await db.query(
+            `UPDATE users SET password_reset_token = $1, password_reset_expires = $2 WHERE user_id = $3`,
+            [tokenHash, expiresAt, user.user_id]
+        );
+
+        // The request Host and forwarded headers never determine email links.
+        const appUrl = getStaffOrigin();
+        const resetUrl = `${appUrl}/login?resetToken=${rawToken}&email=${encodeURIComponent(user.email)}`;
+
+        const isArabic = (req.headers['accept-language'] || '').includes('ar');
+        const subjectEn = `${process.env.CENTER_NAME || 'VIARA'} – Password Reset Request`;
+        const subjectAr = `${process.env.CENTER_NAME || 'VIARA'} – طلب إعادة تعيين كلمة المرور`;
+        const bodyEn = [
+            `Hello ${user.full_name},`,
+            '',
+            'We received a request to reset your password. Click the link below to set a new password:',
+            '',
+            resetUrl,
+            '',
+            'This link will expire in 1 hour. If you did not request a password reset, please ignore this email.',
+            '',
+            `– ${process.env.CENTER_NAME || 'VIARA'} Support Team`
+        ].join('\n');
+        const bodyAr = [
+            `مرحباً ${user.full_name}،`,
+            '',
+            'تلقّينا طلباً لإعادة تعيين كلمة مرور حسابك. انقر على الرابط التالي لتعيين كلمة مرور جديدة:',
+            '',
+            resetUrl,
+            '',
+            'صلاحية هذا الرابط ساعة واحدة فقط. إذا لم تطلب إعادة التعيين، يمكنك تجاهل هذه الرسالة.',
+            '',
+            `– فريق الدعم في ${process.env.CENTER_NAME || 'VIARA'}`
+        ].join('\n');
+
+        try {
+            const { sendEmail } = require('../services/notificationService');
+            await sendEmail(
+                user.email,
+                isArabic ? subjectAr : subjectEn,
+                isArabic ? bodyAr : bodyEn,
+                db,
+                {}
+            );
+        } catch (emailErr) {
+            // Log but don't surface email failures to the caller
+            logger.warn('forgot-password: email delivery failed', {
+                userId: user.user_id,
+                error: emailErr?.message
+            });
+        }
+
+        await logAction(db, {
+            userId: user.user_id,
+            actorName: user.full_name,
+            action: 'PASSWORD_RESET_REQUESTED',
+            resourceTable: 'users',
+            resourceId: user.user_id,
+            ipAddress: req.ip
+        });
+
+        return safeResponse();
+    } catch (error) {
+        next(error);
+    }
+};
+
+/**
+ * POST /api/auth/reset-password
+ * Validates the one-time token and replaces the user's password.
+ * Clears the reset token, forces all active sessions to expire,
+ * and sets must_change_password = FALSE.
+ */
+const resetPassword = (db) => async (req, res, next) => {
+    try {
+        const { token, email, newPassword } = req.body || {};
+        if (typeof token !== 'string' || typeof email !== 'string' || typeof newPassword !== 'string'
+            || !/^[a-f0-9]{64}$/i.test(token) || !email || !newPassword) {
+            return res.status(400).json({ error: 'token, email, and newPassword are required.' });
+        }
+        if (newPassword.length < 8 || Buffer.byteLength(newPassword, 'utf8') > 72) {
+            return res.status(400).json({ error: 'Password must contain at least 8 characters and at most 72 UTF-8 bytes.' });
+        }
+        // Enforce the same strong-password pattern used across the system
+        if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/.test(newPassword)) {
+            return res.status(400).json({ error: 'Password must contain at least one uppercase letter, one lowercase letter, and one number.' });
+        }
+
+        const tokenHash = crypto.createHash('sha256').update(String(token)).digest('hex');
+        const { rows } = await db.query(
+            `SELECT user_id, full_name, email, is_active, password_reset_expires
+             FROM users
+             WHERE email = $1
+               AND password_reset_token = $2
+               AND is_active = TRUE
+             LIMIT 1`,
+            [String(email).trim().toLowerCase(), tokenHash]
+        );
+
+        const user = rows[0];
+        if (!user) {
+            return res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
+        }
+        if (!user.password_reset_expires || new Date(user.password_reset_expires) <= new Date()) {
+            return res.status(400).json({ error: 'This reset link has expired. Please request a new one.' });
+        }
+
+        const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+        // Compare-and-set consumption and session revocation are one PostgreSQL
+        // statement: only one concurrent request can return a consumed token.
+        const consumed = await db.query(
+            `WITH reset_user AS (UPDATE users
+             SET password_hash = $1,
+                 password_reset_token = NULL,
+                 password_reset_expires = NULL,
+                 must_change_password = FALSE,
+                 failed_login_attempts = 0,
+                 locked_until = NULL,
+                 current_session_id = NULL,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE user_id = $2 AND password_reset_token = $3
+               AND password_reset_expires > NOW() AND is_active = TRUE
+             RETURNING user_id), revoked_sessions AS (
+                 UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'password_reset'
+                 WHERE user_id IN (SELECT user_id FROM reset_user) AND revoked = FALSE
+                 RETURNING token_id
+             ) SELECT user_id FROM reset_user`,
+            [passwordHash, user.user_id, tokenHash]
+        );
+        if (!consumed.rows.length) {
+            return res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
+        }
+
+        await logAction(db, {
+            userId: user.user_id,
+            actorName: user.full_name,
+            action: 'PASSWORD_RESET_COMPLETED',
+            resourceTable: 'users',
+            resourceId: user.user_id,
+            ipAddress: req.ip
+        });
+
+        return res.json({ message: 'Password has been reset successfully. You can now sign in.' });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     register,
     login,
@@ -823,5 +1009,7 @@ module.exports = {
     setup2FA,
     enable2FA,
     verify2FA,
-    generateTokens
+    generateTokens,
+    forgotPassword,
+    resetPassword
 };

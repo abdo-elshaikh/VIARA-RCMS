@@ -13,6 +13,7 @@ import authEn from '../../i18n/locales/en/auth.json';
 import authAr from '../../i18n/locales/ar/auth.json';
 import preferencesReducer, { DEFAULT_PREFERENCES } from '../../store/preferencesSlice';
 import Landing from '../Landing';
+vi.mock('../../components/public/PublicConnectionNotice', () => ({ default: () => null }));
 
 vi.mock('../../store/api', () => ({
     useGetPublicLandingOverviewQuery: () => ({
@@ -45,10 +46,10 @@ vi.mock('../../store/api', () => ({
 
 let landingI18n;
 
-const renderLanding = () => {
+const renderLanding = (preferences = DEFAULT_PREFERENCES) => {
     const store = configureStore({
         reducer: { preferences: preferencesReducer },
-        preloadedState: { preferences: { ...DEFAULT_PREFERENCES } },
+        preloadedState: { preferences: { ...preferences } },
     });
     const result = render(
         <Provider store={store}>
@@ -129,6 +130,35 @@ describe('VIARA landing preferences', () => {
         expect(store.getState().preferences.theme).toBe('dark');
         expect(JSON.parse(localStorage.getItem('VIARA_preferences')).theme).toBe('dark');
         expect(localStorage.getItem('theme')).toBeNull();
+    });
+
+    it('opens navigation containing both portals and closes it on Escape from the trigger', () => {
+        renderLanding();
+        const menu = screen.getByRole('button', { name: 'Open menu' });
+        fireEvent.click(menu);
+        expect(menu).toHaveAttribute('aria-expanded', 'true');
+        const nav = screen.getByRole('navigation', { name: 'Navigation' });
+        expect(within(nav).getByRole('link', { name: 'Results Portal' })).toHaveAttribute('href', '/portal');
+        expect(within(nav).getByRole('link', { name: 'Doctor Portal' })).toHaveAttribute('href', '/doctor-portal');
+        fireEvent.keyDown(menu, { key: 'Escape' });
+        expect(menu).toHaveAttribute('aria-expanded', 'false');
+        expect(menu).toHaveFocus();
+    });
+
+    it('applies the in-app reduced-motion preference to the page', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, motion: 'reduced' };
+        const { container } = renderLanding(preferences);
+        expect(container.querySelector('.vlp')).toHaveClass('vlp--reduce-motion');
+    });
+
+    it('uses current relative dates for clearly marked demo worklist rows', () => {
+        renderLanding();
+        const worklist = screen.getByText('Demo data').closest('.vlp__worklist-card');
+        const displayedDates = within(worklist).getAllByText(/^\d{4}\/\d{2}\/\d{2} - \d{2}:\d{2}$/);
+        const currentYear = String(new Date().getFullYear());
+
+        expect(displayedDates).toHaveLength(3);
+        expect(displayedDates.every((date) => date.textContent.startsWith(currentYear))).toBe(true);
     });
 
     it('synchronizes language, direction and persisted system preferences', async () => {

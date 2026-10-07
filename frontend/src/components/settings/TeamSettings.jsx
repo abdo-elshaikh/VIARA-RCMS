@@ -1,7 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import useFocusTrap from '../../hooks/useFocusTrap';
 import {
     BadgeAlert,
     BadgeCheck,
@@ -100,6 +101,16 @@ const TeamSettings = ({ embedded = false }) => {
         setTempPassword('');
         setInviteRole(availableRoles.includes('Radiologist') ? 'Radiologist' : availableRoles[0] || '');
     };
+
+    const dialogRef = useRef(null);
+    const titleId = useId();
+
+    useFocusTrap({
+        containerRef: dialogRef,
+        isActive: Boolean(showModal),
+        onEscape: () => closeModal(),
+        lockScroll: true,
+    });
 
     const closeModal = () => {
         setShowModal(false);
@@ -337,14 +348,21 @@ const TeamSettings = ({ embedded = false }) => {
                     className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md animate-in fade-in duration-200"
                     onMouseDown={(e) => { if (e.target === e.currentTarget) closeModal(); }}
                 >
-                    <div className="flex w-full max-w-lg max-h-[90vh] flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 shadow-2xl backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-900/95">
+                    <div
+                        ref={dialogRef}
+                        tabIndex={-1}
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby={titleId}
+                        className="flex w-full max-w-lg max-h-[90vh] flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 shadow-2xl backdrop-blur-2xl dark:border-slate-800 dark:bg-slate-900/95"
+                    >
                         <div className="flex items-center justify-between border-b border-slate-200/80 p-6 dark:border-slate-800">
                             <div className="flex min-w-0 items-center gap-3.5">
                                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300 ring-1 ring-teal-500/20 shadow-2xs">
                                     <Mail size={18} aria-hidden="true" />
                                 </span>
                                 <div className="min-w-0">
-                                    <h2 className="font-black text-slate-950 dark:text-white text-base">{t('settings.team.addMember', 'Add Team Member')}</h2>
+                                    <h2 id={titleId} className="font-black text-slate-950 dark:text-white text-base">{t('settings.team.addMember', 'Add Team Member')}</h2>
                                     <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{t('settings.team.addMemberHint', 'Create a staff account with a temporary password.')}</p>
                                 </div>
                             </div>

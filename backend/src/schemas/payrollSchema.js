@@ -6,6 +6,10 @@ const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional()
 const money = z.coerce.number().min(0).max(999999999999.99);
 const positiveMoney = z.coerce.number().gt(0).max(999999999999.99);
 const percentage = z.coerce.number().min(0).max(100);
+const PAYROLL_EMPLOYEE_ROLES = [
+    'Admin', 'HR', 'Receptionist', 'Radiologist', 'Technician', 'Nurse',
+    'Cashier', 'Accountant', 'Insurance_Staff', 'Marketing'
+];
 const strictBoolean = (defaultValue) => z.preprocess((value) => {
     if (value === undefined || value === null || value === '') return defaultValue;
     if (value === true || value === false) return value;
@@ -36,9 +40,13 @@ const createCompensationProfileSchema = z.object({
     userId: z.string().uuid(),
     branchId: optionalUuid,
     currencyCode: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).default('EGP'),
-    salaryType: z.enum(['Monthly', 'Hourly']).default('Monthly'),
+    salaryType: z.enum(['Monthly', 'Hourly', 'Daily', 'PerShift', 'PerCase', 'ShiftAndCase', 'Percentage']).default('Monthly'),
     baseSalary: money.default(0),
     hourlyRate: money.default(0),
+    dailyRate: money.default(0),
+    shiftRate: money.default(0),
+    caseRate: money.default(0),
+    percentageRate: percentage.default(0),
     standardHoursPerDay: z.coerce.number().min(0.25).max(24).default(8),
     standardDaysPerPeriod: z.coerce.number().min(1).max(31).default(22),
     effectiveFrom: dateString,
@@ -54,6 +62,21 @@ const createCompensationProfileSchema = z.object({
     }
     if (data.salaryType === 'Hourly' && data.hourlyRate <= 0) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['hourlyRate'], message: 'Hourly compensation requires a positive hourly rate' });
+    }
+    if (data.salaryType === 'Daily' && data.dailyRate <= 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['dailyRate'], message: 'Daily compensation requires a positive daily rate' });
+    }
+    if (data.salaryType === 'PerShift' && data.shiftRate <= 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['shiftRate'], message: 'Per-shift compensation requires a positive shift rate' });
+    }
+    if (data.salaryType === 'PerCase' && data.caseRate <= 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['caseRate'], message: 'Per-case compensation requires a positive case rate' });
+    }
+    if (data.salaryType === 'ShiftAndCase' && (data.shiftRate <= 0 || data.caseRate <= 0)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['shiftRate'], message: 'Combined shift and case compensation requires positive rates for both units' });
+    }
+    if (data.salaryType === 'Percentage' && data.percentageRate <= 0) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['percentageRate'], message: 'Percentage compensation requires a positive percentage' });
     }
 });
 
@@ -71,16 +94,22 @@ const updateCompensationProfileSchema = z.object({
 const createPayrollRuleSchema = z.object({
     branchId: optionalUuid,
     currencyCode: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).default('EGP'),
-    ruleType: z.enum(['Overtime', 'Late', 'EarlyLeave', 'Absence', 'Allowance', 'Deduction', 'Penalty', 'EmployerContribution']),
+    ruleType: z.enum(['Overtime', 'Late', 'EarlyLeave', 'Absence', 'Allowance', 'Bonus', 'Deduction', 'Penalty', 'EmployerContribution']),
     name: z.string().trim().min(2).max(120),
-    calculationMethod: z.enum(['FixedAmount', 'PercentageOfBase', 'PercentageOfGross', 'HourlyMultiplier', 'PerMinute', 'PerDay']),
+    calculationMethod: z.enum([
+        'FixedAmount', 'PercentageOfBase', 'PercentageOfGross', 'PercentageOfCollections',
+        'HourlyMultiplier', 'PerMinute', 'PerDay', 'PerShift', 'PerCase'
+    ]),
     value: z.coerce.number().gt(0).max(999999999999.9999),
     taxable: strictBoolean(true),
     requiresApproval: z.literal(true).default(true),
     effectiveFrom: dateString,
     effectiveTo: z.preprocess(emptyToUndefined, dateString.optional()),
     isActive: strictBoolean(true),
-    metadata: z.record(z.any()).default({})
+    metadata: z.record(z.any()).default({}),
+    targetUserIds: z.array(z.string().uuid()).max(200).default([]),
+    targetRoles: z.array(z.enum(PAYROLL_EMPLOYEE_ROLES)).max(PAYROLL_EMPLOYEE_ROLES.length).default([]),
+    bonusFrequency: z.enum(['OneTime', 'Recurring']).default('OneTime')
 }).refine((data) => !data.effectiveTo || data.effectiveTo >= data.effectiveFrom, {
     path: ['effectiveTo'],
     message: 'Effective end date must be on or after effective start date'
@@ -90,7 +119,8 @@ const createPayrollRuleSchema = z.object({
         Late: new Set(['PerMinute', 'FixedAmount']),
         EarlyLeave: new Set(['PerMinute', 'FixedAmount']),
         Absence: new Set(['PerDay', 'FixedAmount']),
-        Allowance: new Set(['FixedAmount', 'PercentageOfBase', 'PercentageOfGross']),
+        Allowance: new Set(['FixedAmount', 'PercentageOfBase', 'PercentageOfGross', 'PercentageOfCollections', 'PerDay', 'PerShift', 'PerCase']),
+        Bonus: new Set(['FixedAmount', 'PercentageOfBase', 'PercentageOfGross', 'PercentageOfCollections', 'PerDay', 'PerShift', 'PerCase']),
         Deduction: new Set(['FixedAmount', 'PercentageOfBase', 'PercentageOfGross']),
         Penalty: new Set(['FixedAmount', 'PercentageOfBase', 'PercentageOfGross']),
         EmployerContribution: new Set(['FixedAmount', 'PercentageOfBase', 'PercentageOfGross'])
@@ -100,6 +130,13 @@ const createPayrollRuleSchema = z.object({
     }
     if (data.calculationMethod === 'HourlyMultiplier' && data.value <= 1) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['value'], message: 'Overtime multiplier must be greater than 1' });
+    }
+    if (data.calculationMethod.startsWith('Percentage') && data.value > 100) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['value'], message: 'Percentage calculation values cannot exceed 100' });
+    }
+    if (data.ruleType !== 'Bonus'
+        && (data.targetUserIds.length || data.targetRoles.length || data.bonusFrequency !== 'OneTime')) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['targetUserIds'], message: 'Employee targeting and frequency apply only to bonuses' });
     }
 });
 
@@ -196,7 +233,7 @@ const calculatePayrollSchema = z.object({
 
 const updatePayrollRunStatusSchema = z.object({
     status: z.enum(['Reviewed', 'Approved', 'Paid', 'Locked', 'Cancelled']),
-    paymentMethod: z.enum(['Cash', 'BankTransfer', 'Check', 'Wallet', 'Other']).optional(),
+    paymentMethod: z.enum(['Cash', 'BankTransfer', 'Check', 'Wallet']).optional(),
     referenceNumber: optionalString(120),
     paidAmount: z.preprocess(emptyToUndefined, money.optional()),
     paidDate: z.preprocess(emptyToUndefined, dateString.optional()),

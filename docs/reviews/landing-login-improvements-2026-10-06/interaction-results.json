@@ -1,0 +1,105 @@
+{
+  "checks": [
+    {
+      "name": "landing starts in system dark",
+      "pass": true
+    },
+    {
+      "name": "landing follows system light change",
+      "pass": true
+    },
+    {
+      "name": "sign-in preserves system dark",
+      "pass": true
+    },
+    {
+      "name": "recovery focuses email and locks background",
+      "pass": true
+    },
+    {
+      "name": "recovery traps Shift+Tab",
+      "pass": true
+    },
+    {
+      "name": "recovery closes and restores focus",
+      "pass": true
+    },
+    {
+      "name": "successful reset cleans URL and returns usable sign-in",
+      "pass": true
+    },
+    {
+      "name": "continue sign-in focuses email",
+      "pass": true
+    },
+    {
+      "name": "public availability dialog hides administration commands",
+      "pass": true
+    },
+    {
+      "name": "support uses center contact details",
+      "pass": true
+    },
+    {
+      "name": "support transition keeps background locked",
+      "pass": true
+    },
+    {
+      "name": "support returns focus to original service trigger",
+      "pass": true
+    },
+    {
+      "name": "outage preserves sign-in route and email",
+      "pass": true
+    },
+    {
+      "name": "short mobile reset ar: reachable scrolling dialog",
+      "pass": true,
+      "evidence": {
+        "top": 16,
+        "bottom": 384,
+        "width": 352,
+        "viewport": 400,
+        "scrollable": true
+      }
+    },
+    {
+      "name": "expired reset ar: error preserves values",
+      "pass": true
+    },
+    {
+      "name": "expired reset ar: Escape returns to sign-in",
+      "pass": true
+    },
+    {
+      "name": "reduced motion ar: no repeating landing animation",
+      "pass": true,
+      "evidence": 0
+    },
+    {
+      "name": "short mobile reset en: reachable scrolling dialog",
+      "pass": true,
+      "evidence": {
+        "top": 16,
+        "bottom": 384,
+        "width": 352,
+        "viewport": 400,
+        "scrollable": true
+      }
+    },
+    {
+      "name": "expired reset en: error preserves values",
+      "pass": true
+    },
+    {
+      "name": "expired reset en: Escape returns to sign-in",
+      "pass": true
+    },
+    {
+      "name": "reduced motion en: no repeating landing animation",
+      "pass": true,
+      "evidence": 0
+    }
+  ],
+  "errors": []
+}

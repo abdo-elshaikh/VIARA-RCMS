@@ -19,13 +19,20 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": ["warn", {
-        allowConstantExport: true,
-        allowExportNames: [
-          "statusTones", "badgeVariants", "buttonVariants",
-          "resolvePortalBranches", "resolvePortalIdentity", "usePortalIdentity",
-        ],
-      }],
+      "react-refresh/only-export-components": [
+        "warn",
+        {
+          allowConstantExport: true,
+          allowExportNames: [
+            "statusTones",
+            "badgeVariants",
+            "buttonVariants",
+            "resolvePortalBranches",
+            "resolvePortalIdentity",
+            "usePortalIdentity",
+          ],
+        },
+      ],
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/no-explicit-any": "off",
       "no-empty": "off",

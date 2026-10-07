@@ -16,6 +16,7 @@ import {
     Settings as SettingsIcon,
     ShieldAlert,
     Sliders,
+    Sparkles,
     Terminal,
     UserRound,
     Users,
@@ -38,6 +39,7 @@ import TeamSettings from '../components/settings/TeamSettings';
 import NotificationSettingsPanel from '../components/settings/NotificationSettingsPanel';
 import CenterSettings from './CenterSettings';
 import PageHeader from '../components/ui/PageHeader';
+import usePageTitle from '../hooks/usePageTitle';
 import { canAccessSettingsSection } from '../config/settingsSections';
 import { confirmNavigation } from '../utils/navigationGuard';
 
@@ -47,6 +49,7 @@ const PrivacyCenter = lazy(() => import('./PrivacyCenter'));
 const BackupManagement = lazy(() => import('./BackupManagement'));
 const AuditLogs = lazy(() => import('./AuditLogs'));
 const PortalBuilderSettings = lazy(() => import('../components/settings/PortalBuilderSettings'));
+const SystemUpdateSettings = lazy(() => import('../components/settings/SystemUpdateSettings'));
 
 const SECTION_COMPONENTS = {
     appearance: AppearanceSettings,
@@ -64,7 +67,8 @@ const SECTION_COMPONENTS = {
     auditLogs: AuditLogs,
     backups: BackupManagement,
     developer: DeveloperSettings,
-    admin: AdminSettings
+    admin: AdminSettings,
+    updates: SystemUpdateSettings
 };
 
 const GROUP_ORDER = ['personal', 'organization', 'advanced'];
@@ -234,13 +238,15 @@ const Settings = () => {
             { id: 'backups', group: 'advanced', label: t('settings.tabs.backups'), description: t('settings.tabDescriptions.backups'), icon: Database },
             { id: 'auditLogs', group: 'advanced', label: t('settings.tabs.auditLogs'), description: t('settings.tabDescriptions.auditLogs'), icon: FileText },
             { id: 'ai', group: 'advanced', label: t('settings.tabs.ai'), description: t('settings.tabDescriptions.ai'), icon: BrainCircuit },
-            { id: 'developer', group: 'advanced', label: t('settings.tabs.developer'), description: t('settings.tabDescriptions.developer'), icon: Terminal }
+            { id: 'developer', group: 'advanced', label: t('settings.tabs.developer'), description: t('settings.tabDescriptions.developer'), icon: Terminal },
+            { id: 'updates', group: 'advanced', label: t('settings.tabs.updates'), description: t('settings.tabDescriptions.updates'), icon: Sparkles }
         ];
         return available.filter((section) => canAccessSettingsSection(section.id, currentUser));
     }, [currentUser, t]);
 
     const normalizedQuery = query.trim().toLocaleLowerCase(locale);
     const active = tabs.find(tab => tab.id === activeTab) || tabs[0];
+    usePageTitle(active?.label ? `${active.label} · ${t('settings.header', 'الإعدادات')}` : t('settings.header', 'الإعدادات'));
     const matchingTabs = normalizedQuery
         ? tabs.filter(tab => `${tab.label} ${tab.description}`.toLocaleLowerCase(locale).includes(normalizedQuery))
         : tabs;

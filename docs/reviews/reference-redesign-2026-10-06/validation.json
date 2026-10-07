@@ -1,0 +1,200 @@
+[
+  {
+    "name": "landing-ar-light-1720",
+    "overflow": false,
+    "title": "رؤيةأوضح.إدارةأكثرسلاسة.",
+    "pageHeight": 3512,
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-1720",
+    "overflow": false,
+    "title": "مرحبًا بعودتك",
+    "pageHeight": 975,
+    "card": {
+      "x": 1076.890625,
+      "y": 102,
+      "width": 586.359375,
+      "height": 791.390625
+    },
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "landing-ar-light-1440",
+    "overflow": false,
+    "title": "رؤيةأوضح.إدارةأكثرسلاسة.",
+    "pageHeight": 3436,
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-1440",
+    "overflow": false,
+    "title": "مرحبًا بعودتك",
+    "pageHeight": 959,
+    "card": {
+      "x": 901.578125,
+      "y": 100,
+      "width": 490.90625,
+      "height": 785.390625
+    },
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "landing-ar-light-390",
+    "overflow": false,
+    "title": "رؤيةأوضح.إدارةأكثرسلاسة.",
+    "pageHeight": 5641,
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-390",
+    "overflow": false,
+    "title": "مرحبًا بعودتك",
+    "pageHeight": 1012,
+    "card": {
+      "x": 16,
+      "y": 90,
+      "width": 358,
+      "height": 787.546875
+    },
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "landing-ar-light-320",
+    "overflow": false,
+    "title": "رؤيةأوضح.إدارةأكثرسلاسة.",
+    "pageHeight": 5805,
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-320",
+    "overflow": false,
+    "title": "مرحبًا بعودتك",
+    "pageHeight": 1060,
+    "card": {
+      "x": 12,
+      "y": 90,
+      "width": 296,
+      "height": 835.546875
+    },
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "landing-ar-light-820",
+    "overflow": false,
+    "title": "رؤيةأوضح.إدارةأكثرسلاسة.",
+    "pageHeight": 4746,
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-820",
+    "overflow": false,
+    "title": "مرحبًا بعودتك",
+    "pageHeight": 1180,
+    "card": {
+      "x": 150,
+      "y": 205.296875,
+      "width": 520,
+      "height": 785.390625
+    },
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "landing-en-light-1440",
+    "overflow": false,
+    "title": "ClearerVision.SmootherManagement.",
+    "pageHeight": 3473,
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "login-en-light-1440",
+    "overflow": false,
+    "title": "Welcome back",
+    "pageHeight": 959,
+    "card": {
+      "x": 901.578125,
+      "y": 100,
+      "width": 490.90625,
+      "height": 785.390625
+    },
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "landing-ar-dark-1440",
+    "overflow": false,
+    "title": "رؤيةأوضح.إدارةأكثرسلاسة.",
+    "pageHeight": 3436,
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "login-ar-dark-1440",
+    "overflow": false,
+    "title": "مرحبًا بعودتك",
+    "pageHeight": 959,
+    "card": {
+      "x": 901.578125,
+      "y": 100,
+      "width": 490.90625,
+      "height": 785.390625
+    },
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "landing-en-dark-390",
+    "overflow": false,
+    "title": "ClearerVision.SmootherManagement.",
+    "pageHeight": 5614,
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "login-en-dark-390",
+    "overflow": false,
+    "title": "Welcome back",
+    "pageHeight": 1004,
+    "card": {
+      "x": 16,
+      "y": 90,
+      "width": 358,
+      "height": 779.546875
+    },
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "landing-ar-light-1536",
+    "overflow": false,
+    "title": "رؤيةأوضح.إدارةأكثرسلاسة.",
+    "pageHeight": 3347,
+    "missingImages": [],
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-1536",
+    "overflow": false,
+    "title": "مرحبًا بعودتك",
+    "pageHeight": 855,
+    "card": {
+      "x": 961.6875,
+      "y": 78,
+      "width": 523.625,
+      "height": 710.5625
+    },
+    "missingImages": [],
+    "errors": []
+  }
+]

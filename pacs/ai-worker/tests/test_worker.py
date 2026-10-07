@@ -39,6 +39,11 @@ def auth_headers():
     return {"Authorization": f"Bearer {API_KEY}"}
 
 
+def test_medgemma_requires_pinned_model_commit():
+    assert any("MODEL_REVISION" in error for error in settings(model_backend="medgemma", model_revision="main").configuration_errors)
+    assert not settings(model_backend="medgemma", model_revision="a" * 40).configuration_errors
+
+
 def request_payload(modality="DX", body_part="CHEST"):
     return {
         "job": {

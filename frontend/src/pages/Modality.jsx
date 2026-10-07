@@ -214,6 +214,7 @@ const Modality = () => {
     const [holdExam, setHoldExam] = useState(null);
     const [taskScope, setTaskScope] = useState('all');
     const [releaseAssignmentExam, setReleaseAssignmentExam] = useState(null);
+    const [stickerPrintExam, setStickerPrintExam] = useState(null);
     const [completionTarget, setCompletionTarget] = useState(null);
 
     // Advanced Filters State
@@ -895,12 +896,7 @@ const Modality = () => {
                                                                         icon={Printer}
                                                                         label={t('common.printSticker', { defaultValue: 'Print Sticker' })}
                                                                         tone="slate"
-                                                                        onClick={() => {
-                                                                            const copies = window.prompt(t('common.stickerCopiesPrompt'), t('common.stickerCopiesDefault'));
-                                                                            if (copies && parseInt(copies, 10) > 0) {
-                                                                                window.open(`/print/sticker/${exam.appointment_id}?copies=${parseInt(copies, 10)}`, '_blank');
-                                                                            }
-                                                                        }}
+                                                                        onClick={() => setStickerPrintExam(exam)}
                                                                     />
                                                                 </>
                                                             )}
@@ -929,6 +925,7 @@ const Modality = () => {
                                         onClaim={() => claim(exam)}
                                         onReturn={() => setReleaseAssignmentExam(exam)}
                                         onRequestPaymentException={() => requestPaymentException(exam)}
+                                        onPrintSticker={() => setStickerPrintExam(exam)}
                                         isArabic={isRtl}
                                         isClaiming={isClaiming}
                                     />
@@ -1072,11 +1069,36 @@ const Modality = () => {
                 inputProps={{ minLength: 3, maxLength: 1000 }}
                 isLoading={isReleasingAssignment}
             />
+
+            <TextPromptDialog
+                isOpen={Boolean(stickerPrintExam)}
+                onClose={() => setStickerPrintExam(null)}
+                onConfirm={(copies) => {
+                    const num = parseInt(copies, 10);
+                    if (num > 0 && stickerPrintExam?.appointment_id) {
+                        window.open(`/print/sticker/${stickerPrintExam.appointment_id}?copies=${num}`, '_blank');
+                    }
+                    setStickerPrintExam(null);
+                }}
+                title={t('common.printSticker', { defaultValue: 'Print Sticker' })}
+                message={t('common.stickerCopiesPrompt', { defaultValue: 'Enter number of sticker copies to print:' })}
+                label={t('common.stickerCopies', { defaultValue: 'Copies' })}
+                type="number"
+                initialValue="1"
+                confirmLabel={t('common.print', { defaultValue: 'Print' })}
+                cancelLabel={t('common.cancel', { defaultValue: 'Cancel' })}
+                validate={(val) => {
+                    const num = parseInt(val, 10);
+                    if (isNaN(num) || num < 1) return t('common.invalidCopies', { defaultValue: 'Must be at least 1' });
+                    if (num > 20) return t('common.maxCopies', { defaultValue: 'Maximum 20 copies' });
+                    return '';
+                }}
+            />
         </div>
     );
 };
 
-const ModalityQueueCard = ({ exam, t, locale, isMoving, isClaiming, onRelease, onHold, onStart, onComplete, onClaim, onReturn, onRequestPaymentException, isArabic }) => {
+const ModalityQueueCard = ({ exam, t, locale, isMoving, isClaiming, onRelease, onHold, onStart, onComplete, onClaim, onReturn, onRequestPaymentException, onPrintSticker, isArabic }) => {
     const acuity = ACUITY[exam.priority] || ACUITY.Routine;
     const apptTime = formatAppointmentTime(exam.start_time, locale);
 
@@ -1183,12 +1205,7 @@ const ModalityQueueCard = ({ exam, t, locale, isMoving, isClaiming, onRelease, o
                             {t('taskScope.return')}
                         </button>
                         <button
-                            onClick={() => {
-                                const copies = window.prompt(t('common.stickerCopiesPrompt'), t('common.stickerCopiesDefault'));
-                                if (copies && parseInt(copies, 10) > 0) {
-                                    window.open(`/print/sticker/${exam.appointment_id}?copies=${parseInt(copies, 10)}`, '_blank');
-                                }
-                            }}
+                            onClick={onPrintSticker}
                             className="flex items-center justify-center rounded-lg bg-[var(--VIARA-surface)] px-3 py-2.5 text-[var(--VIARA-muted)] ring-1 ring-[var(--VIARA-line)] transition-colors hover:bg-[var(--VIARA-surface-hover)] hover:text-[var(--VIARA-ink)] dark:bg-slate-900 dark:ring-slate-800"
                             title={t('common.printSticker', { defaultValue: 'Print Sticker' })}
                         >

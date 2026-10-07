@@ -45,7 +45,7 @@ describe('Rate Limiters Middleware Suite', () => {
                 user: { user_id: 'usr-abc-123' },
                 ip: '192.168.1.100'
             };
-            expect(authenticatedKey(req)).toBe('usr-abc-123');
+            expect(authenticatedKey(req)).toBe('user:staff:usr-abc-123');
         });
 
         test('returns userId when req.user.userId is present and user_id is absent', () => {
@@ -53,7 +53,7 @@ describe('Rate Limiters Middleware Suite', () => {
                 user: { userId: 'usr-xyz-789' },
                 ip: '192.168.1.100'
             };
-            expect(authenticatedKey(req)).toBe('usr-xyz-789');
+            expect(authenticatedKey(req)).toBe('user:staff:usr-xyz-789');
         });
 
         test('prefers user_id over userId if both exist', () => {
@@ -61,7 +61,7 @@ describe('Rate Limiters Middleware Suite', () => {
                 user: { user_id: 'primary-id', userId: 'secondary-id' },
                 ip: '192.168.1.100'
             };
-            expect(authenticatedKey(req)).toBe('primary-id');
+            expect(authenticatedKey(req)).toBe('user:staff:primary-id');
         });
 
         test('falls back to ipKeyGenerator(req.ip) when req.user is undefined', () => {
@@ -69,7 +69,7 @@ describe('Rate Limiters Middleware Suite', () => {
                 ip: '127.0.0.1'
             };
             const expectedIpKey = ipKeyGenerator(req.ip);
-            expect(authenticatedKey(req)).toBe(expectedIpKey);
+            expect(authenticatedKey(req)).toBe(`ip:${expectedIpKey}`);
         });
 
         test('falls back to ipKeyGenerator(req.ip) when req.user contains no user ID', () => {
@@ -78,7 +78,7 @@ describe('Rate Limiters Middleware Suite', () => {
                 ip: '10.0.0.5'
             };
             const expectedIpKey = ipKeyGenerator(req.ip);
-            expect(authenticatedKey(req)).toBe(expectedIpKey);
+            expect(authenticatedKey(req)).toBe(`ip:${expectedIpKey}`);
         });
     });
 

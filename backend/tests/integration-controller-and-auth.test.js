@@ -305,6 +305,20 @@ describe('Integration Controller & Auth Middleware', () => {
     });
 
     describe('exportAccounting', () => {
+        test('neutralizes spreadsheet formulas while preserving numeric amounts', async () => {
+            mockDb.query.mockResolvedValueOnce({ rows: [{
+                invoice_id: 'inv-1', total_amount: '-150.00',
+                first_name_enc: 'enc:=HYPERLINK("https://example.test")',
+                last_name_enc: 'enc:Patient', modality: '  @SUM(1,2)'
+            }] });
+            await exportAccounting(mockDb)(mockReq, mockRes, mockNext);
+            expect(mockNext).not.toHaveBeenCalled();
+            const output = mockRes.send.mock.calls[0][0];
+            expect(output).toContain("'=HYPERLINK");
+            expect(output).toContain("'  @SUM");
+            expect(output).toContain('"-150.00"');
+            expect(output).not.toContain("'-150.00");
+        });
         test('filters by startDate and endDate with ISO formatting', async () => {
             mockReq.query = {
                 startDate: '2026-08-01',

@@ -1,5 +1,5 @@
-import { RefreshCw } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
+import { RefreshCw } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 /**
  * Shared loading/error affordances for landing sections.
@@ -11,8 +11,8 @@ import { useTranslation } from 'react-i18next';
 
 export const LandingSectionSkeleton = ({
   rows = 1,
-  className = '',
-  minHeight = 'min-h-[280px]',
+  className = "",
+  minHeight = "min-h-[280px]",
 }: {
   rows?: number;
   className?: string;
@@ -24,9 +24,12 @@ export const LandingSectionSkeleton = ({
   >
     <div className="mb-4 h-3.5 w-28 rounded-full bg-muted" />
     <div className="mb-2.5 h-6 w-2/3 rounded-lg bg-muted" />
-    <div className={`grid gap-3 ${rows > 1 ? 'sm:grid-cols-2 lg:grid-cols-3' : ''}`}>
+    <div className={`grid gap-3 ${rows > 1 ? "sm:grid-cols-2 lg:grid-cols-3" : ""}`}>
       {Array.from({ length: rows }).map((_, index) => (
-        <div key={index} className="min-h-[150px] rounded-xl border border-border/60 bg-background/80" />
+        <div
+          key={index}
+          className="min-h-[150px] rounded-xl border border-border/60 bg-background/80"
+        />
       ))}
     </div>
   </div>
@@ -34,15 +37,15 @@ export const LandingSectionSkeleton = ({
 
 export const LandingRetryBox = ({
   onRetry,
-  messageAr = 'تعذر تحميل هذا الجزء حالياً.',
-  messageEn = 'This section could not load right now.',
+  messageAr = "تعذر تحميل هذا الجزء حالياً.",
+  messageEn = "This section could not load right now.",
 }: {
   onRetry: () => void;
   messageAr?: string;
   messageEn?: string;
 }) => {
   const { i18n } = useTranslation();
-  const isRtl = i18n.language?.startsWith('ar');
+  const isRtl = i18n.language?.startsWith("ar");
   return (
     <div
       role="status"
@@ -55,7 +58,7 @@ export const LandingRetryBox = ({
         className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-primary/35 px-4 text-xs font-bold text-primary transition hover:bg-primary-soft/40"
       >
         <RefreshCw className="h-3.5 w-3.5" />
-        {isRtl ? 'إعادة المحاولة' : 'Try again'}
+        {isRtl ? "إعادة المحاولة" : "Try again"}
       </button>
     </div>
   );

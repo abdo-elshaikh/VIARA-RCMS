@@ -67,6 +67,7 @@ portal/unused-images/
 pacs-worklists/*.wl
 !pacs-worklists/.gitkeep
 /ChatGPT Image*
+/*.png
 
 # License keys — NEVER commit these
 keys/privateKey.pem

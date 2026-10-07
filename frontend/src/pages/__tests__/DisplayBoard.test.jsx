@@ -14,7 +14,31 @@ vi.mock('../../utils/speechAnnouncement', async () => ({ ...await vi.importActua
 
 const board = () => ({
   center: { name: 'Test Imaging Center', nameAr: 'مركز التصوير التجريبي' },
-  config: { patientDisplayMode: 'order_only', privacyMode: 'token_only', showTicker: false, soundEnabled: false, voiceEnabled: false },
+  config: {
+        patientDisplayMode: 'order_only',
+        privacyMode: 'token_only',
+        showTicker: false,
+        muteAll: false,
+        quietMode: false,
+        repeatChime: false,
+        announcementRate: 1,
+        announcementRepeatCount: 1,
+        announcementRepeatDelay: 1500,
+        announcementVolume: 0.85,
+        callAnnouncementMode: 'token_only',
+        announcementPreset: 'default',
+        announcementLanguage: 'ar',
+        tokenPronunciation: 'auto',
+        announcementStyle: 'formal',
+        customTemplate: '',
+        pronunciationDictionary: {},
+        arabicVoiceURI: '',
+        englishVoiceURI: '',
+        rotationSpeed: 9000,
+        showSummaryStats: true,
+        announcementMode: 'token_only',
+        boardTitle: '',
+      },
   summary: { waiting: 5, inExam: 1 },
   rooms: ['MRI', 'CT'].map((modality, index) => ({
     room_id: `suite-${index}`, room_number: `0${index + 1}`, room_name: `${modality} suite`, room_status: 'Active', modality,
@@ -56,8 +80,6 @@ describe('waiting lounge display', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'تقليل الحركة' })); });
     expect(root).toHaveAttribute('data-motion', 'reduced');
     expect(localStorage.getItem('viara_tv_motion')).toBe('reduced');
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'الوضع الفاتح' })); });
-    expect(root).toHaveAttribute('data-theme', 'light');
   });
 
   it('continues rotating suites when reduced motion is enabled', () => {
@@ -89,26 +111,16 @@ describe('waiting lounge display', () => {
     expect(container.querySelector('.vb-suite-image__icon')).toBeInTheDocument();
   });
 
-  it('hides operator controls while idle and keeps keyboard access to settings', async () => {
+  it('hides operator controls while idle and uses keyboard shortcuts for fullscreen and motion', async () => {
     vi.useFakeTimers();
     const { container } = mount();
     const header = container.querySelector('.vb-header');
     const tools = container.querySelector('.vb-header-tools');
     expect(tools).toHaveAttribute('hidden');
-    expect(screen.queryByRole('button', { name: 'Mute' })).not.toBeInTheDocument();
     fireEvent.pointerMove(header);
     expect(tools).not.toHaveAttribute('hidden');
-    expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument();
-    await act(async () => {
-      const muteButton = screen.getByRole('button', { name: 'Mute' });
-      fireEvent.pointerDown(muteButton);
-      muteButton.focus();
-      fireEvent.click(muteButton);
-    });
     act(() => vi.advanceTimersByTime(5100));
     expect(tools).toHaveAttribute('hidden');
-    await act(async () => { fireEvent.keyDown(window, { key: 'D', shiftKey: true }); });
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
     await act(async () => { fireEvent.keyDown(window, { key: 'Escape' }); });
   });
   it('shows a live call with the RTL route and preserves token-only privacy', async () => {

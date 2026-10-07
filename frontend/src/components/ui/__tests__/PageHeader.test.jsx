@@ -28,6 +28,17 @@ const renderPageHeader = (header) => render(
 );
 
 describe('PageHeader', () => {
+    it('supports collapsed metrics with a separate storage preference', () => {
+        localStorage.removeItem('financial-review-metrics');
+        const prior = localStorage.getItem('viara_show_header_metrics');
+        renderPageHeader(<PageHeader title="Finance" metricsDefaultVisible={false} metricsStorageKey="financial-review-metrics" metrics={[{ label: 'Revenue', value: '123' }]} />);
+        expect(screen.queryByText('123')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /Show statistics/ }));
+        expect(screen.getByText('123')).toBeInTheDocument();
+        expect(localStorage.getItem('financial-review-metrics')).toBe('true');
+        expect(localStorage.getItem('viara_show_header_metrics')).toBe(prior);
+        localStorage.removeItem('financial-review-metrics');
+    });
     it('renders record indicators inside the shared page header', () => {
         const { container } = renderPageHeader(
             <PageHeader
@@ -106,5 +117,105 @@ describe('PageHeader', () => {
         expect(screen.getByRole('heading', { name: 'Compact workspace' })).toHaveClass('text-xl');
         expect(container.querySelector('.page-header-metric')).toHaveClass('py-2');
         expect(container.querySelector('.page-header-metric')).toHaveAttribute('aria-busy', 'true');
+    });
+
+    it('automatically transitions to a dedicated action toolbar strip when action count > 2', () => {
+        const { container } = renderPageHeader(
+            <PageHeader
+                title="Management"
+                description="Control center"
+                actions={(
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button type="button">Action 1</button>
+                        <button type="button">Action 2</button>
+                        <button type="button">Action 3</button>
+                        <button type="button">Action 4</button>
+                    </div>
+                )}
+            />
+        );
+
+        // Dedicated actions bar is rendered
+        const actionsBar = container.querySelector('.page-header-actions-bar');
+        expect(actionsBar).toBeInTheDocument();
+        expect(actionsBar.querySelector('.page-header-actions')).toBeInTheDocument();
+        expect(screen.getByText('Action 1')).toBeInTheDocument();
+        expect(screen.getByText('Action 4')).toBeInTheDocument();
+
+        // The title container has full width (w-full) instead of being squished
+        const titleLead = container.querySelector('.page-header-content .flex-col > .items-start');
+        expect(titleLead).toHaveClass('w-full');
+    });
+
+    it('honors explicit actionsLayout="toolbar" even for a single action', () => {
+        const { container } = renderPageHeader(
+            <PageHeader
+                title="Solo Action"
+                actionsLayout="toolbar"
+                actions={<button type="button">Single Toolbar Action</button>}
+            />
+        );
+
+        expect(container.querySelector('.page-header-actions-bar')).toBeInTheDocument();
+        expect(screen.getByText('Single Toolbar Action')).toBeInTheDocument();
+    });
+
+    it('honors explicit actionsLayout="inline" even with multiple actions', () => {
+        const { container } = renderPageHeader(
+            <PageHeader
+                title="Inline Force"
+                actionsLayout="inline"
+                actions={(
+                    <>
+                        <button type="button">A1</button>
+                        <button type="button">A2</button>
+                        <button type="button">A3</button>
+                    </>
+                )}
+            />
+        );
+
+        // Dedicated toolbar bar should NOT be rendered
+        expect(container.querySelector('.page-header-actions-bar')).not.toBeInTheDocument();
+        // Actions are rendered inline
+        expect(container.querySelector('.page-header-actions')).toBeInTheDocument();
+        expect(screen.getByText('A1')).toBeInTheDocument();
+    });
+
+    it('applies actionsAlign correctly', () => {
+        const { container } = renderPageHeader(
+            <PageHeader
+                title="Alignment Test"
+                actionsLayout="toolbar"
+                actionsAlign="end"
+                actions={<button type="button">End Button</button>}
+            />
+        );
+
+        const actionsContainer = container.querySelector('.page-header-actions');
+        expect(actionsContainer).toHaveClass('justify-end');
+    });
+
+    it('renders frosted dock container and actionsLeading slot in toolbar mode', () => {
+        const { container } = renderPageHeader(
+            <PageHeader
+                title="Cockpit Console"
+                actionsLayout="toolbar"
+                actionsVariant="docked"
+                actionsLeading={<input type="text" placeholder="Search..." />}
+                actions={<button type="button">Execute</button>}
+            />
+        );
+
+        const dock = container.querySelector('.page-header-dock');
+        expect(dock).toBeInTheDocument();
+        expect(dock).toHaveClass('backdrop-blur-md', 'rounded-2xl');
+
+        const leadingSlot = container.querySelector('.page-header-actions-leading');
+        expect(leadingSlot).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Search...')).toBeInTheDocument();
+
+        const actionsContainer = container.querySelector('.page-header-actions');
+        expect(actionsContainer).toHaveClass('no-scrollbar', 'scroll-smooth');
     });
 });

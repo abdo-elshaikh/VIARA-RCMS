@@ -13,7 +13,7 @@ import {
   Activity,
   FileCheck,
   ChevronRight,
-  ArrowRight
+  ArrowRight,
 } from "lucide-react";
 import { PortalHeader } from "../components/portal/layout/PortalHeader";
 import { PortalFooter } from "../components/portal/layout/PortalFooter";
@@ -45,7 +45,8 @@ export const PublicReportVerify: React.FC = () => {
   const { t, i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith("ar");
 
-  const initialCode = searchParams.get("code") || searchParams.get("hash") || searchParams.get("order") || "";
+  const initialCode =
+    searchParams.get("code") || searchParams.get("hash") || searchParams.get("order") || "";
   const [code, setCode] = useState(initialCode);
   const [loading, setLoading] = useState(Boolean(initialCode));
   const [result, setResult] = useState<VerificationResult | null>(null);
@@ -69,10 +70,19 @@ export const PublicReportVerify: React.FC = () => {
       if (response.ok && data.verified) {
         setResult(data);
       } else {
-        setErrorMsg(data.error || (isRtl ? "لم يتم العثور على تقرير معتمد بهذا الرمز." : "No verified report found matching this code."));
+        setErrorMsg(
+          data.error ||
+            (isRtl
+              ? "لم يتم العثور على تقرير معتمد بهذا الرمز."
+              : "No verified report found matching this code."),
+        );
       }
     } catch {
-      setErrorMsg(isRtl ? "تعذر الاتصال بخادم التحقق. يرجى المحاولة لاحقاً." : "Unable to reach verification server. Please try again.");
+      setErrorMsg(
+        isRtl
+          ? "تعذر الاتصال بخادم التحقق. يرجى المحاولة لاحقاً."
+          : "Unable to reach verification server. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
@@ -101,7 +111,7 @@ export const PublicReportVerify: React.FC = () => {
         month: "short",
         day: "numeric",
         hour: "2-digit",
-        minute: "2-digit"
+        minute: "2-digit",
       });
     } catch {
       return isoStr;
@@ -120,7 +130,9 @@ export const PublicReportVerify: React.FC = () => {
               <ShieldCheck className="h-9 w-9" />
             </div>
             <h1 className="mt-5 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl dark:text-white">
-              {isRtl ? "التحقق من صحة التقرير الطبي الرقمي" : "Diagnostic Report Authenticity Verification"}
+              {isRtl
+                ? "التحقق من صحة التقرير الطبي الرقمي"
+                : "Diagnostic Report Authenticity Verification"}
             </h1>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
               {isRtl
@@ -136,7 +148,11 @@ export const PublicReportVerify: React.FC = () => {
                 type="text"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                placeholder={isRtl ? "أدخل رمز التحقق (Hash) أو رقم الطلب..." : "Enter verification hash code or Order number..."}
+                placeholder={
+                  isRtl
+                    ? "أدخل رمز التحقق (Hash) أو رقم الطلب..."
+                    : "Enter verification hash code or Order number..."
+                }
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 ps-12 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-100 dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:ring-primary-900/30"
               />
               <Search className="absolute start-4 h-5 w-5 text-slate-400" />
@@ -145,7 +161,13 @@ export const PublicReportVerify: React.FC = () => {
                 disabled={loading || !code.trim()}
                 className="absolute end-2 rounded-xl bg-primary-700 px-4 py-2 text-xs font-bold text-white transition hover:bg-primary-800 disabled:opacity-50"
               >
-                {loading ? (isRtl ? "جارٍ التحقق..." : "Verifying...") : (isRtl ? "تحقق الآن" : "Verify")}
+                {loading
+                  ? isRtl
+                    ? "جارٍ التحقق..."
+                    : "Verifying..."
+                  : isRtl
+                    ? "تحقق الآن"
+                    : "Verify"}
               </button>
             </div>
           </form>
@@ -162,10 +184,14 @@ export const PublicReportVerify: React.FC = () => {
                     </div>
                     <div>
                       <h2 className="text-base font-black text-emerald-950 dark:text-emerald-200">
-                        {isRtl ? "وثيقة طبية معتمدة ومطابقة للأصل" : "Authenticated & Certified Medical Report"}
+                        {isRtl
+                          ? "وثيقة طبية معتمدة ومطابقة للأصل"
+                          : "Authenticated & Certified Medical Report"}
                       </h2>
                       <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                        {isRtl ? "تم التحقق من التوقيع الرقمي بنجاح 100%" : "Cryptographic signature confirmed intact"}
+                        {isRtl
+                          ? "تم التحقق من التوقيع الرقمي بنجاح 100%"
+                          : "Cryptographic signature confirmed intact"}
                       </p>
                     </div>
                   </div>
@@ -226,9 +252,7 @@ export const PublicReportVerify: React.FC = () => {
                     <p className="mt-1 text-base font-extrabold text-slate-900 dark:text-white">
                       {result.radiologist}
                     </p>
-                    <p className="text-xs font-medium text-slate-500">
-                      {result.radiologistRole}
-                    </p>
+                    <p className="text-xs font-medium text-slate-500">{result.radiologistRole}</p>
                   </div>
                 </div>
 
@@ -245,7 +269,9 @@ export const PublicReportVerify: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
-                      {isRtl ? "بصمة التشفير الرقمية (SHA-256 Digest)" : "Cryptographic Digital Hash (SHA-256)"}
+                      {isRtl
+                        ? "بصمة التشفير الرقمية (SHA-256 Digest)"
+                        : "Cryptographic Digital Hash (SHA-256)"}
                     </span>
                     <p className="mt-1 font-mono text-[11px] font-bold text-primary-700 dark:text-primary-400 break-all leading-relaxed bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-800">
                       {result.verificationHash}
@@ -267,12 +293,19 @@ export const PublicReportVerify: React.FC = () => {
                     onClick={() => navigate("/patient/login")}
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-primary-700 px-6 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-primary-800"
                   >
-                    <span>{isRtl ? "تسجيل دخول المريض لعرض كامل الملف" : "Login to Patient Portal for Full Records"}</span>
+                    <span>
+                      {isRtl
+                        ? "تسجيل دخول المريض لعرض كامل الملف"
+                        : "Login to Patient Portal for Full Records"}
+                    </span>
                     <ArrowRight className="h-4 w-4 rtl:rotate-180" />
                   </button>
                   <button
                     type="button"
-                    onClick={() => { setResult(null); setCode(""); }}
+                    onClick={() => {
+                      setResult(null);
+                      setCode("");
+                    }}
                     className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-6 py-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                   >
                     <span>{isRtl ? "فحص تقرير آخر" : "Verify Another Document"}</span>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useSubmitSafetyResponseMutation } from '../../store/api';
@@ -15,6 +15,7 @@ import {
     Sparkles
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import useFocusTrap from '../../hooks/useFocusTrap';
 
 const SAFETY_QUESTION_METADATA = {
     contrast_allergy: {
@@ -131,8 +132,17 @@ const cleanQuestionText = (text = '', isArabic = false) => {
 const SafetyFormModal = ({ isOpen, onClose, examId, template, onComplete }) => {
     const { t, i18n } = useTranslation('common');
     const isRtl = Boolean(i18n?.language?.startsWith('ar'));
+    const dialogRef = useRef(null);
+    const titleId = useId();
     const [answers, setAnswers] = useState({});
     const [submitForm, { isLoading }] = useSubmitSafetyResponseMutation();
+
+    useFocusTrap({
+        containerRef: dialogRef,
+        isActive: Boolean(isOpen && template),
+        onEscape: onClose,
+        lockScroll: true,
+    });
 
     const schema = useMemo(() => template?.schema_json || [], [template]);
 
@@ -188,6 +198,11 @@ const SafetyFormModal = ({ isOpen, onClose, examId, template, onComplete }) => {
     return createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-md animate-in fade-in duration-200">
             <div
+                ref={dialogRef}
+                tabIndex={-1}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
                 className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] shadow-2xl transition-all dark:border-slate-800"
                 dir={isRtl ? 'rtl' : 'ltr'}
             >
@@ -199,7 +214,7 @@ const SafetyFormModal = ({ isOpen, onClose, examId, template, onComplete }) => {
                         </div>
                         <div>
                             <div className="flex items-center gap-2">
-                                <h2 className="text-base font-black text-[var(--VIARA-ink)]">
+                                <h2 id={titleId} className="text-base font-black text-[var(--VIARA-ink)]">
                                     {getTemplateDisplayName(template.name, isRtl)}
                                 </h2>
                             </div>
@@ -212,6 +227,7 @@ const SafetyFormModal = ({ isOpen, onClose, examId, template, onComplete }) => {
                     <button
                         type="button"
                         onClick={onClose}
+                        aria-label={isRtl ? 'إغلاق' : 'Close'}
                         className="rounded-xl p-2 text-[var(--VIARA-muted)] transition hover:bg-[var(--VIARA-surface-muted)] hover:text-[var(--VIARA-ink)]"
                         title={isRtl ? 'إغلاق' : 'Close'}
                     >

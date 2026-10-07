@@ -51,9 +51,14 @@ const {
     enumerateDates,
     laterDate,
     earlierDate,
+    payableDaysForRange,
+    payableDaysForProfile,
+    payableShiftsForProfile,
     monthlyAccrualFactor,
     proratedMonthlyAmount,
+    calculateCompensationAmount,
     dateFallsWithin,
+    netCollectionsForProfile,
     paidLeaveHoursForProfile,
     unpaidLeaveDeductionForProfile,
     summarizeAttendance,
@@ -247,6 +252,7 @@ const cancelPayrollPeriod = (db) => async (req, res, next) => {
             [periodId]
         );
         if (!existing.rows.length) throw new AppError('Payroll period not found', 404);
+        assertBranchAccess(req, existing.rows[0].branch_id || DEFAULT_BRANCH_ID);
         if (existing.rows[0].status !== 'Draft') {
             throw new AppError('Only a Draft period without a payroll run can be cancelled here', 409);
         }
@@ -348,9 +354,9 @@ const createCompensationProfile = (db) => async (req, res, next) => {
             INSERT INTO employee_compensation_profiles (
                 user_id, salary_type, base_salary, hourly_rate, standard_hours_per_day,
                 standard_days_per_period, effective_from, effective_to, is_active, notes, created_by,
-                branch_id, currency_code
+                branch_id, currency_code, daily_rate, shift_rate, case_rate, percentage_rate
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::uuid, $13)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::uuid, $13, $14, $15, $16, $17)
             RETURNING *
         `, [
             data.userId,
@@ -365,7 +371,11 @@ const createCompensationProfile = (db) => async (req, res, next) => {
             data.notes,
             getUserId(req),
             branchId,
-            data.currencyCode
+            data.currencyCode,
+            data.dailyRate,
+            data.shiftRate,
+            data.caseRate,
+            data.percentageRate
         ]);
         await client.query(`
             INSERT INTO payroll_audit_log (entity_type, entity_id, action, new_status, details, changed_by)
@@ -480,6 +490,28 @@ const createPayrollRule = (db) => async (req, res, next) => {
         const isActive = false;
         client = await db.connect();
         await client.query('BEGIN');
+        const targetUserIds = [...new Set(data.targetUserIds || [])];
+        if (data.ruleType === 'Bonus' && targetUserIds.length) {
+            const eligibleTargets = await client.query(`
+                SELECT COUNT(DISTINCT u.user_id)::int AS count
+                FROM users u
+                JOIN employee_profiles ep ON ep.user_id = u.user_id
+                WHERE u.user_id = ANY($1::uuid[])
+                  AND u.role = ANY($2::user_role[])
+                  AND ep.payroll_branch_id = $3::uuid
+            `, [targetUserIds, PAYROLL_EMPLOYEE_ROLES, branchId]);
+            if (eligibleTargets.rows[0].count !== targetUserIds.length) {
+                throw new AppError('One or more bonus targets are not eligible employees in this branch', 400);
+            }
+        }
+        const metadata = {
+            ...(data.metadata || {}),
+            ...(data.ruleType === 'Bonus' ? {
+                targetUserIds,
+                targetRoles: data.targetRoles || [],
+                bonusFrequency: data.bonusFrequency || 'OneTime'
+            } : {})
+        };
         const result = await client.query(`
             INSERT INTO payroll_rules (
                 rule_type, name, calculation_method, value, taxable, requires_approval,
@@ -499,7 +531,7 @@ const createPayrollRule = (db) => async (req, res, next) => {
             data.effectiveTo || null,
             isActive,
             status,
-            JSON.stringify(data.metadata || {}),
+            JSON.stringify(metadata),
             getUserId(req),
             null,
             null,
@@ -1253,15 +1285,18 @@ const getPayrollRun = (db) => async (req, res, next) => {
             WHERE r.period_id = $1
         `, [periodId]);
         if (!runResult.rows.length) return next(new AppError('Payroll run not found', 404));
+        assertBranchAccess(req, runResult.rows[0].branch_id || DEFAULT_BRANCH_ID);
 
         const items = await db.query(`
             SELECT i.*, u.full_name AS employee_name, u.email, u.role,
+                   ep.employee_id,
                    COALESCE(jsonb_agg(to_jsonb(li) ORDER BY li.created_at) FILTER (WHERE li.line_item_id IS NOT NULL), '[]'::jsonb) AS line_items
             FROM payroll_employee_items i
             JOIN users u ON u.user_id = i.user_id
+            LEFT JOIN employee_profiles ep ON ep.user_id = i.user_id
             LEFT JOIN payroll_line_items li ON li.payroll_employee_item_id = i.item_id
             WHERE i.run_id = $1
-            GROUP BY i.item_id, u.user_id
+            GROUP BY i.item_id, u.user_id, ep.employee_id
             ORDER BY u.full_name ASC
         `, [runResult.rows[0].run_id]);
 
@@ -1282,6 +1317,7 @@ const calculatePayroll = (db) => async (req, res, next) => {
         const periodResult = await client.query('SELECT * FROM payroll_periods WHERE period_id = $1::uuid FOR UPDATE', [periodId]);
         if (!periodResult.rows.length) throw new AppError('Payroll period not found', 404);
         const period = periodResult.rows[0];
+        assertBranchAccess(req, period.branch_id || DEFAULT_BRANCH_ID);
         if (!['Draft', 'Calculated'].includes(period.status)) {
             throw new AppError(`Payroll period cannot be recalculated while status is ${period.status}`, 409);
         }
@@ -1324,7 +1360,17 @@ const calculatePayroll = (db) => async (req, res, next) => {
                 reason: 'missing_compensation_profile'
             }));
         const payableEmployees = inputs.employees.filter(
-            (employee) => (inputs.compensationByUser.get(employee.user_id) || []).length
+            (employee) => {
+                const profiles = inputs.compensationByUser.get(employee.user_id) || [];
+                const caseMetrics = inputs.caseMetricsByUser.get(employee.user_id) || [];
+                return profiles.some((profile) => {
+                    const segmentStart = laterDate(period.start_date, profile.effective_from, employee.hire_date);
+                    const segmentEnd = earlierDate(period.end_date, profile.effective_to, employee.termination_date);
+                    if (overlapDays(period.start_date, period.end_date, segmentStart, segmentEnd) > 0) return true;
+                    return profile.salary_type === 'Percentage'
+                        && netCollectionsForProfile({ caseMetrics, profile, employee, payrollEndDate: period.end_date }) > 0;
+                });
+            }
         );
 
         for (const employee of payableEmployees) {
@@ -1337,6 +1383,10 @@ const calculatePayroll = (db) => async (req, res, next) => {
             const compensationProfiles = inputs.compensationByUser.get(employee.user_id) || [];
             const hoursWorked = Number(attendance.hours_worked || 0);
             const periodDays = inclusiveDays(period.start_date, period.end_date);
+            const caseMetrics = inputs.caseMetricsByUser.get(employee.user_id) || [];
+            const completedCases = new Set(caseMetrics
+                .filter((metric) => dateFallsWithin(metric.eligible_date, period.start_date, period.end_date))
+                .map((metric) => metric.exam_id)).size;
             const profileEarningLines = compensationProfiles.map((profile) => {
                 const segmentStart = laterDate(period.start_date, profile.effective_from, employee.hire_date);
                 const segmentEnd = earlierDate(period.end_date, profile.effective_to, employee.termination_date);
@@ -1350,22 +1400,48 @@ const calculatePayroll = (db) => async (req, res, next) => {
                 const paidLeaveHours = profile.salary_type === 'Hourly'
                     ? paidLeaveHoursForProfile({ profile, attendance, employee, period })
                     : 0;
-                const amount = profile.salary_type === 'Hourly'
-                    ? roundMoney(Number(profile.hourly_rate || 0) * (Number(profile.profile_hours_worked || 0) + paidLeaveHours))
-                    : proratedMonthlyAmount(profile.base_salary, segmentStart, segmentEnd);
+                const profileCases = new Set(caseMetrics
+                    .filter((metric) => dateFallsWithin(metric.eligible_date, segmentStart, segmentEnd))
+                    .map((metric) => metric.exam_id)).size;
+                const profileShifts = payableShiftsForProfile({ profile, attendance, employee, period });
+                const profileDays = payableDaysForProfile({ profile, attendance, employee, period });
+                const profileNetCollections = netCollectionsForProfile({
+                    caseMetrics,
+                    profile,
+                    employee,
+                    payrollEndDate: period.end_date
+                });
+                const amount = calculateCompensationAmount(profile, {
+                    segmentStart,
+                    segmentEnd,
+                    profileHoursWorked: profile.profile_hours_worked,
+                    paidLeaveHours,
+                    payableDays: profileDays,
+                    paidShifts: profileShifts,
+                    completedCases: profileCases,
+                    netCollections: profileNetCollections
+                });
                 return {
                     type: 'Earning',
                     sourceType: 'employee_compensation_profiles',
                     sourceId: profile.profile_id,
-                    description: profile.salary_type === 'Hourly' ? 'Hourly earnings' : 'Base salary',
+                    description: `${profile.salary_type} compensation`,
                     amount,
                     taxable: true,
                     segmentDays,
                     proration,
                     paidLeaveHours,
-                    salaryType: profile.salary_type
+                    salaryType: profile.salary_type,
+                    payableDays: profileDays,
+                    payableShifts: profileShifts,
+                    completedCases: profileCases,
+                    netCollections: profileNetCollections
                 };
             });
+            const netCollections = roundMoney(Math.max(0, caseMetrics.reduce(
+                (sum, metric) => sum + Number(metric.net_collection_amount || 0),
+                0
+            )));
             const baseGross = sumAmount(profileEarningLines);
             const monthlyProfiles = compensationProfiles.filter((profile) => profile.salary_type === 'Monthly');
             const hourlyProfiles = compensationProfiles.filter((profile) => profile.salary_type === 'Hourly');
@@ -1375,8 +1451,8 @@ const calculatePayroll = (db) => async (req, res, next) => {
                 laterDate(profile.effective_from, employee.hire_date),
                 earlierDate(profile.effective_to || period.end_date, employee.termination_date || period.end_date)
             ), 0);
-            const salaryType = monthlyProfiles.length && hourlyProfiles.length ? 'Mixed'
-                : hourlyProfiles.length ? 'Hourly' : 'Monthly';
+            const salaryTypes = [...new Set(compensationProfiles.map((profile) => profile.salary_type))];
+            const salaryType = salaryTypes.length === 1 ? salaryTypes[0] : 'Mixed';
             const hourlyBase = hourlyProfiles.reduce((sum, profile) => {
                 const paidLeaveHours = paidLeaveHoursForProfile({ profile, attendance, employee, period });
                 return sum + Number(profile.hourly_rate || 0) * (Number(profile.profile_hours_worked || 0) + paidLeaveHours);
@@ -1385,7 +1461,15 @@ const calculatePayroll = (db) => async (req, res, next) => {
                 sum + Number(profile.profile_hours_worked || 0)
                 + paidLeaveHoursForProfile({ profile, attendance, employee, period })
             ), 0);
-            const hourlyRate = hourlyProfileHours > 0 ? hourlyBase / hourlyProfileHours : 0;
+            const monthlyBaseHourlyRate = compensationProfiles.reduce((sum, profile) => {
+                if (profile.salary_type !== 'Monthly') return sum;
+                const denominator = Number(profile.standard_days_per_period || 22)
+                    * Number(profile.standard_hours_per_day || 8);
+                return sum + (denominator > 0 ? Number(profile.base_salary || 0) / denominator : 0);
+            }, 0);
+            const hourlyRate = hourlyProfileHours > 0
+                ? hourlyBase / hourlyProfileHours
+                : monthlyBaseHourlyRate;
             const standardDays = compensationProfiles.reduce((sum, profile) => {
                 const segmentStart = laterDate(profile.effective_from, employee.hire_date, period.start_date);
                 const segmentEnd = earlierDate(profile.effective_to || period.end_date, employee.termination_date || period.end_date, period.end_date);
@@ -1418,6 +1502,10 @@ const calculatePayroll = (db) => async (req, res, next) => {
                 ? Number(attendance.scheduled_hours)
                 : profileStandardHours;
             const weightedMonthlySalary = monthlyProfiles.reduce((sum, profile) => sum + Number(profile.base_salary || 0), 0);
+            const commissionOnly = Boolean(
+                employee.termination_date
+                && dateOnly(employee.termination_date) < dateOnly(period.start_date)
+            );
             const contextBase = {
                 baseGross,
                 gross: baseGross,
@@ -1426,10 +1514,27 @@ const calculatePayroll = (db) => async (req, res, next) => {
                 absenceDays: Number(attendance.unexcused_absent_days || 0) + Number(attendance.half_days || 0),
                 lateMinutes: Number(attendance.late_minutes || 0),
                 earlyLeaveMinutes: Number(attendance.early_leave_minutes || 0),
-                dailyRate: standardDays > 0 ? roundMoney(baseGross / standardDays) : 0
+                dailyRate: standardDays > 0 ? roundMoney(baseGross / standardDays) : 0,
+                payableDays: payableDaysForRange(attendance, period.start_date, period.end_date),
+                paidShifts: Number(attendance.paid_shift_units?.reduce((sum, shift) => sum + Number(shift.units || 0), 0) || 0),
+                completedCases,
+                netCollections
             };
-            const ruleEarningLines = inputs.rules
-                .filter((rule) => ['Allowance', 'Overtime'].includes(rule.rule_type))
+            const applicableRules = inputs.rules.filter((rule) => {
+                if (commissionOnly) return false;
+                const metadata = typeof rule.metadata === 'string' ? JSON.parse(rule.metadata) : (rule.metadata || {});
+                const targetUserIds = Array.isArray(metadata.targetUserIds) ? metadata.targetUserIds : [];
+                const targetRoles = Array.isArray(metadata.targetRoles) ? metadata.targetRoles : [];
+                if ((targetUserIds.length || targetRoles.length)
+                    && !targetUserIds.includes(employee.user_id)
+                    && !targetRoles.includes(employee.role)) return false;
+                if (rule.rule_type === 'Bonus'
+                    && metadata.bonusFrequency === 'OneTime'
+                    && (rule.paid_user_ids || []).includes(employee.user_id)) return false;
+                return true;
+            });
+            const ruleEarningLines = applicableRules
+                .filter((rule) => ['Allowance', 'Bonus', 'Overtime'].includes(rule.rule_type))
                 .map((rule) => ({
                     type: 'Earning',
                     sourceType: 'payroll_rules',
@@ -1441,7 +1546,7 @@ const calculatePayroll = (db) => async (req, res, next) => {
                 .filter((line) => line.amount > 0);
             const gross = roundMoney(baseGross + sumAmount(ruleEarningLines));
             const contextWithGross = { ...contextBase, gross };
-            const ruleControlLines = inputs.rules
+            const ruleControlLines = applicableRules
                 .filter((rule) => ['Deduction', 'Late', 'EarlyLeave', 'Absence', 'Penalty'].includes(rule.rule_type))
                 .map((rule) => ({
                     type: ruleLineType(rule.rule_type),
@@ -1452,7 +1557,7 @@ const calculatePayroll = (db) => async (req, res, next) => {
                     taxable: Boolean(rule.taxable)
                 }))
                 .filter((line) => line.amount > 0);
-            const employerContributionLines = inputs.rules
+            const employerContributionLines = applicableRules
                 .filter((rule) => rule.rule_type === 'EmployerContribution')
                 .map((rule) => ({
                     type: 'EmployerContribution',
@@ -1464,8 +1569,8 @@ const calculatePayroll = (db) => async (req, res, next) => {
                 }))
                 .filter((line) => line.amount > 0);
 
-            const employeeDeductions = inputs.deductionsByUser.get(employee.user_id) || [];
-            const employeePenalties = inputs.penaltiesByUser.get(employee.user_id) || [];
+            const employeeDeductions = commissionOnly ? [] : (inputs.deductionsByUser.get(employee.user_id) || []);
+            const employeePenalties = commissionOnly ? [] : (inputs.penaltiesByUser.get(employee.user_id) || []);
             const unpaidLeaveLines = monthlyProfiles.map((profile) => ({
                 type: 'Deduction',
                 sourceType: 'unpaid_leave',
@@ -1532,6 +1637,10 @@ const calculatePayroll = (db) => async (req, res, next) => {
                         salaryType: profile.salary_type,
                         baseSalary: Number(profile.base_salary || 0),
                         hourlyRate: Number(profile.hourly_rate || 0),
+                        dailyRate: Number(profile.daily_rate || 0),
+                        shiftRate: Number(profile.shift_rate || 0),
+                        caseRate: Number(profile.case_rate || 0),
+                        percentageRate: Number(profile.percentage_rate || 0),
                         effectiveFrom: profile.effective_from,
                         effectiveTo: profile.effective_to,
                         hoursWorked: Number(profile.profile_hours_worked || 0),
@@ -1540,6 +1649,9 @@ const calculatePayroll = (db) => async (req, res, next) => {
                     weightedMonthlySalary,
                     baseGross,
                     hourlyRate,
+                    completedCases,
+                    netCollections,
+                    paidShifts: contextBase.paidShifts,
                     hoursWorked,
                     paidLeaveHours: hourlyProfileHours - hourlyProfiles.reduce((sum, profile) => sum + Number(profile.profile_hours_worked || 0), 0),
                     payableDays,
@@ -1714,6 +1826,7 @@ const updatePayrollRunStatus = (db) => async (req, res, next) => {
         `, [runId]);
         if (!runResult.rows.length) throw new AppError('Payroll run not found', 404);
         const run = runResult.rows[0];
+        assertBranchAccess(req, run.branch_id || DEFAULT_BRANCH_ID);
         if (data.status === 'Paid' && run.status === 'Paid') {
             const replay = await client.query(
                 'SELECT * FROM payroll_payments WHERE idempotency_key = $1::uuid AND run_id = $2::uuid FOR UPDATE',
@@ -1949,6 +2062,7 @@ module.exports = {
     _private: {
         assertMakerChecker,
         calculateDeductionAmount,
+        calculateCompensationAmount,
         calculateRuleAmount,
         capLineAmounts,
         inclusiveDays,

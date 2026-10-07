@@ -72,13 +72,18 @@ export default {
                 slate: {
                     50: '#f8fafc',
                     100: '#f1f5f9',
+                    150: '#EAF0F5',
                     200: '#e2e8f0',
                     300: '#cbd5e1',
+                    350: '#B0BCCB',
                     400: '#94a3b8',
+                    450: '#7C8BA2',
                     500: '#64748b',
                     600: '#475569',
                     700: '#334155',
+                    750: '#293549',
                     800: '#1e293b',
+                    850: '#172334',
                     900: '#0f172a',
                     950: '#020617',
                 },
@@ -93,6 +98,18 @@ export default {
                 sans: ['Inter', 'system-ui', 'sans-serif'],
                 arabic: ['Noto Sans Arabic', 'Inter', 'system-ui', 'sans-serif'],
                 mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', "Liberation Mono", "Courier New", 'monospace'],
+            },
+            borderRadius: {
+                none: '0px',
+                xs: 'calc(var(--VIARA-radius-control) * 0.4)',
+                sm: 'calc(var(--VIARA-radius-control) * 0.65)',
+                DEFAULT: 'var(--VIARA-radius-control)',
+                md: 'var(--VIARA-radius-control)',
+                lg: 'var(--VIARA-radius-control)',
+                xl: 'var(--VIARA-radius-control)',
+                '2xl': 'var(--VIARA-radius-surface)',
+                '3xl': 'var(--VIARA-radius-overlay)',
+                full: 'var(--VIARA-radius-pill)',
             },
             boxShadow: {
                 card: '0 1px 2px rgba(23,35,38,.06)',
@@ -133,6 +150,13 @@ export default {
                 'help-search-glow': 'helpSearchGlow 2.5s ease-in-out infinite',
                 'kbd-press':      'kbdPress 0.15s ease-in-out',
                 'count-up':       'countUp 0.4s cubic-bezier(0.16,1,0.3,1) both',
+                /* button ripple */
+                'btn-ripple':     'btnRipple 480ms linear forwards',
+                /* toast progress bar */
+                'toast-progress': 'toastProgress linear forwards',
+                /* page transitions */
+                'fade-in-up':     'fadeInUp 0.35s cubic-bezier(0.16,1,0.3,1) both',
+                'slide-up':       'slideUp 0.25s cubic-bezier(0.16,1,0.3,1) both',
             },
             keyframes: {
                 slideProgress: {
@@ -203,6 +227,26 @@ export default {
                     '100%': { transform: 'scale(1)' },
                 },
                 countUp: {
+                    '0%':   { opacity: '0', transform: 'translateY(8px)' },
+                    '100%': { opacity: '1', transform: 'translateY(0)' },
+                },
+                /* button click ripple */
+                btnRipple: {
+                    '0%':   { transform: 'scale(0)', opacity: '0.16' },
+                    '80%':  { transform: 'scale(3)', opacity: '0.06' },
+                    '100%': { transform: 'scale(3.5)', opacity: '0' },
+                },
+                /* toast timer progress bar shrink */
+                toastProgress: {
+                    '0%':   { width: '100%' },
+                    '100%': { width: '0%' },
+                },
+                /* page-level fade-in-up */
+                fadeInUp: {
+                    '0%':   { opacity: '0', transform: 'translateY(14px)' },
+                    '100%': { opacity: '1', transform: 'translateY(0)' },
+                },
+                slideUp: {
                     '0%':   { opacity: '0', transform: 'translateY(8px)' },
                     '100%': { opacity: '1', transform: 'translateY(0)' },
                 },

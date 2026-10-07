@@ -215,6 +215,42 @@ describe('refund lifecycle', () => {
             expect(postJournalBatch).not.toHaveBeenCalled();
         });
 
+        test('stamps the processing business date when a refund is processed', async () => {
+            const refund = refundRow('Approved', { payment_id: null });
+            let updateParams = null;
+            const client = makeClient([
+                ['SELECT * FROM refunds WHERE refund_id', () => ok([refund])],
+                ['FROM role_permissions', () => ok([{ 1: 1 }])],
+                ['SELECT * FROM invoices WHERE invoice_id', () => ok([invoiceRow])],
+                ['AS processed_amount', () => ok([{ paid_amount: 1000, processed_amount: 0 }])],
+                ['FROM cashier_shifts', () => ok([{ shift_id: 'shift-1' }])],
+                ['UPDATE refunds', (params) => {
+                    updateParams = params;
+                    return ok([{ ...refund, status: params[0], business_date: params[5] }]);
+                }],
+                ['SELECT invoice_id FROM invoices', () => ok([{ invoice_id: INVOICE_ID }])],
+                ['WITH totals AS', () => ok([invoiceRow])],
+                ['UPDATE invoices', () => ok([invoiceRow])]
+            ]);
+            const db = { connect: jest.fn(async () => client), query: jest.fn(async () => ({ rows: [] })) };
+            const res = createResponse();
+            const next = jest.fn();
+
+            await reviewRefund(db)(makeReq({
+                params: { id: REFUND_ID },
+                body: { status: 'Processed', reason: 'refund completed' },
+                user: { user_id: USER_ID, role: 'Cashier' }
+            }), res, next);
+
+            expect(next).not.toHaveBeenCalled();
+            expect(updateParams[5]).toBe('2026-09-05');
+            const updateSql = client.calls.find((call) => call.text.includes('UPDATE refunds')).text;
+            expect(updateSql).toContain("business_date = CASE WHEN $1::varchar(20) = 'Processed' THEN $6::date");
+            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+                refund: expect.objectContaining({ business_date: '2026-09-05' })
+            }));
+        });
+
         test('allows re-approving a failed refund but not by its requester', async () => {
             const { client } = makeReviewClient(refundRow('Failed'));
             const db = { connect: jest.fn(async () => client), query: jest.fn(async () => ({ rows: [] })) };

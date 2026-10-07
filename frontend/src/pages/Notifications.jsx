@@ -68,6 +68,7 @@ import { getErrorMessage } from '../utils/getErrorMessage';
 import { getEffectivePermissions } from '../utils/effectivePermissions';
 import PageHeader from '../components/ui/PageHeader';
 import Pagination from '../components/ui/Pagination';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { getPaginationState } from '../utils/pagination';
 
 const CHANNELS = ['all', 'InApp', 'WhatsApp', 'SMS', 'Email'];
@@ -267,14 +268,15 @@ export default function Notifications() {
         return Object.entries(buckets).filter(([, items]) => items.length > 0);
     }, [pagedItems]);
 
+    const [showMarkAllConfirm, setShowMarkAllConfirm] = useState(false);
+
     // Actions
-    const handleMarkAll = async () => {
-        const scopeLabel = scope === 'personal'
-            ? (t('yourPersonalInbox'))
-            : (t('theCenterOutboundLog'));
-        if (!window.confirm(isAr
-            ? `هل تريد تحديد جميع الإشعارات في ${scopeLabel} كمقروءة؟`
-            : `Mark all notifications in ${scopeLabel} as read?`)) return;
+    const handleMarkAll = () => {
+        setShowMarkAllConfirm(true);
+    };
+
+    const confirmMarkAll = async () => {
+        setShowMarkAllConfirm(false);
         try {
             if (scope === 'personal') {
                 await markAllMyRead().unwrap();
@@ -900,6 +902,19 @@ export default function Notifications() {
                     </div>
                 )}
             </section>
+
+            <ConfirmDialog
+                isOpen={showMarkAllConfirm}
+                title={t('markAllAsRead')}
+                message={isAr
+                    ? `هل تريد تحديد جميع الإشعارات في ${scope === 'personal' ? t('yourPersonalInbox') : t('theCenterOutboundLog')} كمقروءة؟`
+                    : `Mark all notifications in ${scope === 'personal' ? t('yourPersonalInbox') : t('theCenterOutboundLog')} as read?`}
+                confirmLabel={t('markAllAsRead')}
+                cancelLabel={t('cancel')}
+                onConfirm={confirmMarkAll}
+                onCancel={() => setShowMarkAllConfirm(false)}
+                variant="info"
+            />
         </main>
     );
 }

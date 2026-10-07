@@ -4,6 +4,7 @@
  * In non-production environments, generate safe defaults when placeholders are present
  */
 const crypto = require('crypto');
+const { getStaffOrigin } = require('./publicOrigin');
 
 const requiredEnvVars = [
     'DATABASE_URL',
@@ -50,7 +51,31 @@ function validateEnv() {
     });
 
     if (process.env.NODE_ENV === 'production') {
+        if (process.env.PERF_TEST === 'true') invalid.push('PERF_TEST is forbidden in production');
+        if (process.env.EXPOSE_DEV_STACK === 'true') invalid.push('EXPOSE_DEV_STACK must not be enabled in production');
+        if (process.env.PACS_AI_ENABLED === 'true' && process.env.PACS_AI_RELEASE_APPROVED !== 'true') {
+            invalid.push('PACS AI requires a reviewed worker image and explicit PACS_AI_RELEASE_APPROVED=true');
+        }
+        if (!process.env.REDIS_URL) missing.push('REDIS_URL');
+        else {
+            try {
+                const redis = new URL(process.env.REDIS_URL);
+                if (!['redis:', 'rediss:'].includes(redis.protocol) || !redis.hostname) invalid.push('REDIS_URL must use redis:// or rediss://');
+            } catch { invalid.push('REDIS_URL must be a valid absolute URL'); }
+        }
+        if (process.env.RATE_LIMIT_STORE && process.env.RATE_LIMIT_STORE !== 'redis') invalid.push('Production requires RATE_LIMIT_STORE=redis');
+        if (/^(true|[0-9]+)$/i.test(process.env.TRUST_PROXY || '')) invalid.push('TRUST_PROXY must name trusted IP addresses or networks, not a hop count');
+        else {
+            try {
+                const proxyVal = (process.env.TRUST_PROXY || 'loopback').split(',').map(s => s.trim()).filter(Boolean);
+                require('proxy-addr').compile(proxyVal);
+            }
+            catch { invalid.push('TRUST_PROXY must contain valid trusted IP addresses or networks'); }
+        }
+        try { getStaffOrigin(); } catch (error) { invalid.push(error.message); }
         if (!process.env.BACKUP_ENCRYPTION_KEY) missing.push('BACKUP_ENCRYPTION_KEY');
+        if (!process.env.METRICS_TOKEN) missing.push('METRICS_TOKEN');
+        else if (process.env.METRICS_TOKEN.length < 32 || process.env.METRICS_TOKEN.startsWith('REPLACE_ME')) invalid.push('METRICS_TOKEN must be a private random value of at least 32 characters');
         if (!process.env.ALLOWED_ORIGINS) missing.push('ALLOWED_ORIGINS');
         if (!process.env.CLAMSCAN_PATH) missing.push('CLAMSCAN_PATH');
         if (!process.env.WEBAUTHN_ORIGIN) missing.push('WEBAUTHN_ORIGIN');
@@ -151,6 +176,14 @@ function validateEnv() {
         invalid.push('BACKUP_ENCRYPTION_KEY must be exactly 64 hexadecimal characters');
     }
 
+    // Cryptographic Key Separation (Ensure no reuse of encryption keys)
+    if (process.env.ENCRYPTION_KEY && process.env.BLIND_INDEX_KEY && process.env.ENCRYPTION_KEY === process.env.BLIND_INDEX_KEY) {
+        invalid.push('BLIND_INDEX_KEY must be distinct from ENCRYPTION_KEY');
+    }
+    if (process.env.ENCRYPTION_KEY && process.env.BACKUP_ENCRYPTION_KEY && process.env.ENCRYPTION_KEY === process.env.BACKUP_ENCRYPTION_KEY) {
+        invalid.push('BACKUP_ENCRYPTION_KEY must be distinct from ENCRYPTION_KEY');
+    }
+
     if (process.env.ENCRYPTION_KEYS) {
         try {
             const keyring = JSON.parse(process.env.ENCRYPTION_KEYS);
@@ -222,7 +255,7 @@ function validateEnv() {
         }
         
         console.error('=========================================');
-        process.exit(1);
+        throw new Error(`Invalid environment configuration. Missing: ${missing.join(', ') || 'none'}. Invalid: ${invalid.join('; ') || 'none'}`);
     }
 
     // Log success

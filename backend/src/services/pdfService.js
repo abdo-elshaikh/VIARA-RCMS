@@ -2284,7 +2284,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 var checked = window.activeEnabledIds.indexOf(item.id) !== -1 ? 'checked' : '';
                 var label = document.createElement('label');
                 label.className = 'cp-checkbox-label';
-                label.innerHTML = '<input type="checkbox" ' + checked + ' onchange="window.toggleFieldId(\\'' + item.id + '\\', this.checked)"> ' + item.label;
+                label.innerHTML = '<input type="checkbox" ' + checked + ' onchange="window.toggleFieldId(\\'' + item.id + '\\', this.checked)"> ' + escapeHtml(item.label);
                 container.appendChild(label);
             });
         };
@@ -2302,7 +2302,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 }
                 var label = document.createElement('label');
                 label.className = 'cp-checkbox-label';
-                label.innerHTML = '<input type="checkbox" ' + checked + ' onchange="window.toggleSectionId(\\'' + sec.id + '\\', this.checked)"> ' + sec.title;
+                label.innerHTML = '<input type="checkbox" ' + checked + ' onchange="window.toggleSectionId(\\'' + sec.id + '\\', this.checked)"> ' + escapeHtml(sec.title);
                 container.appendChild(label);
             });
         };

@@ -160,7 +160,7 @@ export const PortalFooter = ({
           </div>
         </div>
 
-        <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-5 text-[11px] text-emerald-50/50 sm:flex-row">
+        <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-5 text-[11px] text-emerald-50/75 sm:flex-row">
           <p>
             © {new Date().getFullYear()} {centerName}.{" "}
             {isArabic ? "جميع الحقوق محفوظة." : "All rights reserved."}

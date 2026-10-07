@@ -1,4 +1,5 @@
-FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+ARG VIARA_APPROVED_GPU_BASE_IMAGE
+FROM ${VIARA_APPROVED_GPU_BASE_IMAGE}
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -19,6 +20,7 @@ RUN groupadd --system VIARA-ai \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN python -c "import torch, torchvision; assert torch.__version__.split('+')[0] == '2.14.1'; assert torchvision.__version__.split('+')[0] == '0.29.1'"
 
 COPY app ./app
 RUN chown -R VIARA-ai:VIARA-ai /app

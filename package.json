@@ -20,6 +20,7 @@
     "logs": "node scripts/logs.js",
     "seed": "node scripts/seed.js",
     "test": "npm test --prefix backend",
-    "build": "npm run build --prefix frontend && npm run build --prefix portal"
+    "build": "npm run build --prefix frontend && npm run build --prefix portal",
+    "package:client": "node scripts/package-client-release.js"
   }
 }

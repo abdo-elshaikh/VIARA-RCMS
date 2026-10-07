@@ -1,7 +1,7 @@
 // Presentational, prop-driven UI primitives for the report editor. Each is memoized
 // and free of business logic, so they can be reused across the editor and tested in
 // isolation. Extracted from ReportEditorPage.jsx.
-import React, { memo, useState, useRef, useEffect, useMemo } from 'react';
+import React, { memo, useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useSelector } from 'react-redux';
 import { selectCurrentUser } from '../../store/authSlice';
@@ -37,6 +37,8 @@ import {
     LayoutTemplate,
     Loader2,
     LockKeyhole,
+    Mic,
+    MicOff,
     Monitor,
     MoreHorizontal,
     PenLine,
@@ -804,10 +806,111 @@ export const TemplateBar = memo(({
 });
 TemplateBar.displayName = 'TemplateBar';
 
+const SECTION_MACROS = {
+    technique: [
+        'Standard multiplanar images acquired without IV contrast.',
+        'With and without IV gadolinium contrast enhancement.',
+        'Low-dose non-contrast protocol performed.'
+    ],
+    findings: [
+        'No acute fracture, dislocation, or osseous lesion.',
+        'Clear lung fields bilaterally without consolidation or effusion.',
+        'No focal mass lesion, acute territorial infarct, or hemorrhage.',
+        'Unremarkable examination with normal anatomy and alignment.'
+    ],
+    impression: [
+        'Unremarkable examination within normal limits for age.',
+        'No acute intracranial or cervical spine pathology.',
+        'Stable appearances compared to prior study.',
+        'Findings discussed with attending physician.'
+    ],
+    recommendations: [
+        'Routine clinical follow-up as clinically indicated.',
+        'Correlation with laboratory and inflammatory markers.',
+        'Follow-up imaging in 3 to 6 months if symptoms persist.'
+    ]
+};
+
 export const ReportSectionCard = memo(({ config, value = '', editable = false, active = false, collapsed = false, onToggleCollapse, onFocus, onChange, canImprove = false, isImproving = false, onImprove, canUndoImprove = false, onUndoImprove, locale = 'en-US', t }) => {
     const IconComponent = IconMap[config.icon] || FileText;
     const isCollapsible = config.collapsible;
     const textareaRef = useRef(null);
+    const [isListening, setIsListening] = useState(false);
+    const recognitionRef = useRef(null);
+
+    const toggleDictation = useCallback(() => {
+        if (!editable) return;
+        const SpeechRec = typeof window !== 'undefined' && (window.SpeechRecognition || window.webkitSpeechRecognition);
+        if (!SpeechRec) {
+            toast.error(t('editor.dictationUnsupported', 'Voice dictation is not supported in this browser.'));
+            return;
+        }
+
+        if (isListening) {
+            recognitionRef.current?.stop();
+            setIsListening(false);
+            return;
+        }
+
+        try {
+            const recognition = new SpeechRec();
+            recognition.continuous = true;
+            recognition.interimResults = false;
+            recognition.lang = locale?.startsWith('ar') ? 'ar-EG' : 'en-US';
+
+            recognition.onstart = () => {
+                setIsListening(true);
+            };
+
+            recognition.onresult = (event) => {
+                let speechTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        speechTranscript += event.results[i][0].transcript;
+                    }
+                }
+                if (speechTranscript) {
+                    const currentText = value || '';
+                    const spacer = currentText.length > 0 && !currentText.endsWith(' ') && !currentText.endsWith('\n') ? ' ' : '';
+                    onChange(config.key, currentText + spacer + speechTranscript.trim());
+                }
+            };
+
+            recognition.onerror = (event) => {
+                setIsListening(false);
+                if (event.error !== 'no-speech') {
+                    toast.error(`Dictation: ${event.error}`);
+                }
+            };
+
+            recognition.onend = () => {
+                setIsListening(false);
+            };
+
+            recognitionRef.current = recognition;
+            recognition.start();
+        } catch {
+            setIsListening(false);
+        }
+    }, [config.key, editable, isListening, locale, onChange, t, value]);
+
+    useEffect(() => {
+        return () => {
+            if (recognitionRef.current) {
+                try {
+                    recognitionRef.current.stop();
+                } catch {
+                    // ignore
+                }
+            }
+        };
+    }, []);
+
+    const appendMacro = useCallback((phrase) => {
+        const current = value || '';
+        const spacer = current.length > 0 && !current.endsWith('\n') ? (current.endsWith(' ') ? '' : '\n') : '';
+        onChange(config.key, current + spacer + phrase);
+    }, [config.key, onChange, value]);
 
     // Auto-grow the textarea to fit its content
     useEffect(() => {
@@ -910,6 +1013,26 @@ export const ReportSectionCard = memo(({ config, value = '', editable = false, a
                         </button>
                     )}
 
+                    {/* Voice Dictation button */}
+                    {editable && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                toggleDictation();
+                            }}
+                            title={isListening ? t('editor.dictating') : t('editor.dictate')}
+                            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[10px] font-bold transition-all ${
+                                isListening
+                                    ? 'bg-rose-500 text-white shadow-xs ring-2 ring-rose-400/50 animate-pulse'
+                                    : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                            }`}
+                        >
+                            {isListening ? <MicOff size={11} /> : <Mic size={11} />}
+                            <span>{isListening ? t('editor.dictating') : t('editor.dictate')}</span>
+                        </button>
+                    )}
+
                     {/* AI Improve button */}
                     {canImprove && editable && value?.trim() && (
                         <button
@@ -993,6 +1116,25 @@ export const ReportSectionCard = memo(({ config, value = '', editable = false, a
                             }`}
                         />
                     </div>
+
+                    {/* Quick Clinical Macros */}
+                    {editable && SECTION_MACROS[config.key] && (
+                        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                                {t('editor.quickPhrases')}:
+                            </span>
+                            {SECTION_MACROS[config.key].map((phrase) => (
+                                <button
+                                    key={phrase}
+                                    type="button"
+                                    onClick={() => appendMacro(phrase)}
+                                    className="rounded-lg border border-slate-200/80 bg-slate-50/80 px-2 py-0.5 text-[10.5px] font-medium text-slate-600 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300 dark:hover:border-teal-500 dark:hover:bg-teal-950/30 dark:hover:text-teal-300 transition"
+                                >
+                                    + {phrase}
+                                </button>
+                            ))}
+                        </div>
+                    )}
 
                     {/* ── Footer bar ── */}
                     <div className="mt-2.5 flex items-center justify-between gap-2">
@@ -1261,12 +1403,37 @@ export const PatientDocumentsPanel = memo(({ patientId, locale, t }) => {
 });
 PatientDocumentsPanel.displayName = 'PatientDocumentsPanel';
 
-export const DeliveryPanel = memo(({ history = [], onDeliver, isDelivering = false, locale, t }) => {
+export const DeliveryPanel = memo(({ history = [], onDeliver, isDelivering = false, locale, t, exam = null }) => {
     const [method, setMethod] = useState('Email');
-    const [recipientName, setRecipientName] = useState('');
-    const [recipientContact, setRecipientContact] = useState('');
+    const [recipientName, setRecipientName] = useState(exam?.patient_name || '');
+    const [recipientContact, setRecipientContact] = useState(() => (
+        method === 'Email'
+            ? (exam?.patient_email || exam?.email || '')
+            : (exam?.patient_phone || exam?.phone || '')
+    ));
     const [notes, setNotes] = useState('');
     const [copyCount, setCopyCount] = useState(1);
+
+    const handlePrefillPatient = () => {
+        if (!exam) return;
+        if (exam.patient_name) setRecipientName(exam.patient_name);
+        if (method === 'Email' && (exam.patient_email || exam.email)) {
+            setRecipientContact(exam.patient_email || exam.email);
+        } else if (exam.patient_phone || exam.phone) {
+            setRecipientContact(exam.patient_phone || exam.phone);
+        }
+    };
+
+    const handleOpenWhatsApp = () => {
+        const cleanPhone = (recipientContact || '').replace(/\D/g, '');
+        if (!cleanPhone) return;
+        const patientName = recipientName || exam?.patient_name || '';
+        const isAr = locale?.startsWith('ar');
+        const text = isAr
+            ? `السلام عليكم، نفيدكم بجاهزية التقرير الطبي للأشعة ${patientName ? `للمريض: ${patientName}` : ''}.`
+            : `Hello, this is VIARA Radiology. Your imaging report ${patientName ? `for ${patientName}` : ''} is ready.`;
+        window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+    };
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -1287,9 +1454,20 @@ export const DeliveryPanel = memo(({ history = [], onDeliver, isDelivering = fal
     return (
         <div className="space-y-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <form onSubmit={handleSubmit} className="space-y-3 border-b border-slate-100 pb-3 dark:border-slate-800">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    {t('delivery.newDelivery', 'Record Delivery')}
-                </h3>
+                <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        {t('delivery.newDelivery', 'Record Delivery')}
+                    </h3>
+                    {exam?.patient_name && (
+                        <button
+                            type="button"
+                            onClick={handlePrefillPatient}
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-600 hover:text-teal-700 dark:text-teal-400"
+                        >
+                            <span>{t('delivery.fillPatient', { defaultValue: 'Use patient info' })}</span>
+                        </button>
+                    )}
+                </div>
                 
                 <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -1368,6 +1546,17 @@ export const DeliveryPanel = memo(({ history = [], onDeliver, isDelivering = fal
                     />
                 </div>
 
+                {method === 'WhatsApp Link' && recipientContact && (
+                    <button
+                        type="button"
+                        onClick={handleOpenWhatsApp}
+                        className="inline-flex min-h-9 w-full items-center justify-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-bold text-emerald-700 hover:bg-emerald-500 hover:text-white dark:text-emerald-300 transition-colors"
+                    >
+                        <Send size={13} />
+                        <span>{t('delivery.openWhatsApp', { defaultValue: 'Open WhatsApp' })}</span>
+                    </button>
+                )}
+
                 <button
                     type="submit"
                     disabled={isDelivering}
@@ -1445,11 +1634,16 @@ export const AiPreliminaryDraftPanel = memo(({
     const sourceContext = draft?.sourceContext || {};
     const imageAnalysis = sourceContext.imageAnalysis || null;
     const coverage = provenance.coverage || imageAnalysis?.payload?.provenance?.coverage || null;
-    const imageAssisted = provenance.sourceMode === 'pacs-image-analysis'
-        || provenance.mode === 'structured-pacs-ai'
-        || Boolean(imageAnalysis);
     const providerName = provenance.provider || draft?.provider || reportSettingsStatus?.provider;
     const modelName = provenance.model || draft?.model || reportSettingsStatus?.model;
+    const imageAssisted = imageAnalysis?.quality?.supported === true
+        && Number(imageAnalysis.quality.imageCountAnalyzed) > 0
+        && Number(imageAnalysis.evidenceCount) > 0
+        && imageAnalysis?.provenance?.mode !== 'metadata-only-analysis'
+        && Number(coverage?.analyzedImageCount || imageAnalysis.quality.imageCountAnalyzed) > 0
+        && (provenance.sourceMode === 'pacs-image-analysis'
+            || provenance.mode === 'structured-pacs-ai')
+        && Boolean(imageAnalysis);
     const coverageParts = [];
     if (coverage?.analyzedImageCount != null) {
         coverageParts.push(`${coverage.analyzedImageCount}/${coverage.studyImageCount || coverage.analyzedImageCount} ${t('editor.aiDraft.images', { defaultValue: 'images' })}`);

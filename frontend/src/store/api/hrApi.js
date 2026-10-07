@@ -149,7 +149,7 @@ export const hrApi = api.injectEndpoints({
             providesTags: ['PayrollCompensation'],
         }),
         getPayrollEmployees: builder.query({
-            query: () => '/payroll/employees',
+            query: (params) => ({ url: '/payroll/employees', params }),
             providesTags: ['Payroll'],
         }),
         createPayrollCompensation: builder.mutation({

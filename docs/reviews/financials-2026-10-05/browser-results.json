@@ -1,0 +1,121 @@
+[
+  {
+    "tab": "reports",
+    "headings": [
+      "المركز المالي والحسابات الختامية",
+      "حزمة مالية تنفيذية"
+    ],
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "tab": "pl",
+    "headings": [
+      "المركز المالي والحسابات الختامية",
+      "ملخص الأرباح والخسائر"
+    ],
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "tab": "expenses",
+    "headings": [
+      "المركز المالي والحسابات الختامية",
+      "متابعة المصروفات"
+    ],
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "expenseModalClosedWithEscape": true
+  },
+  {
+    "reverseModalClosedWithEscape": true
+  },
+  {
+    "tab": "commissions",
+    "headings": [
+      "المركز المالي والحسابات الختامية",
+      "عمولات الأطباء"
+    ],
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "commissionModalClosedWithEscape": true
+  },
+  {
+    "tab": "discounts",
+    "headings": [
+      "المركز المالي والحسابات الختامية",
+      "تقرير حوكمة الخصومات"
+    ],
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "tab": "receivables",
+    "headings": [
+      "المركز المالي والحسابات الختامية",
+      "أعمار مستحقات التأمين"
+    ],
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "tab": "cashier",
+    "headings": [
+      "المركز المالي والحسابات الختامية",
+      "تسوية ورديات الصندوق"
+    ],
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "cashierModalClosedWithEscape": true
+  },
+  {
+    "tab": "ledger",
+    "headings": [
+      "المركز المالي والحسابات الختامية",
+      "مراجعة القيود وميزان المراجعة"
+    ],
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "tab": "closures",
+    "headings": [
+      "المركز المالي والحسابات الختامية",
+      "الإغلاق النقدي اليومي"
+    ],
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "closureModalClosedWithEscape": true
+  },
+  {
+    "closureCreateFormDate": 1
+  },
+  {
+    "tab": "invalid",
+    "headings": [
+      "المركز المالي والحسابات الختامية",
+      "حزمة مالية تنفيذية"
+    ],
+    "errors": [],
+    "overflow": false
+  },
+  {
+    "periodSurvivesReload": [
+      "2026-09-01",
+      "2026-09-30"
+    ]
+  },
+  {
+    "mobile": true,
+    "metricsCollapsed": true,
+    "overflow": false
+  }
+]

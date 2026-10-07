@@ -1,12 +1,12 @@
 // Appointments.jsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Activity, AlertCircle, ArrowRight, Bell, Calendar, CalendarCheck2,
     CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ChevronUp, Clock,
     FilterX, Gauge, ListChecks, Plus, RotateCw, Search,
     SlidersHorizontal, Sparkles, UserPlus, UserX, X, Zap, XCircle,
     Grid3X3, Table2, Eye, EyeOff, FileSpreadsheet, Printer,
-    Clock4, Users, Building2, BarChart3
+    Clock4, Users, Building2, BarChart3, Copy, Check
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSelector } from 'react-redux';
@@ -33,6 +33,7 @@ import { formatLocalizedDate } from '../utils/localizedDate';
 import { buildCsv, getWaitingListValidation } from '../utils/appointmentOperations';
 import { getPaginationState } from '../utils/pagination';
 import useDebounce from '../hooks/useDebounce';
+import usePageTitle from '../hooks/usePageTitle';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
 import Scheduler from '../components/ui/Scheduler';
 import PageHeader from '../components/ui/PageHeader';
@@ -325,13 +326,51 @@ const getPresetRange = (preset) => {
 };
 
 // ============================================================================
-// STYLE CONSTANTS
+// STYLE CONSTANTS & MODALITY HELPERS
 // ============================================================================
 
-const cardBase = 'rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)]/80 dark:shadow-none transition-all duration-200';
+const cardBase = 'rounded-2xl border border-slate-200/80 bg-white/90 shadow-xs backdrop-blur-md dark:border-white/10 dark:bg-[var(--VIARA-surface-raised)] transition-all duration-200';
 
 const sectionHeadingClass = 'text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400';
-const subHeadingClass = 'text-[11px] font-medium text-slate-400 dark:text-slate-500';
+const subHeadingClass = 'text-[11px] font-medium text-slate-400 dark:text-slate-400';
+
+const getModalityBadgeStyle = (machineName = '', examTypeName = '') => {
+    const text = `${machineName || ''} ${examTypeName || ''}`.toUpperCase();
+    if (text.includes('MR') || text.includes('رنين') || text.includes('MAGNET')) {
+        return {
+            badge: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800/40',
+            code: 'MR'
+        };
+    }
+    if (text.includes('CT') || text.includes('مقطعية') || text.includes('TOMO')) {
+        return {
+            badge: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800/40',
+            code: 'CT'
+        };
+    }
+    if (text.includes('US') || text.includes('سيلسون') || text.includes('صوتية') || text.includes('SONO') || text.includes('ECHO')) {
+        return {
+            badge: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40',
+            code: 'US'
+        };
+    }
+    if (text.includes('MG') || text.includes('ثدي') || text.includes('MAMMO')) {
+        return {
+            badge: 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-950/40 dark:text-pink-300 dark:border-pink-800/40',
+            code: 'MG'
+        };
+    }
+    if (text.includes('XR') || text.includes('سيني') || text.includes('X-RAY') || text.includes('DX')) {
+        return {
+            badge: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+            code: 'XR'
+        };
+    }
+    return {
+        badge: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800/40',
+        code: 'RAD'
+    };
+};
 
 // ============================================================================
 // MAIN COMPONENT
@@ -340,6 +379,7 @@ const subHeadingClass = 'text-[11px] font-medium text-slate-400 dark:text-slate-
 const Appointments = () => {
     const { t, i18n } = useTranslation('appointments');
     const isRtl = i18n?.language?.startsWith('ar');
+    usePageTitle(t('title', 'منصة الجدولة'));
     const preferences = useSelector(selectPreferences);
     const [viewMode, setViewMode] = useState(() => ['day', 'week', 'month'].includes(preferences.calendarView) ? preferences.calendarView : 'day');
     const [layoutMode, setLayoutMode] = useState('list');
@@ -696,16 +736,23 @@ const Appointments = () => {
                 metricsLabel={t('overview.metricsLabel', 'نظرة عامة على أداء الجدول')}
                 meta={
                     <div className="flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200/80 bg-emerald-50/90 px-2.5 py-1 text-[11px] font-bold text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                            </span>
+                            <span>{isRtl ? 'بث مباشر' : 'Live'}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
                             <Calendar size={12} className="text-teal-600 dark:text-teal-400" />
                             <span>{viewMode === 'day' ? formatDateOnly(date, language) : `${rangeLabel.start} - ${rangeLabel.end}`}</span>
                         </span>
-                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
                             <Building2 size={12} className="text-teal-600 dark:text-teal-400" />
                             <span>{selectedMachineName}</span>
                         </span>
                         {nextAppointment && (
-                            <span className="hidden md:inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                            <span className="hidden md:inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
                                 <Clock size={12} className="text-teal-600 dark:text-teal-400" />
                                 <span>{t('command.next', 'القادم:')} {formatTime(nextAppointment.start_time, language)} - {nextAppointment.patient_name || nextAppointment.mrn}</span>
                             </span>
@@ -723,9 +770,9 @@ const Appointments = () => {
                         <button
                             type="button"
                             onClick={() => setShowOperationalInsights(!showOperationalInsights)}
-                            className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition ${showOperationalInsights
+                            className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition duration-200 active:scale-[0.98] ${showOperationalInsights
                                 ? 'border-teal-400 bg-teal-50 text-teal-800 ring-1 ring-teal-400/20 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300'
-                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
                             }`}
                         >
                             <BarChart3 size={15} />
@@ -735,7 +782,7 @@ const Appointments = () => {
                             type="button"
                             onClick={exportSchedule}
                             disabled={visibleAppointments.length === 0}
-                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 active:scale-[0.98] dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
                         >
                             <FileSpreadsheet size={15} />
                             <span>{t('actions.exportSchedule', 'تصدير الجدول')}</span>
@@ -743,7 +790,7 @@ const Appointments = () => {
                         <button
                             type="button"
                             onClick={() => window.print()}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
                             title={t('actions.print', 'Print')}
                             aria-label={t('actions.print', 'Print')}
                         >
@@ -751,7 +798,7 @@ const Appointments = () => {
                         </button>
                         <Link
                             to="/appointments/new"
-                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-xs font-black text-white shadow-sm transition hover:bg-teal-800 active:scale-[0.98] dark:bg-teal-600 dark:text-white dark:hover:bg-teal-500"
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-700 via-teal-800 to-cyan-800 px-4 text-xs font-black text-white shadow-md shadow-teal-900/20 transition duration-200 hover:from-teal-800 hover:to-cyan-900 active:scale-[0.98] dark:from-teal-600 dark:to-cyan-700 dark:hover:from-teal-500 dark:hover:to-cyan-600"
                         >
                             <Plus size={16} />
                             <span>{t('actions.newAppointment', 'حجز موعد جديد')}</span>
@@ -790,15 +837,18 @@ const Appointments = () => {
             )}
 
             {/* Compact Interactive KPI Command Strip */}
-            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/70 bg-slate-50/60 p-2 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)]/60">
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/80 p-2 shadow-2xs backdrop-blur-md dark:border-white/10 dark:bg-[var(--VIARA-surface-raised)]/70">
                 {/* Total Booked */}
                 <button
                     type="button"
                     onClick={clearFilters}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold transition hover:border-teal-300 hover:shadow-2xs dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]"
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${!hasActiveFilters
+                        ? 'border-teal-500/50 bg-teal-50/80 text-teal-950 ring-1 ring-teal-500/20 dark:border-teal-500/30 dark:bg-teal-950/40 dark:text-teal-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-teal-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    }`}
                     title={t('overview.bookedTooltip', 'عرض كافة المواعيد')}
                 >
-                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300">
                         <CalendarRange size={12} />
                     </span>
                     <span className="text-slate-500 dark:text-slate-400">{t('overview.booked', 'إجمالي المواعيد')}</span>
@@ -809,12 +859,12 @@ const Appointments = () => {
                 <button
                     type="button"
                     onClick={() => { setStatusFilter(statusFilter === 'Confirmed' ? 'all' : 'Confirmed'); setPriorityFilter('all'); }}
-                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition hover:shadow-2xs ${statusFilter === 'Confirmed'
-                        ? 'border-emerald-500 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-500/20 dark:bg-emerald-950/40 dark:text-emerald-200'
-                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-emerald-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${statusFilter === 'Confirmed'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-500/20 dark:bg-emerald-950/50 dark:text-emerald-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-emerald-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
                     }`}
                 >
-                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
                         <CheckCircle2 size={12} />
                     </span>
                     <span className="text-slate-500 dark:text-slate-400">{t('overview.confirmed', 'جاهزة ومؤكدة')}</span>
@@ -825,28 +875,46 @@ const Appointments = () => {
                 <button
                     type="button"
                     onClick={() => { setStatusFilter(statusFilter === 'Arrived' ? 'all' : 'Arrived'); setPriorityFilter('all'); }}
-                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition hover:shadow-2xs ${statusFilter === 'Arrived'
-                        ? 'border-amber-500 bg-amber-50 text-amber-900 ring-1 ring-amber-500/20 dark:bg-amber-950/40 dark:text-amber-200'
-                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-amber-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${statusFilter === 'Arrived'
+                        ? 'border-teal-500 bg-teal-50 text-teal-950 ring-1 ring-teal-500/20 dark:bg-teal-950/50 dark:text-teal-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-teal-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
                     }`}
                 >
-                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300">
                         <Clock4 size={12} />
                     </span>
                     <span className="text-slate-500 dark:text-slate-400">{t('status.Arrived', 'حاضر بالمركز')}</span>
-                    <span className="font-mono text-xs font-black text-amber-700 dark:text-amber-400">{formatNumber(statusCounts.Arrived || 0, language)}</span>
+                    <span className="font-mono text-xs font-black text-teal-700 dark:text-teal-300">{formatNumber(statusCounts.Arrived || 0, language)}</span>
                 </button>
+
+                {/* In-Progress (if any active) */}
+                {((statusCounts['In-Progress'] || 0) > 0 || (statusCounts['Checked-In'] || 0) > 0) && (
+                    <button
+                        type="button"
+                        onClick={() => { setStatusFilter(statusFilter === 'In-Progress' ? 'all' : 'In-Progress'); }}
+                        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${statusFilter === 'In-Progress'
+                            ? 'border-violet-500 bg-violet-50 text-violet-950 ring-1 ring-violet-500/20 dark:bg-violet-950/50 dark:text-violet-200'
+                            : 'border-slate-200/80 bg-white text-slate-700 hover:border-violet-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                        }`}
+                    >
+                        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-violet-500/15 text-violet-700 dark:text-violet-300">
+                            <Activity size={12} className="animate-pulse" />
+                        </span>
+                        <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'قيد الفحص' : 'In Progress'}</span>
+                        <span className="font-mono text-xs font-black text-violet-700 dark:text-violet-300">{formatNumber((statusCounts['In-Progress'] || 0) + (statusCounts['Checked-In'] || 0), language)}</span>
+                    </button>
+                )}
 
                 {/* Urgent / Priority */}
                 <button
                     type="button"
                     onClick={() => { setPriorityFilter(priorityFilter === 'Urgent' ? 'all' : 'Urgent'); }}
-                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition hover:shadow-2xs ${priorityFilter === 'Urgent'
-                        ? 'border-rose-500 bg-rose-50 text-rose-900 ring-1 ring-rose-500/20 dark:bg-rose-950/40 dark:text-rose-200'
-                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-rose-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${priorityFilter === 'Urgent'
+                        ? 'border-rose-500 bg-rose-50 text-rose-950 ring-1 ring-rose-500/20 dark:bg-rose-950/50 dark:text-rose-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-rose-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
                     }`}
                 >
-                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-rose-500/15 text-rose-700 dark:text-rose-300">
                         <AlertCircle size={12} />
                     </span>
                     <span className="text-slate-500 dark:text-slate-400">{t('overview.urgent', 'حالات عاجلة')}</span>
@@ -854,8 +922,8 @@ const Appointments = () => {
                 </button>
 
                 {/* Room Utilization */}
-                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-cyan-50 text-cyan-700 dark:bg-cyan-950/50 dark:text-cyan-400">
+                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold dark:border-white/10 dark:bg-[var(--VIARA-surface)]">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-cyan-500/15 text-cyan-700 dark:text-cyan-300">
                         <Gauge size={12} />
                     </span>
                     <span className="text-slate-500 dark:text-slate-400">{t('overview.utilization', 'إشغال الغرف')}</span>
@@ -866,9 +934,9 @@ const Appointments = () => {
                 <button
                     type="button"
                     onClick={() => setShowSidePanel(true)}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold transition hover:border-teal-300 hover:shadow-2xs dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]"
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold transition duration-200 hover:border-violet-300 hover:shadow-2xs active:scale-[0.98] dark:border-white/10 dark:bg-[var(--VIARA-surface)]"
                 >
-                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-violet-50 text-violet-700 dark:bg-violet-950/50 dark:text-violet-400">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-violet-500/15 text-violet-700 dark:text-violet-300">
                         <Users size={12} />
                     </span>
                     <span className="text-slate-500 dark:text-slate-400">{t('command.waitingPressure', 'قائمة الانتظار')}</span>
@@ -880,12 +948,12 @@ const Appointments = () => {
                     <button
                         type="button"
                         onClick={() => { setStatusFilter(statusFilter === 'No-Show' ? 'Cancelled' : statusFilter === 'Cancelled' ? 'all' : 'No-Show'); }}
-                        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition hover:shadow-2xs ${['No-Show', 'Cancelled'].includes(statusFilter)
+                        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${['No-Show', 'Cancelled'].includes(statusFilter)
                             ? 'border-slate-500 bg-slate-100 text-slate-900 ring-1 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-100'
-                            : 'border-slate-200/80 bg-white text-slate-700 hover:border-slate-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                            : 'border-slate-200/80 bg-white text-slate-700 hover:border-slate-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
                         }`}
                     >
-                        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-slate-500/15 text-slate-600 dark:text-slate-300">
                             <UserX size={12} />
                         </span>
                         <span className="text-slate-500 dark:text-slate-400">{t('overview.disruptions', 'غياب / ملغي')}</span>
@@ -898,7 +966,7 @@ const Appointments = () => {
                     <button
                         type="button"
                         onClick={clearFilters}
-                        className="ms-auto inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-black text-rose-700 transition hover:bg-rose-100 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300"
+                        className="ms-auto inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-black text-rose-700 transition duration-200 hover:bg-rose-100 active:scale-[0.98] dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300"
                     >
                         <FilterX size={12} />
                         <span>{t('filters.reset', 'إلغاء التصفيات')}</span>
@@ -1185,34 +1253,77 @@ const Appointments = () => {
                                     {t('table.selectedCount', { count: formatNumber(selectedIds.size, language) })}
                                 </span>
                             )}
-                            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 tabular-nums dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                            <span aria-live="polite" aria-atomic="true" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 tabular-nums dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
                                 {t('calendar.count', { count: formatNumber(visibleAppointments.length, language) })}
                             </span>
                         </div>
                     </div>
 
                     {selectedIds.size > 0 && (
-                        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-teal-50/70 px-5 py-3 dark:border-white/5 dark:bg-teal-950/20">
-                            <span className="text-xs font-bold text-teal-700 dark:text-teal-300">
-                                {t('table.selectedCount', { count: formatNumber(selectedIds.size, language) })}
-                            </span>
-                            <button
-                                type="button"
-                                onClick={handleBulkRemind}
-                                disabled={isSendingReminder}
-                                className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-teal-800 disabled:opacity-50"
+                        <>
+                            <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-teal-50/70 px-5 py-3 dark:border-white/5 dark:bg-teal-950/20">
+                                <span className="text-xs font-bold text-teal-700 dark:text-teal-300">
+                                    {t('table.selectedCount', { count: formatNumber(selectedIds.size, language) })}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={handleBulkRemind}
+                                    disabled={isSendingReminder}
+                                    className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-teal-800 disabled:opacity-50"
+                                >
+                                    <Bell size={12} />
+                                    {t('actions.bulkRemind', 'Send Reminders')}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedIds(new Set())}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
+                                >
+                                    {t('actions.clearSelection', 'Clear')}
+                                </button>
+                            </div>
+
+                            {/* Floating Persistent Bulk Action HUD for Long Scrolling Views */}
+                            <div
+                                role="region"
+                                aria-live="polite"
+                                className="fixed bottom-6 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-40 flex w-auto sm:w-full max-w-lg items-center justify-between gap-4 rounded-2xl border border-teal-500/40 bg-slate-950/95 px-5 py-3.5 text-white shadow-2xl shadow-teal-950/40 backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 ring-1 ring-white/10"
                             >
-                                <Bell size={12} />
-                                {t('actions.bulkRemind', 'Send Reminders')}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setSelectedIds(new Set())}
-                                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
-                            >
-                                {t('actions.clearSelection', 'Clear')}
-                            </button>
-                        </div>
+                                <div className="flex items-center gap-2.5">
+                                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-500/20 text-teal-400 ring-1 ring-teal-500/30">
+                                        <Sparkles size={15} />
+                                    </span>
+                                    <div>
+                                        <span className="text-xs font-black tracking-wide text-white">
+                                            {t('table.selectedCount', { count: formatNumber(selectedIds.size, language) })}
+                                        </span>
+                                        <p className="text-[10px] font-medium text-slate-400">
+                                            {language?.startsWith('ar') ? 'إجراءات جماعية للمواعيد المحددة' : 'Bulk actions available'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleBulkRemind}
+                                        disabled={isSendingReminder}
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-2 text-xs font-black text-white shadow-md shadow-teal-900/30 transition hover:from-teal-500 hover:to-emerald-500 disabled:opacity-50"
+                                    >
+                                        <Bell size={13} />
+                                        <span>{t('actions.bulkRemind', 'Send Reminders')}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedIds(new Set())}
+                                        className="inline-flex items-center gap-1 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-bold text-white transition hover:bg-white/20"
+                                        aria-label={t('actions.clearSelection', 'Clear')}
+                                    >
+                                        <X size={13} />
+                                        <span>{t('actions.clearSelection', 'Clear')}</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </>
                     )}
 
                     {layoutMode === 'calendar' ? (
@@ -1408,7 +1519,7 @@ const CommandFact = ({ icon: Icon, label, value }) => (
                 <Icon size={14} />
             </span>
             <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[.12em] text-slate-400 dark:text-slate-500">
+                <p className="text-[10px] font-black uppercase tracking-[.12em] text-slate-400 dark:text-slate-400">
                     {label}
                 </p>
                 <p className="mt-0.5 truncate text-xs font-bold text-slate-800 dark:text-slate-100">
@@ -1510,58 +1621,105 @@ const SegmentedControl = ({ ariaLabel, items, value, onChange }) => (
 );
 
 const FocusedAppointmentCard = ({ appointment, language, onClose, onRemind, onReschedule, t }) => {
+    const [copiedMrn, setCopiedMrn] = useState(false);
     const sc = statusConfig[appointment.status] || statusConfig.Scheduled;
     const StatusIcon = sc.icon || Activity;
     const priority = priorityConfig[appointment.priority || 'Routine'] || priorityConfig.Routine;
     const PriorityIcon = priority.icon || Activity;
+    const modality = getModalityBadgeStyle(appointment.machine_name, appointment.exam_type_name);
     const appointmentDate = appointment.start_time ? formatDateOnly(appointment.start_time.slice(0, 10), language) : '-';
     const appointmentTime = appointment.start_time && appointment.end_time
         ? `${appointmentDate} - ${formatTime(appointment.start_time, language)} - ${formatTime(appointment.end_time, language)}`
         : appointmentDate;
 
+    const handleCopyMrn = async () => {
+        if (!appointment.mrn) return;
+        try {
+            await navigator.clipboard.writeText(appointment.mrn);
+            setCopiedMrn(true);
+            toast.success(language?.startsWith('ar') ? 'تم نسخ الرقم الطبي (MRN)' : 'MRN copied to clipboard');
+            setTimeout(() => setCopiedMrn(false), 2000);
+        } catch {
+            toast.error(language?.startsWith('ar') ? 'تعذر نسخ الرقم الطبي' : 'Failed to copy MRN');
+        }
+    };
+
     return (
-        <section className="overflow-hidden rounded-2xl border border-teal-200 bg-teal-50/70 shadow-sm dark:border-teal-500/20 dark:bg-teal-500/10">
-            <div className="flex items-start justify-between gap-3 border-b border-teal-200/70 px-4 py-3 dark:border-teal-500/20">
+        <section className="overflow-hidden rounded-2xl border border-teal-200/80 bg-gradient-to-b from-teal-50/60 to-white/95 shadow-sm dark:border-teal-500/25 dark:from-teal-950/20 dark:to-[var(--VIARA-surface-raised)] backdrop-blur-sm">
+            <div className="flex items-start justify-between gap-3 border-b border-teal-200/70 px-4 py-3.5 dark:border-teal-500/20 bg-teal-50/50 dark:bg-teal-950/30">
                 <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-[.12em] text-teal-700 dark:text-teal-300">
-                        {t('focused.title', 'Selected appointment')}
-                    </p>
-                    <h2 className="mt-1 truncate text-sm font-black text-slate-950 dark:text-white">
+                    <div className="flex items-center gap-2">
+                        <span className="flex h-2 w-2 rounded-full bg-teal-500 ring-4 ring-teal-500/20 animate-pulse" />
+                        <p className="text-[10px] font-black uppercase tracking-[.12em] text-teal-700 dark:text-teal-300">
+                            {t('focused.title', 'Selected appointment')}
+                        </p>
+                    </div>
+                    <h2 className="mt-1 truncate text-base font-black text-slate-950 dark:text-white">
                         {appointment.patient_name || t('waitlist.unnamedPatient', 'Unnamed Patient')}
                     </h2>
                 </div>
                 <button
                     type="button"
                     onClick={onClose}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/70 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-white"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/80 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-white"
                     aria-label={t('actions.close', 'Close')}
                 >
-                    <X size={14} />
+                    <X size={15} />
                 </button>
             </div>
-            <div className="space-y-3 p-4">
+            <div className="space-y-3.5 p-4">
                 <div className="grid gap-2 text-xs">
-                    <InfoLine label={t('table.mrn', 'MRN')} value={appointment.mrn || '-'} />
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-white/80 p-2.5 shadow-2xs dark:bg-white/[0.04]">
+                        <span className="shrink-0 text-[10px] font-black uppercase tracking-[.1em] text-slate-400">
+                            {t('table.mrn', 'MRN')}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200">{appointment.mrn || '-'}</span>
+                            {appointment.mrn && (
+                                <button
+                                    type="button"
+                                    onClick={handleCopyMrn}
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-white/10 dark:hover:text-teal-300"
+                                    title={copiedMrn ? (language?.startsWith('ar') ? 'تم النسخ' : 'Copied') : (language?.startsWith('ar') ? 'نسخ MRN' : 'Copy MRN')}
+                                    aria-label={t('table.copyMrn', 'Copy MRN')}
+                                >
+                                    {copiedMrn ? <Check size={13} className="text-teal-600 dark:text-teal-400" /> : <Copy size={13} />}
+                                </button>
+                            )}
+                        </div>
+                    </div>
                     <InfoLine label={t('table.time', 'Time')} value={appointmentTime} />
-                    <InfoLine label={t('table.room', 'Room')} value={appointment.machine_name || '-'} />
+                    <div className="flex items-start justify-between gap-3 rounded-xl bg-white/80 p-2.5 shadow-2xs dark:bg-white/[0.04]">
+                        <span className="shrink-0 text-[10px] font-black uppercase tracking-[.1em] text-slate-400">
+                            {t('table.room', 'Room')}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${modality.badge}`}>
+                                {modality.code}
+                            </span>
+                            <span className="min-w-0 text-end font-bold text-slate-700 dark:text-slate-200">
+                                {appointment.machine_name || '-'}
+                            </span>
+                        </div>
+                    </div>
                     <InfoLine label={t('table.exam', 'Exam')} value={appointment.exam_type_name || t('table.noExamType', 'General Exam')} />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase ${sc.bg} ${sc.text}`}>
+                    <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase border ${sc.border} ${sc.bg} ${sc.text}`}>
                         <StatusIcon size={12} />
                         {t(`status.${appointment.status}`, appointment.status)}
                     </span>
-                    <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase ${priority.bg} ${priority.text}`}>
+                    <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase border ${priority.border} ${priority.bg} ${priority.text}`}>
                         <PriorityIcon size={12} />
                         {t(`priority.${appointment.priority || 'Routine'}`, appointment.priority || 'Routine')}
                     </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                     <button
                         type="button"
                         onClick={onRemind}
                         disabled={['Completed', 'Cancelled', 'No-Show'].includes(appointment.status)}
-                        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-white px-3 text-xs font-black text-teal-700 ring-1 ring-teal-200 transition hover:bg-teal-700 hover:text-white disabled:opacity-40 dark:bg-[var(--VIARA-surface-raised)] dark:text-teal-300 dark:ring-teal-500/20"
+                        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-white px-3 text-xs font-black text-teal-700 ring-1 ring-teal-200 shadow-2xs transition hover:bg-teal-700 hover:text-white disabled:opacity-40 dark:bg-[var(--VIARA-surface-raised)] dark:text-teal-300 dark:ring-teal-500/20"
                     >
                         <Bell size={13} />
                         {t('table.sendReminder', 'Send Reminder')}
@@ -1570,7 +1728,7 @@ const FocusedAppointmentCard = ({ appointment, language, onClose, onRemind, onRe
                         type="button"
                         onClick={onReschedule}
                         disabled={appointment.status === 'Completed'}
-                        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-white px-3 text-xs font-black text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-900 hover:text-white disabled:opacity-40 dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-200 dark:ring-white/10"
+                        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-white px-3 text-xs font-black text-slate-700 ring-1 ring-slate-200 shadow-2xs transition hover:bg-slate-900 hover:text-white disabled:opacity-40 dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-200 dark:ring-white/10"
                     >
                         <RotateCw size={13} />
                         {t('table.reschedule', 'Reschedule')}
@@ -1650,23 +1808,23 @@ const AppointmentTable = ({
                                 type="checkbox"
                                 checked={allPageSelected}
                                 onChange={onToggleSelectAll}
-                                className="h-4 w-4 rounded border-slate-300 text-teal-700 transition focus:ring-teal-600"
+                                className="h-4 w-4 rounded border-slate-300 text-teal-700 transition focus:ring-teal-600 focus:ring-offset-0 dark:border-white/20 dark:bg-slate-800"
                                 aria-label={t('table.selectAll', 'تحديد كافة المواعيد في هذه الصفحة')}
                             />
                         </th>
-                        <th className="px-4 py-3.5 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        <th className="px-4 py-3.5 text-start text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             {t('table.patient', 'المريض')}
                         </th>
-                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400 md:table-cell">
+                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 md:table-cell">
                             {t('table.details', 'الغرفة والفحص')}
                         </th>
-                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400 lg:table-cell">
+                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 lg:table-cell">
                             {t('table.time', 'الوقت')}
                         </th>
-                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-bold uppercase tracking-wider text-slate-400 sm:table-cell">
+                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 sm:table-cell">
                             {t('table.status', 'الحالة')}
                         </th>
-                        <th className="w-36 px-4 py-3.5 text-end text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                        <th className="w-36 px-4 py-3.5 text-end text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                             {t('table.actions', 'إجراءات')}
                         </th>
                     </tr>
@@ -1711,19 +1869,35 @@ const AppointmentRow = React.memo(({
     const shade = getAvatarShade(appt.patient_name || appt.mrn);
     const initials = (appt.patient_name || appt.mrn || 'P')[0]?.toUpperCase();
     const isCancelled = appt.status === 'Cancelled';
+    const isEmergency = appt.priority === 'Emergency';
+    const isUrgent = appt.priority === 'Urgent';
     const priority = priorityConfig[appt.priority] || priorityConfig.Routine;
     const StatusIcon = sc.icon || Activity;
+    const modality = getModalityBadgeStyle(appt.machine_name, appt.exam_type_name);
     const dateLabel = appt.start_time ? formatDateOnly(appt.start_time.slice(0, 10), language) : '-';
     const timeLabel = appt.start_time && appt.end_time
         ? `${formatTime(appt.start_time, language)} - ${formatTime(appt.end_time, language)}`
         : '-';
 
+    let priorityBorder = 'border-s-4 border-s-transparent';
+    let priorityBg = '';
+    if (isEmergency) {
+        priorityBorder = 'border-s-4 border-s-rose-500';
+        priorityBg = 'bg-rose-50/25 dark:bg-rose-950/15';
+    } else if (isUrgent) {
+        priorityBorder = 'border-s-4 border-s-amber-500';
+        priorityBg = 'bg-amber-50/20 dark:bg-amber-950/10';
+    }
+
     return (
         <tr
             role="row"
             aria-selected={isSelected}
-            className={`group cursor-pointer border-b border-transparent transition-all duration-200 hover:border-teal-100 dark:hover:border-teal-500/10 ${isSelected ? 'bg-teal-50/70 dark:bg-teal-950/25' : 'hover:bg-teal-50/35 dark:hover:bg-white/[0.035]'
-                } ${isCancelled ? 'opacity-60 hover:opacity-100' : ''}`}
+            className={`group cursor-pointer border-b border-transparent transition-all duration-200 hover:border-teal-100 dark:hover:border-teal-500/10 ${priorityBorder} ${
+                isSelected
+                    ? 'bg-teal-50/80 dark:bg-teal-950/30'
+                    : priorityBg || 'hover:bg-slate-50/70 dark:hover:bg-white/[0.03]'
+            } ${isCancelled ? 'opacity-60 hover:opacity-100' : ''}`}
             onClick={onSelect}
         >
             <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
@@ -1731,53 +1905,79 @@ const AppointmentRow = React.memo(({
                     type="checkbox"
                     checked={isSelected}
                     onChange={onToggleSelect}
-                    className="h-4 w-4 rounded border-slate-300 text-teal-700 transition focus:ring-teal-600"
+                    className="h-4 w-4 rounded border-slate-300 text-teal-700 transition focus:ring-teal-600 focus:ring-offset-0 dark:border-white/20 dark:bg-slate-800"
                     aria-label={t('table.selectAppointment', 'Select appointment')}
                 />
             </td>
             <td className="px-4 py-4">
                 <div className="flex items-center gap-3.5">
-                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${shade} text-sm font-bold text-white shadow-sm ring-2 ring-white dark:ring-[var(--VIARA-surface-raised)]`}>
-                        {initials}
-                    </span>
+                    <div className="relative shrink-0">
+                        <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${shade} text-sm font-black text-white shadow-xs ring-2 ring-white dark:ring-[var(--VIARA-surface-raised)]`}>
+                            {initials}
+                        </span>
+                        {isEmergency && (
+                            <span className="absolute -top-1 -end-1 flex h-3 w-3">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75"></span>
+                                <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-600 ring-2 ring-white dark:ring-slate-900"></span>
+                            </span>
+                        )}
+                        {isUrgent && (
+                            <span className="absolute -top-0.5 -end-0.5 flex h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-900" />
+                        )}
+                    </div>
                     <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                            <span className="truncate text-sm font-bold text-slate-900 dark:text-white">
+                            <span className="truncate text-sm font-black text-slate-900 dark:text-white group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors">
                                 {appt.patient_name || t('waitlist.unnamedPatient', 'Unnamed Patient')}
                             </span>
                             {appt.priority && appt.priority !== 'Routine' && (
-                                <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider ${priority.bg} ${priority.border} ${priority.text}`}>
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${priority.bg} ${priority.border} ${priority.text}`}>
+                                    <priority.icon size={10} />
                                     {priority.label}
                                 </span>
                             )}
                         </div>
-                        <div className={`font-mono text-[10px] font-semibold text-teal-700 dark:text-teal-400 tabular-nums`}>
-                            {appt.mrn}
+                        <div className="mt-1 flex items-center gap-1.5">
+                            <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-teal-800 tabular-nums dark:bg-white/10 dark:text-teal-300">
+                                {appt.mrn}
+                            </span>
+                            {appt.gender && (
+                                <span className="text-[10px] font-medium text-slate-400">
+                                    • {appt.gender}
+                                </span>
+                            )}
                         </div>
                     </div>
                 </div>
             </td>
             <td className="hidden px-4 py-3.5 md:table-cell">
                 <div className="min-w-0 max-w-sm">
-                    <div className="text-xs font-bold text-slate-900 dark:text-white">
-                        {appt.machine_name}
+                    <div className="flex items-center gap-1.5">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${modality.badge}`}>
+                            {modality.code}
+                        </span>
+                        <span className="truncate text-xs font-bold text-slate-900 dark:text-white">
+                            {appt.machine_name}
+                        </span>
                     </div>
-                    <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">
+                    <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">
                         {appt.exam_type_name || t('table.noExamType', 'فحص عام')}
                     </div>
                 </div>
             </td>
             <td className="hidden whitespace-nowrap px-4 py-3.5 lg:table-cell">
-                <div className="text-xs font-bold text-slate-700 dark:text-slate-300 tabular-nums">
-                    {dateLabel}
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 tabular-nums">
+                    <Calendar size={13} className="text-slate-400 shrink-0" />
+                    <span>{dateLabel}</span>
                 </div>
-                <div className="mt-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400 tabular-nums">
-                    {timeLabel}
+                <div className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400 tabular-nums">
+                    <Clock size={12} className="text-slate-400 shrink-0" />
+                    <span>{timeLabel}</span>
                 </div>
             </td>
             <td className="hidden px-4 py-3.5 sm:table-cell">
                 <div className="flex flex-col items-start gap-1">
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ${sc.bg} ${sc.border} ${sc.text}`}>
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold border ${sc.border} ${sc.bg} ${sc.text}`}>
                         <StatusIcon size={12} />
                         <span>{getStatusDisplayLabel(appt.status, t, language)}</span>
                     </span>
@@ -1793,7 +1993,7 @@ const AppointmentRow = React.memo(({
                     {appt.exam_id && (
                         <Link
                             to={`/cases/${appt.exam_id}`}
-                            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-[var(--VIARA-surface-hover)]"
+                            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-sky-950/40 dark:hover:text-sky-400"
                             title={t('table.viewCase', 'View Case')}
                             aria-label={t('table.viewCase', 'View Case')}
                         >
@@ -1804,7 +2004,7 @@ const AppointmentRow = React.memo(({
                         type="button"
                         onClick={onRemind}
                         disabled={['Completed', 'Cancelled', 'No-Show'].includes(appt.status)}
-                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 disabled:opacity-30 dark:hover:bg-[var(--VIARA-surface-hover)]"
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 disabled:opacity-30 dark:hover:bg-teal-950/40 dark:hover:text-teal-300"
                         title={t('table.sendReminder', 'Send Reminder')}
                         aria-label={t('table.sendReminder', 'Send Reminder')}
                     >
@@ -1814,7 +2014,7 @@ const AppointmentRow = React.memo(({
                         type="button"
                         onClick={onReschedule}
                         disabled={appt.status === 'Completed'}
-                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 disabled:opacity-30 dark:hover:bg-[var(--VIARA-surface-hover)]"
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-violet-50 hover:text-violet-700 disabled:opacity-30 dark:hover:bg-violet-950/40 dark:hover:text-violet-300"
                         title={t('table.reschedule', 'Reschedule')}
                         aria-label={t('table.reschedule', 'Reschedule')}
                     >
@@ -1824,7 +2024,7 @@ const AppointmentRow = React.memo(({
                         type="button"
                         onClick={onNoShow}
                         disabled={isMarkingNoShow || ['Completed', 'Cancelled', 'No-Show'].includes(appt.status)}
-                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-amber-50 hover:text-amber-600 disabled:opacity-30 dark:hover:bg-amber-500/10"
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-amber-50 hover:text-amber-600 disabled:opacity-30 dark:hover:bg-amber-500/15 dark:hover:text-amber-400"
                         title={t('table.noShow', 'Mark No-Show')}
                         aria-label={t('table.noShow', 'Mark No-Show')}
                     >
@@ -1834,7 +2034,7 @@ const AppointmentRow = React.memo(({
                         type="button"
                         onClick={onCancel}
                         disabled={['Completed', 'Cancelled', 'No-Show'].includes(appt.status)}
-                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30 dark:hover:bg-rose-500/10"
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30 dark:hover:bg-rose-500/15 dark:hover:text-rose-400"
                         title={t('table.cancelAppt', 'Cancel Appointment')}
                         aria-label={t('table.cancelAppt', 'Cancel Appointment')}
                     >
@@ -1912,6 +2112,121 @@ const AvailabilityPanel = ({ availability, t }) => {
     );
 };
 
+// ── Patient Autocomplete ────────────────────────────────────────────────────
+// Replaces the plain <select> with a searchable combobox so staff can type a
+// patient name or MRN instead of scrolling through hundreds of IDs.
+const PatientAutocomplete = ({ patients, value, onChange, t, isRtl }) => {
+    const [query, setQuery] = useState('');
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef(null);
+
+    // Derive display label from selected ID
+    const selectedPatient = useMemo(
+        () => patients.find(p => p.patient_id === value) || null,
+        [patients, value]
+    );
+
+    const filtered = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return patients.slice(0, 40); // cap dropdown to 40 when empty
+        return patients.filter(p => {
+            const name = `${p.first_name || ''} ${p.last_name || ''}`.toLowerCase();
+            const mrn  = (p.mrn || '').toLowerCase();
+            return name.includes(q) || mrn.includes(q);
+        }).slice(0, 40);
+    }, [patients, query]);
+
+    // Close on outside click
+    useEffect(() => {
+        const handler = (e) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const handleSelect = (patient) => {
+        onChange(patient.patient_id);
+        setQuery('');
+        setOpen(false);
+    };
+
+    const handleClear = () => {
+        onChange('');
+        setQuery('');
+        setOpen(false);
+    };
+
+    const displayValue = selectedPatient
+        ? `${selectedPatient.mrn} — ${selectedPatient.first_name} ${selectedPatient.last_name}`
+        : '';
+
+    return (
+        <div ref={wrapRef} className="relative">
+            <div className={`flex h-10 items-center rounded-xl border bg-white transition dark:bg-slate-900 ${open ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-slate-200 dark:border-slate-700'}`}>
+                <Search size={14} className="ms-3 shrink-0 text-slate-400" aria-hidden="true" />
+                <input
+                    type="text"
+                    dir={isRtl ? 'rtl' : 'ltr'}
+                    className="flex-1 bg-transparent px-2 text-xs font-bold text-slate-900 placeholder:text-slate-400 outline-none dark:text-white"
+                    placeholder={selectedPatient ? displayValue : t('waitlist.searchPatient', 'Search patient name or MRN...')}
+                    value={selectedPatient && !open ? displayValue : query}
+                    onFocus={() => { setOpen(true); if (selectedPatient) setQuery(''); }}
+                    onChange={(e) => { setQuery(e.target.value); onChange(''); setOpen(true); }}
+                    aria-autocomplete="list"
+                    aria-expanded={open}
+                    aria-haspopup="listbox"
+                    autoComplete="off"
+                />
+                {(value || query) && (
+                    <button
+                        type="button"
+                        onClick={handleClear}
+                        className="me-2 grid h-5 w-5 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 transition"
+                        aria-label={t('waitlist.clearPatient', 'Clear patient')}
+                    >
+                        <X size={12} />
+                    </button>
+                )}
+            </div>
+
+            {open && (
+                <ul
+                    role="listbox"
+                    className="absolute z-50 mt-1 max-h-52 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
+                >
+                    {filtered.length === 0 ? (
+                        <li className="px-4 py-3 text-xs font-semibold text-slate-400">
+                            {t('waitlist.noPatientResults', 'No patients found')}
+                        </li>
+                    ) : filtered.map(p => (
+                        <li key={p.patient_id}>
+                            <button
+                                type="button"
+                                role="option"
+                                aria-selected={p.patient_id === value}
+                                onClick={() => handleSelect(p)}
+                                className={`flex w-full items-center gap-3 px-4 py-2.5 text-start text-xs transition hover:bg-teal-50 dark:hover:bg-teal-950/30 ${p.patient_id === value ? 'bg-teal-50 dark:bg-teal-950/20' : ''}`}
+                            >
+                                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 text-[10px] font-black">
+                                    {(p.first_name?.[0] || '?').toUpperCase()}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block truncate font-bold text-slate-900 dark:text-white">
+                                        {p.first_name} {p.last_name}
+                                    </span>
+                                    <span className="block font-mono text-[10px] text-slate-400" dir="ltr">{p.mrn}</span>
+                                </span>
+                                {p.patient_id === value && <CheckCircle2 size={14} className="shrink-0 text-teal-600" />}
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+};
+
 const WaitingListPanel = ({
     waitingList,
     patients,
@@ -1927,6 +2242,7 @@ const WaitingListPanel = ({
     language,
     t
 }) => {
+    const isRtl = (language || '').startsWith('ar');
     const [searchWaitlist, setSearchWaitlist] = useState('');
 
     const filteredWaitingList = useMemo(() => {
@@ -1967,18 +2283,13 @@ const WaitingListPanel = ({
                     <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
                         {t('waitlist.formTitle', 'Add Patient to Waitlist')}
                     </p>
-                    <select
+                    <PatientAutocomplete
+                        patients={patients}
                         value={form.patientId}
-                        onChange={e => setForm(prev => ({ ...prev, patientId: e.target.value }))}
-                        className={inputClass}
-                    >
-                        <option value="">{t('waitlist.selectPatient', 'Select patient...')}</option>
-                        {patients.map(p => (
-                            <option key={p.patient_id} value={p.patient_id}>
-                                {p.mrn} - {p.first_name} {p.last_name}
-                            </option>
-                        ))}
-                    </select>
+                        onChange={(id) => setForm(prev => ({ ...prev, patientId: id }))}
+                        t={t}
+                        isRtl={isRtl}
+                    />
                     <div className="grid grid-cols-2 gap-2">
                         <select
                             value={form.priority}

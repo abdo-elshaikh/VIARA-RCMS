@@ -72,9 +72,7 @@ describe("todayLocalISO / isPastDate", () => {
 
     const now = new Date();
     const offset = now.getTimezoneOffset();
-    const expected = new Date(now.getTime() - offset * 60 * 1000)
-      .toISOString()
-      .split("T")[0];
+    const expected = new Date(now.getTime() - offset * 60 * 1000).toISOString().split("T")[0];
     expect(value).toBe(expected);
   });
 

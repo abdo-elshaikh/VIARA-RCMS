@@ -29,6 +29,7 @@ export const SETTINGS_SECTION_ACCESS = Object.freeze({
     },
     ai: { roles: ['Developer'], permissions: ['MANAGE_SECRET_SETTINGS'] },
     developer: { roles: ['Developer'], permissions: ['MANAGE_DATABASE_CONFIG'] },
+    updates: { roles: ['Developer', 'Admin'], permissions: ['MANAGE_SETTINGS'] },
 });
 
 export const canAccessSettingsSection = (sectionId, user = {}) => {

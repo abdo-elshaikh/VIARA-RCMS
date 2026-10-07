@@ -1,0 +1,850 @@
+[
+  {
+    "name": "ar-light-320x720",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-320x720",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-320x720",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-320x720",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-360x640",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-360x640",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-360x640",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-360x640",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-390x844",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-390x844",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-390x844",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-390x844",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-600x960",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-600x960",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-600x960",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-600x960",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-768x1024",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-768x1024",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-768x1024",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-768x1024",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-844x390",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-844x390",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-844x390",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-844x390",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-901x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-901x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-901x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-901x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-1024x600",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-1024x600",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-1024x600",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-1024x600",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-1180x780",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-1180x780",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-1180x780",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-1180x780",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": {
+      "fits": true,
+      "controlsFit": true,
+      "utilitiesAccessible": true,
+      "portals": true,
+      "escape": true,
+      "focusReturned": true,
+      "outsideCloses": true
+    },
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-1181x780",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-1181x780",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-1181x780",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-1181x780",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-1201x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-1201x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-1201x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-1201x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-1366x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-1366x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-1366x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-1366x768",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-1536x704",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-1536x704",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-1536x704",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-1536x704",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-light-1920x880",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "ar-dark-1920x880",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-light-1920x880",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  },
+  {
+    "name": "en-dark-1920x880",
+    "overlap": false,
+    "clipped": [],
+    "overflow": false,
+    "firstFoldFits": true,
+    "menu": null,
+    "returnFromLogin": true,
+    "errors": []
+  }
+]

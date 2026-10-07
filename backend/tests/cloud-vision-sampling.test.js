@@ -1,6 +1,9 @@
 jest.mock('../src/config/logger', () => ({
     info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn()
 }));
+// Sampling/provider tests use an already de-identified source; privacy-gate
+// behavior has its own tests covering real tag responses and closed failures.
+jest.mock('../src/services/cloudImagePrivacyService', () => ({ assertCloudImagePrivacy: jest.fn().mockResolvedValue(undefined) }));
 
 jest.mock('dns', () => ({
     promises: {
@@ -12,7 +15,8 @@ const {
     analyzeStudy,
     isConfigured,
     selectRepresentativeInstances,
-    normalizeOpenAiCompatibleChatUrl
+    normalizeOpenAiCompatibleChatUrl,
+    normaliseResult
 } = require('../src/services/cloudVisionService');
 
 const originalFetch = global.fetch;
@@ -40,6 +44,29 @@ const makeSeries = (uid, count) => ({
 });
 
 describe('cloud vision study sampling', () => {
+    it('forces metadata-only cloud output to contain no imaging findings or image coverage', () => {
+        const result = normaliseResult({
+            summary: 'The study shows a fracture.',
+            findings: [{ label: 'Fracture', present: true }],
+            impression: 'Acute fracture.',
+            quality: { diagnostic: true, supported: true, imageCountAnalyzed: 12 }
+        }, 'custom', 'test-model', {
+            images: [],
+            totalImageCount: 12,
+            totalSeriesCount: 2
+        });
+
+        expect(result).toMatchObject({
+            resultType: 'metadata_only_screening',
+            summary: expect.stringContaining('No pixel images were analyzed'),
+            findings: [],
+            impression: '',
+            quality: { diagnostic: false, supported: false, imageCountAnalyzed: 0 },
+            provenance: { mode: 'metadata-only-analysis' }
+        });
+        expect(result.limitations.join(' ')).toMatch(/metadata-only result is non-diagnostic/i);
+    });
+
     afterEach(() => {
         global.fetch = originalFetch;
         restoreEnv('OPENAI_API_KEY', originalOpenAiApiKey);
@@ -117,8 +144,8 @@ describe('cloud vision study sampling', () => {
         });
 
         await expect(analyzeStudy({
-            study: { modality: 'MR', examType: 'MRI knee', bodyPart: 'Knee', imageCount: 1 },
-            series: [makeSeries('1', 1)]
+            study: { modality: 'MR', examType: 'SyntheticPatientName', clinicalIndication: 'SyntheticPatientIdentifier', bodyPart: 'Knee', imageCount: 1 },
+            series: [{ ...makeSeries('1', 1), description: 'SyntheticSeriesIdentifier' }]
         }, {
             provider: 'cloud-custom',
             baseUrl: 'https://agentrouter.org/',
@@ -126,6 +153,7 @@ describe('cloud vision study sampling', () => {
         })).rejects.toThrow('Custom endpoint returned HTML');
 
         expect(global.fetch.mock.calls[0][0]).toBe('https://agentrouter.org/v1/chat/completions');
+        expect(global.fetch.mock.calls[0][1].body).not.toMatch(/SyntheticPatientName|SyntheticPatientIdentifier|SyntheticSeriesIdentifier/);
         expect(global.fetch.mock.calls[0][1]).toMatchObject({ redirect: 'error' });
     });
 
@@ -153,8 +181,8 @@ describe('cloud vision study sampling', () => {
             });
 
         const result = await analyzeStudy({
-            study: { modality: 'MR', examType: 'MRI knee', bodyPart: 'Knee', imageCount: 1 },
-            series: [makeSeries('1', 1)]
+            study: { modality: 'MR', examType: 'SyntheticPatientName', clinicalIndication: 'SyntheticPatientIdentifier', bodyPart: 'Knee', imageCount: 1 },
+            series: [{ ...makeSeries('1', 1), description: 'SyntheticSeriesIdentifier' }]
         }, {
             provider: 'cloud-openai',
             apiKey: 'openai-secret',
@@ -162,6 +190,7 @@ describe('cloud vision study sampling', () => {
         });
 
         const request = JSON.parse(global.fetch.mock.calls[1][1].body);
+        expect(JSON.stringify(request)).not.toMatch(/SyntheticPatientName|SyntheticPatientIdentifier|SyntheticSeriesIdentifier/);
         expect(global.fetch.mock.calls[1][0]).toBe('https://api.openai.com/v1/chat/completions');
         expect(request).toMatchObject({
             model: 'gpt-5.6-terra',

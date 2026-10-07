@@ -26,7 +26,9 @@ const readState = (role: string): LoginThrottleState => {
   if (typeof sessionStorage === "undefined") return emptyState();
   try {
     const stored = sessionStorage.getItem(storageKey(role));
-    return stored ? { ...emptyState(), ...(JSON.parse(stored) as LoginThrottleState) } : emptyState();
+    return stored
+      ? { ...emptyState(), ...(JSON.parse(stored) as LoginThrottleState) }
+      : emptyState();
   } catch {
     return emptyState();
   }
@@ -72,8 +74,7 @@ export const useLoginThrottle = (role: string): LoginThrottle => {
     const timestamp = Date.now();
     setState((current) => {
       const attempts = [...current.attempts.filter((t) => timestamp - t < WINDOW_MS), timestamp];
-      const lockUntil =
-        attempts.length >= MAX_ATTEMPTS ? timestamp + LOCK_MS : current.lockUntil;
+      const lockUntil = attempts.length >= MAX_ATTEMPTS ? timestamp + LOCK_MS : current.lockUntil;
       const next = { attempts, lockUntil };
       writeState(role, next);
       return next;
@@ -87,5 +88,11 @@ export const useLoginThrottle = (role: string): LoginThrottle => {
     setNow(Date.now());
   }, [role]);
 
-  return { locked, lockRemainingMs, failedAttempts: state.attempts.length, registerFailure, registerSuccess };
+  return {
+    locked,
+    lockRemainingMs,
+    failedAttempts: state.attempts.length,
+    registerFailure,
+    registerSuccess,
+  };
 };

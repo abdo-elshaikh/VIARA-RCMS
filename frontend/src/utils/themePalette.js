@@ -101,6 +101,64 @@ const contrastRatio = (first, second) => {
     return (brighter + 0.05) / (darker + 0.05);
 };
 
+const getPaletteTextBackgrounds = (palette) => [
+    palette.canvas,
+    palette.surface,
+    palette.surfaceSecondary,
+    palette.surfaceMuted,
+];
+
+export const getAccessibleTextTone = (source, backgrounds, minimumContrast = 4.5) => {
+    const normalizedSource = normalizeHexColor(source, '#172326');
+    const surfaces = backgrounds.map((background) => normalizeHexColor(background, '#FFFFFF'));
+    const candidates = [normalizedSource];
+
+    ['#000000', '#FFFFFF'].forEach((target) => {
+        for (let step = 1; step <= 100; step += 1) {
+            candidates.push(mixHexColors(normalizedSource, target, step / 100));
+        }
+    });
+
+    const ranked = [...new Set(candidates)].map((color) => ({
+        color,
+        minimum: Math.min(...surfaces.map((surface) => contrastRatio(color, surface))),
+    }));
+    const readable = ranked
+        .filter(({ minimum }) => minimum >= minimumContrast)
+        .sort((first, second) => (
+            Math.abs(luminanceDistance(first.color, normalizedSource))
+            - Math.abs(luminanceDistance(second.color, normalizedSource))
+        ));
+    const chosen = readable[0] || ranked.sort((first, second) => second.minimum - first.minimum)[0];
+
+    return {
+        color: chosen.color,
+        minimumContrast: chosen.minimum,
+        passes: chosen.minimum >= minimumContrast,
+    };
+};
+
+const luminanceDistance = (first, second) => (
+    Math.abs(relativeLuminance(first) - relativeLuminance(second))
+);
+
+export const getPaletteTextContrastStatus = (palette) => {
+    const backgrounds = getPaletteTextBackgrounds(palette);
+    return [
+        { key: 'text', minimumContrast: 7 },
+        { key: 'textSecondary', minimumContrast: 4.5 },
+        { key: 'textMuted', minimumContrast: 4.5 },
+    ].map(({ key, minimumContrast }) => {
+        const result = getAccessibleTextTone(palette[key], backgrounds, minimumContrast);
+        return {
+            key,
+            minimumContrast,
+            ...result,
+            adjusted: result.color !== normalizeHexColor(palette[key], '#172326'),
+        };
+    });
+};
+
 const getAccessibleSemanticTone = (source, background, fallback) => {
     if (contrastRatio(source, background) >= 4.5) return source;
     const candidate = [0.18, 0.32, 0.46, 0.6, 0.74, 0.88]
@@ -169,6 +227,8 @@ export const applyThemePalette = (root, { brandColor, mode = 'light', colorOverr
         ...SEMANTIC_PALETTE_DEFAULTS[resolvedMode],
         ...normalizePaletteOverrides(colorOverrides)[resolvedMode],
     };
+    const textColors = getPaletteTextContrastStatus(palette)
+        .reduce((result, entry) => ({ ...result, [entry.key]: entry.color }), {});
     const scale = createBrandScale(brandColor);
     const accessibleTone = getAccessibleBrandTone(scale, palette.surface, resolvedMode);
     const accent = accessibleTone.color;
@@ -188,8 +248,12 @@ export const applyThemePalette = (root, { brandColor, mode = 'light', colorOverr
         : scale[50];
 
     Object.entries(CSS_TOKEN_MAP).forEach(([key, cssVariable]) => {
-        root.style.setProperty(cssVariable, palette[key]);
+        root.style.setProperty(cssVariable, textColors[key] || palette[key]);
     });
+    root.style.setProperty('--text-secondary', textColors.textSecondary);
+    root.style.setProperty('--text-muted', textColors.textMuted);
+    root.style.setProperty('--VIARA-ink', textColors.text);
+    root.style.setProperty('--VIARA-muted', textColors.textSecondary);
     Object.entries(scale).forEach(([step, color]) => {
         root.style.setProperty(`--viara-primary-${step}`, color);
         root.style.setProperty(`--viara-primary-${step}-rgb`, hexToChannels(color).join(' '));

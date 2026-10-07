@@ -142,6 +142,8 @@ import {
     STICKER_OPTIONS,
     createChatFormData
 } from './chatRichContent';
+import ConfirmDialog from '../ui/ConfirmDialog';
+import TextPromptDialog from '../ui/TextPromptDialog';
 
 const MESSAGE_HISTORY_PAGE_SIZE = 150;
 import {
@@ -400,6 +402,9 @@ export default function CommunicationCenter() {
     const [memberSearchQuery, setMemberSearchQuery] = useState('');
     const [selectedUserToAdd, setSelectedUserToAdd] = useState('');
     const [selectedRoleToAdd, setSelectedRoleToAdd] = useState('member');
+    const [removeMemberTarget, setRemoveMemberTarget] = useState(null);
+    const [deleteChannelTarget, setDeleteChannelTarget] = useState(null);
+    const [showCaseRefPrompt, setShowCaseRefPrompt] = useState(false);
 
     // Channel Mutations
     const [createChatChannel, { isLoading: isCreatingChannel }] = useCreateChatChannelMutation();
@@ -500,12 +505,13 @@ export default function CommunicationCenter() {
         }
     };
 
-    const handleRemoveMember = async (userId, isSelf = false) => {
-        const msg = isSelf
-            ? t('chat.confirmLeaveChannel', { defaultValue: 'Are you sure you want to leave this channel?' })
-            : t('chat.confirmRemoveMember', { defaultValue: 'Remove this member from the channel?' });
-        if (!window.confirm(msg)) return;
+    const handleRemoveMember = (userId, isSelf = false) => {
+        setRemoveMemberTarget({ userId, isSelf });
+    };
 
+    const confirmRemoveMember = async () => {
+        if (!removeMemberTarget) return;
+        const { userId, isSelf } = removeMemberTarget;
         try {
             await removeChannelMember({ channelId: managingChannelId, userId }).unwrap();
             toast.success(isSelf ? t('chat.leftChannel', { defaultValue: 'You left the channel' }) : t('chat.memberRemoved', { defaultValue: 'Member removed' }));
@@ -515,6 +521,7 @@ export default function CommunicationCenter() {
                     setSelectedChat({ type: 'channel', id: 'general' });
                 }
             }
+            setRemoveMemberTarget(null);
         } catch (err) {
             toast.error(err?.data?.message || t('chat.removeMemberFailed', { defaultValue: 'Failed to remove member' }));
         }
@@ -540,17 +547,20 @@ export default function CommunicationCenter() {
         }
     };
 
-    const handleDeleteChannel = async (channelId, e) => {
+    const handleDeleteChannel = (channelId, e) => {
         if (e?.stopPropagation) e.stopPropagation();
-        if (!window.confirm(t('chat.confirmDeleteChannel', { defaultValue: 'Are you sure you want to delete this channel?' }))) {
-            return;
-        }
+        setDeleteChannelTarget(channelId);
+    };
+
+    const confirmDeleteChannel = async () => {
+        if (!deleteChannelTarget) return;
         try {
-            await deleteChatChannel(channelId).unwrap();
+            await deleteChatChannel(deleteChannelTarget).unwrap();
             toast.success(t('chat.channelDeleted', { defaultValue: 'Channel deleted' }));
-            if (selectedChat.type === 'channel' && selectedChat.id === channelId) {
+            if (selectedChat.type === 'channel' && selectedChat.id === deleteChannelTarget) {
                 setSelectedChat({ type: 'channel', id: 'general' });
             }
+            setDeleteChannelTarget(null);
         } catch (err) {
             toast.error(err?.data?.message || t('chat.deleteFailed', { defaultValue: 'Failed to delete channel' }));
         }
@@ -848,11 +858,14 @@ export default function CommunicationCenter() {
             setMessageText(prev => `${prev ? `${prev} ` : ''}[MRN: ${mrn}] `);
             return;
         }
-        const sample = 'ACC-' + Math.floor(10000 + Math.random() * 90000);
-        const caseInput = window.prompt(t('chat.caseRefPrompt', { defaultValue: 'Enter Study Accession Number or Case ID (e.g. ACC-10928):' }), sample);
+        setShowCaseRefPrompt(true);
+    };
+
+    const confirmInsertCaseReference = (caseInput) => {
         if (caseInput && caseInput.trim()) {
             setMessageText(prev => `${prev ? `${prev} ` : ''}[Case: ${caseInput.trim()}] `);
         }
+        setShowCaseRefPrompt(false);
     };
 
     const handleSendMessage = async (e, directText = null) => {
@@ -2654,6 +2667,40 @@ export default function CommunicationCenter() {
                         </div>
                     </div>
                 ), document.body)}
+
+            <ConfirmDialog
+                isOpen={Boolean(removeMemberTarget)}
+                title={removeMemberTarget?.isSelf ? t('chat.leaveChannel', { defaultValue: 'Leave Channel' }) : t('chat.removeMember', { defaultValue: 'Remove Member' })}
+                message={removeMemberTarget?.isSelf ? t('chat.confirmLeaveChannel', { defaultValue: 'Are you sure you want to leave this channel?' }) : t('chat.confirmRemoveMember', { defaultValue: 'Remove this member from the channel?' })}
+                confirmText={removeMemberTarget?.isSelf ? t('chat.leaveChannel', { defaultValue: 'Leave' }) : t('actions.remove', { defaultValue: 'Remove' })}
+                cancelText={t('common:cancel', 'Cancel')}
+                variant="danger"
+                onConfirm={confirmRemoveMember}
+                onCancel={() => setRemoveMemberTarget(null)}
+            />
+
+            <ConfirmDialog
+                isOpen={Boolean(deleteChannelTarget)}
+                title={t('chat.deleteChannel', { defaultValue: 'Delete Channel' })}
+                message={t('chat.confirmDeleteChannel', { defaultValue: 'Are you sure you want to delete this channel?' })}
+                confirmText={t('actions.delete', { defaultValue: 'Delete' })}
+                cancelText={t('common:cancel', 'Cancel')}
+                variant="danger"
+                onConfirm={confirmDeleteChannel}
+                onCancel={() => setDeleteChannelTarget(null)}
+            />
+
+            <TextPromptDialog
+                isOpen={showCaseRefPrompt}
+                title={t('chat.insertCaseRef', { defaultValue: 'Insert Case Reference' })}
+                message={t('chat.caseRefPrompt', { defaultValue: 'Enter Study Accession Number or Case ID (e.g. ACC-10928):' })}
+                label={t('chat.caseIdOrAcc', { defaultValue: 'Accession Number / Case ID' })}
+                placeholder="ACC-10928"
+                confirmLabel={t('actions.insert', { defaultValue: 'Insert' })}
+                cancelLabel={t('common:cancel', 'Cancel')}
+                onClose={() => setShowCaseRefPrompt(false)}
+                onConfirm={confirmInsertCaseReference}
+            />
             </div>
         </div>
     );

@@ -47,10 +47,7 @@ export const HeroSection = ({
 
   if (variant === "minimal" || audience === "doctors")
     return (
-      <section
-        id="hero"
-        className="mx-auto max-w-5xl px-4 py-14 text-center sm:py-20"
-      >
+      <section id="hero" className="mx-auto max-w-5xl px-4 py-14 text-center sm:py-20">
         <h1 className="text-4xl font-bold leading-tight sm:text-5xl">
           {title ||
             (audience === "doctors"
@@ -96,7 +93,10 @@ export const HeroSection = ({
     );
   if (variant === "modern")
     return (
-      <section id="hero" className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-2 lg:items-center lg:py-20">
+      <section
+        id="hero"
+        className="mx-auto grid max-w-7xl gap-8 px-4 py-12 sm:px-6 lg:grid-cols-2 lg:items-center lg:py-20"
+      >
         <div>
           <p className="text-sm font-bold text-primary">{identity.center.name}</p>
           <h1 className="mt-5 text-4xl font-bold leading-tight sm:text-5xl">

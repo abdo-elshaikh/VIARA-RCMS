@@ -17,10 +17,7 @@ export interface PortalRealtimeEvent {
 }
 
 /** Dispatch complete SSE frames that carry a JSON "data:" payload. */
-const handleSseFrame = (
-  frame: string,
-  onEvent: (event: PortalRealtimeEvent) => void,
-): void => {
+const handleSseFrame = (frame: string, onEvent: (event: PortalRealtimeEvent) => void): void => {
   const dataBuffer: string[] = [];
   let eventName = "message";
 
@@ -33,7 +30,8 @@ const handleSseFrame = (
     else if (field === "event") eventName = value;
   });
 
-  if (eventName && eventName !== "message" && eventName !== "PING" && eventName !== "CONNECTED") return;
+  if (eventName && eventName !== "message" && eventName !== "PING" && eventName !== "CONNECTED")
+    return;
   if (!dataBuffer.length) return;
 
   const data = dataBuffer.join("\n");
@@ -98,7 +96,8 @@ export const usePortalRealtime = (
             ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
           },
         });
-        if (!sessionResponse.ok) throw new Error(`Realtime session failed (${sessionResponse.status})`);
+        if (!sessionResponse.ok)
+          throw new Error(`Realtime session failed (${sessionResponse.status})`);
         const session = await sessionResponse.json();
         if (cancelled || !session?.token) return;
 

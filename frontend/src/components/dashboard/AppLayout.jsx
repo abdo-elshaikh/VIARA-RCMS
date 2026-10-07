@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import WorkspaceSectionBoundary from './WorkspaceSectionBoundary';
 import Topbar from './Topbar';
+import NetworkStatusBanner from './NetworkStatusBanner';
 import ChatBubble from '../communications/ChatBubble';
 import TrialBanner from '../TrialBanner';
 import { useTranslation } from 'react-i18next';
@@ -11,7 +12,8 @@ import { confirmNavigation } from '../../utils/navigationGuard';
 
 import { useSelector } from 'react-redux';
 import { selectPreferences } from '../../store/preferencesSlice';
-import './workspace-chrome.css';
+import '../../styles/workspace-chrome.css';
+import ScrollToTop from '../ui/ScrollToTop';
 
 const SIDEBAR_MIN = 232;
 const SIDEBAR_MAX = 360;
@@ -229,8 +231,8 @@ const AppLayout = ({ children, role }) => {
             </aside>
 
             {/* Main Content Wrapper */}
-            <div ref={mainRef} className="workspace-main viara-workspace-main flex h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-
+            <div className="workspace-main viara-workspace-main flex h-dvh min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <NetworkStatusBanner />
                 <TrialBanner />
 
                 <div data-print-chrome>
@@ -244,6 +246,7 @@ const AppLayout = ({ children, role }) => {
 
                 <main
                     id="main-content"
+                    ref={mainRef}
                     tabIndex={-1}
                     aria-label={t('aria.mainContent', { defaultValue: 'Main content' })}
                     className="app-canvas workspace-canvas relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain scroll-smooth bg-[var(--VIARA-canvas)]"
@@ -252,6 +255,7 @@ const AppLayout = ({ children, role }) => {
                     <div className="app-content workspace-content min-h-full animate-fade-in-up">
                         <WorkspaceSectionBoundary>{children}</WorkspaceSectionBoundary>
                     </div>
+                    <ScrollToTop scrollRef={mainRef} />
                 </main>
             </div>
 

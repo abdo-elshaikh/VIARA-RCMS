@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { usePortalIdentity } from '../../../lib/portal-identity';
+import { useEffect, useState } from "react";
+import { usePortalIdentity } from "../../../lib/portal-identity";
 
 interface PortalBrandProps {
   className?: string;
@@ -7,27 +7,28 @@ interface PortalBrandProps {
   textClassName?: string;
   nameClassName?: string;
   subtitleClassName?: string;
-  layout?: 'inline' | 'stacked';
+  layout?: "inline" | "stacked";
   showSubtitle?: boolean;
   isRtl?: boolean;
-  variant?: 'light' | 'dark' | 'auto';
+  variant?: "light" | "dark" | "auto";
 }
 
 export const PortalBrand = ({
-  className = '',
-  logoClassName = '',
-  textClassName = '',
-  nameClassName = '',
-  subtitleClassName = '',
-  layout = 'inline',
+  className = "",
+  logoClassName = "",
+  textClassName = "",
+  nameClassName = "",
+  subtitleClassName = "",
+  layout = "inline",
   showSubtitle = true,
   isRtl = false,
-  variant = 'auto',
+  variant = "auto",
 }: PortalBrandProps) => {
   const identity = usePortalIdentity();
   const [logoFailed, setLogoFailed] = useState(false);
-  const centerName = identity.center.name || (isRtl ? 'مركز الأشعة' : 'Radiology Center');
-  const subtitle = identity.branch.name || (isRtl ? 'مركز الأشعة والتشخيص' : 'Diagnostic Radiology Center');
+  const centerName = identity.center.name || (isRtl ? "مركز الأشعة" : "Radiology Center");
+  const subtitle =
+    identity.branch.name || (isRtl ? "مركز الأشعة والتشخيص" : "Diagnostic Radiology Center");
 
   useEffect(() => {
     setLogoFailed(false);
@@ -35,10 +36,12 @@ export const PortalBrand = ({
 
   return (
     <span
-      className={`inline-flex min-w-0 items-center ${layout === 'stacked' ? 'flex-col gap-3 text-center' : 'gap-2.5'} ${className}`}
+      className={`inline-flex min-w-0 items-center ${layout === "stacked" ? "flex-col gap-3 text-center" : "gap-2.5"} ${className}`}
       aria-label={centerName}
     >
-      <span className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-primary/15 bg-white shadow-sm ${logoClassName}`}>
+      <span
+        className={`flex shrink-0 items-center justify-center overflow-hidden rounded-xl border border-primary/15 bg-white shadow-sm ${logoClassName}`}
+      >
         {identity.center.logoUrl && !logoFailed ? (
           <img
             src={identity.center.logoUrl}
@@ -48,20 +51,22 @@ export const PortalBrand = ({
             onError={() => setLogoFailed(true)}
           />
         ) : (
-          <span className="text-[0.65em] font-black text-primary">{identity.center.initials}</span>
+          <span className="text-[0.65em] font-black text-[var(--portal-accent-on-light,#006f55)]">
+            {identity.center.initials}
+          </span>
         )}
       </span>
 
       <span className={`min-w-0 ${textClassName}`}>
         <span
-          className={`block truncate font-extrabold leading-tight ${variant === 'dark' ? 'text-white' : variant === 'light' ? 'text-[#0B2348]' : 'text-foreground'} ${nameClassName}`}
+          className={`block truncate font-extrabold leading-tight ${variant === "dark" ? "text-white" : variant === "light" ? "text-[#0B2348]" : "text-foreground"} ${nameClassName}`}
           title={centerName}
         >
           {centerName}
         </span>
         {showSubtitle && (
           <span
-            className={`mt-1 block truncate font-bold leading-tight ${variant === 'dark' ? 'text-emerald-100/75' : 'text-primary'} ${subtitleClassName}`}
+            className={`mt-1 block truncate font-bold leading-tight ${variant === "dark" ? "text-emerald-100/75" : "text-primary"} ${subtitleClassName}`}
             title={subtitle}
           >
             {subtitle}

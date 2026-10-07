@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { 
     AlertTriangle, 
     Calendar, 
@@ -32,8 +32,10 @@ const ExpenseManager = ({ dateRange }) => {
     const { t, i18n } = useTranslation('workspace');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
     const { data: expenses = [], isLoading, isError } = useGetExpensesQuery(dateRange || undefined);
-    const { data: categories = [] } = useGetExpenseCategoriesQuery();
-    const { data: suppliers = [] } = useGetSuppliersQuery();
+    const categoryQuery = useGetExpenseCategoriesQuery();
+    const supplierQuery = useGetSuppliersQuery();
+    const categories = categoryQuery.data || [];
+    const suppliers = supplierQuery.data || [];
     const [createExpense, { isLoading: isCreating }] = useCreateExpenseMutation();
     const [updateExpense, { isLoading: isUpdating }] = useUpdateExpenseMutation();
     const [deleteExpense, { isLoading: isReversing }] = useDeleteExpenseMutation();
@@ -44,8 +46,12 @@ const ExpenseManager = ({ dateRange }) => {
     const [reverseDraft, setReverseDraft] = useState({ expense: null, reason: '' });
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
+    const createAttemptRef = useRef(null);
+    const submittingRef = useRef(false);
     const isEditing = Boolean(editingExpense);
     const isSaving = isCreating || isUpdating;
+    const categoryUnavailable = !isEditing && (categoryQuery.isLoading || categoryQuery.isError || !categories.length);
+    const isAr = i18n.language?.startsWith('ar');
 
     const totals = useMemo(() => expenses.reduce((sum, expense) => ({
         amount: sum.amount + Number(expense.amount || 0),
@@ -71,6 +77,7 @@ const ExpenseManager = ({ dateRange }) => {
     const setField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
     const openCreateModal = () => {
+        createAttemptRef.current = null;
         setEditingExpense(null);
         setForm(initialForm());
         setIsExpenseModalOpen(true);
@@ -100,6 +107,8 @@ const ExpenseManager = ({ dateRange }) => {
 
     const handleSubmit = async (event) => {
         event.preventDefault();
+        if (categoryUnavailable || isSaving || submittingRef.current) return;
+        submittingRef.current = true;
         try {
             if (isEditing) {
                 await updateExpense({
@@ -111,13 +120,18 @@ const ExpenseManager = ({ dateRange }) => {
                 }).unwrap();
                 toast.success(t('finance.expenses.updateSuccess'));
             } else {
-                await createExpense({
+                const payload = {
                     ...form,
                     amount: parseFloat(form.amount),
                     taxAmount: parseFloat(form.taxAmount || 0),
                     supplierId: form.supplierId || null,
-                    idempotencyKey: generateUUID()
-                }).unwrap();
+                };
+                const fingerprint = JSON.stringify(payload);
+                if (createAttemptRef.current?.fingerprint !== fingerprint) {
+                    createAttemptRef.current = { fingerprint, key: generateUUID() };
+                }
+                await createExpense({ ...payload, idempotencyKey: createAttemptRef.current.key }).unwrap();
+                createAttemptRef.current = null;
                 toast.success(t('finance.expenses.success'));
             }
             setIsExpenseModalOpen(false);
@@ -125,6 +139,8 @@ const ExpenseManager = ({ dateRange }) => {
             setForm(initialForm());
         } catch (error) {
             toast.error(error?.data?.message || t(isEditing ? 'finance.expenses.updateError' : 'finance.expenses.saveError'));
+        } finally {
+            submittingRef.current = false;
         }
     };
 
@@ -242,7 +258,7 @@ const ExpenseManager = ({ dateRange }) => {
                         <button
                             type="submit"
                             form="expense-form"
-                            disabled={isSaving}
+                            disabled={isSaving || categoryUnavailable}
                             className="rounded-xl bg-rose-600 px-6 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition hover:bg-rose-700 disabled:opacity-50"
                         >
                             {isSaving
@@ -253,6 +269,14 @@ const ExpenseManager = ({ dateRange }) => {
                 )}
             >
                 <form id="expense-form" onSubmit={handleSubmit} className="p-5 sm:p-6">
+                    {categoryUnavailable && <div role="alert" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                        {categoryQuery.isLoading ? (isAr ? 'جار تحميل فئات المصروفات...' : 'Loading expense categories...') : categoryQuery.isError ? (isAr ? 'تعذر تحميل فئات المصروفات. أعد المحاولة قبل الحفظ.' : 'Expense categories could not be loaded. Retry before saving.') : (isAr ? 'لا توجد فئات مصروفات. اطلب من المسؤول إعداد الفئات قبل تسجيل المصروف.' : 'No expense categories are available. Ask an administrator to configure them before recording an expense.')}
+                        {categoryQuery.isError && typeof categoryQuery.refetch === 'function' && <button type="button" onClick={() => categoryQuery.refetch()} className="ms-2 underline">{isAr ? 'إعادة المحاولة' : 'Retry'}</button>}
+                    </div>}
+                    {supplierQuery.isError && <div role="alert" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                        {isAr ? 'تعذر تحميل الموردين. يمكنك إعادة المحاولة أو التسجيل بدون مورد.' : 'Suppliers could not be loaded. Retry or record the expense without a supplier.'}
+                        {typeof supplierQuery.refetch === 'function' && <button type="button" onClick={() => supplierQuery.refetch()} className="ms-2 underline">{isAr ? 'إعادة المحاولة' : 'Retry'}</button>}
+                    </div>}
                     <div className="mb-5">
                         <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
                             {isEditing ? t('finance.expenses.immutableFieldsNote') : t('finance.expenses.formHelp')}
@@ -424,7 +448,7 @@ const ExpenseManager = ({ dateRange }) => {
 
             {/* Reversal Confirmation Dialog */}
             {reverseDraft.expense ? (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+                <Modal isOpen onClose={isReversing ? undefined : () => setReverseDraft({ expense: null, reason: '' })} size="sm" ariaLabel={t('finance.expenses.reverseTitle', { defaultValue: 'Reverse expense' })}>
                     <form onSubmit={handleReverse} className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-950">
                         <div className="flex items-start gap-3 border-b border-slate-100 p-5 dark:border-white/10">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
@@ -457,6 +481,7 @@ const ExpenseManager = ({ dateRange }) => {
                             <button
                                 type="button"
                                 onClick={() => setReverseDraft({ expense: null, reason: '' })}
+                                disabled={isReversing}
                                 className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5"
                             >
                                 {t('finance.common.cancel')}
@@ -473,7 +498,7 @@ const ExpenseManager = ({ dateRange }) => {
                             </button>
                         </div>
                     </form>
-                </div>
+                </Modal>
             ) : null}
         </div>
     );

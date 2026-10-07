@@ -20,6 +20,7 @@ import {
     EyeOff,
     FileCheck2,
     FileText,
+    Keyboard,
     Layers3,
     Loader2,
     LockKeyhole,
@@ -65,6 +66,7 @@ import { getErrorMessage } from '../utils/getErrorMessage';
 import { hasDeveloperOrAdminRole } from '../utils/roles';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
+import usePageTitle from '../hooks/usePageTitle';
 
 import {
     SECTION_CONFIG,
@@ -105,6 +107,13 @@ const userHasPermission = (user, permission) => (
     Array.isArray(user?.permissions) && user.permissions.includes(permission)
 );
 
+const hasUsableImageAnalysis = (worker) => (
+    worker?.quality?.supported === true &&
+    Number(worker?.quality?.imageCountAnalyzed) > 0 &&
+    (Number(worker?.evidenceCount) > 0 || (Array.isArray(worker?.evidence) && worker.evidence.length > 0)) &&
+    worker?.provenance?.mode !== 'metadata-only-analysis'
+);
+
 const ReportEditorPage = () => {
     const { examId } = useParams();
     const location = useLocation();
@@ -116,6 +125,7 @@ const ReportEditorPage = () => {
     const initialExam = location.state?.exam || null;
 
     const [exam, setExam] = useState(initialExam);
+    usePageTitle(exam?.patient_name ? `${exam.patient_name} · ${t('caseDetails.diagnosticReport', 'التقرير التشخيصي')}` : t('caseDetails.diagnosticReport', 'التقرير التشخيصي'));
     const [sections, setSections] = useState(() => normalizeSections(initialExam));
     const [baseline, setBaseline] = useState(() => normalizeSections(initialExam));
     const [selectedTemplateId, setSelectedTemplateId] = useState(initialExam?.template_id || '');
@@ -128,6 +138,7 @@ const ReportEditorPage = () => {
     const [amendmentReason, setAmendmentReason] = useState('');
     const [showFinalize, setShowFinalize] = useState(false);
     const [criticalResult, setCriticalResult] = useState(false);
+    const [cancelingJobId, setCancelingJobId] = useState(null);
     const [showTemplatePrompt, setShowTemplatePrompt] = useState(false);
     const [showExportDialog, setShowExportDialog] = useState(false);
     const [isExportingWord, setIsExportingWord] = useState(false);
@@ -153,6 +164,7 @@ const ReportEditorPage = () => {
     const dirtyRef = useRef(false);
     const imageUploadRef = useRef(null);
     const appliedDocumentDefaults = useRef(false);
+    const pendingAiDraftApplicationsRef = useRef(new Map());
 
     const {
         data: fetchedExam,
@@ -218,7 +230,7 @@ const ReportEditorPage = () => {
     }, [aiAnalysisData, aiAnalysisError]);
     const aiAnalysisJobs = aiAnalysisData?.jobs || [];
     const structuredPacsDraftAvailable = aiAnalysisJobs.some((job) => (
-        job.status === 'Completed' && job.result_payload?.worker?.quality?.supported === true
+        job.status === 'Completed' && hasUsableImageAnalysis(job.result_payload?.worker)
     ));
     const aiDraftGenerationAvailable = canUseReportAi && (reportAiConfigured || structuredPacsDraftAvailable);
     const sectionImproveAvailable = canUseReportAi && reportAiConfigured;
@@ -497,19 +509,26 @@ const ReportEditorPage = () => {
         }
     }, [retryPacsAiJob, t]);
 
-    const handleCancelPacsAiJob = useCallback(async (jobId) => {
+    const handleCancelPacsAiJob = useCallback((jobId) => {
+        setCancelingJobId(jobId);
+    }, []);
+
+    const confirmCancelPacsAiJob = useCallback(async () => {
+        if (!cancelingJobId) return;
         try {
-            if (confirm(t('editor.aiImage.cancelConfirm', { defaultValue: 'Are you sure you want to stop this analysis job?' }))) {
-                await cancelPacsAiJob(jobId).unwrap();
-                toast.success(t('editor.aiImage.cancelSuccess', { defaultValue: 'Job stopped' }));
-            }
+            await cancelPacsAiJob(cancelingJobId).unwrap();
+            toast.success(t('editor.aiImage.cancelSuccess', { defaultValue: 'Job stopped' }));
         } catch (error) {
             toast.error(getErrorMessage(error, t('editor.aiImage.cancelError', { defaultValue: 'Failed to stop job' })));
+        } finally {
+            setCancelingJobId(null);
         }
-    }, [cancelPacsAiJob, t]);
+    }, [cancelPacsAiJob, cancelingJobId, t]);
 
     const loadAiDraftSnapshot = useCallback((item) => {
         if (!item?.sections) return;
+        const imageAnalysis = item.prompt_context?.imageAnalysis || null;
+        const hasVerifiedImageAnalysis = hasUsableImageAnalysis(imageAnalysis);
         setAiDraft({
             success: true,
             draftId: item.draft_id,
@@ -523,12 +542,12 @@ const ReportEditorPage = () => {
             provenance: item.prompt_context?.draftProvenance || {
                 provider: item.provider,
                 model: item.model,
-                sourceMode: item.prompt_context?.imageAnalysis ? 'pacs-image-analysis' : 'exam-metadata',
-                coverage: item.prompt_context?.imageAnalysis?.provenance?.coverage || null
+                sourceMode: hasVerifiedImageAnalysis ? 'pacs-image-analysis' : 'exam-metadata',
+                coverage: imageAnalysis?.provenance?.coverage || null
             },
             sourceContext: {
                 imaging: item.prompt_context?.imaging || null,
-                imageAnalysis: item.prompt_context?.imageAnalysis || null
+                imageAnalysis: hasVerifiedImageAnalysis ? imageAnalysis : null
             }
         });
     }, []);
@@ -548,6 +567,9 @@ const ReportEditorPage = () => {
             toast(t('editor.aiDraft.nothingToApply', { defaultValue: 'The selected report sections already contain text.' }));
             return;
         }
+        if (aiDraft.draftId) {
+            pendingAiDraftApplicationsRef.current.set(aiDraft.draftId, { mode, examId });
+        }
         const applicableKeySet = new Set(applicableKeys);
         setImprovementUndo(null);
         setSections((current) => {
@@ -558,14 +580,11 @@ const ReportEditorPage = () => {
             });
             return next;
         });
-        if (aiDraft.draftId) {
-            markAiDraftApplied({ examId, draftId: aiDraft.draftId, mode }).catch(() => undefined);
-        }
         toast.success(t('editor.aiDraft.inserted', {
             count: applicableKeys.length,
             defaultValue: `AI draft inserted into ${applicableKeys.length} sections`
         }));
-    }, [aiDraft, examId, markAiDraftApplied, sections, t]);
+    }, [aiDraft, examId, sections, t]);
 
     const selectSection = useCallback((key) => {
         setActiveSection(key);
@@ -592,6 +611,30 @@ const ReportEditorPage = () => {
         toast.success(t('messages.templateApplied'));
     }, [effectiveReportTemplates, sections, t]);
 
+    const markPendingAiDraftsApplied = async () => {
+        const pending = Array.from(pendingAiDraftApplicationsRef.current.entries());
+        let failed = false;
+        for (const [draftId, application] of pending) {
+            try {
+                await markAiDraftApplied({
+                    examId: application.examId,
+                    draftId,
+                    mode: application.mode
+                }).unwrap();
+                if (pendingAiDraftApplicationsRef.current.get(draftId) === application) {
+                    pendingAiDraftApplicationsRef.current.delete(draftId);
+                }
+            } catch {
+                failed = true;
+            }
+        }
+        if (failed) {
+            toast.error(t('editor.aiDraft.statusSaveError', {
+                defaultValue: 'Report saved, but AI draft usage status could not be recorded. Save again to retry.'
+            }));
+        }
+    };
+
     const saveTypedReport = async () => {
         if (!editable) return false;
         try {
@@ -603,6 +646,7 @@ const ReportEditorPage = () => {
             const updated = await updateReport({ examId, ...payload }).unwrap();
             setExam(updated);
             setBaseline({ ...sections });
+            await markPendingAiDraftsApplied();
             toast.success(t('messages.saved'));
             return true;
         } catch (error) {
@@ -624,6 +668,7 @@ const ReportEditorPage = () => {
             const updated = await updateReport({ examId, ...payload }).unwrap();
             setExam(updated);
             setBaseline({ ...sections });
+            await markPendingAiDraftsApplied();
             toast.success(t(`statuses.${nextReportStatus}`, { defaultValue: nextReportStatus }));
             return true;
         } catch (error) {
@@ -648,6 +693,7 @@ const ReportEditorPage = () => {
             const updated = await updateReport({ examId, ...payload }).unwrap();
             setExam(updated);
             setBaseline({ ...sections });
+            await markPendingAiDraftsApplied();
             setShowFinalize(false);
             setCriticalResult(false);
             toast.success(t('messages.finalized'));
@@ -671,6 +717,7 @@ const ReportEditorPage = () => {
             }).unwrap();
             setExam(updated);
             setBaseline({ ...sections });
+            await markPendingAiDraftsApplied();
             setAmendmentMode(false);
             setAmendmentReason('');
             toast.success(t('messages.amended'));
@@ -889,7 +936,13 @@ const ReportEditorPage = () => {
                                 {locked && (
                                     <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-black text-emerald-700 dark:text-emerald-300">
                                         <LockKeyhole size={11} />
-                                        <span>FINALIZED & LOCKED</span>
+                                        <span>{t('editor.finalizedAndLocked')}</span>
+                                    </span>
+                                )}
+                                {Boolean(exam?.critical_result) && (
+                                    <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-0.5 text-[10px] font-black text-rose-700 dark:text-rose-300">
+                                        <AlertTriangle size={11} />
+                                        <span>{t('criticalResultRequiringAcknowledgement')}</span>
                                     </span>
                                 )}
                             </div>
@@ -988,6 +1041,32 @@ const ReportEditorPage = () => {
             )}
 
             {/* Main 2-Column Responsive Workspace */}
+            {editable && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200/80 bg-slate-50/90 px-3.5 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-300">
+                    <div className="flex items-center gap-2">
+                        <Keyboard size={14} className="text-teal-600 dark:text-teal-400 shrink-0" />
+                        <span className="font-bold text-[11px] uppercase tracking-wider">{t('keyboard.shortcutsTitle')}:</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-0.5 font-mono text-[11px] font-bold text-slate-700 shadow-2xs border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200">
+                            <kbd className="text-teal-700 dark:text-teal-400">Ctrl+S</kbd>
+                            <span className="font-sans font-normal text-slate-500 dark:text-slate-400">{t('keyboard.saveDraft')}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-0.5 font-mono text-[11px] font-bold text-slate-700 shadow-2xs border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200">
+                            <kbd className="text-teal-700 dark:text-teal-400">Ctrl+Enter</kbd>
+                            <span className="font-sans font-normal text-slate-500 dark:text-slate-400">{t('keyboard.finalize')}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-0.5 font-mono text-[11px] font-bold text-slate-700 shadow-2xs border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200">
+                            <kbd className="text-teal-700 dark:text-teal-400">Ctrl+Space</kbd>
+                            <span className="font-sans font-normal text-slate-500 dark:text-slate-400">{t('keyboard.templates')}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-0.5 font-mono text-[11px] font-bold text-slate-700 shadow-2xs border border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200">
+                            <kbd className="text-teal-700 dark:text-teal-400">Esc</kbd>
+                            <span className="font-sans font-normal text-slate-500 dark:text-slate-400">{t('keyboard.closeModal')}</span>
+                        </span>
+                    </div>
+                </div>
+            )}
             <div className={`grid items-start gap-4 ${focusMode ? 'grid-cols-1' : 'lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_400px]'}`}>
                 {/* Left: Section Cards Editor Suite */}
                 <div className="min-w-0 space-y-3">
@@ -1228,6 +1307,7 @@ const ReportEditorPage = () => {
                             )}
                             {inspectorTab === 'delivery' && locked && (
                                 <DeliveryPanel
+                                    exam={exam}
                                     history={deliveryHistory}
                                     onDeliver={deliver}
                                     isDelivering={isDelivering}
@@ -1410,6 +1490,18 @@ const ReportEditorPage = () => {
                 settings={reportDocument}
                 onSettingsChange={updateReportDocument}
                 t={t}
+            />
+
+            {/* Cancel Pacs AI Job Confirmation Dialog */}
+            <ConfirmDialog
+                isOpen={Boolean(cancelingJobId)}
+                title={t('editor.aiImage.stopAnalysis')}
+                message={t('editor.aiImage.cancelConfirm')}
+                confirmLabel={t('editor.aiImage.stopAnalysis')}
+                cancelLabel={t('cancel')}
+                onConfirm={confirmCancelPacsAiJob}
+                onCancel={() => setCancelingJobId(null)}
+                variant="danger"
             />
         </div>
     );

@@ -146,11 +146,22 @@ const PatientPortal = () => {
 
   const [activeTab, setActiveTab] = useState(() => {
     const requestedTab = searchParams.get("tab");
-    return ["overview", "records", "invoices", "crm", "documents", "requests", "notifications", "messages"].includes(requestedTab || "")
+    return [
+      "overview",
+      "records",
+      "invoices",
+      "crm",
+      "documents",
+      "requests",
+      "notifications",
+      "messages",
+    ].includes(requestedTab || "")
       ? requestedTab!
       : "overview";
   });
-  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(() => searchParams.get("entityId"));
+  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(() =>
+    searchParams.get("entityId"),
+  );
   const [requestForm, setRequestForm] = useState(emptyRequestForm);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
 
@@ -166,9 +177,11 @@ const PatientPortal = () => {
           navigate("/patient/login", { replace: true });
           return;
         }
-        window.dispatchEvent(new CustomEvent("VIARA_FORCE_LOGOUT_WARNING", {
-          detail: { message: data?.message, remainingSeconds: remaining },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("VIARA_FORCE_LOGOUT_WARNING", {
+            detail: { message: data?.message, remainingSeconds: remaining },
+          }),
+        );
         window.setTimeout(finishLogout, 1000);
       };
       finishLogout();
@@ -1008,9 +1021,15 @@ const PatientPortal = () => {
                       <option value="">
                         {t("patient.appointment.anyTime", "Any available time")}
                       </option>
-                      <option value="Morning (8am-12pm)">{t("patient.appointment.timeWindows.morning")}</option>
-                      <option value="Afternoon (12pm-4pm)">{t("patient.appointment.timeWindows.afternoon")}</option>
-                      <option value="Evening (4pm-7pm)">{t("patient.appointment.timeWindows.evening")}</option>
+                      <option value="Morning (8am-12pm)">
+                        {t("patient.appointment.timeWindows.morning")}
+                      </option>
+                      <option value="Afternoon (12pm-4pm)">
+                        {t("patient.appointment.timeWindows.afternoon")}
+                      </option>
+                      <option value="Evening (4pm-7pm)">
+                        {t("patient.appointment.timeWindows.evening")}
+                      </option>
                     </select>
                   </Field>
                   <Field label={t("patient.appointment.phone", "Contact phone")}>
@@ -1144,7 +1163,12 @@ const PatientPortal = () => {
                 {isLoadingProfile ? (
                   <Loading compact label={t("patient.profileInfo.loading", "Loading profile")} />
                 ) : (
-                  <ProfileGrid patient={patient} formatDate={formatDate} t={t} language={language} />
+                  <ProfileGrid
+                    patient={patient}
+                    formatDate={formatDate}
+                    t={t}
+                    language={language}
+                  />
                 )}
               </Panel>
             </section>
@@ -1226,7 +1250,9 @@ const PatientPortal = () => {
                     >
                       <option value="Phone">{t("patient.profileInfo.contactOptions.phone")}</option>
                       <option value="Email">{t("patient.profileInfo.contactOptions.email")}</option>
-                      <option value="WhatsApp">{t("patient.profileInfo.contactOptions.whatsapp")}</option>
+                      <option value="WhatsApp">
+                        {t("patient.profileInfo.contactOptions.whatsapp")}
+                      </option>
                     </select>
                   </Field>
                   <Field label={t("patient.profileInfo.language", "Preferred language")}>
@@ -1291,7 +1317,12 @@ const PatientPortal = () => {
                 "Stay informed about appointments, reports, documents, and messages.",
               )}
             />
-            <PortalNotificationsView portalType="patient" locale={locale} t={t} onNavigate={openPortalTab} />
+            <PortalNotificationsView
+              portalType="patient"
+              locale={locale}
+              t={t}
+              onNavigate={openPortalTab}
+            />
           </div>
         )}
 

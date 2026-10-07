@@ -100,7 +100,9 @@ export default function PortalChatBubble({ role = "patient" }) {
     const container = threadRef.current;
     const isNearBottom =
       isNearBottomRef.current ||
-      (container ? container.scrollHeight - container.scrollTop - container.clientHeight < 160 : true);
+      (container
+        ? container.scrollHeight - container.scrollTop - container.clientHeight < 160
+        : true);
     const ownLatest = isDoctor ? last.sender_role === "Doctor" : last.sender_role === "Patient";
     if (isNearBottom || ownLatest) {
       messageEndRef.current?.scrollIntoView({ behavior: ownLatest ? "auto" : "smooth" });

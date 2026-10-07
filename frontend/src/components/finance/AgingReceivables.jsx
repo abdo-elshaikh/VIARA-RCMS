@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGetReceivablesAgingQuery } from '../../store/api';
-import { formatFinancialCurrency } from '../../utils/financialFormat';
+import { formatFinancialCurrency, formatFinancialDate } from '../../utils/financialFormat';
 import AccessibleChartData from '../ui/AccessibleChartData';
 
 const BUCKETS = [
@@ -68,6 +68,7 @@ const AgingReceivables = ({ asOfDate }) => {
                     <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400 sm:text-sm">
                         {t('finance.receivables.description')}
                     </p>
+                    {asOfDate && <p className="mt-1 text-xs font-bold text-teal-700 dark:text-teal-300">{isAr ? 'الأرصدة حتى تاريخ: ' : 'Balances as of: '}{formatFinancialDate(asOfDate, i18n.language)}</p>}
                 </div>
             </div>
 

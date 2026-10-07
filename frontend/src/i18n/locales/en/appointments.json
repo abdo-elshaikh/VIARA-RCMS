@@ -138,7 +138,8 @@
     "appointmentTable": "Appointments",
     "selectAppointment": "Select appointment",
     "viewCase": "Open case",
-    "cancelAppt": "Cancel appointment"
+    "cancelAppt": "Cancel appointment",
+    "copyMrn": "Copy MRN"
   },
   "availability": {
     "title": "Availability",
@@ -163,6 +164,9 @@
     "activeRequests": "{{count}} active requests",
     "selectPatient": "Select patient",
     "searchPatientPlaceholder": "Search patient by MRN or name...",
+    "searchPatient": "Search patient name or MRN...",
+    "clearPatient": "Clear patient",
+    "noPatientResults": "No patients found",
     "noPatientsFound": "No patients match filter",
     "unnamedPatient": "Unnamed patient",
     "preferredDate": "Preferred date",

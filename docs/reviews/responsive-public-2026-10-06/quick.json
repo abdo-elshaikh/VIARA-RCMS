@@ -1,0 +1,612 @@
+[
+  {
+    "name": "landing-ar-light-1536x704",
+    "width": 1536,
+    "height": 704,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": {
+      "left": 0,
+      "right": 1536,
+      "top": 0,
+      "bottom": 706.59375,
+      "width": 1536,
+      "height": 706.59375
+    },
+    "card": null,
+    "footer": null,
+    "primary": {
+      "left": 1054.890625,
+      "right": 1459.203125,
+      "top": 406.21875,
+      "bottom": 458.21875,
+      "width": 404.3125,
+      "height": 52
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-1536x704",
+    "width": 1536,
+    "height": 704,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": null,
+    "card": {
+      "left": 947.71875,
+      "right": 1485.3125,
+      "top": 66,
+      "bottom": 660.6875,
+      "width": 537.59375,
+      "height": 594.6875
+    },
+    "footer": {
+      "left": 0,
+      "right": 1536,
+      "top": 666.6875,
+      "bottom": 704.6875,
+      "width": 1536,
+      "height": 38
+    },
+    "primary": {
+      "left": 976.71875,
+      "right": 1456.3125,
+      "top": 433.1875,
+      "bottom": 482.6875,
+      "width": 479.59375,
+      "height": 49.5
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "landing-en-light-1536x704",
+    "width": 1536,
+    "height": 704,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": {
+      "left": 0,
+      "right": 1536,
+      "top": 0,
+      "bottom": 706.59375,
+      "width": 1536,
+      "height": 706.59375
+    },
+    "card": null,
+    "footer": null,
+    "primary": {
+      "left": 76.796875,
+      "right": 466.0625,
+      "top": 401.59375,
+      "bottom": 453.59375,
+      "width": 389.265625,
+      "height": 52
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "login-en-light-1536x704",
+    "width": 1536,
+    "height": 704,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": null,
+    "card": {
+      "left": 947.71875,
+      "right": 1485.3125,
+      "top": 66,
+      "bottom": 660.6875,
+      "width": 537.59375,
+      "height": 594.6875
+    },
+    "footer": {
+      "left": 0,
+      "right": 1536,
+      "top": 666.6875,
+      "bottom": 704.6875,
+      "width": 1536,
+      "height": 38
+    },
+    "primary": {
+      "left": 976.71875,
+      "right": 1456.3125,
+      "top": 433.1875,
+      "bottom": 482.6875,
+      "width": 479.59375,
+      "height": 49.5
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "landing-ar-light-1920x880",
+    "width": 1920,
+    "height": 880,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": {
+      "left": 0,
+      "right": 1920,
+      "top": 0,
+      "bottom": 880,
+      "width": 1920,
+      "height": 880
+    },
+    "card": null,
+    "footer": null,
+    "primary": {
+      "left": 1263.921875,
+      "right": 1724,
+      "top": 517.921875,
+      "bottom": 579.921875,
+      "width": 460.078125,
+      "height": 62
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-1920x880",
+    "width": 1920,
+    "height": 880,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": null,
+    "card": {
+      "left": 1216.640625,
+      "right": 1756.640625,
+      "top": 90.046875,
+      "bottom": 819.953125,
+      "width": 540,
+      "height": 729.90625
+    },
+    "footer": {
+      "left": 100,
+      "right": 1820,
+      "top": 842,
+      "bottom": 880,
+      "width": 1720,
+      "height": 38
+    },
+    "primary": {
+      "left": 1257.640625,
+      "right": 1715.640625,
+      "top": 546.96875,
+      "bottom": 598.96875,
+      "width": 458,
+      "height": 52
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "landing-en-light-1920x880",
+    "width": 1920,
+    "height": 880,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": {
+      "left": 0,
+      "right": 1920,
+      "top": 0,
+      "bottom": 880,
+      "width": 1920,
+      "height": 880
+    },
+    "card": null,
+    "footer": null,
+    "primary": {
+      "left": 196,
+      "right": 638.859375,
+      "top": 508.3125,
+      "bottom": 570.3125,
+      "width": 442.859375,
+      "height": 62
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "login-en-light-1920x880",
+    "width": 1920,
+    "height": 880,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": null,
+    "card": {
+      "left": 1216.640625,
+      "right": 1756.640625,
+      "top": 90.046875,
+      "bottom": 819.953125,
+      "width": 540,
+      "height": 729.90625
+    },
+    "footer": {
+      "left": 100,
+      "right": 1820,
+      "top": 842,
+      "bottom": 880,
+      "width": 1720,
+      "height": 38
+    },
+    "primary": {
+      "left": 1257.640625,
+      "right": 1715.640625,
+      "top": 546.96875,
+      "bottom": 598.96875,
+      "width": 458,
+      "height": 52
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "landing-ar-light-901x768",
+    "width": 901,
+    "height": 768,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": {
+      "left": 0,
+      "right": 901,
+      "top": 0,
+      "bottom": 768,
+      "width": 901,
+      "height": 768
+    },
+    "card": null,
+    "footer": null,
+    "primary": {
+      "left": 451.640625,
+      "right": 855.953125,
+      "top": 381.0625,
+      "bottom": 433.0625,
+      "width": 404.3125,
+      "height": 52
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-901x768",
+    "width": 901,
+    "height": 768,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": null,
+    "card": {
+      "left": 481.28125,
+      "right": 871.28125,
+      "top": 97.65625,
+      "bottom": 692.34375,
+      "width": 390,
+      "height": 594.6875
+    },
+    "footer": {
+      "left": 0,
+      "right": 901,
+      "top": 730,
+      "bottom": 768,
+      "width": 901,
+      "height": 38
+    },
+    "primary": {
+      "left": 510.28125,
+      "right": 842.28125,
+      "top": 464.84375,
+      "bottom": 514.34375,
+      "width": 332,
+      "height": 49.5
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "landing-en-light-901x768",
+    "width": 901,
+    "height": 768,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": {
+      "left": 0,
+      "right": 901,
+      "top": 0,
+      "bottom": 768,
+      "width": 901,
+      "height": 768
+    },
+    "card": null,
+    "footer": null,
+    "primary": {
+      "left": 45.046875,
+      "right": 434.3125,
+      "top": 375.25,
+      "bottom": 427.25,
+      "width": 389.265625,
+      "height": 52
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "login-en-light-901x768",
+    "width": 901,
+    "height": 768,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": null,
+    "card": {
+      "left": 481.28125,
+      "right": 871.28125,
+      "top": 97.65625,
+      "bottom": 692.34375,
+      "width": 390,
+      "height": 594.6875
+    },
+    "footer": {
+      "left": 0,
+      "right": 901,
+      "top": 730,
+      "bottom": 768,
+      "width": 901,
+      "height": 38
+    },
+    "primary": {
+      "left": 510.28125,
+      "right": 842.28125,
+      "top": 464.84375,
+      "bottom": 514.34375,
+      "width": 332,
+      "height": 49.5
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "landing-ar-light-320x720",
+    "width": 320,
+    "height": 720,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": {
+      "left": 0,
+      "right": 320,
+      "top": 0,
+      "bottom": 1270.15625,
+      "width": 320,
+      "height": 1270.15625
+    },
+    "card": null,
+    "footer": null,
+    "primary": {
+      "left": 16,
+      "right": 304,
+      "top": 331.375,
+      "bottom": 451.375,
+      "width": 288,
+      "height": 120
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-320x720",
+    "width": 320,
+    "height": 720,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": null,
+    "card": {
+      "left": 12,
+      "right": 308,
+      "top": 80,
+      "bottom": 900.453125,
+      "width": 296,
+      "height": 820.453125
+    },
+    "footer": {
+      "left": 0,
+      "right": 320,
+      "top": 920.453125,
+      "bottom": 1026.453125,
+      "width": 320,
+      "height": 106
+    },
+    "primary": {
+      "left": 51,
+      "right": 269,
+      "top": 594.578125,
+      "bottom": 651.578125,
+      "width": 218,
+      "height": 57
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "landing-en-light-320x720",
+    "width": 320,
+    "height": 720,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": {
+      "left": 0,
+      "right": 320,
+      "top": 0,
+      "bottom": 1321.34375,
+      "width": 320,
+      "height": 1321.34375
+    },
+    "card": null,
+    "footer": null,
+    "primary": {
+      "left": 16,
+      "right": 304,
+      "top": 322.96875,
+      "bottom": 442.96875,
+      "width": 288,
+      "height": 120
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "login-en-light-320x720",
+    "width": 320,
+    "height": 720,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": null,
+    "card": {
+      "left": 12,
+      "right": 308,
+      "top": 80,
+      "bottom": 892.453125,
+      "width": 296,
+      "height": 812.453125
+    },
+    "footer": {
+      "left": 0,
+      "right": 320,
+      "top": 912.453125,
+      "bottom": 1018.453125,
+      "width": 320,
+      "height": 106
+    },
+    "primary": {
+      "left": 31,
+      "right": 289,
+      "top": 586.578125,
+      "bottom": 643.578125,
+      "width": 258,
+      "height": 57
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "landing-ar-light-844x390",
+    "width": 844,
+    "height": 390,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": {
+      "left": 0,
+      "right": 844,
+      "top": 0,
+      "bottom": 1196.671875,
+      "width": 844,
+      "height": 1196.671875
+    },
+    "card": null,
+    "footer": null,
+    "primary": {
+      "left": 281.84375,
+      "right": 670.15625,
+      "top": 456.484375,
+      "bottom": 518.484375,
+      "width": 388.3125,
+      "height": 62
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "login-ar-light-844x390",
+    "width": 844,
+    "height": 390,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": null,
+    "card": {
+      "left": 152,
+      "right": 692,
+      "top": 72,
+      "bottom": 843.4375,
+      "width": 540,
+      "height": 771.4375
+    },
+    "footer": {
+      "left": 0,
+      "right": 844,
+      "top": 863.4375,
+      "bottom": 917.4375,
+      "width": 844,
+      "height": 54
+    },
+    "primary": {
+      "left": 191,
+      "right": 653,
+      "top": 552.25,
+      "bottom": 609.25,
+      "width": 462,
+      "height": 57
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "landing-en-light-844x390",
+    "width": 844,
+    "height": 390,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": {
+      "left": 0,
+      "right": 844,
+      "top": 0,
+      "bottom": 1169.859375,
+      "width": 844,
+      "height": 1169.859375
+    },
+    "card": null,
+    "footer": null,
+    "primary": {
+      "left": 181.359375,
+      "right": 554.625,
+      "top": 429.671875,
+      "bottom": 491.671875,
+      "width": 373.265625,
+      "height": 62
+    },
+    "overlappingColumns": false,
+    "errors": []
+  },
+  {
+    "name": "login-en-light-844x390",
+    "width": 844,
+    "height": 390,
+    "horizontalOverflow": false,
+    "clipped": [],
+    "masthead": null,
+    "card": {
+      "left": 152,
+      "right": 692,
+      "top": 72,
+      "bottom": 823.4375,
+      "width": 540,
+      "height": 751.4375
+    },
+    "footer": {
+      "left": 0,
+      "right": 844,
+      "top": 843.4375,
+      "bottom": 897.4375,
+      "width": 844,
+      "height": 54
+    },
+    "primary": {
+      "left": 181,
+      "right": 663,
+      "top": 538.25,
+      "bottom": 595.25,
+      "width": 482,
+      "height": 57
+    },
+    "overlappingColumns": false,
+    "errors": []
+  }
+]

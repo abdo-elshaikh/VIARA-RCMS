@@ -42,6 +42,8 @@ describe('SafetyFormModal', () => {
             />
         );
 
+        expect(screen.getByRole('dialog', { name: template.name })).toBeInTheDocument();
+
         fireEvent.click(screen.getByLabelText('Yes'));
         fireEvent.click(screen.getByRole('button', { name: /Sign & Authorize Exam/i }));
 

@@ -42,7 +42,9 @@ let refreshPromise: Promise<string | null> | null = null;
 async function performRefreshRequest(): Promise<string | null> {
   try {
     const csrfMatch =
-      typeof document === "undefined" ? null : document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+      typeof document === "undefined"
+        ? null
+        : document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
     const csrfToken = csrfMatch ? decodeURIComponent(csrfMatch[1]) : null;
     const res = await fetch(`${API_BASE_URL}/portal/auth/refresh`, {
       method: "POST",
@@ -97,7 +99,10 @@ export async function refreshAuthTokenSilently(): Promise<boolean> {
  * Fetch from the API, retrying once after a silent token refresh when the
  * first attempt is rejected with 401 (matching the RTK Query reauth flow).
  */
-export async function fetchWithAuthRetry(endpoint: string, init: RequestInit = {}): Promise<Response> {
+export async function fetchWithAuthRetry(
+  endpoint: string,
+  init: RequestInit = {},
+): Promise<Response> {
   const isAuthEndpoint =
     endpoint.endsWith("/login") ||
     endpoint.endsWith("/auth/refresh") ||
@@ -139,7 +144,13 @@ export type PortalIdentity = {
  */
 export async function getAuthIdentity(): Promise<PortalIdentity | null> {
   try {
-    const res = await request<{ id?: string; name?: string; email?: string; role?: string; mustChangePassword?: boolean }>('/profile');
+    const res = await request<{
+      id?: string;
+      name?: string;
+      email?: string;
+      role?: string;
+      mustChangePassword?: boolean;
+    }>("/profile");
     return res;
   } catch {
     return null;
@@ -175,7 +186,11 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers, credentials: 'include' });
+    res = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+      credentials: "include",
+    });
   } catch (e) {
     throw new ApiError("Network error. Check your connection and try again.", 0);
   }
@@ -201,7 +216,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       body = await res.json();
       if (body?.message) errorMsg = body.message;
       else if (body?.error) errorMsg = body.error;
-    } catch { }
+    } catch {}
     throw new ApiError(errorMsg, res.status, body);
   }
 
@@ -270,7 +285,7 @@ export async function fetchProcedureApproachDetails(nameOrId: string) {
       );
       if (match) return match;
     }
-  } catch { }
+  } catch {}
   return null;
 }
 

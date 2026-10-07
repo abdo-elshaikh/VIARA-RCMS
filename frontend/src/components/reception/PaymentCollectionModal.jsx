@@ -136,6 +136,7 @@ const PaymentCollectionModal = ({
     };
 
     const handleClose = () => {
+        if (isLoading) return;
         if (onClose) {
             onClose();
         }

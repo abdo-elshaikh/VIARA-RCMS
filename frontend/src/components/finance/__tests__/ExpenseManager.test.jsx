@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     createExpense: vi.fn(() => ({ unwrap: () => Promise.resolve({}) })),
     updateExpense: vi.fn(() => ({ unwrap: () => Promise.resolve({}) })),
     deleteExpense: vi.fn(() => ({ unwrap: () => Promise.resolve({}) })),
+    categoryStatus: {},
     expenses: [{
         expense_id: 'expense-1',
         category_id: '11111111-1111-4111-8111-111111111111',
@@ -43,14 +44,40 @@ vi.mock('../../../store/api', () => ({
     useGetExpenseCategoriesQuery: () => ({ data: [
         { category_id: '11111111-1111-4111-8111-111111111111', name: 'Supplies' },
         { category_id: '22222222-2222-4222-8222-222222222222', name: 'Travel' },
-    ] }),
+    ], ...mocks.categoryStatus }),
     useGetExpensesQuery: () => ({ data: mocks.expenses, isLoading: false, isError: false }),
     useGetSuppliersQuery: () => ({ data: [{ supplier_id: '33333333-3333-4333-8333-333333333333', name: 'Northwind' }] }),
 }));
 
 describe('ExpenseManager add and edit modal', () => {
+    it('retries an unchanged expense using the same idempotency key after a network failure', async () => {
+        mocks.createExpense.mockReturnValueOnce({ unwrap: () => Promise.reject(new Error('Synthetic lost response')) });
+        render(<ExpenseManager />);
+        fireEvent.click(screen.getByRole('button', { name: 'finance.expenses.addExpense' }));
+        fireEvent.change(screen.getByLabelText('finance.expenses.category'), { target: { value: categoryId } });
+        fireEvent.change(screen.getByLabelText('finance.common.amount'), { target: { value: '100' } });
+        fireEvent.click(screen.getByRole('button', { name: 'finance.expenses.save' }));
+        await waitFor(() => expect(mocks.createExpense).toHaveBeenCalledTimes(1));
+        expect(screen.getByRole('dialog')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'finance.expenses.save' }));
+        await waitFor(() => expect(mocks.createExpense).toHaveBeenCalledTimes(2));
+        expect(mocks.createExpense.mock.calls[1][0]).toEqual(mocks.createExpense.mock.calls[0][0]);
+    });
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.categoryStatus = {};
+    });
+
+    it('explains unavailable categories and disables saving without blocking cancel', async () => {
+        const retry = vi.fn();
+        mocks.categoryStatus = { isError: true, refetch: retry };
+        render(<ExpenseManager />);
+        fireEvent.click(screen.getByRole('button', { name: 'finance.expenses.addExpense' }));
+        expect(screen.getByRole('alert')).toHaveTextContent('Expense categories could not be loaded');
+        expect(screen.getByRole('button', { name: 'finance.expenses.save' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'finance.common.cancel' })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        expect(retry).toHaveBeenCalledOnce();
     });
 
     it('creates a new expense from a modal', async () => {

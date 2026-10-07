@@ -43,8 +43,10 @@ import {
 } from '../store/api';
 import PageHeader from '../components/ui/PageHeader';
 import Pagination from '../components/ui/Pagination';
+import Modal from '../components/ui/Modal';
 import { getEffectivePermissions } from '../utils/effectivePermissions';
 import useDebounce from '../hooks/useDebounce';
+import usePageTitle from '../hooks/usePageTitle';
 
 const PAGE_SIZE = 25;
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -78,6 +80,7 @@ const toLocalDateInput = (date) => {
 const AuditLogs = ({ embedded = false }) => {
     const { t, i18n } = useTranslation('admin');
     const isRtl = i18n.language?.startsWith('ar');
+    usePageTitle(embedded ? null : t('audit.title', { defaultValue: 'Audit Trail & Event Stream' }));
     const token = useSelector((state) => state.auth?.token);
     const currentUser = useSelector((state) => state.auth?.user);
     const searchInputRef = useRef(null);
@@ -134,17 +137,18 @@ const AuditLogs = ({ embedded = false }) => {
     ), [filters, debouncedQuery]);
 
     const params = { ...activeParams, limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE };
-    const { data, isLoading, isFetching, isError, refetch } = useGetAuditLogsQuery(params);
+    const invalidDateRange = Boolean(filters.startDate && filters.endDate && filters.startDate > filters.endDate);
+    const { currentData: data, isLoading, isFetching, isError, refetch } = useGetAuditLogsQuery(params, { skip: invalidDateRange });
 
     // Auto-refresh interval (every 15 seconds)
     useEffect(() => {
-        if (!autoRefresh) return undefined;
+        if (!autoRefresh || invalidDateRange) return undefined;
         const interval = setInterval(() => {
             refetch();
             refetchAlerts();
         }, 15000);
         return () => clearInterval(interval);
-    }, [autoRefresh, refetch, refetchAlerts]);
+    }, [autoRefresh, invalidDateRange, refetch, refetchAlerts]);
 
     const logs = useMemo(() => (Array.isArray(data?.logs) ? data.logs : []), [data?.logs]);
     const total = Number(data?.total || 0);
@@ -258,7 +262,7 @@ const AuditLogs = ({ embedded = false }) => {
                 defaultValue: `Detection scan complete: ${result.totalCreated || 0} alert(s) generated.`,
                 count: Number(result.totalCreated || 0),
             }));
-            refetch();
+            if (!invalidDateRange) refetch();
             refetchAlerts();
         } catch {
             toast.error(t('audit.detectError', { defaultValue: 'Detection scan failed.' }));
@@ -277,11 +281,15 @@ const AuditLogs = ({ embedded = false }) => {
         }
     };
 
-    const copyJsonPayload = (log) => {
-        navigator.clipboard.writeText(JSON.stringify(log, null, 2));
-        setCopiedId(log.log_id);
-        toast.success(t('audit.copied', { defaultValue: 'Log payload copied to clipboard.' }));
-        setTimeout(() => setCopiedId(null), 2000);
+    const copyJsonPayload = async (log) => {
+        try {
+            await navigator.clipboard.writeText(JSON.stringify(log, null, 2));
+            setCopiedId(log.log_id);
+            toast.success(t('audit.copied', { defaultValue: 'Log payload copied to clipboard.' }));
+            setTimeout(() => setCopiedId(null), 2000);
+        } catch {
+            toast.error(t('audit.copyError', { defaultValue: isRtl ? 'تعذر النسخ إلى الحافظة. يمكنك تحديد النص ونسخه يدويًا.' : 'Could not copy to clipboard. Select the text and copy it manually.' }));
+        }
     };
 
     // Category distribution calculations
@@ -325,7 +333,7 @@ const AuditLogs = ({ embedded = false }) => {
         <button
             type="button"
             onClick={handleExportCsv}
-            disabled={exporting || !total}
+            disabled={exporting || !total || isFetching || isError || invalidDateRange}
             className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-3.5 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
         >
             {exporting ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
@@ -337,7 +345,7 @@ const AuditLogs = ({ embedded = false }) => {
         <button
             type="button"
             onClick={handleExportJson}
-            disabled={!logs.length}
+            disabled={!logs.length || isFetching || isError || invalidDateRange}
             className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
         >
             <FileJson size={14} />
@@ -738,7 +746,9 @@ const AuditLogs = ({ embedded = false }) => {
                     </div>
                 </div>
 
-                {isLoading ? (
+                {invalidDateRange ? (
+                    <p role="alert" className="p-5 text-sm font-semibold text-rose-700">{isRtl ? 'يجب أن يكون تاريخ البداية قبل تاريخ النهاية أو مساويًا له.' : 'Start date must be on or before end date.'}</p>
+                ) : isLoading || (isFetching && !data) ? (
                     <AuditLoading label={t('audit.loading', { defaultValue: 'Loading audit logs...' })} />
                 ) : isError ? (
                     <AuditError label={t('audit.loadError', { defaultValue: 'Failed to load audit logs.' })} retry={t('audit.retry', { defaultValue: 'Retry' })} onRetry={refetch} />
@@ -817,7 +827,7 @@ const AuditLogs = ({ embedded = false }) => {
 
             {/* Event Detail Fullscreen Inspector Modal */}
             {inspectingLog && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+                <Modal isOpen onClose={() => setInspectingLog(null)} size="wide" ariaLabel={t('audit.inspector.title', { id: inspectingLog.log_id, defaultValue: `Audit Entry #${inspectingLog.log_id}` })}>
                     <div className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 text-white shadow-2xl">
                         <div className="flex items-center justify-between border-b border-slate-800 p-4">
                             <div className="flex items-center gap-2">
@@ -836,7 +846,7 @@ const AuditLogs = ({ embedded = false }) => {
                                     {copiedId === inspectingLog.log_id ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
                                     <span>{t('audit.inspector.copyJson', { defaultValue: 'Copy JSON' })}</span>
                                 </button>
-                                <button type="button" onClick={() => setInspectingLog(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
+                                <button type="button" aria-label={isRtl ? 'إغلاق' : 'Close'} onClick={() => setInspectingLog(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-white">
                                     <X size={16} />
                                 </button>
                             </div>
@@ -898,7 +908,7 @@ const AuditLogs = ({ embedded = false }) => {
                             </div>
                         </div>
                     </div>
-                </div>
+                </Modal>
             )}
         </main>
     );

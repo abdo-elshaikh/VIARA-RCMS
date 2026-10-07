@@ -7,10 +7,14 @@ const {
 } = require('./financialPostingService');
 
 const roundMoney = (value) => {
+    if (value === null || value === undefined || value === '') return 0;
     try {
-        return new Decimal(value || 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
-    } catch {
-        return 0;
+        const amount = new Decimal(value);
+        if (!amount.isFinite()) throw new AppError('Invalid monetary value encountered during payroll calculation', 500);
+        return amount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toNumber();
+    } catch (error) {
+        if (error instanceof AppError) throw error;
+        throw new AppError('Invalid monetary value encountered during payroll calculation', 500);
     }
 };
 
@@ -77,10 +81,18 @@ const calculateRuleAmount = (rule, context) => {
     if (rule.calculation_method === 'FixedAmount') return roundMoney(value);
     if (rule.calculation_method === 'PercentageOfBase') return roundMoney(context.baseGross * (value / 100));
     if (rule.calculation_method === 'PercentageOfGross') return roundMoney(context.gross * (value / 100));
+    if (rule.calculation_method === 'PercentageOfCollections') {
+        return roundMoney(Number(context.netCollections || 0) * (value / 100));
+    }
     if (rule.calculation_method === 'HourlyMultiplier') {
         return roundMoney(context.overtimeHours * context.hourlyRate * Math.max(0, value - 1));
     }
-    if (rule.calculation_method === 'PerDay') return roundMoney(context.absenceDays * context.dailyRate * value);
+    if (rule.calculation_method === 'PerDay') {
+        if (rule.rule_type === 'Absence') return roundMoney(context.absenceDays * context.dailyRate * value);
+        return roundMoney(Number(context.payableDays || 0) * value);
+    }
+    if (rule.calculation_method === 'PerShift') return roundMoney(Number(context.paidShifts || 0) * value);
+    if (rule.calculation_method === 'PerCase') return roundMoney(Number(context.completedCases || 0) * value);
     if (rule.calculation_method === 'PerMinute') {
         const minutes = rule.rule_type === 'EarlyLeave' ? context.earlyLeaveMinutes : context.lateMinutes;
         return roundMoney(minutes * value);
@@ -89,7 +101,7 @@ const calculateRuleAmount = (rule, context) => {
 };
 
 const ruleLineType = (ruleType) => {
-    if (['Allowance', 'Overtime'].includes(ruleType)) return 'Earning';
+    if (['Allowance', 'Bonus', 'Overtime'].includes(ruleType)) return 'Earning';
     if (['Deduction', 'Late', 'EarlyLeave', 'Absence'].includes(ruleType)) return 'Deduction';
     if (ruleType === 'Penalty') return 'Penalty';
     if (ruleType === 'EmployerContribution') return 'EmployerContribution';
@@ -116,7 +128,8 @@ const paymentAccount = (method) => {
     if (method === 'Cash') return ['1000', 'Cash on hand'];
     if (method === 'Check') return ['1015', 'Checks clearing'];
     if (method === 'Wallet') return ['1020', 'Wallet clearing'];
-    return ['1010', 'Bank transfer clearing'];
+    if (method === 'BankTransfer') return ['1010', 'Bank transfer clearing'];
+    throw new AppError('Unsupported payroll payment method', 400);
 };
 
 const payrollPaymentJournalEntries = (run, paymentMethod) => {
@@ -200,9 +213,46 @@ const proratedMonthlyAmount = (baseSalary, startDate, endDate) => {
     return roundMoney(new Decimal(baseSalary || 0).times(monthlyAccrualFactor(startDate, endDate)));
 };
 
+const calculateCompensationAmount = (profile, context) => {
+    switch (profile.salary_type) {
+        case 'Monthly':
+            return proratedMonthlyAmount(profile.base_salary, context.segmentStart, context.segmentEnd);
+        case 'Hourly':
+            return roundMoney(Number(profile.hourly_rate || 0) * (
+                Number(context.profileHoursWorked || 0) + Number(context.paidLeaveHours || 0)
+            ));
+        case 'Daily':
+            return roundMoney(Number(profile.daily_rate || 0) * Number(context.payableDays || 0));
+        case 'PerShift':
+            return roundMoney(Number(profile.shift_rate || 0) * Number(context.paidShifts || 0));
+        case 'PerCase':
+            return roundMoney(Number(profile.case_rate || 0) * Number(context.completedCases || 0));
+        case 'ShiftAndCase':
+            return roundMoney(
+                Number(profile.shift_rate || 0) * Number(context.paidShifts || 0)
+                + Number(profile.case_rate || 0) * Number(context.completedCases || 0)
+            );
+        case 'Percentage':
+            return roundMoney(Math.max(0, Number(context.netCollections || 0)) * Number(profile.percentage_rate || 0) / 100);
+        default:
+            throw new Error(`Unsupported compensation type: ${profile.salary_type}`);
+    }
+};
+
 const dateFallsWithin = (value, startDate, endDate) => {
     const date = dateOnly(value);
     return date >= dateOnly(startDate) && date <= dateOnly(endDate);
+};
+
+const netCollectionsForProfile = ({ caseMetrics, profile, employee, payrollEndDate }) => {
+    const eligibleFrom = laterDate(profile.effective_from, employee.hire_date);
+    const eligibleTo = earlierDate(profile.effective_to, employee.termination_date) || payrollEndDate;
+    return roundMoney(Math.max(0, caseMetrics
+        .filter((metric) => (
+            metric.collection_date
+            && dateFallsWithin(metric.eligible_date, eligibleFrom, eligibleTo)
+        ))
+        .reduce((sum, metric) => sum + Number(metric.net_collection_amount || 0), 0)));
 };
 
 const paidLeaveHoursForProfile = ({ profile, attendance, employee, period }) => {
@@ -228,6 +278,31 @@ const unpaidLeaveDeductionForProfile = ({ profile, attendance, employee, period 
         .times(eligibleDays));
 };
 
+const payableDaysForRange = (attendance, segmentStart, segmentEnd) => {
+    const workUnits = (attendance.worked_day_units || [])
+        .filter((item) => dateFallsWithin(item.date, segmentStart, segmentEnd))
+        .reduce((sum, item) => sum + Number(item.units || 0), 0);
+    const leaveDates = new Set((attendance.paid_leave_shifts || [])
+        .map((shift) => cairoDateKey(shift.start_time))
+        .filter((date) => dateFallsWithin(date, segmentStart, segmentEnd)));
+    const workedDates = new Set((attendance.worked_day_units || []).map((item) => item.date));
+    return workUnits + [...leaveDates].filter((date) => !workedDates.has(date)).length;
+};
+
+const payableDaysForProfile = ({ profile, attendance, employee, period }) => {
+    const segmentStart = laterDate(period.start_date, profile.effective_from, employee.hire_date);
+    const segmentEnd = earlierDate(period.end_date, profile.effective_to, employee.termination_date);
+    return payableDaysForRange(attendance, segmentStart, segmentEnd);
+};
+
+const payableShiftsForProfile = ({ profile, attendance, employee, period }) => {
+    const segmentStart = laterDate(period.start_date, profile.effective_from, employee.hire_date);
+    const segmentEnd = earlierDate(period.end_date, profile.effective_to, employee.termination_date);
+    return (attendance.paid_shift_units || [])
+        .filter((item) => dateFallsWithin(item.date, segmentStart, segmentEnd))
+        .reduce((sum, item) => sum + Number(item.units || 0), 0);
+};
+
 const summarizeAttendance = ({ attendance, shifts, leaves, periodStart, periodEnd }) => {
     const logs = Array.isArray(attendance?.logs) ? attendance.logs : [];
     const paidLeaveDates = new Set();
@@ -249,19 +324,37 @@ const summarizeAttendance = ({ attendance, shifts, leaves, periodStart, periodEn
     const absentDates = new Set(unpaidLeaveDates);
     const unexcusedAbsentDates = new Set();
     const paidLeaveShifts = [];
+    const paidShiftUnits = [];
+    const workedDayUnitsByDate = new Map();
+    for (const log of logs) {
+        if (!log.clockIn || !log.clockOut || log.status === 'Absent') continue;
+        const date = cairoDateKey(log.clockIn);
+        const units = log.status === 'Half-Day' ? 0.5 : 1;
+        workedDayUnitsByDate.set(date, Math.max(workedDayUnitsByDate.get(date) || 0, units));
+    }
     for (const shift of shifts) {
         const shiftDate = cairoDateKey(shift.start_time);
         const shiftStart = new Date(shift.start_time).getTime();
         const shiftEnd = new Date(shift.end_time).getTime();
-        const covered = logs.some((log) => {
+        const coveredLogs = logs.filter((log) => {
             if (!log.clockOut || log.status === 'Absent') return false;
             if (log.shiftId && log.shiftId === shift.shift_id) return true;
             const logStart = new Date(log.clockIn).getTime();
             const logEnd = new Date(log.clockOut).getTime();
             return logStart < shiftEnd && logEnd > shiftStart;
         });
+        const covered = coveredLogs.length > 0;
+        if (covered) {
+            paidShiftUnits.push({
+                date: shiftDate,
+                units: coveredLogs.every((log) => log.status === 'Half-Day') ? 0.5 : 1
+            });
+        }
         if (paidLeaveDates.has(shiftDate)) {
-            if (!covered) paidLeaveShifts.push(shift);
+            if (!covered) {
+                paidLeaveShifts.push(shift);
+                paidShiftUnits.push({ date: shiftDate, units: 1 });
+            }
             continue;
         }
         if (unpaidLeaveAllDates.has(shiftDate)) {
@@ -293,6 +386,8 @@ const summarizeAttendance = ({ attendance, shifts, leaves, periodStart, periodEn
         unpaid_leave_dates: [...unpaidLeaveDates].sort(),
         approved_leave_days: paidLeaveDates.size,
         paid_leave_shifts: paidLeaveShifts,
+        paid_shift_units: paidShiftUnits,
+        worked_day_units: [...workedDayUnitsByDate].map(([date, units]) => ({ date, units })),
         logs
     };
 };
@@ -310,7 +405,6 @@ const loadCalculationInputs = async (client, period) => {
           AND ep.payroll_branch_id = $4::uuid
           AND (u.is_active = TRUE OR ep.termination_date IS NOT NULL)
           AND (ep.hire_date IS NULL OR ep.hire_date <= $2::date)
-          AND (ep.termination_date IS NULL OR ep.termination_date >= $1::date)
         ORDER BY u.full_name ASC
     `, [period.start_date, period.end_date, PAYROLL_EMPLOYEE_ROLES, branchId]);
 
@@ -347,15 +441,25 @@ const loadCalculationInputs = async (client, period) => {
         FROM employee_compensation_profiles cp
         JOIN employee_profiles ep ON ep.user_id = cp.user_id
         CROSS JOIN bounds b
-        WHERE cp.is_active = TRUE
+        WHERE (cp.is_active = TRUE OR cp.salary_type = 'Percentage')
           AND cp.branch_id = $3::uuid
           AND cp.currency_code = $4
-          AND ((cp.salary_type = 'Monthly' AND cp.base_salary > 0)
-               OR (cp.salary_type = 'Hourly' AND cp.hourly_rate > 0))
+          AND (
+              (cp.salary_type = 'Monthly' AND cp.base_salary > 0)
+              OR (cp.salary_type = 'Hourly' AND cp.hourly_rate > 0)
+              OR (cp.salary_type = 'Daily' AND cp.daily_rate > 0)
+              OR (cp.salary_type = 'PerShift' AND cp.shift_rate > 0)
+              OR (cp.salary_type = 'PerCase' AND cp.case_rate > 0)
+              OR (cp.salary_type = 'ShiftAndCase' AND cp.shift_rate > 0 AND cp.case_rate > 0)
+              OR (cp.salary_type = 'Percentage' AND cp.percentage_rate > 0)
+          )
           AND cp.effective_from <= $2::date
-          AND (cp.effective_to IS NULL OR cp.effective_to >= $1::date)
+          AND (
+              cp.effective_to IS NULL
+              OR cp.effective_to >= $1::date
+              OR cp.salary_type = 'Percentage'
+          )
           AND (ep.hire_date IS NULL OR ep.hire_date <= $2::date)
-          AND (ep.termination_date IS NULL OR ep.termination_date >= $1::date)
         ORDER BY cp.user_id, cp.effective_from ASC, cp.created_at ASC
     `, [period.start_date, period.end_date, branchId, currencyCode]);
 
@@ -404,6 +508,90 @@ const loadCalculationInputs = async (client, period) => {
         ORDER BY l.start_date ASC
     `, [period.start_date, period.end_date, branchId]);
 
+    const caseMetrics = await client.query(`
+        WITH eligible_cases AS (
+            SELECT assignments.exam_id, assignments.user_id, MIN(assignments.eligible_at) AS eligible_at
+            FROM (
+                SELECT e.exam_id, a.technician_id AS user_id, e.exam_completed_at AS eligible_at
+                FROM examinations e
+                JOIN appointments a ON a.appointment_id = e.appointment_id
+                WHERE a.technician_id IS NOT NULL
+                  AND e.exam_completed_at IS NOT NULL
+                  AND e.exam_completed_at < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Cairo')
+                UNION ALL
+                SELECT e.exam_id, a.nurse_id AS user_id, e.exam_completed_at AS eligible_at
+                FROM examinations e
+                JOIN appointments a ON a.appointment_id = e.appointment_id
+                WHERE a.nurse_id IS NOT NULL
+                  AND e.exam_completed_at IS NOT NULL
+                  AND e.exam_completed_at < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Cairo')
+                UNION ALL
+                SELECT e.exam_id, e.performing_radiologist_id AS user_id, e.report_finalized_at AS eligible_at
+                FROM examinations e
+                WHERE e.performing_radiologist_id IS NOT NULL
+                  AND e.report_finalized_at IS NOT NULL
+                  AND e.report_status = 'Finalized'
+                  AND e.report_finalized_at < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Cairo')
+            ) assignments
+            GROUP BY assignments.exam_id, assignments.user_id
+        ),
+        cash_flows AS (
+            SELECT p.invoice_id, p.business_date, p.amount::numeric AS amount
+            FROM payments p
+            WHERE p.payment_status = 'Completed'
+              AND p.business_date BETWEEN $1::date AND $2::date
+            UNION ALL
+            SELECT COALESCE(cr.invoice_id, ic.invoice_id), cr.business_date, cr.amount::numeric
+            FROM claim_receipts cr
+            JOIN insurance_claims ic ON ic.claim_id = cr.claim_id
+            WHERE cr.business_date BETWEEN $1::date AND $2::date
+              AND COALESCE(cr.invoice_id, ic.invoice_id) IS NOT NULL
+            UNION ALL
+            SELECT r.invoice_id, r.business_date, -r.amount::numeric
+            FROM refunds r
+            WHERE r.status = 'Processed'
+              AND r.business_date BETWEEN $1::date AND $2::date
+            UNION ALL
+            SELECT cn.invoice_id, cn.business_date, -cn.net_amount::numeric
+            FROM credit_notes cn
+            WHERE cn.reversed_at IS NULL
+              AND cn.refund_id IS NULL
+              AND cn.business_date BETWEEN $1::date AND $2::date
+        ),
+        allocated_collections AS (
+            SELECT ec.user_id, ec.exam_id, ec.eligible_at,
+                   cf.business_date,
+                   SUM(
+                       cf.amount
+                       * GREATEST(i.subtotal_amount - COALESCE(i.discount_amount, 0), 0)
+                       / NULLIF(i.total_amount, 0)
+                       * GREATEST(ii.total_amount, 0)
+                       / NULLIF(i.subtotal_amount, 0)
+                   )::numeric AS net_collection_amount
+            FROM eligible_cases ec
+            JOIN invoice_items ii ON ii.exam_id = ec.exam_id
+            JOIN invoices i ON i.invoice_id = ii.invoice_id
+            JOIN cash_flows cf ON cf.invoice_id = i.invoice_id
+            WHERE i.branch_id = $3::uuid
+              AND i.currency_code = $4
+              AND i.invoice_status <> 'Voided'
+              AND i.total_amount > 0
+              AND i.subtotal_amount > 0
+            GROUP BY ec.user_id, ec.exam_id, ec.eligible_at, cf.business_date
+        )
+        SELECT ec.user_id, ec.exam_id, ec.eligible_at::date AS eligible_date,
+               ac.business_date AS collection_date,
+               COALESCE(ac.net_collection_amount, 0)::numeric AS net_collection_amount
+        FROM eligible_cases ec
+        LEFT JOIN allocated_collections ac
+          ON ac.user_id = ec.user_id
+         AND ac.exam_id = ec.exam_id
+         AND ac.eligible_at = ec.eligible_at
+        WHERE ec.user_id IN (
+            SELECT ep2.user_id FROM employee_profiles ep2 WHERE ep2.payroll_branch_id = $3::uuid
+        )
+    `, [period.start_date, period.end_date, branchId, currencyCode]);
+
     const deductions = await client.query(`
         SELECT * FROM employee_deductions
         WHERE status = 'Approved'
@@ -442,22 +630,40 @@ const loadCalculationInputs = async (client, period) => {
     `, [period.period_id, branchId, currencyCode]);
 
     const rules = await client.query(`
-        SELECT * FROM payroll_rules
-        WHERE is_active = TRUE AND status = 'Approved'
-          AND branch_id = $3::uuid
-          AND currency_code = $4
-          AND value > 0
-          AND (calculation_method <> 'HourlyMultiplier' OR value > 1)
+        SELECT r.*,
+               COALESCE((
+                   SELECT jsonb_agg(paid.user_id)
+                   FROM (
+                       SELECT DISTINCT pei.user_id
+                       FROM payroll_line_items li
+                       JOIN payroll_employee_items pei ON pei.item_id = li.payroll_employee_item_id
+                       JOIN payroll_runs pr ON pr.run_id = li.run_id
+                       WHERE li.source_type = 'payroll_rules'
+                         AND li.source_id = r.rule_id
+                         AND pr.status IN ('Paid', 'Locked')
+                   ) paid
+               ), '[]'::jsonb) AS paid_user_ids
+        FROM payroll_rules r
+        WHERE r.is_active = TRUE AND r.status = 'Approved'
+          AND r.branch_id = $3::uuid
+          AND r.currency_code = $4
+          AND r.value > 0
+          AND (r.calculation_method <> 'HourlyMultiplier' OR r.value > 1)
           AND (
-              (rule_type = 'Overtime' AND calculation_method IN ('HourlyMultiplier', 'FixedAmount', 'PercentageOfBase'))
-              OR (rule_type IN ('Late', 'EarlyLeave') AND calculation_method IN ('PerMinute', 'FixedAmount'))
-              OR (rule_type = 'Absence' AND calculation_method IN ('PerDay', 'FixedAmount'))
-              OR (rule_type IN ('Allowance', 'Deduction', 'Penalty', 'EmployerContribution')
-                  AND calculation_method IN ('FixedAmount', 'PercentageOfBase', 'PercentageOfGross'))
+              (r.rule_type = 'Overtime' AND r.calculation_method IN ('HourlyMultiplier', 'FixedAmount', 'PercentageOfBase'))
+              OR (r.rule_type IN ('Late', 'EarlyLeave') AND r.calculation_method IN ('PerMinute', 'FixedAmount'))
+              OR (r.rule_type = 'Absence' AND r.calculation_method IN ('PerDay', 'FixedAmount'))
+              OR (r.rule_type IN ('Allowance', 'Bonus')
+                  AND r.calculation_method IN (
+                      'FixedAmount', 'PercentageOfBase', 'PercentageOfGross',
+                      'PercentageOfCollections', 'PerDay', 'PerShift', 'PerCase'
+                  ))
+              OR (r.rule_type IN ('Deduction', 'Penalty', 'EmployerContribution')
+                  AND r.calculation_method IN ('FixedAmount', 'PercentageOfBase', 'PercentageOfGross'))
           )
-          AND effective_from <= $2::date
-          AND (effective_to IS NULL OR effective_to >= $1::date)
-        ORDER BY rule_type ASC, created_at ASC
+          AND r.effective_from <= $2::date
+          AND (r.effective_to IS NULL OR r.effective_to >= $1::date)
+        ORDER BY r.rule_type ASC, r.created_at ASC
     `, [period.start_date, period.end_date, branchId, currencyCode]);
 
     const attendanceMap = new Map(attendance.rows.map((row) => [row.user_id, row]));
@@ -466,6 +672,7 @@ const loadCalculationInputs = async (client, period) => {
     return {
         employees: employees.rows,
         rules: rules.rows,
+        caseMetricsByUser: groupRowsByUser(caseMetrics.rows),
         compensationByUser: groupRowsByUser(compensation.rows),
         attendanceByUser: new Map(employees.rows.map((employee) => [employee.user_id, summarizeAttendance({
             attendance: attendanceMap.get(employee.user_id),
@@ -573,9 +780,14 @@ module.exports = {
     enumerateDates,
     laterDate,
     earlierDate,
+    payableDaysForRange,
+    payableDaysForProfile,
+    payableShiftsForProfile,
     monthlyAccrualFactor,
     proratedMonthlyAmount,
+    calculateCompensationAmount,
     dateFallsWithin,
+    netCollectionsForProfile,
     paidLeaveHoursForProfile,
     unpaidLeaveDeductionForProfile,
     summarizeAttendance,

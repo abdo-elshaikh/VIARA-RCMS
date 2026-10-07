@@ -3,6 +3,7 @@ const { authenticateToken, authorizeRole } = require('../middleware/authMiddlewa
 const auditRead = require('../middleware/auditRead');
 const { hasPermission, hasAnyPermission } = require('../middleware/rbacMiddleware');
 const { validateRequest, validateQuery } = require('../middleware/validateRequest');
+const { aiReportLimiter, aiReportDailyLimiter } = require('../middleware/rateLimiters');
 
 const {
     updateExamReportSchema,
@@ -143,6 +144,8 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         authenticateToken,
         authorizeRole(['Radiologist', 'Admin']),
         hasAnyPermission(pool, ['WRITE_REPORTS', 'EDIT_REPORTS']),
+        aiReportLimiter,
+        aiReportDailyLimiter,
         validateRequest(improveReportSchema),
         improveReportFormat(pool)
     );
@@ -159,6 +162,8 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         authenticateToken,
         authorizeRole(['Radiologist', 'Admin']),
         hasAnyPermission(pool, ['WRITE_REPORTS', 'EDIT_REPORTS']),
+        aiReportLimiter,
+        aiReportDailyLimiter,
         validateRequest(generatePreliminaryReportSchema),
         generatePreliminaryReportDraft(pool)
     );

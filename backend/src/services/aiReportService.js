@@ -191,8 +191,13 @@ const providerErrorMessage = async (response, providerName) => {
     return `AI provider error (${response.status})${detail ? `: ${detail.slice(0, 120)}` : ''}`;
 };
 
-const buildSystemPrompt = () => {
-    const langInstruction = 'Respond entirely in English. Translate non-English source text when needed.';
+const normalizeLanguage = (language) => language === 'ar' ? 'ar' : 'en';
+
+const languageInstruction = (language) => normalizeLanguage(language) === 'ar'
+    ? 'Respond entirely in Arabic using clear Modern Standard Arabic. Translate non-Arabic source text when needed.'
+    : 'Respond entirely in English. Translate non-English source text when needed.';
+
+const buildSystemPrompt = (language = 'en') => {
     return [
         'You are a senior radiology report editor.',
         'Reformat the radiologist\'s draft into a clean, professional diagnostic imaging report.',
@@ -213,12 +218,11 @@ const buildSystemPrompt = () => {
         '- Keep AI/model/provider names, confidence scores, and processing details out of the report.',
         '- Omit a section entirely if the draft has no content for it.',
         '- Return only the formatted report text, with no preamble or commentary.',
-        langInstruction,
+        languageInstruction(language),
     ].join('\n');
 };
 
-const buildPreliminaryDraftPrompt = () => {
-    const langInstruction = 'Respond entirely in English. Translate non-English source metadata when needed.';
+const buildPreliminaryDraftPrompt = (language = 'en') => {
     return [
         'You are a senior radiology report drafting assistant.',
         'Create a PRELIMINARY report draft from the supplied exam metadata, template default text, and any available PACS AI image analysis results.',
@@ -240,11 +244,11 @@ const buildPreliminaryDraftPrompt = () => {
         '- Do not include markdown, tables, citations, disclaimers, or patient identifiers inside report sections.',
         '- Return JSON only. No markdown, no commentary.',
         '- JSON shape must be: {"clinicalHistory":"","technique":"","findings":"","impression":"","recommendations":"","limitations":[]}',
-        langInstruction,
+        languageInstruction(language),
     ].join('\n');
 };
 
-const buildSectionImprovePrompt = (sectionType) => {
+const buildSectionImprovePrompt = (sectionType, language = 'en') => {
     const sectionGuidance = {
         clinicalHistory: 'Polish as a brief Clinical Indication/History sentence. Preserve symptoms, dates, laterality, and relevant prior diagnosis. Do not add findings.',
         technique: 'Polish as a Technique section. Include only acquisition/protocol details present in the text. Do not add contrast, sequences, or views unless stated.',
@@ -263,7 +267,7 @@ const buildSectionImprovePrompt = (sectionType) => {
         '- Remove markdown, duplicate wording, and non-clinical filler.',
         '- Keep AI/model/provider names, confidence scores, and processing details out of the report section.',
         '- Return only the improved section text.',
-        'Respond entirely in English. Translate non-English source text when needed.'
+        languageInstruction(language)
     ].join('\n');
 };
 
@@ -577,6 +581,15 @@ const sectionValue = (value) => {
     return String(value || '');
 };
 
+const isImageAnalysisUsable = (worker) => (
+    worker?.quality?.supported === true &&
+    Number(worker?.quality?.imageCountAnalyzed) > 0 &&
+    Array.isArray(worker?.findings) &&
+    Array.isArray(worker?.evidence) &&
+    worker.evidence.length > 0 &&
+    worker?.provenance?.mode !== 'metadata-only-analysis'
+);
+
 const normalizeDraftSections = (draft = {}) => ({
     clinicalHistory: normalizeClinicalHistory(sectionValue(draft.clinicalHistory || draft.clinical_history || '')),
     technique: normalizeNarrativeSection(sectionValue(draft.technique || '')),
@@ -587,7 +600,7 @@ const normalizeDraftSections = (draft = {}) => ({
 
 const buildStructuredImageAnalysisDraft = ({ exam = {}, imaging = {}, imageAnalysis = null }) => {
     const worker = imageAnalysis?.payload;
-    if (!worker || worker?.quality?.supported !== true || !Array.isArray(worker.findings)) {
+    if (!isImageAnalysisUsable(worker) || !Array.isArray(worker.findings)) {
         return null;
     }
 
@@ -662,15 +675,16 @@ const buildStructuredImageAnalysisDraft = ({ exam = {}, imaging = {}, imageAnaly
  * @param {{ reportText: string, modality?: string, examType?: string, sectionType?: string, language?: string }} input
  * @returns {Promise<string>} polished report text
  */
-const improveReportFormat = async ({ reportText, modality, examType, sectionType }) => {
+const improveReportFormat = async ({ reportText, modality, examType, sectionType, language = 'en' }) => {
+    const responseLanguage = normalizeLanguage(language);
     const trimmed = (reportText || '').trim();
     if (!trimmed) {
         throw new AppError('Report text is required', 400);
     }
 
     const systemPrompt = sectionType
-        ? buildSectionImprovePrompt(sectionType)
-        : buildSystemPrompt('en');
+        ? buildSectionImprovePrompt(sectionType, responseLanguage)
+        : buildSystemPrompt(responseLanguage);
     const contextLines = [
         modality ? `Modality: ${modality}` : null,
         examType ? `Exam type: ${examType}` : null,
@@ -765,54 +779,27 @@ const testConnection = async () => {
     };
 };
 
-const generatePreliminaryDraft = async ({ exam, template = null, imaging = null, imageAnalysis = null }) => {
+const generatePreliminaryDraft = async ({ exam, template = null, imaging = null, imageAnalysis = null, language = 'en' }) => {
+    const responseLanguage = normalizeLanguage(language);
+    const usableImageAnalysis = isImageAnalysisUsable(imageAnalysis?.payload) ? imageAnalysis : null;
     const structuredDraft = buildStructuredImageAnalysisDraft({
         exam,
         imaging: imaging || {},
-        imageAnalysis,
-        language: 'en'
+        imageAnalysis: usableImageAnalysis,
+        language: responseLanguage
     });
     if (!(await isConfigured())) {
-        if (structuredDraft) return structuredDraft;
+        if (structuredDraft && responseLanguage === 'en') return structuredDraft;
         throw new AppError('AI report drafting is not configured on this server', 503);
     }
 
-    const systemPrompt = buildPreliminaryDraftPrompt('en');
-    const payload = {
-        exam: {
-            orderNumber: exam.order_number,
-            modality: exam.modality_type || exam.modality_name,
-            examType: exam.exam_type_name,
-            bodyPart: exam.body_part,
-            clinicalIndication: exam.clinical_indication,
-            provisionalDiagnosis: exam.provisional_diagnosis,
-            priority: exam.priority,
-            patientAge: exam.patient_age || null,
-            patientSex: exam.gender || null,
-            contrastRequired: exam.contrast_required,
-            studyInstanceUidPresent: Boolean(exam.study_instance_uid)
-        },
-        priorStudy: exam.is_follow_up && exam.prior_exam_id ? {
-            orderNumber: exam.prior_order_number,
-            examType: exam.prior_exam_type_name,
-            modality: exam.prior_modality_name,
-            examDate: exam.prior_exam_time,
-            reportStatus: exam.prior_report_status,
-            followUpReason: exam.follow_up_reason,
-            reportSections: exam.prior_report_sections || null,
-            reportText: exam.prior_report_content || null
-        } : null,
-        imaging: imaging || {},
-        imageAnalysis: imageAnalysis || null,
-        template: template ? {
-            name: template.name,
-            clinicalHistory: template.clinical_history,
-            technique: template.technique,
-            findings: template.findings,
-            impression: template.impression,
-            recommendations: template.recommendations
-        } : null
-    };
+    const systemPrompt = buildPreliminaryDraftPrompt(responseLanguage);
+    const payload = buildPreliminaryDraftPayload({
+        exam,
+        template,
+        imaging,
+        imageAnalysis: usableImageAnalysis
+    });
 
     const userContent = [
         'Create a preliminary report draft for this exam metadata.',
@@ -834,7 +821,7 @@ const generatePreliminaryDraft = async ({ exam, template = null, imaging = null,
                 jsonMode: true
             });
         } catch (providerError) {
-            if (!structuredDraft) throw providerError;
+            if (!structuredDraft || responseLanguage !== 'en') throw providerError;
             logger.warn('[AIReport] Report provider failed; using structured PACS draft', {
                 error: providerError.message
             });
@@ -852,7 +839,7 @@ const generatePreliminaryDraft = async ({ exam, template = null, imaging = null,
         }
         const output = generated.output;
         if (!String(output || '').trim()) {
-            if (structuredDraft) {
+            if (structuredDraft && responseLanguage === 'en') {
                 return {
                     ...structuredDraft,
                     limitations: [
@@ -882,7 +869,8 @@ const generatePreliminaryDraft = async ({ exam, template = null, imaging = null,
                         'You are a strict JSON repair utility.',
                         'Convert the supplied radiology draft into valid JSON without adding or changing clinical facts.',
                         'Return JSON only with this shape:',
-                        '{"clinicalHistory":"","technique":"","findings":"","impression":"","recommendations":"","limitations":[]}'
+                        '{"clinicalHistory":"","technique":"","findings":"","impression":"","recommendations":"","limitations":[]}',
+                        languageInstruction(responseLanguage)
                     ].join('\n'),
                     userContent: `Repair this provider output:\n\n${String(output || '').slice(0, 20000)}`,
                     maxTokens: 1800,
@@ -897,7 +885,7 @@ const generatePreliminaryDraft = async ({ exam, template = null, imaging = null,
                 });
             }
         }
-        if (!parsed && structuredDraft) {
+        if (!parsed && structuredDraft && responseLanguage === 'en') {
             return {
                 ...structuredDraft,
                 limitations: [
@@ -922,12 +910,16 @@ const generatePreliminaryDraft = async ({ exam, template = null, imaging = null,
         if (!sections.findings && !sections.impression) {
             throw new AppError('AI provider returned an empty draft', 502);
         }
-        if (Object.values(sections).some(containsArabicScript)) {
-            logger.warn('[AIReport] Provider returned Arabic report content despite the English-only policy', {
+        const hasRequestedLanguage = responseLanguage === 'ar'
+            ? Object.values(sections).some(containsArabicScript)
+            : !Object.values(sections).some(containsArabicScript);
+        if (!hasRequestedLanguage) {
+            logger.warn('[AIReport] Provider returned report content in the wrong language', {
                 provider: generated.provenance?.provider,
-                model: generated.provenance?.model
+                model: generated.provenance?.model,
+                requestedLanguage: responseLanguage
             });
-            if (structuredDraft) {
+            if (structuredDraft && responseLanguage === 'en') {
                 return {
                     ...structuredDraft,
                     limitations: [
@@ -942,23 +934,36 @@ const generatePreliminaryDraft = async ({ exam, template = null, imaging = null,
                     }
                 };
             }
-            throw new AppError('The AI provider returned non-English report content. Try again or select a different report model.', 502);
+            throw new AppError('The AI provider returned report content in a different language than requested. Try again or select a different report model.', 502);
+        }
+        if (!usableImageAnalysis) {
+            const reviewRequired = responseLanguage === 'ar'
+                ? 'بانتظار مراجعة اختصاصي الأشعة لكامل الصور.'
+                : 'Findings are pending radiologist review of the complete study.';
+            sections.findings = reviewRequired;
+            sections.impression = reviewRequired;
+            sections.recommendations = '';
         }
         return {
             sections,
-            limitations: Array.isArray(parsed.limitations || parsedDraft.limitations)
+            limitations: [
+                ...(Array.isArray(parsed.limitations || parsedDraft.limitations)
                 ? (parsed.limitations || parsedDraft.limitations)
                     .map(String)
-                    .filter((value) => value && !containsArabicScript(value))
-                : [],
+                    .filter((value) => value && (responseLanguage !== 'en' || !containsArabicScript(value)))
+                : []),
+                ...(!usableImageAnalysis
+                    ? [responseLanguage === 'ar'
+                        ? 'لم تُحلل صور الدراسة؛ أُبقيت النتائج والانطباع بانتظار مراجعة اختصاصي الأشعة.'
+                        : 'No study images were analyzed; findings and impression are placeholders pending radiologist review.']
+                    : [])
+            ],
             provenance: {
                 ...generated.provenance,
-                sourceMode: imageAnalysis?.payload?.quality?.supported === true
-                    ? 'pacs-image-analysis'
-                    : 'exam-metadata',
-                imageAnalysisProvider: imageAnalysis?.payload?.model?.provider || null,
-                imageAnalysisModel: imageAnalysis?.payload?.model?.name || null,
-                coverage: imageAnalysis?.payload?.provenance?.coverage || null
+                sourceMode: usableImageAnalysis ? 'pacs-image-analysis' : 'exam-metadata',
+                imageAnalysisProvider: usableImageAnalysis?.payload?.model?.provider || null,
+                imageAnalysisModel: usableImageAnalysis?.payload?.model?.name || null,
+                coverage: usableImageAnalysis?.payload?.provenance?.coverage || null
             }
         };
     } catch (error) {
@@ -968,11 +973,61 @@ const generatePreliminaryDraft = async ({ exam, template = null, imaging = null,
     }
 };
 
+const buildPreliminaryDraftPayload = ({ exam, template, imaging, imageAnalysis }) => {
+    const payload = {
+        exam: {
+            modality: exam.modality_type || exam.modality_name,
+            examType: exam.exam_type_name,
+            bodyPart: exam.body_part,
+            clinicalIndication: exam.clinical_indication,
+            provisionalDiagnosis: exam.provisional_diagnosis,
+            contrastRequired: exam.contrast_required
+        },
+        priorStudy: exam.is_follow_up && exam.prior_exam_id ? {
+            examType: exam.prior_exam_type_name,
+            modality: exam.prior_modality_name,
+            examDate: exam.prior_exam_time,
+            comparisonAvailable: true
+        } : null,
+        imaging: {
+            instanceCount: Number(imaging?.instance_count || 0),
+            seriesCount: Number(imaging?.series_count || 0)
+        },
+        imageAnalysis: null,
+        template: template ? {
+            name: template.name,
+            clinicalHistory: template.clinical_history,
+            technique: template.technique,
+            findings: template.findings,
+            impression: template.impression,
+            recommendations: template.recommendations
+        } : null
+    };
+
+    if (isImageAnalysisUsable(imageAnalysis?.payload)) {
+        const worker = imageAnalysis.payload;
+        payload.imageAnalysis = {
+            summary: String(worker.summary || worker.impression || '').slice(0, 1000),
+            findings: worker.findings.map((finding) => ({
+                label: String(finding.label || '').slice(0, 120),
+                present: finding.present !== false,
+                location: finding.location ? String(finding.location).slice(0, 160) : null,
+                description: String(finding.description || '').slice(0, 1000)
+            })),
+            quality: { supported: true }
+        };
+    }
+
+    return payload;
+};
+
 module.exports = {
     improveReportFormat,
     generatePreliminaryDraft,
     testConnection,
     isConfigured,
     buildStructuredImageAnalysisDraft,
+    buildPreliminaryDraftPayload,
+    isImageAnalysisUsable,
     parseJsonObject
 };

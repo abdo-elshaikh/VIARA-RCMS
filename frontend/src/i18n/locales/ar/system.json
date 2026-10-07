@@ -426,6 +426,7 @@
     "statAlertBanner": "تنبيه سريري طارئ / حالة حرجة STAT",
     "insertCaseRef": "إدراج مرجع فحص أو رقم استدعاء حالة",
     "caseRefPrompt": "أدخل رقم الفحص أو الاستدعاء (مثال: ACC-10928):",
+    "caseIdOrAcc": "رقم الوصول / معرف الفحص",
     "broadcastChannelNotice": "قناة إعلانات وبث رسمي: المحتوى متاح لكافة الطاقم والنشر مقصور على المشرفين.",
     "keyboardHint": "Enter ↵ للإرسال · Shift+Enter لسطر جديد",
     "statActiveNotice": "وضع التنبيه الطارئ STAT مفعّل",

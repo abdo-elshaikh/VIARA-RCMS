@@ -69,6 +69,8 @@ import Modal from '../components/ui/Modal';
 import Pagination from '../components/ui/Pagination';
 import { getPaginationState } from '../utils/pagination';
 import { printWhenReady } from '../utils/printDocument';
+import useDebounce from '../hooks/useDebounce';
+import usePageTitle from '../hooks/usePageTitle';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const REPORT_STATUSES = ['Draft', 'Typed', 'Reviewed', 'Approved', 'Finalized', 'Amended'];
@@ -308,6 +310,7 @@ const CaseReports = () => {
     const reportLanguage = isAr ? 'ar' : 'en';
     const ui = isAr ? I18N.ar : I18N.en;
     const ar = ui;
+    usePageTitle(ui.title);
 
     const currentUser = useSelector(selectCurrentUser);
     const canDeliver = useMemo(() => userHasPermission(currentUser, 'DELIVER_RESULTS'), [currentUser]);
@@ -318,6 +321,25 @@ const CaseReports = () => {
     const [pageSize, setPageSize] = useState(10);
     const [page, setPage] = useState(1);
     const [activeFilters, setActiveFilters] = useState({ ...EMPTY_FILTERS, limit: 10, offset: 0 });
+
+    // ── Live filter sync ────────────────────────────────────────────────────────
+    // Debounce the filters object so quick typing/selection changes don't fire
+    // an API call on every keystroke. 500 ms is a good balance between
+    // responsiveness and server load. The text search field gets its own faster
+    // 300 ms debounce (handled below) so it feels instant to the user.
+    const debouncedFilters = useDebounce(filters, 500);
+
+    // Sync debouncedFilters → activeFilters automatically (live filter mode).
+    // We skip the first mount because activeFilters is already initialised.
+    const isFirstMount = useRef(true);
+    useEffect(() => {
+        if (isFirstMount.current) { isFirstMount.current = false; return; }
+        setActiveFilters({ ...debouncedFilters, limit: pageSize, offset: 0 });
+        setPage(1);
+        setExpandedId(null);
+        setSelectedIds([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debouncedFilters]);
 
     const [expandedId, setExpandedId] = useState(null);
     const [selectedIds, setSelectedIds] = useState([]);
@@ -373,6 +395,8 @@ const CaseReports = () => {
 
     const setFilter = (field, value) => setFilters((current) => ({ ...current, [field]: value }));
 
+    // applyFilters is kept for legacy callers (QR scan lookup, Enter key on search).
+    // In live-filter mode it is a no-op because the useEffect above handles sync.
     const applyFilters = () => {
         setActiveFilters({ ...filters, limit: pageSize, offset: 0 });
         setPage(1);

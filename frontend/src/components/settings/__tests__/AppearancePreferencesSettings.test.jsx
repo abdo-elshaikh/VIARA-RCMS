@@ -65,6 +65,17 @@ describe('appearance and preference settings experience', () => {
         expect(apiMocks.update).toHaveBeenCalled();
     });
 
+    it('persists border radius choice when selecting different border styles', async () => {
+        const { store } = renderSettings(AppearanceSettings);
+
+        const sharpOption = screen.getByRole('button', { name: /Sharp/i });
+        expect(sharpOption).toBeInTheDocument();
+        fireEvent.click(sharpOption);
+
+        await waitFor(() => expect(store.getState().preferences.borderRadius).toBe('sharp'));
+        expect(apiMocks.update).toHaveBeenCalledWith(expect.objectContaining({ borderRadius: 'sharp' }));
+    });
+
     it('validates custom colors without corrupting the saved preference', () => {
         renderSettings(AppearanceSettings, { preferences: { primaryColor: 'custom' } });
         const hexInput = screen.getByLabelText('Custom hex color');

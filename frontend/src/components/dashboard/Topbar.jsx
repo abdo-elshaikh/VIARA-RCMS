@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     AlertCircle,
     Bell,
-    CheckCircle2,
     ChevronDown,
     ChevronRight,
     Clock3,
@@ -155,23 +154,21 @@ const isWithinQuietHours = (preferences) => {
 };
 
 /* ── Live clock ─────────────────────────────────────────────────────── */
+// Detects the local timezone once at module load time — no re-detection needed.
+const LOCAL_TIMEZONE = (() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
+})();
+
 const LiveClock = ({ isRtl, timezone, timeFormat }) => {
     const [now, setNow] = useState(() => new Date());
 
+    // 60-second tick is sufficient — the displayed value only changes per minute.
     useEffect(() => {
-        const id = setInterval(() => setNow(new Date()), 10000);
+        const id = setInterval(() => setNow(new Date()), 60000);
         return () => clearInterval(id);
     }, []);
 
-    const detectedTimezone = useMemo(() => {
-        try {
-            return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-        } catch {
-            return 'UTC';
-        }
-    }, []);
-
-    const activeTz = timezone && timezone !== 'auto' ? timezone : detectedTimezone;
+    const activeTz = timezone && timezone !== 'auto' ? timezone : LOCAL_TIMEZONE;
     const is12Hour = timeFormat ? timeFormat === '12h' : true;
     const locale = isRtl ? 'ar-EG' : 'en-US';
 
@@ -180,7 +177,7 @@ const LiveClock = ({ isRtl, timezone, timeFormat }) => {
             return {
                 timeStr: now.toLocaleTimeString(locale, { timeZone: activeTz, hour: '2-digit', minute: '2-digit', hour12: is12Hour }),
                 dayStr: now.toLocaleDateString(locale, { timeZone: activeTz, weekday: 'short', day: 'numeric', month: 'short' }),
-                tzLabel: activeTz.split('/').pop().replace('_', ' ')
+                tzLabel: activeTz.split('/').pop().replace(/_/g, ' ')
             };
         } catch {
             return {
@@ -192,7 +189,7 @@ const LiveClock = ({ isRtl, timezone, timeFormat }) => {
     }, [now, locale, activeTz, is12Hour]);
 
     return (
-        <div className="vx-clock hidden select-none lg:flex" title={`${tzLabel} (${is12Hour ? '12h' : '24h'})`}>
+        <div className="vx-clock hidden select-none lg:flex" title={`${tzLabel} · ${is12Hour ? '12h' : '24h'}`}>
             <time dateTime={now.toISOString()} className="vx-clock-time">{timeStr}</time>
             <span className="vx-clock-date">{dayStr}</span>
         </div>
@@ -234,36 +231,44 @@ const AttendanceIndicator = ({ isClockedIn, isUpdating, isStale }) => {
 };
 
 /* ── Attendance presence chip ───────────────────────────────────────── */
-const AttendanceButton = ({ isClockedIn, isStaleSession, isUpdating, elapsedText, isOpen, onClick, t, className = '' }) => (
-    <button
-        type="button"
-        data-punch-trigger
-        data-state={isStaleSession ? 'stale' : isClockedIn ? 'active' : 'idle'}
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-        onClick={onClick}
-        disabled={isUpdating}
-        title={isStaleSession
-            ? t('topbar.staleSessionHint', { defaultValue: 'جلسة حضور معلقة لأكثر من 24 ساعة - انقر لإنهاء الوردية' })
+const AttendanceButton = ({ isClockedIn, isStaleSession, isUpdating, elapsedText, isOpen, onClick, t, className = '' }) => {
+    const label = isUpdating
+        ? t('status.updating', { defaultValue: 'جارِ...' })
+        : isStaleSession
+            ? t('topbar.staleSession', { defaultValue: 'معلقة >24س' })
             : isClockedIn
-                ? t('topbar.clockOutHint', { defaultValue: 'إدارة جلسة الحضور والانصراف' })
-                : t('topbar.clockInHint', { defaultValue: 'تسجيل الحضور السريع' })}
-        className={cx('vx-presence', className)}
-    >
-        <AttendanceIndicator isClockedIn={isClockedIn} isUpdating={isUpdating} isStale={isStaleSession} />
-        <span className="whitespace-nowrap">
-            {isUpdating
-                ? t('status.updating', { defaultValue: 'جارِ...' })
-                : isStaleSession
-                    ? t('topbar.staleSession', { defaultValue: 'معلقة >24س' })
-                    : isClockedIn
-                        ? t('topbar.clockedIn', { defaultValue: 'حاضر' })
-                        : t('topbar.clockInHint', { defaultValue: 'حضور' })}
-        </span>
-        {isClockedIn && elapsedText && <span className="vx-presence-time">{elapsedText}</span>}
-        <ChevronDown size={14} aria-hidden="true" className={cx('opacity-60 transition-transform duration-200', isOpen && 'rotate-180')} />
-    </button>
-);
+                ? t('topbar.clockedIn', { defaultValue: 'حاضر' })
+                : t('topbar.clockInAction', { defaultValue: 'حضور' });
+
+    return (
+        <button
+            type="button"
+            data-punch-trigger
+            data-state={isStaleSession ? 'stale' : isClockedIn ? 'active' : 'idle'}
+            aria-haspopup="dialog"
+            aria-expanded={isOpen}
+            onClick={onClick}
+            disabled={isUpdating}
+            title={isStaleSession
+                ? t('topbar.staleSessionHint', { defaultValue: 'جلسة حضور معلقة لأكثر من 24 ساعة - انقر لإنهاء الوردية' })
+                : isClockedIn
+                    ? t('topbar.clockOutHint', { defaultValue: 'إدارة جلسة الحضور والانصراف' })
+                    : t('topbar.clockInHint', { defaultValue: 'تسجيل الحضور السريع' })}
+            className={cx('vx-presence', className)}
+        >
+            <AttendanceIndicator isClockedIn={isClockedIn} isUpdating={isUpdating} isStale={isStaleSession} />
+            <span className="whitespace-nowrap">{label}</span>
+            {isClockedIn && elapsedText && (
+                <span className="vx-presence-time" dir="ltr">{elapsedText}</span>
+            )}
+            <ChevronDown
+                size={14}
+                aria-hidden="true"
+                className={cx('ms-0.5 opacity-60 transition-transform duration-200', isOpen && 'rotate-180')}
+            />
+        </button>
+    );
+};
 
 /* ── Role Badge Styling Helper ──────────────────────────────────────── */
 const getRoleBadgeStyle = (role) => {
@@ -383,6 +388,7 @@ const ProfileMenu = ({
     <div
         role="menu"
         dir={isRtl ? 'rtl' : 'ltr'}
+        aria-label={t('topbar.userMenuLabel', { defaultValue: 'User account menu' })}
         className="vx-menu topbar-profile-menu absolute end-0 top-full z-50 mt-2 w-[min(320px,calc(100vw-24px))] rounded-2xl border border-[var(--VIARA-line,#e2e8f0)] bg-white/95 p-2 shadow-2xl backdrop-blur-2xl animate-in fade-in-50 zoom-in-95 slide-in-from-top-2 duration-150 ltr:origin-top-right rtl:origin-top-left dark:border-slate-800 dark:bg-slate-900/95"
     >
         {/* User Identity & Clinical Role Header */}
@@ -615,6 +621,9 @@ const Topbar = ({ onMobileMenuClick, menuButtonRef }) => {
     const saveTimeoutRef = useRef(null);
     const isSavingRef = useRef(false);
 
+    // Cleanup the debounce timer on unmount to avoid stale state updates.
+    useEffect(() => () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); }, []);
+
     const flushPreferencesQueue = useCallback(async () => {
         if (isSavingRef.current) return;
         const changesToSave = { ...pendingChangesRef.current };
@@ -634,18 +643,19 @@ const Topbar = ({ onMobileMenuClick, menuButtonRef }) => {
             }, 2500);
         } catch (_) {
             setSaveStatus('error');
-            toast.error(t('topbar.preferencesSaveError', {
-                defaultValue: isRtl
-                    ? 'تعذر حفظ بعض التفضيلات على الخادم (محفوظة محلياً)'
-                    : 'Failed to save preferences to server (saved locally)'
-            }));
+            // Toast with latest values via a ref to avoid stale closure.
+            toast.error(isRtl
+                ? 'تعذر حفظ بعض التفضيلات على الخادم (محفوظة محلياً)'
+                : 'Failed to save preferences to server (saved locally)'
+            );
         } finally {
             isSavingRef.current = false;
             if (Object.keys(pendingChangesRef.current).length > 0) {
                 flushPreferencesQueue();
             }
         }
-    }, [isRtl, t, updatePreferences]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [updatePreferences]);
 
     const handleUpdatePreference = useCallback((changes) => {
         const next = { ...preferences, ...changes };
@@ -788,19 +798,20 @@ const Topbar = ({ onMobileMenuClick, menuButtonRef }) => {
     const displayUserName = getLocalizedDemoUserName(user?.name, t);
     const userInitials = useMemo(() => getInitials(displayUserName), [displayUserName]);
 
-    // Live active session duration ticker
+    // Live active session duration ticker — updates every minute (display is HH:MM).
     useEffect(() => {
         if (!isClockedIn || !activeSession?.clock_in) {
             setElapsedSeconds(0);
             return undefined;
         }
         const startTime = new Date(activeSession.clock_in).getTime();
+        if (!Number.isFinite(startTime)) return undefined;
+
         const tick = () => {
-            const diff = Math.max(0, Math.floor((Date.now() - startTime) / 1000));
-            setElapsedSeconds(diff);
+            setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startTime) / 1000)));
         };
-        tick();
-        const interval = setInterval(tick, 30000);
+        tick(); // immediate first tick
+        const interval = setInterval(tick, 60000);
         return () => clearInterval(interval);
     }, [isClockedIn, activeSession?.clock_in]);
 
@@ -1028,21 +1039,13 @@ const Topbar = ({ onMobileMenuClick, menuButtonRef }) => {
                     <Menu size={20} />
                 </HeaderAction>
 
-                {/* Desktop Current Workspace / Module Badge */}
-                <div className="hidden min-w-0 shrink-0 items-center gap-2 lg:flex">
-                    <div className="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-100/70 px-3 py-1.5 shadow-2xs dark:border-slate-800/80 dark:bg-slate-850/60">
-                        <span className="relative flex h-2 w-2">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                        </span>
-                        <p className="vx-page-title max-w-[160px] truncate text-xs font-bold text-slate-800 dark:text-slate-200 xl:max-w-[220px]" title={workspaceLabel}>
-                            {workspaceLabel}
-                        </p>
-                    </div>
-                </div>
+                {/* Current workspace label — visible on small screens between menu icon and search */}
+                <p className="min-w-0 flex-1 truncate text-sm font-bold text-[var(--VIARA-ink)] md:hidden" aria-live="polite">
+                    {workspaceLabel}
+                </p>
 
                 {/* Global Search Slots */}
-                <div className="topbar-mobile-search min-w-0 flex-1 md:hidden">
+                <div className="topbar-mobile-search hidden min-w-0 max-w-[min(52vw,320px)] flex-1 sm:flex md:hidden">
                     <GlobalSearch />
                 </div>
                 <div className="topbar-search-slot hidden w-full min-w-0 max-w-[min(42vw,560px)] flex-1 md:flex">
@@ -1066,7 +1069,7 @@ const Topbar = ({ onMobileMenuClick, menuButtonRef }) => {
                         aria-label={t('topbar.displayControls', { defaultValue: isRtl ? 'إعدادات العرض' : 'Display controls' })}
                     >
                         <LanguageToggle variant="compact" className="topbar-language-control" />
-                        
+
                         <HeaderAction
                             label={t('topbar.toggleTheme', { defaultValue: isDarkMode ? 'Switch to light mode' : 'Toggle theme' })}
                             onClick={toggleTheme}
@@ -1161,9 +1164,17 @@ const Topbar = ({ onMobileMenuClick, menuButtonRef }) => {
                             aria-haspopup="dialog"
                             onClick={toggleNotifications}
                         >
-                            <Bell size={19} className={unreadCount > 0 ? 'topbar-bell-active' : ''} strokeWidth={unreadCount > 0 ? 2.3 : 1.9} />
+                            <Bell
+                                size={19}
+                                className={unreadCount > 0 ? 'topbar-bell-active' : ''}
+                                strokeWidth={unreadCount > 0 ? 2.3 : 1.9}
+                                aria-hidden="true"
+                            />
                             {preferences?.showNotificationBadge !== false && unreadCount > 0 && (
-                                <span className="topbar-notif-badge absolute -end-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-[var(--VIARA-surface)] bg-[var(--danger)] px-1 text-[10px] font-bold leading-none text-white shadow-xs">
+                                <span
+                                    aria-hidden="true"
+                                    className="topbar-notif-badge absolute -end-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-[var(--VIARA-surface)] bg-[var(--danger)] px-1 text-[10px] font-bold leading-none text-white shadow-xs"
+                                >
                                     {unreadCount > 99 ? '99+' : unreadCount}
                                 </span>
                             )}

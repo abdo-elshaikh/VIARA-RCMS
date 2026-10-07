@@ -79,10 +79,15 @@ describe('display board admin controller', () => {
         const db = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
-                if (text.includes('display.patient_display_mode')) return { rows: [{ setting_value: 'order_only' }] };
-                if (text.includes('display.call_announcement_mode')) return { rows: [{ setting_value: 'token_and_name' }] };
-                if (text.includes('display.show_ticker')) return { rows: [{ setting_value: 'false' }] };
-                if (text.includes('display.board_title')) return { rows: [] };
+                if (text.includes('FROM system_settings')) {
+                    return {
+                        rows: [
+                            { setting_key: 'display.patient_display_mode', setting_value: 'order_only' },
+                            { setting_key: 'display.call_announcement_mode', setting_value: 'token_and_name' },
+                            { setting_key: 'display.show_ticker', setting_value: 'false' }
+                        ]
+                    };
+                }
                 if (text.includes('FROM display_announcements')) {
                     return {
                         rows: [{
@@ -105,7 +110,7 @@ describe('display board admin controller', () => {
         await getDisplayConfig(db)({}, res, jest.fn());
 
         const payload = res.json.mock.calls[0][0];
-        expect(payload.config).toEqual({
+        expect(payload.config).toMatchObject({
             patientDisplayMode: 'order_only',
             callAnnouncementMode: 'token_and_name',
             showTicker: false,

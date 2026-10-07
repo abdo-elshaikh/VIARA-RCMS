@@ -1,12 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlertCircle,
-  ArrowRight,
-  Bell,
-  Check,
-  CheckCheck,
-  RefreshCw,
-} from "lucide-react";
+import { AlertCircle, ArrowRight, Bell, Check, CheckCheck, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   type PortalNotification,
@@ -37,7 +30,8 @@ const formatNotificationTime = (value: string, locale?: string) => {
 };
 
 const priorityClass: Record<string, string> = {
-  Critical: "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200",
+  Critical:
+    "border-red-300 bg-red-50 text-red-800 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200",
   Warning:
     "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200",
   Action:
@@ -126,9 +120,7 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
       if (!byId.has(item.notification_id)) byId.set(item.notification_id, item);
     });
     return [...byId.values()]
-      .map((item) =>
-        readOverrides.has(item.notification_id) ? { ...item, is_read: true } : item,
-      )
+      .map((item) => (readOverrides.has(item.notification_id) ? { ...item, is_read: true } : item))
       .sort((a, b) => (Date.parse(b.created_at) || 0) - (Date.parse(a.created_at) || 0));
   }, [additionalItems, firstPage?.items, readOverrides]);
 
@@ -168,7 +160,9 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
   };
 
   const handleMarkAllRead = async () => {
-    const unreadIds = notifications.filter((item) => !item.is_read).map((item) => item.notification_id);
+    const unreadIds = notifications
+      .filter((item) => !item.is_read)
+      .map((item) => item.notification_id);
     const previousUnreadCount = unreadCount;
     setReadOverrides((current) => new Set([...current, ...unreadIds]));
     setUnreadCount(0);
@@ -222,9 +216,18 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
     if (!isDoctor || !notification.entity_id) return;
     try {
       await acknowledgeDoctorCritical({ id: notification.entity_id }).unwrap();
-      toast.success(t("notifications.acknowledged", { defaultValue: "Critical result acknowledged." }));
+      toast.success(
+        t("notifications.acknowledged", { defaultValue: "Critical result acknowledged." }),
+      );
     } catch (error) {
-      toast.error(getErrorMessage(error, t("notifications.acknowledgeError", { defaultValue: "Could not acknowledge this result." })));
+      toast.error(
+        getErrorMessage(
+          error,
+          t("notifications.acknowledgeError", {
+            defaultValue: "Could not acknowledge this result.",
+          }),
+        ),
+      );
     }
   };
 
@@ -262,13 +265,19 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
       };
 
   return (
-    <section className="rounded-xl border border-border bg-surface p-5 shadow-sm" aria-labelledby={`${effectiveRole}-notifications-title`}>
+    <section
+      className="rounded-xl border border-border bg-surface p-5 shadow-sm"
+      aria-labelledby={`${effectiveRole}-notifications-title`}
+    >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-wider text-primary-700 dark:text-primary-300">
             {t("notifications.inboxEyebrow", { defaultValue: "Notification inbox" })}
           </p>
-          <h2 id={`${effectiveRole}-notifications-title`} className="mt-1 font-display text-lg font-semibold text-foreground">
+          <h2
+            id={`${effectiveRole}-notifications-title`}
+            className="mt-1 font-display text-lg font-semibold text-foreground"
+          >
             {t("notifications.title", { defaultValue: "Notifications" })}
           </h2>
           <p className="mt-1 text-xs font-semibold text-muted-foreground" aria-live="polite">
@@ -294,7 +303,11 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
             disabled={!unreadCount || isMarkingAll}
             className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-3 text-xs font-bold text-primary-foreground transition hover:bg-primary-700 focus-visible:ring-2 focus-visible:ring-primary/30 disabled:opacity-60"
           >
-            {isMarkingAll ? <RefreshCw size={13} className="animate-spin" /> : <CheckCheck size={13} />}
+            {isMarkingAll ? (
+              <RefreshCw size={13} className="animate-spin" />
+            ) : (
+              <CheckCheck size={13} />
+            )}
             {t("notifications.markAllRead", { defaultValue: "Mark all read" })}
           </button>
         </div>
@@ -302,18 +315,32 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
 
       {query.isLoading ? (
         <div className="mt-5">
-          <Loading label={t("notifications.loading", { defaultValue: "Loading notifications..." })} />
+          <Loading
+            label={t("notifications.loading", { defaultValue: "Loading notifications..." })}
+          />
         </div>
       ) : query.isError ? (
-        <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-5 text-center dark:border-red-900 dark:bg-red-950/20">
+        <div
+          role="alert"
+          className="mt-5 rounded-xl border border-red-200 bg-red-50 p-5 text-center dark:border-red-900 dark:bg-red-950/20"
+        >
           <AlertCircle className="mx-auto h-7 w-7 text-red-600" />
           <h3 className="mt-2 text-sm font-bold text-foreground">
             {t("notifications.errorTitle", { defaultValue: "Notifications could not be loaded" })}
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            {getErrorMessage(query.error, t("notifications.errorDescription", { defaultValue: "Check your connection and try again." }))}
+            {getErrorMessage(
+              query.error,
+              t("notifications.errorDescription", {
+                defaultValue: "Check your connection and try again.",
+              }),
+            )}
           </p>
-          <button type="button" onClick={() => query.refetch()} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-bold text-primary-foreground focus-visible:ring-2 focus-visible:ring-primary/30">
+          <button
+            type="button"
+            onClick={() => query.refetch()}
+            className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-lg bg-primary px-4 text-xs font-bold text-primary-foreground focus-visible:ring-2 focus-visible:ring-primary/30"
+          >
             <RefreshCw size={13} />
             {t("common.retry", { defaultValue: "Retry" })}
           </button>
@@ -343,28 +370,45 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
                     : "border-primary-200 bg-primary-50 text-foreground shadow-sm dark:border-primary-400/20 dark:bg-primary-400/10"
                 }`}
               >
-                <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${notification.is_read ? "bg-surface text-muted-foreground" : "bg-primary-700 text-white"}`} aria-hidden="true">
+                <span
+                  className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${notification.is_read ? "bg-surface text-muted-foreground" : "bg-primary-700 text-white"}`}
+                  aria-hidden="true"
+                >
                   {notification.is_read ? <Check size={16} /> : <Bell size={16} />}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-display text-sm font-semibold">
-                      {notification.subject || t("notifications.updateFallback", { defaultValue: "Portal update" })}
+                      {notification.subject ||
+                        t("notifications.updateFallback", { defaultValue: "Portal update" })}
                     </h3>
                     <span className="rounded-full border border-border bg-surface px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
-                      {notification.is_read ? t("notifications.read", { defaultValue: "Read" }) : t("notifications.unread", { defaultValue: "Unread" })}
+                      {notification.is_read
+                        ? t("notifications.read", { defaultValue: "Read" })
+                        : t("notifications.unread", { defaultValue: "Unread" })}
                     </span>
-                    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${priorityClass[notification.priority] || priorityClass.Normal}`}>
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${priorityClass[notification.priority] || priorityClass.Normal}`}
+                    >
                       {priorityLabels[notification.priority] || notification.priority}
                     </span>
                   </div>
-                  {notification.content && <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6">{notification.content}</p>}
+                  {notification.content && (
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6">
+                      {notification.content}
+                    </p>
+                  )}
                   <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-semibold text-muted-foreground">
                     {notification.category && (
-                      <span>{categoryLabels[notification.category.toLowerCase()] || notification.category}</span>
+                      <span>
+                        {categoryLabels[notification.category.toLowerCase()] ||
+                          notification.category}
+                      </span>
                     )}
                     {notification.event_type && <span>{notification.event_type}</span>}
-                    <time dateTime={notification.created_at}>{formatNotificationTime(notification.created_at, locale)}</time>
+                    <time dateTime={notification.created_at}>
+                      {formatNotificationTime(notification.created_at, locale)}
+                    </time>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {!notification.is_read && (
@@ -374,7 +418,11 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
                         disabled={isPending}
                         className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-primary-200 bg-surface px-3 text-xs font-bold text-primary-700 transition hover:bg-primary-50 focus-visible:ring-2 focus-visible:ring-primary/30 disabled:opacity-60"
                       >
-                        {isPending ? <RefreshCw size={12} className="animate-spin" /> : <Check size={12} />}
+                        {isPending ? (
+                          <RefreshCw size={12} className="animate-spin" />
+                        ) : (
+                          <Check size={12} />
+                        )}
                         {t("notifications.markRead", { defaultValue: "Mark as read" })}
                       </button>
                     )}
@@ -393,16 +441,18 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
                         <ArrowRight size={12} className="rtl:rotate-180" />
                       </button>
                     )}
-                    {isDoctor && notification.acknowledgement_status === "Pending" && notification.entity_id && (
-                      <button
-                        type="button"
-                        onClick={() => void handleAcknowledge(notification)}
-                        className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 focus-visible:ring-2 focus-visible:ring-red-500/30 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200"
-                      >
-                        <Check size={12} />
-                        {t("notifications.acknowledge", { defaultValue: "Acknowledge" })}
-                      </button>
-                    )}
+                    {isDoctor &&
+                      notification.acknowledgement_status === "Pending" &&
+                      notification.entity_id && (
+                        <button
+                          type="button"
+                          onClick={() => void handleAcknowledge(notification)}
+                          className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-bold text-red-700 transition hover:bg-red-100 focus-visible:ring-2 focus-visible:ring-red-500/30 dark:border-red-800 dark:bg-red-950/30 dark:text-red-200"
+                        >
+                          <Check size={12} />
+                          {t("notifications.acknowledge", { defaultValue: "Acknowledge" })}
+                        </button>
+                      )}
                   </div>
                 </div>
               </article>
@@ -410,7 +460,10 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
           })}
 
           {loadMoreError && (
-            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-center text-xs font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/20 dark:text-red-200">
+            <div
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 p-3 text-center text-xs font-semibold text-red-700 dark:border-red-900 dark:bg-red-950/20 dark:text-red-200"
+            >
               {loadMoreError}
             </div>
           )}
@@ -427,7 +480,10 @@ const PortalNotificationsView: React.FC<PortalNotificationsViewProps> = ({
                 : t("notifications.loadMore", { defaultValue: "Load more" })}
             </button>
           )}
-          <p className="text-center text-[10px] font-semibold text-muted-foreground" aria-live="polite">
+          <p
+            className="text-center text-[10px] font-semibold text-muted-foreground"
+            aria-live="polite"
+          >
             {t("notifications.showing", {
               defaultValue: "Showing {{shown}} of {{total}} notifications",
               shown: notifications.length,

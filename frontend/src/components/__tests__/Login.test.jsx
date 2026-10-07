@@ -10,6 +10,7 @@ import preferencesReducer from '../../store/preferencesSlice';
 import Login from '../../pages/Login';
 import { api } from '../../store/api';
 import { vi } from 'vitest';
+vi.mock('../public/PublicConnectionNotice', () => ({ default: () => null }));
 
 vi.mock('../../store/api', async (importOriginal) => {
     const actual = await importOriginal();

@@ -684,9 +684,16 @@ const getQueue = (db) => async (req, res, next) => {
                 timing_basis: 'active_stage'
             };
             if (row.first_name_enc || row.last_name_enc) {
-                mapped.patient_name = [decrypt(row.first_name_enc), decrypt(row.last_name_enc)]
-                    .filter(Boolean)
-                    .join(' ');
+                try {
+                    mapped.patient_name = [
+                        row.first_name_enc ? decrypt(row.first_name_enc) : null,
+                        row.last_name_enc ? decrypt(row.last_name_enc) : null
+                    ]
+                        .filter(Boolean)
+                        .join(' ');
+                } catch {
+                    mapped.patient_name = row.mrn ? `Patient (${row.mrn})` : 'Patient';
+                }
             }
             delete mapped.first_name_enc;
             delete mapped.last_name_enc;

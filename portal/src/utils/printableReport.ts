@@ -126,4 +126,3 @@ export const openPrintableReport = (
   }
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 };
-

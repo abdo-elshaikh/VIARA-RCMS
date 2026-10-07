@@ -9,7 +9,7 @@ jest.mock('../src/services/notificationJobService', () => ({
 const { logAction } = require('../src/services/auditService');
 const { triggerEvent } = require('../src/services/notificationJobService');
 const {
-    clockIn, clockOut, getShifts, getProductivityReport,
+    clockIn, clockOut, getAttendance, getShifts, getProductivityReport,
     updateLeaveStatus, recordManualAttendance, upsertLeaveBalance, createLeaveRequest,
     getAttendanceSettings, updateAttendanceSettings,
     getAttendancePermissions, createAttendancePermission, updateAttendancePermissionStatus,
@@ -57,6 +57,45 @@ describe('HR attendance controller', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         invalidateAttendanceConfigCache();
+    });
+
+    test('attendance accepts exact timezone-aware timestamp bounds', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+        const res = createResponse();
+        const next = jest.fn();
+
+        await getAttendance(db)(makeReq({
+            query: {
+                startDateTime: '2026-08-03T04:00:00.000Z',
+                endDateTime: '2026-08-04T04:00:00.000Z'
+            }
+        }), res, next);
+
+        expect(db.query.mock.calls[0][0]).toContain('a.clock_in >= $1::timestamptz');
+        expect(db.query.mock.calls[0][0]).toContain('a.clock_in < $2::timestamptz');
+        expect(db.query.mock.calls[0][1]).toEqual([
+            '2026-08-03T04:00:00.000Z',
+            '2026-08-04T04:00:00.000Z',
+            USER_ID,
+            100
+        ]);
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    test('attendance rejects malformed or unordered timestamp bounds', async () => {
+        const db = { query: jest.fn() };
+        const res = createResponse();
+        const next = jest.fn();
+
+        await getAttendance(db)(makeReq({
+            query: {
+                startDateTime: '2026-08-04T04:00:00.000Z',
+                endDateTime: '2026-08-03T04:00:00.000Z'
+            }
+        }), res, next);
+
+        expect(db.query).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 400 }));
     });
 
     test('attendance corrections require a reason and ordered timestamps', () => {

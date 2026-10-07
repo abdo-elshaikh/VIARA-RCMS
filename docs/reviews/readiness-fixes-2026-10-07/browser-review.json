@@ -1,0 +1,1529 @@
+[
+  {
+    "name": "staff-landing",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 0,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".block.text-primary.font-bold:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".bg-\\[\\#F0F8F5\\] > .min-w-0 > .sm\\:text-sm.mt-0\\.5.leading-5"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".block.text-primary.font-bold:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".bg-\\[\\#F0F8F5\\] > .min-w-0 > .sm\\:text-sm.mt-0\\.5.leading-5"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".block.text-primary.font-bold:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".bg-\\[\\#F0F8F5\\] > .min-w-0 > .sm\\:text-sm.mt-0\\.5.leading-5"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".block.text-primary.font-bold:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".bg-\\[\\#F0F8F5\\] > .min-w-0 > .sm\\:text-sm.mt-0\\.5.leading-5"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 0,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": []
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".block.text-primary.font-bold:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".bg-\\[\\#F0F8F5\\] > .min-w-0 > .sm\\:text-sm.mt-0\\.5.leading-5"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".block.text-primary.font-bold:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".bg-\\[\\#F0F8F5\\] > .min-w-0 > .sm\\:text-sm.mt-0\\.5.leading-5"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.22 (foreground color: #48a086, background color: #253137, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  }
+]

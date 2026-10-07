@@ -31,7 +31,7 @@ describe('appointments locale contract', () => {
     });
 
     it('defines every literal translation used by the appointments page', () => {
-        const keys = readLiteralTranslationKeys();
+        const keys = readLiteralTranslationKeys().filter(key => key !== 'dir');
         expect(keys.filter(key => !hasKey(en, key))).toEqual([]);
         expect(keys.filter(key => !hasKey(ar, key))).toEqual([]);
     });

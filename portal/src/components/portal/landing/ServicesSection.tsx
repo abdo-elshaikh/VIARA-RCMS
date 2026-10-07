@@ -148,22 +148,33 @@ interface ServicesSectionProps {
   subheading?: string;
 }
 
-export const ServicesSection = ({ onSelectService, onViewAllServices, heading, subheading }: ServicesSectionProps) => {
+export const ServicesSection = ({
+  onSelectService,
+  onViewAllServices,
+  heading,
+  subheading,
+}: ServicesSectionProps) => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith("ar");
   const reduceMotion = useReducedMotion();
-  const { activeModalityNames, overviewLoaded, overviewError, refetchOverview, isLoading } = useLandingContent();
+  const { activeModalityNames, overviewLoaded, overviewError, refetchOverview, isLoading } =
+    useLandingContent();
 
   const services = overviewLoaded
     ? SERVICES.filter((service) => matchesActiveModalities(activeModalityNames, service.matchers))
     : [];
   const specializedServices = overviewLoaded
-    ? SPECIALIZED_SERVICES.filter((service) => matchesActiveModalities(activeModalityNames, service.matchers))
+    ? SPECIALIZED_SERVICES.filter((service) =>
+        matchesActiveModalities(activeModalityNames, service.matchers),
+      )
     : [];
 
   if (overviewError) {
     return (
-      <section id="services-section" className="scroll-mt-24 border-y border-[#E3EEEB] bg-[#F7FBFA] py-14 dark:border-border dark:bg-surface sm:py-16 lg:py-20">
+      <section
+        id="services-section"
+        className="scroll-mt-24 border-y border-[#E3EEEB] bg-[#F7FBFA] py-14 dark:border-border dark:bg-surface sm:py-16 lg:py-20"
+      >
         <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
           <LandingRetryBox
             onRetry={refetchOverview}
@@ -178,7 +189,10 @@ export const ServicesSection = ({ onSelectService, onViewAllServices, heading, s
   // Still loading — keep the layout stable with a skeleton.
   if (isLoading || !overviewLoaded) {
     return (
-      <section id="services-section" className="scroll-mt-24 border-y border-[#E3EEEB] bg-[#F7FBFA] py-14 dark:border-border dark:bg-surface sm:py-16 lg:py-20">
+      <section
+        id="services-section"
+        className="scroll-mt-24 border-y border-[#E3EEEB] bg-[#F7FBFA] py-14 dark:border-border dark:bg-surface sm:py-16 lg:py-20"
+      >
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <LandingSectionSkeleton rows={3} minHeight="min-h-[420px]" />
         </div>
@@ -205,12 +219,14 @@ export const ServicesSection = ({ onSelectService, onViewAllServices, heading, s
               {isRtl ? "خدمات التصوير لدينا" : "Our imaging services"}
             </span>
             <h2 className="mt-3 max-w-full break-words text-2xl font-bold leading-tight text-[#0B2348] dark:text-white sm:text-3xl lg:text-4xl">
-              {heading || (isRtl ? "الفحص المناسب، بمعلومة أوضح" : "The right exam, explained clearly")}
+              {heading ||
+                (isRtl ? "الفحص المناسب، بمعلومة أوضح" : "The right exam, explained clearly")}
             </h2>
             <p className="mt-3 max-w-xl break-words text-sm leading-7 text-muted-foreground">
-              {subheading || (isRtl
-                ? "تعرف سريعاً على فحوصات التصوير المتاحة لدينا، ثم اختر الخدمة التي تناسب احتياجك."
-                : "Quickly compare the imaging exams we operate, then choose the service that fits your needs.")}
+              {subheading ||
+                (isRtl
+                  ? "تعرف سريعاً على فحوصات التصوير المتاحة لدينا، ثم اختر الخدمة التي تناسب احتياجك."
+                  : "Quickly compare the imaging exams we operate, then choose the service that fits your needs.")}
             </p>
           </div>
 

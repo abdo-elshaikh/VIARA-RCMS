@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -51,6 +51,8 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import PageHeader from '../components/ui/PageHeader';
 import Pagination from '../components/ui/Pagination';
 import { selectCurrentUser } from '../store/authSlice';
+import useFocusTrap from '../hooks/useFocusTrap';
+import usePageTitle from '../hooks/usePageTitle';
 
 const emptyPatientForm = {
     firstName: '',
@@ -147,7 +149,11 @@ const copyText = async (value, successMsg, errorMsg) => {
 const SortTh = ({ columnKey, sortConfig, onSort, children }) => {
     const active = sortConfig.key === columnKey;
     return (
-        <th className="px-4 py-3.5 text-start">
+        <th
+            scope="col"
+            aria-sort={active ? (sortConfig.direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+            className="px-4 py-3.5 text-start"
+        >
             <button
                 type="button"
                 onClick={() => onSort(columnKey)}
@@ -330,25 +336,34 @@ const PatientRecordCard = ({ row, selected, onSelect, onOpen, onEdit, onDelete, 
     );
 };
 
-const PatientField = ({ label, value, onChange, type = 'text', placeholder = '', error = '', required = false }) => (
-    <div>
-        <label className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">
-            {label} {required && <span className="text-rose-500 font-black">*</span>}
-        </label>
-        <input
-            type={type}
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            placeholder={placeholder}
-            className={`h-10 w-full rounded-xl border bg-white px-3 text-xs font-bold text-slate-800 outline-hidden transition focus:border-teal-500 dark:bg-slate-900 dark:text-slate-200 ${
-                error
-                    ? 'border-rose-500 focus:border-rose-500 dark:border-rose-500 bg-rose-50/10'
-                    : 'border-slate-200/80 dark:border-slate-800'
-            }`}
-        />
-        {error && <p className="mt-1 text-[11px] font-bold text-rose-500">{error}</p>}
-    </div>
-);
+const PatientField = ({ label, value, onChange, type = 'text', placeholder = '', error = '', required = false }) => {
+    const fieldId = useId();
+    const errorId = `${fieldId}-error`;
+
+    return (
+        <div>
+            <label htmlFor={fieldId} className="mb-1 block text-xs font-bold text-slate-700 dark:text-slate-300">
+                {label} {required && <span className="text-rose-500 font-black">*</span>}
+            </label>
+            <input
+                id={fieldId}
+                type={type}
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                placeholder={placeholder}
+                aria-required={required || undefined}
+                aria-invalid={error ? 'true' : undefined}
+                aria-describedby={error ? errorId : undefined}
+                className={`h-10 w-full rounded-xl border bg-white px-3 text-xs font-bold text-slate-800 outline-hidden transition focus:border-teal-500 dark:bg-slate-900 dark:text-slate-200 ${
+                    error
+                        ? 'border-rose-500 focus:border-rose-500 dark:border-rose-500 bg-rose-50/10'
+                        : 'border-slate-200/80 dark:border-slate-800'
+                }`}
+            />
+            {error && <p id={errorId} className="mt-1 text-[11px] font-bold text-rose-500">{error}</p>}
+        </div>
+    );
+};
 
 const ConsentCheckbox = ({ label, checked, onChange }) => (
     <label className="flex cursor-pointer items-center gap-2.5 rounded-2xl border border-slate-200/80 bg-white p-3 text-xs font-bold text-slate-700 shadow-2xs transition hover:border-teal-500/40 hover:bg-teal-50/20 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
@@ -365,6 +380,17 @@ const ConsentCheckbox = ({ label, checked, onChange }) => (
 const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSaving, duplicatePatients = [], errors = {}, setErrors }) => {
     const { t } = useTranslation('patients');
     const [activeTab, setActiveTab] = useState('demographics');
+    const dialogRef = useRef(null);
+    const closeBtnRef = useRef(null);
+
+    useFocusTrap({
+        containerRef: dialogRef,
+        isActive: Boolean(visible),
+        onEscape: onCancel,
+        lockScroll: true,
+        initialFocusRef: closeBtnRef,
+    });
+
     const patch = updates => {
         setForm(prev => ({ ...prev, ...updates }));
         if (setErrors) {
@@ -379,7 +405,14 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
     if (!visible) return null;
     return createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md animate-in fade-in duration-200">
-            <div className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-200">
+            <div
+                ref={dialogRef}
+                tabIndex={-1}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="patient-modal-title"
+                className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-200"
+            >
                 {/* Header */}
                 <div className="flex shrink-0 items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -387,11 +420,12 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
                             <User size={19} />
                         </span>
                         <div>
-                            <h2 className="text-base font-black text-slate-900 dark:text-white">{title}</h2>
-                            <p className="text-xs font-semibold text-slate-400">{t('modal.description')}</p>
+                            <h2 id="patient-modal-title" className="text-base font-black text-slate-900 dark:text-white">{title}</h2>
+                            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('modal.description')}</p>
                         </div>
                     </div>
                     <button
+                        ref={closeBtnRef}
                         type="button"
                         onClick={onCancel}
                         aria-label={t('modal.close')}
@@ -626,6 +660,7 @@ const PatientModal = ({ visible, title, form, setForm, onSave, onCancel, isSavin
 const Patients = () => {
     const { t, i18n } = useTranslation('patients');
     const isArabic = i18n.language === 'ar';
+    usePageTitle(t('title', 'المرضى'));
     const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
     const canRestrictPatient = hasDeveloperOrAdminRole(currentUser?.role);
@@ -916,7 +951,7 @@ const Patients = () => {
                         <div className="min-w-0 flex-1">
                             <div className="mb-2 flex items-center justify-between gap-3">
                                 <label htmlFor="patient-registry-search" className="text-xs font-black text-slate-700 dark:text-slate-200">{t('filters.title')}</label>
-                                <span className="text-[11px] font-bold text-slate-400">{t('overview.results', { shown: stats.shown, total: stats.total })}</span>
+                                <span aria-live="polite" aria-atomic="true" className="text-[11px] font-bold text-slate-500 dark:text-slate-400">{t('overview.results', { shown: stats.shown, total: stats.total })}</span>
                             </div>
                             <div className="relative">
                                 <Search className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
@@ -1019,10 +1054,10 @@ const Patients = () => {
                                     </th>
                                     <SortTh columnKey="name" sortConfig={sortConfig} onSort={toggleSort}>{t('columns.name')}</SortTh>
                                     <SortTh columnKey="mrn" sortConfig={sortConfig} onSort={toggleSort}>{t('columns.mrn')}</SortTh>
-                                    <th className="px-4 py-3.5 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t('records.contact')}</th>
+                                    <th className="px-4 py-3.5 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('records.contact')}</th>
                                     <SortTh columnKey="date_of_birth" sortConfig={sortConfig} onSort={toggleSort}>{t('records.demographics')}</SortTh>
-                                    <th className="px-4 py-3.5 text-start text-[10px] font-black uppercase tracking-wider text-slate-400">{t('records.statusAndRegistration')}</th>
-                                    <th className="w-32 px-5 py-3.5 text-end text-[10px] font-black uppercase tracking-wider text-slate-400">{t('actions')}</th>
+                                    <th className="px-4 py-3.5 text-start text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('records.statusAndRegistration')}</th>
+                                    <th className="w-32 px-5 py-3.5 text-end text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{t('actions')}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">

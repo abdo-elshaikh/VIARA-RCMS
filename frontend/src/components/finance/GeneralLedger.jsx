@@ -18,6 +18,7 @@ import {
 } from '../../store/api';
 import { formatFinancialCurrency, formatFinancialDate, toFinancialDateInput } from '../../utils/financialFormat';
 import Pagination from '../ui/Pagination';
+import { escapeFinancialCsvValue as csvEscape } from '../../utils/financialCsv';
 
 const monthStart = () => toFinancialDateInput(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 const today = () => toFinancialDateInput();
@@ -153,10 +154,6 @@ const SOURCE_OPTIONS = [
 
 const PAGE_SIZE_OPTIONS = [50, 100, 150, 250, 500];
 
-const csvEscape = (value) => {
-    const text = value === null || value === undefined ? '' : String(value);
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-};
 
 const GeneralLedger = ({ dateRange: externalDateRange, onDateRangeChange }) => {
     const { i18n } = useTranslation('workspace');
@@ -312,7 +309,7 @@ const GeneralLedger = ({ dateRange: externalDateRange, onDateRangeChange }) => {
                             className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-slate-950 px-3 text-xs font-black text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
                         >
                             <Download size={14} />
-                            {text.exportCsv}
+                            {language?.startsWith('ar') ? 'تصدير الصفحة الحالية CSV' : 'Export current page CSV'}
                         </button>
                     </div>
                 </div>

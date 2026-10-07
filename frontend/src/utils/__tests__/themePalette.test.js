@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
     BRAND_COLOR_PRESETS,
     SEMANTIC_COLOR_KEYS,
@@ -7,6 +9,7 @@ import {
     createBrandScale,
     getAccessibleBrandTone,
     getContrastColor,
+    getPaletteTextContrastStatus,
     normalizePaletteOverrides,
 } from '../themePalette';
 
@@ -39,6 +42,42 @@ describe('theme palette', () => {
         expect(contrast(palette.textSecondary, palette.surface)).toBeGreaterThanOrEqual(4.5);
         expect(contrast(palette.textMuted, palette.surface)).toBeGreaterThanOrEqual(4.5);
         expect(contrast(palette.text, palette.canvas)).toBeGreaterThanOrEqual(7);
+    });
+
+    it.each(['light', 'dark'])('adjusts customized %s text colors to meet contrast on all interface surfaces', (mode) => {
+        const poorTextColor = mode === 'dark' ? '#000000' : '#FFFFFF';
+        const palette = {
+            ...SEMANTIC_PALETTE_DEFAULTS[mode],
+            text: poorTextColor,
+            textSecondary: poorTextColor,
+            textMuted: poorTextColor,
+        };
+        const status = getPaletteTextContrastStatus(palette);
+        const root = document.createElement('div');
+        applyThemePalette(root, { mode, colorOverrides: { [mode]: palette } });
+
+        status.forEach(({ key, minimumContrast, color, adjusted, passes }) => {
+            expect(adjusted).toBe(true);
+            expect(passes).toBe(true);
+            ['canvas', 'surface', 'surfaceSecondary', 'surfaceMuted'].forEach((surfaceKey) => {
+                expect(contrast(color, palette[surfaceKey])).toBeGreaterThanOrEqual(minimumContrast);
+            });
+            expect(root.style.getPropertyValue(`--${key === 'text' ? 'text-primary' : key === 'textSecondary' ? 'text-secondary' : 'text-muted'}`)).toBe(color);
+        });
+        expect(root.style.getPropertyValue('--VIARA-ink')).toBe(status[0].color);
+        expect(root.style.getPropertyValue('--VIARA-muted')).toBe(status[1].color);
+    });
+
+    it('reports when customized surfaces make the required text contrast impossible', () => {
+        const status = getPaletteTextContrastStatus({
+            ...SEMANTIC_PALETTE_DEFAULTS.light,
+            canvas: '#FFFFFF',
+            surface: '#000000',
+            surfaceSecondary: '#FFFFFF',
+            surfaceMuted: '#000000',
+        });
+
+        expect(status.some(({ passes }) => !passes)).toBe(true);
     });
 
     it('keeps dark structural surfaces neutral and strong controls distinguishable', () => {
@@ -76,6 +115,27 @@ describe('theme palette', () => {
         expect(root.style.getPropertyValue('--primary-does-not-exist')).toBe('');
         expect(root.style.getPropertyValue('--background')).toBeTruthy();
         SEMANTIC_COLOR_KEYS.forEach((key) => expect(key).toBeTruthy());
+    });
+
+    it('keeps the dark CSS fallback synchronized with the runtime palette', () => {
+        const stylesheet = readFileSync(resolve(process.cwd(), 'src', 'index.css'), 'utf8');
+        const darkThemeStyles = stylesheet.match(/\[data-theme="dark"\],[\s\S]*?\n}/)?.[0];
+
+        expect(darkThemeStyles).toContain(`--border-strong: ${SEMANTIC_PALETTE_DEFAULTS.dark.borderStrong}`);
+        expect(darkThemeStyles).not.toContain('#364958');
+    });
+
+    it('uses semantic colors for dark headers and high-contrast placeholders', () => {
+        const stylesheet = readFileSync(resolve(process.cwd(), 'src', 'index.css'), 'utf8');
+        const darkHeaderStyles = stylesheet.match(/\.dark \.app-page-header \{[\s\S]*?\n\s*\}/)?.[0];
+
+        expect(darkHeaderStyles).toContain('var(--VIARA-surface)');
+        expect(darkHeaderStyles).toContain('var(--VIARA-canvas)');
+        expect(darkHeaderStyles).not.toMatch(/#[0-9a-f]{3,8}/i);
+        expect(stylesheet).toContain('.high-contrast body :where(input, textarea)::placeholder');
+        expect(stylesheet).toContain('color: var(--VIARA-muted) !important;');
+        expect(stylesheet).toContain('--VIARA-field: #FFFFFF;');
+        expect(stylesheet).toContain('--VIARA-field: #1E293B;');
     });
 
     it.each(['light', 'dark'])('derives accessible %s status foregrounds, soft surfaces, and borders', (mode) => {

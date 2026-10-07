@@ -1,0 +1,33 @@
+{
+  "port": "5310",
+  "scope": "Read-only public endpoint loopback baseline, 20 sequential calls per endpoint. Not a production load test or clinical-workflow SLA.",
+  "results": [
+    {
+      "route": "/health/ready",
+      "requests": 20,
+      "successes": 20,
+      "p50Ms": 3.8699000000000012,
+      "p95Ms": 8.947500000000005,
+      "p99Ms": 66.4724,
+      "bytes": 15
+    },
+    {
+      "route": "/api/settings/public/home",
+      "requests": 20,
+      "successes": 20,
+      "p50Ms": 3.736499999999978,
+      "p95Ms": 9.671099999999996,
+      "p99Ms": 35.285199999999975,
+      "bytes": 3552
+    },
+    {
+      "route": "/api/public/landing-overview",
+      "requests": 20,
+      "successes": 20,
+      "p50Ms": 5.677000000000021,
+      "p95Ms": 28.183100000000024,
+      "p99Ms": 126.64439999999996,
+      "bytes": 1389
+    }
+  ]
+}

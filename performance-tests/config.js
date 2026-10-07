@@ -33,22 +33,22 @@ const config = {
     // Test Users Pool (passwords match seeded environment)
     users: {
         admin: {
-            email: process.env.PERF_ADMIN_EMAIL || 'developer@VIARA.com',
+            email: process.env.PERF_ADMIN_EMAIL || 'developer@viara.com',
             password: process.env.PERF_ADMIN_PASSWORD || process.env.TEST_USER_PASSWORD || 'ViaraAdmin@2026',
             role: 'Developer'
         },
         receptionist: {
-            email: process.env.PERF_RECEPTION_EMAIL || 'reception@VIARA.com',
+            email: process.env.PERF_RECEPTION_EMAIL || 'reception@viara.com',
             password: process.env.PERF_RECEPTION_PASSWORD || process.env.TEST_USER_PASSWORD || 'ViaraAdmin@2026',
             role: 'Receptionist'
         },
         radiologist: {
-            email: process.env.PERF_RADIOLOGIST_EMAIL || 'mona.ibrahim@VIARA.com',
+            email: process.env.PERF_RADIOLOGIST_EMAIL || 'alice@viara.com',
             password: process.env.PERF_RADIOLOGIST_PASSWORD || process.env.TEST_USER_PASSWORD || 'ViaraAdmin@2026',
             role: 'Radiologist'
         },
         cashier: {
-            email: process.env.PERF_CASHIER_EMAIL || 'cashier@VIARA.com',
+            email: process.env.PERF_CASHIER_EMAIL || 'cashier@viara.com',
             password: process.env.PERF_CASHIER_PASSWORD || process.env.TEST_USER_PASSWORD || 'ViaraAdmin@2026',
             role: 'Cashier'
         },

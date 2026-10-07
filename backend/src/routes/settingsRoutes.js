@@ -25,6 +25,7 @@ const {
     getDemoStatus
 } = require('../controllers/settingsController');
 const { hasPermission } = require('../middleware/rbacMiddleware');
+const { aiSettingsTestLimiter } = require('../middleware/rateLimiters');
 const portalBuilder = require('../controllers/portalBuilderController');
 
 module.exports = (pool, authenticateToken, authorizeRole) => {
@@ -65,7 +66,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.get('/ai/status', authenticateToken, getAiSettingsStatus(pool));
     router.get('/ai', authenticateToken, authorizeRole(['Developer']), hasPermission(pool, 'MANAGE_SECRET_SETTINGS'), getAiSettings(pool));
     router.put('/ai', authenticateToken, authorizeRole(['Developer']), hasPermission(pool, 'MANAGE_SECRET_SETTINGS'), updateAiSettings(pool));
-    router.post('/ai/test', authenticateToken, authorizeRole(['Developer']), hasPermission(pool, 'MANAGE_SECRET_SETTINGS'), testAiSettings(pool));
+    router.post('/ai/test', authenticateToken, authorizeRole(['Developer']), hasPermission(pool, 'MANAGE_SECRET_SETTINGS'), aiSettingsTestLimiter, testAiSettings(pool));
     router.get('/ai/profiles', authenticateToken, authorizeRole(['Developer']), hasPermission(pool, 'MANAGE_SECRET_SETTINGS'), getAiProfiles(pool));
     router.post('/ai/profiles', authenticateToken, authorizeRole(['Developer']), hasPermission(pool, 'MANAGE_SECRET_SETTINGS'), createAiProfile(pool));
     router.put('/ai/profiles/:id', authenticateToken, authorizeRole(['Developer']), hasPermission(pool, 'MANAGE_SECRET_SETTINGS'), updateAiProfile(pool));

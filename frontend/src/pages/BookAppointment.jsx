@@ -53,38 +53,33 @@ import {
     useGetRoomsQuery,
     useGetShiftsQuery,
     useGetAttendanceQuery,
-    useGetEquipmentDowntimeQuery
+    useGetEquipmentDowntimeQuery,
+    useGetCenterSettingsQuery
 } from "../store/api";
 import { getErrorMessage } from "../utils/getErrorMessage";
 import { generateUUID } from '../utils/uuid';
+import {
+    addDaysToDateInput,
+    centerDayBounds,
+    dateInputInTimezone,
+    dateTimeInTimezone,
+    getCenterTimezone,
+    nextTimeInTimezone,
+} from '../utils/centerTimezone';
 import { inputClass } from "../utils/designTokens";
 import PageHeader from '../components/ui/PageHeader';
+import useUnsavedChangesGuard from '../hooks/useUnsavedChangesGuard';
+import usePageTitle from '../hooks/usePageTitle';
 
 /* ── Date & Time Utilities ── */
-const toDateInput = (d = new Date()) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-const dateAfter = (days) => {
-    const d = new Date();
-    d.setDate(d.getDate() + days);
-    return toDateInput(d);
-};
-
-const nextTime = () => {
-    const d = new Date(Date.now() + 30 * 60000);
-    const r = d.getMinutes() % 15;
-    if (r) d.setMinutes(d.getMinutes() + 15 - r);
-    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-};
-
-const appointmentWindow = (date, time, mins = 60) => {
+const appointmentWindow = (date, time, timezone, mins = 60) => {
     if (!date || !time) return { start: null, end: null };
-    const s = new Date(`${date}T${time}:00`);
-    if (isNaN(s.getTime())) return { start: null, end: null };
+    const s = dateTimeInTimezone(date, time, timezone);
+    if (!s) return { start: null, end: null };
     return { start: s, end: new Date(s.getTime() + mins * 60000) };
 };
 
-const fmt = (d) => d?.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) || "--:--";
+const fmt = (d, timezone) => d?.toLocaleTimeString([], { timeZone: timezone, hour: "2-digit", minute: "2-digit" }) || "--:--";
 const optId = (v) => v || null;
 
 const ALL_TIME_SLOTS = [
@@ -185,12 +180,20 @@ const SlotStatus = ({ isPast, overlap, modalityId, time, machine, t }) => {
 ════════════════════════════════════════════════════════════ */
 const BookAppointment = () => {
     const { t, i18n } = useTranslation('reception');
+    usePageTitle(t('bookingPage.title', 'حجز موعد'));
     const navigate = useNavigate();
     const [sp] = useSearchParams();
     const isRtl = i18n?.dir?.() === 'rtl' || i18n?.language?.startsWith('ar');
+    const {
+        data: centerSettings,
+        isLoading: centerSettingsLoading,
+        isError: centerSettingsError,
+    } = useGetCenterSettingsQuery();
+    const centerTimezone = getCenterTimezone(centerSettings?.timezone);
 
     const reqPtId = sp.get('patientId') || '';
-    const initDate = sp.get('date') || toDateInput();
+    const requestedDate = sp.get('date');
+    const initDate = requestedDate || dateInputInTimezone(new Date(), centerTimezone);
     const reqMId = sp.get('modalityId') || '';
     const reqEId = sp.get('examTypeId') || '';
     const reqPri = sp.get('priority') || 'Routine';
@@ -201,6 +204,7 @@ const BookAppointment = () => {
     const [ptSearch, setPtSearch] = useState('');
     const [refMode, setRefMode] = useState('directory');
     const [date, setDate] = useState(initDate);
+    const dateEdited = useRef(false);
     const [bookedAppointment, setBookedAppointment] = useState(null);
     const [timePeriodFilter, setTimePeriodFilter] = useState('all');
     const [showUnavailableSlots, setShowUnavailableSlots] = useState(false);
@@ -222,7 +226,7 @@ const BookAppointment = () => {
         watch,
         trigger,
         clearErrors,
-        formState: { errors, isSubmitted }
+        formState: { errors, isSubmitted, isDirty, dirtyFields }
     } = useForm({
         mode: 'onTouched',
         defaultValues: {
@@ -232,7 +236,7 @@ const BookAppointment = () => {
             examTypeId: reqEId,
             priority: reqPri,
             notes: reqNotes,
-            time: nextTime(),
+            time: nextTimeInTimezone(new Date(), centerTimezone),
             paymentMethod: 'Cash',
             appointmentSource: reqSrc,
             referringDoctorId: '',
@@ -252,6 +256,13 @@ const BookAppointment = () => {
         },
     });
 
+    useUnsavedChangesGuard(
+        isDirty && !isSubmitted,
+        t('booking.unsavedWarning', {
+            defaultValue: 'You have unsaved changes in this appointment booking form. Are you sure you want to leave?'
+        })
+    );
+
     const patientId = watch('patientId');
     const roomId = watch('roomId');
     const modalityId = watch('modalityId');
@@ -259,10 +270,13 @@ const BookAppointment = () => {
     const nurseId = watch('nurseId');
     const [dutyStaffOnly, setDutyStaffOnly] = useState(false);
     const [applyWorkstationScope, setApplyWorkstationScope] = useState(true);
+    const [urgentSurchargeEnabled, setUrgentSurchargeEnabled] = useState(false);
+    const [urgentSurchargeAmount, setUrgentSurchargeAmount] = useState('');
     const examTypeId = watch('examTypeId');
     const time = watch('time');
     const priority = watch('priority');
     const payMethod = watch('paymentMethod');
+    const insuranceProviderId = watch('insuranceProviderId');
     const isFollowUp = watch('isFollowUp');
     const contrastRequired = watch('contrastRequired');
     const paymentAmount = watch('paymentAmount');
@@ -273,10 +287,14 @@ const BookAppointment = () => {
     const { data: pHist, isLoading: histLoad } = useGetPatientHistoryQuery(patientId, { skip: !patientId });
     const user = useSelector(selectCurrentUser);
     const { data: rRes = [], isLoading: roomsLoading } = useGetRoomsQuery();
-    const shiftStart = date ? `${date}T00:00:00.000Z` : undefined;
-    const shiftEnd = date ? `${date}T23:59:59.999Z` : undefined;
+    const shiftBounds = date ? centerDayBounds(date, centerTimezone) : null;
+    const shiftStart = shiftBounds?.start;
+    const shiftEnd = shiftBounds?.end;
     const { data: shiftsRes = [] } = useGetShiftsQuery({ startDate: shiftStart, endDate: shiftEnd }, { skip: !date });
-    const { data: attRes = [] } = useGetAttendanceQuery({ startDate: date }, { skip: !date });
+    const { data: attRes = [] } = useGetAttendanceQuery(
+        { startDateTime: shiftStart, endDateTime: shiftEnd },
+        { skip: !date || !shiftStart || !shiftEnd }
+    );
     const { data: mRes = [] } = useGetMachinesQuery();
     const { data: downtimeRes = [] } = useGetEquipmentDowntimeQuery(undefined, { pollingInterval: 30000 });
     const { data: eRes = [] } = useGetExamTypesQuery({ modalityId }, { skip: !modalityId });
@@ -287,6 +305,16 @@ const BookAppointment = () => {
 
     const [createAppt, { isLoading: isSaving }] = useCreateAppointmentMutation();
     const [createInsuranceApproval] = useCreateInsuranceApprovalMutation();
+
+    useEffect(() => {
+        if (!centerSettings) return;
+        if (!requestedDate && !dateEdited.current) {
+            setDate(dateInputInTimezone(new Date(), centerTimezone));
+        }
+        if (!dirtyFields.time) {
+            setValue('time', nextTimeInTimezone(new Date(), centerTimezone), { shouldDirty: false });
+        }
+    }, [centerSettings, centerTimezone, dirtyFields.time, requestedDate, setValue]);
 
     /* ── Normalization ── */
     const patients = useMemo(() => Array.isArray(pRes) ? pRes : pRes.data || [], [pRes]);
@@ -402,6 +430,26 @@ const BookAppointment = () => {
             return { desk: '', scope: 'all', rooms: [], modalities: [], hasScopeFilter: false };
         }
     }, [user?.user_id]);
+
+    // Auto-detect shift-assigned room for this employee and pre-select modality.
+    // Runs once when shifts data loads and the form fields are still empty.
+    useEffect(() => {
+        if (!user?.user_id || !date) return;
+        const myShifts = dayShifts.filter((s) => String(s.user_id) === String(user.user_id));
+        if (!myShifts.length) return;
+
+        // Find the first shift that has a room_id (reception workstation assignment)
+        const shiftWithRoom = myShifts.find((s) => s.room_id || s.modality_id);
+        if (!shiftWithRoom) return;
+
+        // Pre-select room/modality only if not already set
+        if (shiftWithRoom.room_id && !roomId) {
+            setValue('roomId', String(shiftWithRoom.room_id), { shouldDirty: false });
+        }
+        if (shiftWithRoom.modality_id && !modalityId) {
+            setValue('modalityId', String(shiftWithRoom.modality_id), { shouldDirty: false });
+        }
+    }, [dayShifts, user?.user_id, date]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const selRoom = useMemo(() => rooms.find((r) => String(r.room_id) === String(roomId) || String(r.room_number) === String(roomId)), [rooms, roomId]);
     const selMachine = useMemo(() => machines.find((m) => m.modality_id === modalityId), [machines, modalityId]);
@@ -587,24 +635,24 @@ const BookAppointment = () => {
         if (selExam) {
             if (selExam.contrast_required !== undefined) {
                 const requiresContrast = Boolean(selExam.contrast_required);
-                if (contrastRequired !== requiresContrast) {
-                    setValue('contrastRequired', requiresContrast, { shouldDirty: true });
-                }
+                // Only auto-set if the user hasn't manually changed it yet
+                // (i.e., still at default false). This lets staff override.
+                setValue('contrastRequired', requiresContrast, { shouldDirty: false });
             }
             if (selExam.price != null && String(paymentAmount ?? '') !== String(selExam.price)) {
                 setValue('paymentAmount', selExam.price, { shouldDirty: true });
             }
         }
-    }, [selExam, contrastRequired, paymentAmount, setValue]);
+    }, [selExam?.type_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const duration = selExam?.duration_minutes || 30;
-    const slot = useMemo(() => appointmentWindow(date, time, duration), [date, time, duration]);
+    const slot = useMemo(() => appointmentWindow(date, time, centerTimezone, duration), [date, time, centerTimezone, duration]);
 
     /* Overlap & Slot Collision Detection */
     const overlap = useMemo(() => {
         if (!modalityId || !slot.start || !slot.end) return null;
         return dayAppts.find((a) => {
-            if (a.modality_id !== modalityId || ['Cancelled', 'No-Show'].includes(a.status)) return false;
+            if (a.modality_id !== modalityId || a.status === 'Cancelled') return false;
             const as = new Date(a.start_time);
             const ae = new Date(a.end_time);
             return slot.start < ae && slot.end > as;
@@ -618,7 +666,7 @@ const BookAppointment = () => {
         return slot.start < now;
     }, [slot.start]);
 
-    const hasValidSlot = Boolean(modalityId && date && time && !isPast && !overlap);
+    const hasValidSlot = Boolean(modalityId && date && time && slot.start && slot.end && !isPast && !overlap);
 
     /* Filtered quick time slots based on period */
     const quickTimes = useMemo(() => {
@@ -633,11 +681,11 @@ const BookAppointment = () => {
 
     /* Rich availability state for suggested slots */
     const quickTimeOptions = useMemo(() => quickTimes.map((candidate) => {
-        const candidateWindow = appointmentWindow(date, candidate, duration);
+        const candidateWindow = appointmentWindow(date, candidate, centerTimezone, duration);
         const candidatePast = Boolean(candidateWindow.start && candidateWindow.start < new Date(Date.now() - 10 * 60000));
         const candidateOverlap = modalityId && candidateWindow.start && candidateWindow.end
             ? dayAppts.find((a) => {
-                if (a.modality_id !== modalityId || ['Cancelled', 'No-Show'].includes(a.status)) return false;
+                if (a.modality_id !== modalityId || a.status === 'Cancelled') return false;
                 const as = new Date(a.start_time);
                 const ae = new Date(a.end_time);
                 return candidateWindow.start < ae && candidateWindow.end > as;
@@ -647,30 +695,30 @@ const BookAppointment = () => {
             value: candidate,
             isPast: candidatePast,
             overlap: candidateOverlap,
-            available: Boolean(modalityId && !candidatePast && !candidateOverlap)
+            available: Boolean(modalityId && candidateWindow.start && !candidatePast && !candidateOverlap)
         };
-    }), [quickTimes, date, duration, modalityId, dayAppts]);
+    }), [quickTimes, date, centerTimezone, duration, modalityId, dayAppts]);
 
     /* Section Completion Matrix */
     const sectionComplete = useMemo(() => [
         Boolean(patientId && date),
         Boolean(modalityId && examTypeId),
         Boolean(hasValidSlot),
-        Boolean(payMethod)
-    ], [patientId, date, modalityId, examTypeId, hasValidSlot, payMethod]);
+        Boolean(payMethod && (payMethod !== 'Insurance' || insuranceProviderId))
+    ], [patientId, date, modalityId, examTypeId, hasValidSlot, payMethod, insuranceProviderId]);
 
     const bookingProgress = useMemo(() => {
         const completedCount = sectionComplete.filter(Boolean).length;
         return Math.round((completedCount / 4) * 100);
     }, [sectionComplete]);
 
-    const bookingReady = sectionComplete.every(Boolean);
+    const bookingReady = sectionComplete.every(Boolean) && !centerSettingsLoading && !centerSettingsError;
     const bookingChecklist = useMemo(() => [
         { key: 'patient', done: Boolean(patientId && date), label: isRtl ? 'المريض والتاريخ' : 'Patient & date', target: 0 },
         { key: 'exam', done: Boolean(modalityId && examTypeId), label: isRtl ? 'الجهاز والفحص' : 'Device & exam', target: 1 },
         { key: 'slot', done: Boolean(hasValidSlot), label: isRtl ? 'وقت متاح' : 'Available time', target: 2 },
-        { key: 'payment', done: Boolean(payMethod), label: isRtl ? 'طريقة الدفع' : 'Payment', target: 3 },
-    ], [patientId, date, modalityId, examTypeId, hasValidSlot, payMethod, isRtl]);
+        { key: 'payment', done: Boolean(payMethod && (payMethod !== 'Insurance' || insuranceProviderId)), label: isRtl ? 'طريقة الدفع' : 'Payment', target: 3 },
+    ], [patientId, date, modalityId, examTypeId, hasValidSlot, payMethod, insuranceProviderId, isRtl]);
     const missingChecklist = useMemo(() => bookingChecklist.filter((item) => !item.done), [bookingChecklist]);
 
     const visibleTimeOptions = useMemo(() => {
@@ -689,15 +737,26 @@ const BookAppointment = () => {
 
     const selectedExamPrice = selExam?.price ?? null;
     const selectedExamBodyPart = selExam?.body_part || null;
+
+    // Effective surcharge: only when priority is Urgent/Emergency AND user enables it
+    const effectiveSurcharge = urgentSurchargeEnabled && ['Urgent', 'Emergency'].includes(priority)
+        ? Math.max(0, Number(urgentSurchargeAmount) || 0)
+        : 0;
+
+    const baseAmount = paymentAmount !== undefined && paymentAmount !== ''
+        ? Number(paymentAmount)
+        : selectedExamPrice != null ? Number(selectedExamPrice) : null;
+
+    const totalAmount = baseAmount != null ? baseAmount + effectiveSurcharge : null;
     const paymentMethodLabel = payMethod === 'Insurance'
         ? t('booking.insurance', 'Insurance')
         : t(`billing.methods.${payMethod}`, { defaultValue: payMethod || '—' });
     const displayDate = useMemo(() => {
         if (!date) return '—';
-        const parsed = new Date(`${date}T12:00:00`);
-        if (Number.isNaN(parsed.getTime())) return date;
-        return parsed.toLocaleDateString(isRtl ? 'ar-EG' : undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-    }, [date, isRtl]);
+        const parsed = dateTimeInTimezone(date, '12:00', centerTimezone);
+        if (!parsed) return date;
+        return parsed.toLocaleDateString(isRtl ? 'ar-EG' : undefined, { timeZone: centerTimezone, day: 'numeric', month: 'short', year: 'numeric' });
+    }, [date, centerTimezone, isRtl]);
 
     const goToSection = (index) => {
         sectionRefs[index]?.current?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
@@ -771,12 +830,25 @@ const BookAppointment = () => {
         if (overlap) {
             toast.error(t('booking.machineBooked', {
                 machine: selMachine?.name || t('booking.thisMachine'),
-                start: fmt(new Date(overlap.start_time)),
-                end: fmt(new Date(overlap.end_time)),
+                start: fmt(new Date(overlap.start_time), centerTimezone),
+                end: fmt(new Date(overlap.end_time), centerTimezone),
             }));
             goToSection(2);
             return;
         }
+        if (values.paymentMethod === 'Insurance' && !values.insuranceProviderId) {
+            toast.error(t('booking.insuranceProviderRequired', 'Please select an insurance provider.'));
+            goToSection(3);
+            return;
+        }
+
+        const effectivePaymentAmount = values.paymentAmount !== undefined
+            && values.paymentAmount !== ''
+            && values.paymentAmount !== null
+            ? Number(values.paymentAmount) + effectiveSurcharge
+            : selectedExamPrice != null
+                ? Number(selectedExamPrice) + effectiveSurcharge
+                : null;
 
         const payload = {
             idempotencyKey: idKey.current,
@@ -789,7 +861,7 @@ const BookAppointment = () => {
             priority: values.priority || 'Routine',
             notes: values.notes?.trim() || null,
             paymentMethod: values.paymentMethod || 'Cash',
-            paymentAmount: values.paymentAmount ? Number(values.paymentAmount) : (selectedExamPrice != null ? Number(selectedExamPrice) : null),
+            paymentAmount: effectivePaymentAmount,
             appointmentSource: values.appointmentSource || 'Walk-in',
             referringDoctorId: refMode === 'directory' ? optId(values.referringDoctorId) : null,
             referringDoctor: refMode === 'custom' ? values.referringDoctor?.trim() || null : null,
@@ -822,7 +894,7 @@ const BookAppointment = () => {
                         approvalNumber: values.insuranceApprovalNumber?.trim() || undefined,
                         // Booking can request authorization, but only an insurance
                         // reviewer may approve it from the authorization workspace.
-                        requestedAmount: Number(selectedExamPrice ?? values.paymentAmount ?? 0)
+                        requestedAmount: Number(effectivePaymentAmount ?? 0)
                     }).unwrap();
                 } catch (insErr) {
                     toast.error(t('toast.appointmentBookedApprovalFailed', 'Appointment booked, but insurance approval filing failed. Complete it from reception.'), { duration: 8000 });
@@ -1095,7 +1167,7 @@ const BookAppointment = () => {
                                                 <option value="">{histLoad ? t('bookingPage.loadingHistory', 'Loading...') : priorExams.length ? t('bookingPage.selectPriorStudy', 'Select prior study') : t('bookingPage.noPriorStudies', 'No eligible studies')}</option>
                                                 {priorExams.map((e) => (
                                                     <option key={e.exam_id} value={e.exam_id}>
-                                                        {new Date(e.start_time).toLocaleDateString()} — {e.exam_type_name || e.machine_name || 'Exam'}
+                                                        {new Date(e.start_time).toLocaleDateString(isRtl ? 'ar-EG' : undefined, { timeZone: centerTimezone })} — {e.exam_type_name || e.machine_name || 'Exam'}
                                                     </option>
                                                 ))}
                                             </select>
@@ -1116,14 +1188,27 @@ const BookAppointment = () => {
                                                 <Calendar size={11} className="text-teal-600" />
                                                 {t('booking.appointmentDate', 'Date')} *
                                             </label>
-                                            <input id="appointment-date" type="date" min={toDateInput()} value={date} onChange={(e) => setDate(e.target.value)} className={inp} />
+                                            <input
+                                                id="appointment-date"
+                                                type="date"
+                                                min={dateInputInTimezone(new Date(), centerTimezone)}
+                                                value={date}
+                                                onChange={(e) => {
+                                                    dateEdited.current = true;
+                                                    setDate(e.target.value);
+                                                }}
+                                                className={inp}
+                                            />
                                             <div className="mt-1.5 grid grid-cols-3 gap-1">
                                                 {[
-                                                    { label: t('bookingPage.today', 'Today'), value: dateAfter(0) },
-                                                    { label: t('bookingPage.tomorrow', 'Tomorrow'), value: dateAfter(1) },
-                                                    { label: t('bookingPage.inTwoDays', '+2 Days'), value: dateAfter(2) },
+                                                    { label: t('bookingPage.today', 'Today'), value: dateInputInTimezone(new Date(), centerTimezone) },
+                                                    { label: t('bookingPage.tomorrow', 'Tomorrow'), value: addDaysToDateInput(dateInputInTimezone(new Date(), centerTimezone), 1) },
+                                                    { label: t('bookingPage.inTwoDays', '+2 Days'), value: addDaysToDateInput(dateInputInTimezone(new Date(), centerTimezone), 2) },
                                                 ].map((item) => (
-                                                    <button key={item.value} type="button" onClick={() => setDate(item.value)} className={`min-h-7 rounded-lg border px-1.5 text-[9px] font-black transition ${date === item.value ? 'border-teal-600 bg-teal-600 text-white shadow-sm' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] hover:border-teal-300 hover:text-teal-700'}`}>
+                                                    <button key={item.value} type="button" onClick={() => {
+                                                        dateEdited.current = true;
+                                                        setDate(item.value);
+                                                    }} className={`min-h-7 rounded-lg border px-1.5 text-[9px] font-black transition ${date === item.value ? 'border-teal-600 bg-teal-600 text-white shadow-sm' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)] hover:border-teal-300 hover:text-teal-700'}`}>
                                                         {item.label}
                                                     </button>
                                                 ))}
@@ -1148,6 +1233,32 @@ const BookAppointment = () => {
                                                                 {applyWorkstationScope ? (isRtl ? 'نطاق الشباك' : 'Desk scope') : (isRtl ? 'كل الأجهزة' : 'All devices')}
                                                             </button>
                                                         )}
+                                                        {/* Show shift-assigned workstation indicator */}
+                                                        {(() => {
+                                                            const myShift = dayShifts.find(s =>
+                                                                String(s.user_id) === String(user?.user_id) &&
+                                                                (s.room_id || s.modality_id)
+                                                            );
+                                                            if (!myShift) return null;
+                                                            const shiftRoom = myShift.room_id
+                                                                ? rooms.find(r => String(r.room_id) === String(myShift.room_id))
+                                                                : null;
+                                                            const shiftMachine = myShift.modality_id
+                                                                ? machines.find(m => String(m.modality_id) === String(myShift.modality_id))
+                                                                : null;
+                                                            const label = shiftRoom?.room_number
+                                                                ? `${isRtl ? 'وردية: غرفة' : 'Shift: Room'} ${shiftRoom.room_number}`
+                                                                : shiftMachine?.name
+                                                                    ? `${isRtl ? 'وردية:' : 'Shift:'} ${shiftMachine.name}`
+                                                                    : null;
+                                                            if (!label) return null;
+                                                            return (
+                                                                <span className="inline-flex items-center gap-1 rounded-lg border border-emerald-200/80 bg-emerald-50/70 px-2 py-1 text-[8.5px] font-black text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300">
+                                                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                                                    {label}
+                                                                </span>
+                                                            );
+                                                        })()}
                                                         <select
                                                             aria-label={isRtl ? 'الغرفة' : 'Room'}
                                                             {...register('roomId')}
@@ -1482,14 +1593,85 @@ const BookAppointment = () => {
                                     </div>
                                 </div>
 
+                                {/* ── Urgent/Emergency Surcharge ── */}
+                                {['Urgent', 'Emergency'].includes(priority) && (
+                                    <div className={`flex flex-wrap items-center gap-3 rounded-xl border p-3 ${urgentSurchargeEnabled ? (priority === 'Emergency' ? 'border-rose-300/70 bg-rose-50/60 dark:border-rose-800/60 dark:bg-rose-950/20' : 'border-amber-300/70 bg-amber-50/60 dark:border-amber-800/60 dark:bg-amber-950/20') : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/25'}`}>
+                                        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                                            <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${priority === 'Emergency' ? 'bg-rose-500/15 text-rose-700 dark:text-rose-300' : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'}`}>
+                                                <Flame size={15} />
+                                            </span>
+                                            <div className="min-w-0">
+                                                <p className="text-[11px] font-black text-[var(--VIARA-ink)]">
+                                                    {isRtl
+                                                        ? `رسوم إضافية — حالة ${priority === 'Emergency' ? 'طارئة' : 'عاجلة'}`
+                                                        : `${priority} surcharge`}
+                                                </p>
+                                                <p className="text-[9.5px] font-medium text-[var(--VIARA-muted)]">
+                                                    {isRtl ? 'مبلغ إضافي اختياري يُضاف للسعر الأساسي' : 'Optional additional amount added to base price'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <label className="inline-flex cursor-pointer items-center gap-1.5 text-[10px] font-black text-[var(--VIARA-muted)]">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={urgentSurchargeEnabled}
+                                                    onChange={(e) => setUrgentSurchargeEnabled(e.target.checked)}
+                                                    className="h-3.5 w-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                                                />
+                                                {isRtl ? 'تفعيل' : 'Enable'}
+                                            </label>
+                                            {urgentSurchargeEnabled && (
+                                                <div className="relative w-28">
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="1"
+                                                        value={urgentSurchargeAmount}
+                                                        onChange={(e) => setUrgentSurchargeAmount(e.target.value)}
+                                                        placeholder="0"
+                                                        className={`${inp} pe-10 text-[13px] font-black w-full`}
+                                                    />
+                                                    <span className="pointer-events-none absolute end-2.5 top-1/2 -translate-y-1/2 text-[9px] font-black text-[var(--VIARA-muted)]">{isRtl ? 'ج.م' : 'EGP'}</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        {urgentSurchargeEnabled && effectiveSurcharge > 0 && (
+                                            <div className="w-full border-t border-[var(--VIARA-line)]/50 pt-2">
+                                                <div className="flex items-center justify-between text-[10.5px] font-black">
+                                                    <span className="text-[var(--VIARA-muted)]">{isRtl ? 'السعر الأساسي:' : 'Base price:'}</span>
+                                                    <span>{baseAmount != null ? `${Number(baseAmount).toLocaleString(isRtl ? 'ar-EG' : 'en-US')} ${isRtl ? 'ج.م' : 'EGP'}` : '—'}</span>
+                                                </div>
+                                                <div className="flex items-center justify-between text-[10.5px] font-black">
+                                                    <span className="text-[var(--VIARA-muted)]">{isRtl ? 'الإضافة:' : 'Surcharge:'}</span>
+                                                    <span className={priority === 'Emergency' ? 'text-rose-700 dark:text-rose-300' : 'text-amber-700 dark:text-amber-300'}>+ {effectiveSurcharge.toLocaleString(isRtl ? 'ar-EG' : 'en-US')} {isRtl ? 'ج.م' : 'EGP'}</span>
+                                                </div>
+                                                <div className="mt-1 flex items-center justify-between border-t border-[var(--VIARA-line)]/50 pt-1 text-[11.5px] font-black text-[var(--VIARA-ink)]">
+                                                    <span>{isRtl ? 'الإجمالي:' : 'Total:'}</span>
+                                                    <span className="text-emerald-700 dark:text-emerald-300">{totalAmount != null ? `${Number(totalAmount).toLocaleString(isRtl ? 'ar-EG' : 'en-US')} ${isRtl ? 'ج.م' : 'EGP'}` : '—'}</span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
                                 {payMethod === 'Insurance' && (
                                     <div className="grid gap-2.5 rounded-xl border border-teal-200/80 bg-teal-50/45 p-3 dark:border-teal-900/50 dark:bg-teal-950/20 sm:grid-cols-2">
                                         <div>
                                             <label className={lbl}>{t('booking.insuranceProvider', 'Insurance Provider')} *</label>
-                                            <select {...register('insuranceProviderId')} className={inp} required>
+                                            <select
+                                                {...register('insuranceProviderId', {
+                                                    required: payMethod === 'Insurance'
+                                                        ? t('booking.insuranceProviderRequired', 'Please select an insurance provider.')
+                                                        : false
+                                                })}
+                                                className={inp}
+                                                required
+                                            >
                                                 <option value="">{t('booking.selectProvider', 'Select provider...')}</option>
                                                 {insurers.map((p) => <option key={p.provider_id} value={p.provider_id}>{p.name}</option>)}
                                             </select>
+                                            <ErrMsg msg={errors.insuranceProviderId?.message} />
                                         </div>
                                         <div>
                                             <label className={lbl}>{t('booking.approvalNumber', 'Approval #')}</label>
@@ -1566,13 +1748,16 @@ const BookAppointment = () => {
                                                     <input type="checkbox" {...register('contrastRequired')} className="h-3.5 w-3.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500" />
                                                     <AlertTriangle size={11} />
                                                     {isRtl ? 'يتطلب صبغة' : t('booking.contrastRequired', 'Contrast')}
+                                                    {selExam?.contrast_required && <span className="ms-1 rounded bg-amber-200/60 px-1 text-[8px] font-black text-amber-900 dark:bg-amber-800/40 dark:text-amber-200">{isRtl ? 'مقترح من الفحص' : 'Suggested'}</span>}
                                                 </label>
                                             </div>
 
                                             {contrastRequired && (
                                                 <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/90 p-2.5 text-[10.5px] font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-200">
                                                     <ShieldAlert size={14} className="mt-0.5 shrink-0" />
-                                                    <span>{isRtl ? 'هذا الفحص يتطلب مراجعة متطلبات الصبغة وسلامة وظائف الكلى قبل التنفيذ.' : t('bookingPage.contrastAlertMsg', 'This examination requires IV contrast supplies.')}</span>
+                                                    <span>{isRtl
+                                                        ? 'هذا الفحص يُقترح أن يستخدم صبغة — يمكن إلغاء تحديد الخيار إذا قرر الطبيب عدم الحاجة إليها.'
+                                                        : t('bookingPage.contrastAlertMsg', 'This exam is configured to use IV contrast. Uncheck if the physician decides contrast is not needed.')}</span>
                                                 </div>
                                             )}
 
@@ -1706,6 +1891,14 @@ const BookAppointment = () => {
                             </div>
                         </div>
 
+                        {centerSettingsError && (
+                            <div role="alert" className="border-b border-rose-200 bg-rose-50 p-2.5 text-[10px] font-bold text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">
+                                {isRtl
+                                    ? 'تعذر تحميل المنطقة الزمنية للمركز. أعد تحميل الصفحة قبل تأكيد الموعد.'
+                                    : 'Could not load the center timezone. Reload the page before confirming this appointment.'}
+                            </div>
+                        )}
+
                         {!bookingReady && (
                             <div className="border-b border-[var(--VIARA-line)] bg-amber-500/[0.035] p-2.5">
                                 <p className="mb-1.5 text-[9px] font-black text-amber-800 dark:text-amber-300">{isRtl ? 'المطلوب قبل التأكيد' : 'Required before confirmation'}</p>
@@ -1737,7 +1930,7 @@ const BookAppointment = () => {
                                 <button type="button" onClick={() => goToSection(2)} className={`min-w-0 rounded-xl border p-2.5 text-start transition ${hasValidSlot ? 'border-emerald-200/80 bg-emerald-500/[0.04] dark:border-emerald-900/60' : isPast || overlap ? 'border-amber-300 bg-amber-50/55 dark:border-amber-900/60 dark:bg-amber-950/20' : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/25 hover:border-emerald-300'}`}>
                                     <div className="flex items-center justify-between gap-1"><span className="flex items-center gap-1 text-[8.5px] font-bold text-[var(--VIARA-muted)]"><Calendar size={10} />{isRtl ? 'الموعد' : 'Appointment'}</span>{hasValidSlot && <CheckCircle2 size={10} className="text-emerald-600" />}</div>
                                     <p className="mt-1 truncate text-[10px] font-black text-[var(--VIARA-ink)]">{displayDate}</p>
-                                    <p dir="ltr" className={`mt-0.5 truncate font-mono text-[8.5px] font-black ${hasValidSlot ? 'text-teal-700 dark:text-teal-300' : 'text-[var(--VIARA-muted)]'}`}>{slot.start ? `${fmt(slot.start)} – ${fmt(slot.end)}` : '—'}</p>
+                                    <p dir="ltr" className={`mt-0.5 truncate font-mono text-[8.5px] font-black ${hasValidSlot ? 'text-teal-700 dark:text-teal-300' : 'text-[var(--VIARA-muted)]'}`}>{slot.start ? `${fmt(slot.start, centerTimezone)} – ${fmt(slot.end, centerTimezone)}` : '—'}</p>
                                 </button>
 
                                 <button type="button" onClick={() => goToSection(3)} className="min-w-0 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/20 p-2.5 text-start transition hover:border-emerald-300">
@@ -1751,10 +1944,15 @@ const BookAppointment = () => {
                                 <div>
                                     <p className="text-[8.5px] font-bold text-[var(--VIARA-muted)]">{isRtl ? 'المبلغ المتوقع' : t('booking.amount', 'Amount')}</p>
                                     <p className="mt-0.5 text-[13px] font-black text-emerald-700 dark:text-emerald-300">
-                                        {(paymentAmount !== undefined && paymentAmount !== '' ? Number(paymentAmount) : selectedExamPrice != null ? Number(selectedExamPrice) : null) != null
-                                            ? `${Number(paymentAmount !== undefined && paymentAmount !== '' ? paymentAmount : selectedExamPrice).toLocaleString(isRtl ? 'ar-EG' : 'en-US')} ${isRtl ? 'ج.م' : t('bookingPage.currency', 'EGP')}`
+                                        {totalAmount != null
+                                            ? `${Number(totalAmount).toLocaleString(isRtl ? 'ar-EG' : 'en-US')} ${isRtl ? 'ج.م' : t('bookingPage.currency', 'EGP')}`
                                             : '—'}
                                     </p>
+                                    {effectiveSurcharge > 0 && (
+                                        <p className="text-[9px] font-bold text-amber-600 dark:text-amber-400">
+                                            {isRtl ? `+ ${effectiveSurcharge.toLocaleString('ar-EG')} إضافة` : `+ ${effectiveSurcharge.toLocaleString('en-US')} surcharge`}
+                                        </p>
+                                    )}
                                 </div>
                                 <div className="text-end">
                                     <p className="text-[8.5px] font-bold text-[var(--VIARA-muted)]">{isRtl ? 'مدة الفحص' : 'Exam duration'}</p>
@@ -1792,7 +1990,7 @@ const BookAppointment = () => {
             <div className="fixed inset-x-3 bottom-3 z-40 mx-auto flex max-w-2xl items-center gap-3 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)]/95 p-2.5 shadow-2xl backdrop-blur-xl xl:hidden">
                 <div className="min-w-0 flex-1 ps-1">
                     <p className="truncate text-[10px] font-bold text-[var(--VIARA-muted)]">{selExam?.name || (isRtl ? 'اختر الفحص والموعد' : 'Choose exam and time')}</p>
-                    <p className="text-xs font-black text-[var(--VIARA-ink)]">{slot.start ? <><span>{displayDate}</span><span dir="ltr" className="ms-1">· {fmt(slot.start)}</span></> : (isRtl ? 'الحجز غير مكتمل' : 'Booking incomplete')}</p>
+                    <p className="text-xs font-black text-[var(--VIARA-ink)]">{slot.start ? <><span>{displayDate}</span><span dir="ltr" className="ms-1">· {fmt(slot.start, centerTimezone)}</span></> : (isRtl ? 'الحجز غير مكتمل' : 'Booking incomplete')}</p>
                 </div>
                 <button
                     type="submit"
@@ -1928,7 +2126,7 @@ const BookAppointment = () => {
                                     <label className={lbl}>{t('register.dob', 'Date of Birth')}</label>
                                     <input
                                         type="date"
-                                        max={toDateInput()}
+                                        max={dateInputInTimezone(new Date(), centerTimezone)}
                                         value={quickPtForm.dateOfBirth}
                                         onChange={(e) => {
                                             const dob = e.target.value;
@@ -2038,6 +2236,7 @@ const BookAppointment = () => {
                             <button
                                 type="button"
                                 onClick={() => {
+                                    idKey.current = generateUUID();
                                     setBookedAppointment(null);
                                     setValue('modalityId', '');
                                     setValue('examTypeId', '');

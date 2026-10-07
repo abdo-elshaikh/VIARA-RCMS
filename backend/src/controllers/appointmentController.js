@@ -281,12 +281,18 @@ const createAppointment = (db) => async (req, res, next) => {
                 }
 
                 const existing = await client.query(
-                    `SELECT resource_id AS appointment_id FROM appointment_idempotency_keys
+                    `SELECT resource_id AS appointment_id, request_fingerprint FROM appointment_idempotency_keys
                      WHERE idempotency_key = $1 AND actor_id = $2 AND operation_type = 'CREATE_APPOINTMENT'`,
                     [idempotencyKey, userId]
                 );
                 if (existing.rows.length > 0) {
                     await client.query('ROLLBACK');
+                    const requestFingerprint = crypto.createHash('sha256')
+                        .update(JSON.stringify(data || {}))
+                        .digest('hex');
+                    if (existing.rows[0].request_fingerprint !== requestFingerprint) {
+                        return next(new AppError('This idempotency key has already been used for a different appointment request.', 409));
+                    }
                     const apptResult = await db.query(
                         'SELECT * FROM appointments WHERE appointment_id = $1',
                         [existing.rows[0].appointment_id]
@@ -397,6 +403,7 @@ const createAppointment = (db) => async (req, res, next) => {
             }
 
             await assertClinicalAssignees(client, data);
+            const appointmentStatus = data.arrived ? 'Checked-in' : 'Confirmed';
             assertReceptionistRequiredForReceptionStage(data.receptionistId, appointmentStatus, data.arrived);
             await assertReceptionistAssignment(client, data.receptionistId);
             const orderFields = buildOrderFields(data, {}, examDefaults);
@@ -406,7 +413,6 @@ const createAppointment = (db) => async (req, res, next) => {
                 patientId: data.patientId,
                 startTime: data.startTime
             });
-            const appointmentStatus = data.arrived ? 'Checked-in' : 'Confirmed';
 
             const insertQuery = `
               INSERT INTO appointments (

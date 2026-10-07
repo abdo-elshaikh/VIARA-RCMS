@@ -39,6 +39,25 @@ services:
       postgres:
         condition: service_healthy
 
+  redis:
+    image: redis:7-alpine
+    container_name: VIARA_redis
+    restart: unless-stopped
+    command: ["sh", "-c", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in the root .env file}
+    networks: [app, data]
+    mem_limit: 512m
+    cpus: 0.5
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   clamav:
     image: clamav/clamav:stable
     container_name: VIARA_clamav
@@ -64,7 +83,7 @@ services:
     restart: unless-stopped
     ports:
       - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-3000}:3000"
-    networks: [app, data]
+    networks: [app, data, redis]
     mem_limit: 2g
     cpus: 2.0
     stop_grace_period: 45s
@@ -90,6 +109,8 @@ services:
       BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:?Set BACKUP_ENCRYPTION_KEY in the root .env file}
       BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:?Set BLIND_INDEX_KEY in the root .env file}
       CLIENT_URL: ${CLIENT_URL:?Set CLIENT_URL to the public HTTPS staff application URL}
+      TRUST_PROXY: ${TRUST_PROXY:-loopback,linklocal,uniquelocal}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
       PORTAL_CLIENT_URL: ${PORTAL_CLIENT_URL:?Set PORTAL_CLIENT_URL to the public HTTPS portal URL}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set ALLOWED_ORIGINS to the exact public HTTPS origins}
       CLAMSCAN_PATH: /usr/bin/clamdscan
@@ -130,8 +151,12 @@ services:
       PACS_AI_WORKER_TIMEOUT_MS: ${PACS_AI_WORKER_TIMEOUT_MS:-600000}
       PACS_AI_QUEUE_INTERVAL_MS: ${PACS_AI_QUEUE_INTERVAL_MS:-30000}
       PACS_AI_QUEUE_BATCH_SIZE: ${PACS_AI_QUEUE_BATCH_SIZE:-1}
+      RATE_LIMIT_STORE: redis
+      PACS_AI_RELEASE_APPROVED: ${PACS_AI_RELEASE_APPROVED:-false}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     volumes:
-      - ./backend/src:/app/src
+      # Host source mount moved to docker-compose.override.yml for development only
+      # - ./backend/src:/app/src
       - backup_data:/app/backups
       - pacs_cold_archive:/app/pacs-cold
       - upload_data:/app/uploads
@@ -349,9 +374,11 @@ volumes:
   pacs_cold_archive:
   ai_model_cache:
   clamav_signatures:
+  redis_data:
 
 networks:
   app:
   data:
     internal: true
   scanner-egress:
+  redis:

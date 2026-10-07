@@ -53,8 +53,7 @@ const roleCopy = {
     patient: {
       badge: "بوابة المرضى",
       visualTitle: "تقاريرك وصور فحوصاتك، متاحة لك وقتما تحتاجها.",
-      visualBody:
-        "اطّلع على تقاريرك وسجل فحوصاتك، وتابع رحلتك التشخيصية كاملة من مكان واحد آمن.",
+      visualBody: "اطّلع على تقاريرك وسجل فحوصاتك، وتابع رحلتك التشخيصية كاملة من مكان واحد آمن.",
       switchLead: "هل أنت طبيب مُحيل؟",
       switchLabel: "الدخول إلى بوابة الأطباء",
     },
@@ -200,60 +199,64 @@ export const PortalAuthShell = ({
               </Link>
             </div>
             <div className="overflow-hidden rounded-[28px] border border-white/75 bg-white/55 shadow-[0_30px_80px_rgba(11,35,72,0.18)] backdrop-blur-2xl ring-1 ring-white/50 dark:border-white/15 dark:bg-[#0A1728]/55 dark:ring-white/[0.08]">
-            <div className="min-w-0 border-b border-white/55 bg-gradient-to-r from-white/65 via-white/40 to-white/20 px-6 py-6 backdrop-blur-xl dark:border-white/10 dark:from-white/[0.06] dark:via-white/[0.03] dark:to-transparent sm:px-8 sm:py-7">
-              <span className="inline-flex items-center gap-2 text-xs font-bold text-primary">
-                <RoleIcon className="h-4 w-4" />
-                {roleText.badge}
-              </span>
-              <h1
-                id={`auth-title-${role}`}
-                className="mt-2 text-2xl font-extrabold leading-tight text-[#0B2348] dark:text-white sm:text-3xl"
-              >
-                {title}
-              </h1>
-              <p className="mt-2 break-words text-sm leading-6 text-[#687B91] dark:text-slate-300">
-                {subtitle}
-              </p>
+              <div className="min-w-0 border-b border-white/55 bg-gradient-to-r from-white/65 via-white/40 to-white/20 px-6 py-6 backdrop-blur-xl dark:border-white/10 dark:from-white/[0.06] dark:via-white/[0.03] dark:to-transparent sm:px-8 sm:py-7">
+                <span className="inline-flex items-center gap-2 text-xs font-bold text-primary">
+                  <RoleIcon className="h-4 w-4" />
+                  {roleText.badge}
+                </span>
+                <h1
+                  id={`auth-title-${role}`}
+                  className="mt-2 text-2xl font-extrabold leading-tight text-[#0B2348] dark:text-white sm:text-3xl"
+                >
+                  {title}
+                </h1>
+                <p className="mt-2 break-words text-sm leading-6 text-[#687B91] dark:text-slate-300">
+                  {subtitle}
+                </p>
 
-              <div className="mt-4 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-primary/80">
-                <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_0_5px_rgba(8,120,95,0.12)]" />
-                {copy.secure}
+                <div className="mt-4 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-primary/80">
+                  <span className="h-2 w-2 rounded-full bg-primary shadow-[0_0_0_5px_rgba(8,120,95,0.12)]" />
+                  {copy.secure}
+                </div>
+
+                {benefits.length > 0 && (
+                  <div className="mt-4 hidden min-w-0 flex-wrap gap-x-4 gap-y-2 sm:flex lg:hidden">
+                    {benefits.slice(0, 2).map((benefit) => (
+                      <span
+                        key={benefit}
+                        className="inline-flex min-w-0 items-start gap-1.5 break-words text-[11px] font-semibold leading-5 text-[#38516B] dark:text-slate-300"
+                      >
+                        <Check className="h-3.5 w-3.5 text-primary" />
+                        {benefit}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {benefits.length > 0 && (
-                <div className="mt-4 hidden min-w-0 flex-wrap gap-x-4 gap-y-2 sm:flex lg:hidden">
-                  {benefits.slice(0, 2).map((benefit) => (
-                    <span
-                      key={benefit}
-                      className="inline-flex min-w-0 items-start gap-1.5 break-words text-[11px] font-semibold leading-5 text-[#38516B] dark:text-slate-300"
-                    >
-                      <Check className="h-3.5 w-3.5 text-primary" />
-                      {benefit}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="min-w-0 overflow-hidden bg-white/15 px-6 py-6 backdrop-blur-md dark:bg-black/[0.04] sm:px-8 sm:py-7">{children}</div>
-
-            <div className="grid min-w-0 gap-4 border-t border-white/55 bg-white/30 px-6 py-5 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.035] sm:px-8">
-              <div className="flex items-start gap-2.5">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                <div>
-                  <p className="text-xs font-bold text-[#0B2348] dark:text-white">{copy.session}</p>
-                  <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">
-                    {copy.sessionBody}
-                  </p>
-                </div>
+              <div className="min-w-0 overflow-hidden bg-white/15 px-6 py-6 backdrop-blur-md dark:bg-black/[0.04] sm:px-8 sm:py-7">
+                {children}
               </div>
-              <p className="text-xs leading-5 text-muted-foreground lg:hidden">
-                {roleText.switchLead}{" "}
-                <Link to={switchTo} className="font-bold text-primary hover:underline">
-                  {roleText.switchLabel}
-                </Link>
-              </p>
-            </div>
+
+              <div className="grid min-w-0 gap-4 border-t border-white/55 bg-white/30 px-6 py-5 backdrop-blur-xl dark:border-white/10 dark:bg-white/[0.035] sm:px-8">
+                <div className="flex items-start gap-2.5">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-xs font-bold text-[#0B2348] dark:text-white">
+                      {copy.session}
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">
+                      {copy.sessionBody}
+                    </p>
+                  </div>
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground lg:hidden">
+                  {roleText.switchLead}{" "}
+                  <Link to={switchTo} className="font-bold text-primary hover:underline">
+                    {roleText.switchLabel}
+                  </Link>
+                </p>
+              </div>
             </div>
           </motion.section>
         </div>
@@ -265,4 +268,3 @@ export const PortalAuthShell = ({
     </PortalLayout>
   );
 };
-

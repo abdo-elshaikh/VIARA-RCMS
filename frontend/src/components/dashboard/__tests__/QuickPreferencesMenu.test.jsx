@@ -82,6 +82,15 @@ describe('QuickPreferencesMenu', () => {
         expect(mockUpdatePreference).toHaveBeenCalledWith({ density: 'compact' });
     });
 
+    it('triggers border radius update on radius button click', () => {
+        renderMenu();
+
+        const sharpButton = screen.getByRole('button', { name: /Sharp/i });
+        fireEvent.click(sharpButton);
+
+        expect(mockUpdatePreference).toHaveBeenCalledWith({ borderRadius: 'sharp' });
+    });
+
     it('triggers font scale update on scale click', () => {
         renderMenu();
 

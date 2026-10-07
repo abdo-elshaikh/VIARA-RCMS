@@ -20,6 +20,7 @@ import { formatDuration } from '../utils/dateFormat';
 import { AccessibleChartData, PageHeader, PagePanel } from '../components/ui';
 import { canAccessRoute } from '../config/routes';
 import { getEffectivePermissions } from '../utils/effectivePermissions';
+import usePageTitle from '../hooks/usePageTitle';
 
 const chartTooltipStyle = {
     background: 'rgba(15, 23, 42, 0.95)',
@@ -40,10 +41,12 @@ const toNumber = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 const DashboardHome = () => {
     const user = useSelector(selectCurrentUser);
     const preferences = useSelector(selectPreferences);
-    const { t, i18n } = useTranslation('dashboard');
+    const { t, i18n } = useTranslation(['dashboard', 'navigation']);
     const { data: stats = {}, isLoading, isFetching, isError, error, refetch } = useGetDashboardStatsQuery(undefined, {
         skip: !user, refetchOnMountOrArgChange: true, pollingInterval: 60000,
     });
+
+    usePageTitle(t('navigation:dashboard', { defaultValue: 'لوحة التحكم الرئيسية' }));
 
     if (isLoading) return <DashboardSkeleton />;
     if (isError && Object.keys(stats).length === 0) return <DashboardError error={error} onRetry={refetch} />;
@@ -470,6 +473,36 @@ const ClinicalDashboard = props => {
                 />
             )}
         >
+            {/* ── Worklist Entry Point Banner ── Always visible to guide clinical staff ── */}
+            {worklistAction && (
+                <button
+                    type="button"
+                    onClick={worklistAction.onClick}
+                    className="group flex w-full items-center justify-between gap-4 overflow-hidden rounded-3xl border border-teal-500/40 bg-gradient-to-r from-teal-500/10 via-teal-500/5 to-transparent p-5 text-start shadow-sm transition-all hover:border-teal-500/60 hover:shadow-md dark:from-teal-950/40 dark:via-slate-900/60 dark:to-slate-900"
+                    aria-label={worklistAction.label}
+                >
+                    <div className="flex items-center gap-4">
+                        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-teal-500/20 text-teal-700 dark:text-teal-300 ring-2 ring-teal-500/30">
+                            <Stethoscope size={22} />
+                        </span>
+                        <div>
+                            <span className="block text-sm font-black text-teal-950 dark:text-teal-100">
+                                {isArabic ? 'قائمة عملك اليوم' : 'Your work queue for today'}
+                            </span>
+                            <span className="mt-0.5 block text-xs font-semibold text-teal-700/80 dark:text-teal-300/70">
+                                {isArabic
+                                    ? `${formatNumber(stats.totalAssigned, language)} مهمة نشطة — انقر للعمل`
+                                    : `${formatNumber(stats.totalAssigned, language)} active tasks — click to start`}
+                            </span>
+                        </div>
+                    </div>
+                    <span className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-xl bg-teal-600 px-4 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 group-hover:translate-x-1 rtl:group-hover:-translate-x-1">
+                        <span>{isArabic ? 'فتح القائمة' : 'Open Worklist'}</span>
+                        <ArrowRight size={14} className={isArabic ? 'rotate-180' : ''} />
+                    </span>
+                </button>
+            )}
+
             {/* High-Acuity Alert Banner */}
             {toNumber(stats.urgentCases) > 0 && worklistAction && (
                 <button

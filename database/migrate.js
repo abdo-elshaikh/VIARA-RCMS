@@ -222,7 +222,10 @@ const MIGRATION_FILES = [
     '188_portal_message_access_control.sql',
     '189_pacs_reliability.sql',
     '190_pacs_viewer_bookmarks.sql',
-    '191_pacs_measurement_drafts.sql'
+    '191_pacs_measurement_drafts.sql',
+    '192_system_updates_management.sql',
+    '193_password_reset_tokens.sql',
+    '194_payroll_compensation_expansion.sql'
 ];
 
 const SEED_FILES = [
@@ -243,7 +246,18 @@ const requireFiles = (files, directory, kind) => files.map((filename) => {
 
 const applySqlFile = async (client, migration, label) => {
     console.log(`  → ${label}`);
-    await client.query(migration.sql);
+    // Keep historical files/checksums intact, but never execute their optional
+    // demo inserts in production. Already applied migrations are left untouched.
+    const demoMarkers = {
+        '001_add_roles.sql': '-- Seed new users',
+        '003_add_inventory.sql': '-- Seed some initial items'
+    };
+    const marker = process.env.NODE_ENV === 'production' && demoMarkers[migration.filename];
+    const sql = marker ? migration.sql.slice(0, migration.sql.indexOf(marker)) : migration.sql;
+    if (marker && !migration.sql.includes(marker)) {
+        throw new Error(`Missing expected demo seed boundary: ${migration.filename}`);
+    }
+    await client.query(sql);
 };
 
 const ensureMigrationTable = async (client, migrations) => {

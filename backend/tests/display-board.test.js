@@ -102,7 +102,7 @@ describe('public display board controller', () => {
         const payload = res.json.mock.calls[0][0];
 
         expect(res.set).toHaveBeenCalledWith('Cache-Control', 'no-store, max-age=0');
-        expect(payload.config).toEqual({
+        expect(payload.config).toMatchObject({
             patientDisplayMode: 'name_and_order',
             callAnnouncementMode: 'token_only',
             showTicker: true,
@@ -184,7 +184,7 @@ describe('public display board controller', () => {
         await getDisplayBoard(db)({}, res, jest.fn());
 
         const payload = res.json.mock.calls[0][0];
-        expect(payload.config).toEqual({
+        expect(payload.config).toMatchObject({
             patientDisplayMode: 'name_and_order',
             callAnnouncementMode: 'token_and_name',
             showTicker: false,

@@ -14,6 +14,7 @@ import {
     useUpdateAiProfileMutation
 } from '../../store/api';
 import Modal from '../ui/Modal';
+import ConfirmDialog from '../ui/ConfirmDialog';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import { inputClass, secondaryBtn } from '../../utils/designTokens';
 
@@ -59,6 +60,7 @@ const AiProviderSettings = ({ embedded = false }) => {
     const [form, setForm] = useState(emptyProfile);
     const [showCreate, setShowCreate] = useState(false);
     const [newName, setNewName] = useState('');
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
     const group = data?.[target];
     const profiles = useMemo(() => group?.profiles || [], [group?.profiles]);
@@ -193,9 +195,12 @@ const AiProviderSettings = ({ embedded = false }) => {
         } catch (error) { toast.error(getErrorMessage(error, t('settings.aiProfiles.messages.duplicateFailed'))); }
     };
 
-    const remove = async () => {
+    const remove = () => {
         if (selected.active) return toast.error(t('settings.aiProfiles.messages.activateAnother'));
-        if (!window.confirm(t('settings.aiProfiles.messages.deleteConfirm', { name: selected.name }))) return;
+        setShowDeleteConfirm(true);
+    };
+    const confirmRemove = async () => {
+        setShowDeleteConfirm(false);
         try {
             await deleteProfile(selected.id).unwrap();
             setSelectedId(group.activeProfileId);
@@ -359,6 +364,17 @@ const AiProviderSettings = ({ embedded = false }) => {
             <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title={t('settings.aiProfiles.createTitle', { target: t(`settings.aiProfiles.targets.${target}`) })} width="max-w-md">
                 <div className="space-y-4"><Field label={t('settings.aiProfiles.fields.name')}><input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') create(); }} className={inputClass} placeholder={t('settings.aiProfiles.namePlaceholder')} /></Field><div className="flex justify-end gap-2"><button type="button" onClick={() => setShowCreate(false)} className={secondaryBtn}>{t('common:actions.cancel')}</button><button type="button" onClick={create} disabled={newName.trim().length < 2 || createState.isLoading} className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-cyan-600 px-4 text-xs font-black text-white"><Plus size={14} />{t('settings.aiProfiles.create')}</button></div></div>
             </Modal>
+
+            <ConfirmDialog
+                isOpen={showDeleteConfirm}
+                title={t('settings.aiProfiles.delete', { defaultValue: 'حذف ملف المزود' })}
+                message={t('settings.aiProfiles.messages.deleteConfirm', { name: selected?.name })}
+                confirmLabel={t('settings.aiProfiles.delete', { defaultValue: 'حذف' })}
+                cancelLabel={t('common:actions.cancel', { defaultValue: 'إلغاء' })}
+                onConfirm={confirmRemove}
+                onCancel={() => setShowDeleteConfirm(false)}
+                variant="danger"
+            />
         </div>
     );
 };

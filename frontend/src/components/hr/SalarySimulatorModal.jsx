@@ -33,12 +33,19 @@ export const SalarySimulatorModal = ({
     const [salaryType, setSalaryType] = useState('Monthly');
     const [baseSalary, setBaseSalary] = useState(15000);
     const [hourlyRate, setHourlyRate] = useState(85);
+    const [dailyRate, setDailyRate] = useState(700);
+    const [shiftRate, setShiftRate] = useState(500);
+    const [caseRate, setCaseRate] = useState(150);
+    const [percentageRate, setPercentageRate] = useState(10);
     const [standardDays, setStandardDays] = useState(22);
     const [standardHoursPerDay, setStandardHoursPerDay] = useState(8);
 
     // Dynamic attendance and adjustment variables
     const [daysWorked, setDaysWorked] = useState(22);
     const [hoursWorked, setHoursWorked] = useState(176);
+    const [shiftsWorked, setShiftsWorked] = useState(22);
+    const [casesCompleted, setCasesCompleted] = useState(30);
+    const [netCollections, setNetCollections] = useState(50000);
     const [overtimeHours, setOvertimeHours] = useState(10);
     const [lateMinutes, setLateMinutes] = useState(45);
     const [unexcusedAbsenceDays, setUnexcusedAbsenceDays] = useState(0);
@@ -54,9 +61,13 @@ export const SalarySimulatorModal = ({
             setSalaryType(profile.salary_type || 'Monthly');
             if (profile.salary_type === 'Monthly') {
                 setBaseSalary(Number(profile.base_salary || 0));
-            } else {
+            } else if (profile.salary_type === 'Hourly') {
                 setHourlyRate(Number(profile.hourly_rate || 0));
             }
+            setDailyRate(Number(profile.daily_rate || 0));
+            setShiftRate(Number(profile.shift_rate || 0));
+            setCaseRate(Number(profile.case_rate || 0));
+            setPercentageRate(Number(profile.percentage_rate || 0));
             setStandardDays(Number(profile.standard_days_per_period || 22));
             setStandardHoursPerDay(Number(profile.standard_hours_per_day || 8));
         }
@@ -68,17 +79,26 @@ export const SalarySimulatorModal = ({
         const stdHoursDay = Math.max(1, Number(standardHoursPerDay || 8));
         const monthlyBase = Number(baseSalary || 0);
         const hourly = Number(hourlyRate || 0);
-        const dailyRate = salaryType === 'Monthly' ? monthlyBase / stdDays : hourly * stdHoursDay;
-        const effectiveHourlyRate = salaryType === 'Monthly' ? dailyRate / stdHoursDay : hourly;
+        const dailyWage = salaryType === 'Monthly' ? monthlyBase / stdDays
+            : salaryType === 'Daily' ? Number(dailyRate || 0)
+                : salaryType === 'Hourly' ? hourly * stdHoursDay : 0;
+        const effectiveHourlyRate = salaryType === 'Monthly' ? monthlyBase / (stdDays * stdHoursDay)
+            : salaryType === 'Hourly' ? hourly
+                : salaryType === 'Daily' ? dailyWage / stdHoursDay : 0;
 
         // 1. Base Earnings
         let calculatedBase = 0;
-        if (salaryType === 'Monthly') {
-            const workedRatio = Math.min(1, Math.max(0, Number(daysWorked || stdDays) / stdDays));
-            calculatedBase = monthlyBase * workedRatio;
-        } else {
-            calculatedBase = Number(hoursWorked || 0) * hourly;
+        if (salaryType === 'Monthly') calculatedBase = monthlyBase;
+        if (salaryType === 'Hourly') calculatedBase = Number(hoursWorked || 0) * hourly;
+        if (salaryType === 'Daily') calculatedBase = Number(daysWorked || 0) * Number(dailyRate || 0);
+        if (salaryType === 'PerShift') calculatedBase = Number(shiftsWorked || 0) * Number(shiftRate || 0);
+        if (salaryType === 'PerCase') calculatedBase = Number(casesCompleted || 0) * Number(caseRate || 0);
+        if (salaryType === 'ShiftAndCase') {
+            calculatedBase = Number(shiftsWorked || 0) * Number(shiftRate || 0)
+                + Number(casesCompleted || 0) * Number(caseRate || 0);
         }
+        if (salaryType === 'Percentage') calculatedBase = Number(netCollections || 0) * Number(percentageRate || 0) / 100;
+        const calculatedDailyRate = calculatedBase / stdDays;
 
         // 2. Overtime Earnings (1.5x multiplier standard rate)
         const overtimeBonus = Number(overtimeHours || 0) * effectiveHourlyRate * 1.5;
@@ -90,7 +110,7 @@ export const SalarySimulatorModal = ({
         const grossEarnings = calculatedBase + overtimeBonus + allowances;
 
         // 4. Absence Deductions
-        const absenceDeduction = Number(unexcusedAbsenceDays || 0) * dailyRate;
+        const absenceDeduction = Number(unexcusedAbsenceDays || 0) * calculatedDailyRate;
 
         // 5. Late Penalties (1 minute = proportional hourly rate)
         const minuteRate = effectiveHourlyRate / 60;
@@ -111,7 +131,7 @@ export const SalarySimulatorModal = ({
         const netRatio = Math.max(0, 100 - deductionsRatio);
 
         return {
-            dailyRate,
+            dailyRate: calculatedDailyRate,
             effectiveHourlyRate,
             calculatedBase,
             overtimeBonus,
@@ -128,8 +148,9 @@ export const SalarySimulatorModal = ({
             netRatio
         };
     }, [
-        salaryType, baseSalary, hourlyRate, standardDays, standardHoursPerDay,
-        daysWorked, hoursWorked, overtimeHours, lateMinutes, unexcusedAbsenceDays,
+        salaryType, baseSalary, hourlyRate, dailyRate, shiftRate, caseRate, percentageRate,
+        standardDays, standardHoursPerDay, daysWorked, hoursWorked, shiftsWorked,
+        casesCompleted, netCollections, overtimeHours, lateMinutes, unexcusedAbsenceDays,
         customAllowances, loanDeduction, disciplinaryPenalty
     ]);
 
@@ -138,10 +159,17 @@ export const SalarySimulatorModal = ({
         setSalaryType('Monthly');
         setBaseSalary(15000);
         setHourlyRate(85);
+        setDailyRate(700);
+        setShiftRate(500);
+        setCaseRate(150);
+        setPercentageRate(10);
         setStandardDays(22);
         setStandardHoursPerDay(8);
         setDaysWorked(22);
         setHoursWorked(176);
+        setShiftsWorked(22);
+        setCasesCompleted(30);
+        setNetCollections(50000);
         setOvertimeHours(10);
         setLateMinutes(45);
         setUnexcusedAbsenceDays(0);
@@ -215,8 +243,9 @@ export const SalarySimulatorModal = ({
                                     onChange={(e) => setSalaryType(e.target.value)}
                                     className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                 >
-                                    <option value="Monthly">{isArabic ? 'شهري ثابت (Monthly)' : 'Monthly'}</option>
-                                    <option value="Hourly">{isArabic ? 'بالساعة (Hourly)' : 'Hourly'}</option>
+                                    {['Monthly', 'Hourly', 'Daily', 'PerShift', 'PerCase', 'ShiftAndCase', 'Percentage'].map((type) => (
+                                        <option key={type} value={type}>{t(`salaryTypes.${type}`)}</option>
+                                    ))}
                                 </select>
                             </label>
 
@@ -231,7 +260,7 @@ export const SalarySimulatorModal = ({
                                         className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                     />
                                 </label>
-                            ) : (
+                            ) : salaryType === 'Hourly' ? (
                                 <label className="block">
                                     <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{isArabic ? 'الأجر بالساعة' : 'Hourly Rate'} ({currency})</span>
                                     <input
@@ -241,6 +270,32 @@ export const SalarySimulatorModal = ({
                                         onChange={(e) => setHourlyRate(Number(e.target.value))}
                                         className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                     />
+                                </label>
+                            ) : salaryType === 'Daily' ? (
+                                <label className="block">
+                                    <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{t('dailyRate')} ({currency})</span>
+                                    <input type="number" min="0" value={dailyRate} onChange={(e) => setDailyRate(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" />
+                                </label>
+                            ) : ['PerShift', 'ShiftAndCase'].includes(salaryType) ? (
+                                <label className="block">
+                                    <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{t('shiftRate')} ({currency})</span>
+                                    <input type="number" min="0" value={shiftRate} onChange={(e) => setShiftRate(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" />
+                                </label>
+                            ) : ['PerCase'].includes(salaryType) ? (
+                                <label className="block">
+                                    <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{t('caseRate')} ({currency})</span>
+                                    <input type="number" min="0" value={caseRate} onChange={(e) => setCaseRate(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" />
+                                </label>
+                            ) : salaryType === 'Percentage' ? (
+                                <label className="block">
+                                    <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{t('percentageOfCollections')}</span>
+                                    <input type="number" min="0" max="100" step="0.01" value={percentageRate} onChange={(e) => setPercentageRate(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" />
+                                </label>
+                            ) : null}
+                            {salaryType === 'ShiftAndCase' && (
+                                <label className="block">
+                                    <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{t('caseRate')} ({currency})</span>
+                                    <input type="number" min="0" value={caseRate} onChange={(e) => setCaseRate(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" />
                                 </label>
                             )}
                         </div>
@@ -284,7 +339,7 @@ export const SalarySimulatorModal = ({
                         </h4>
 
                         <div className="grid grid-cols-2 gap-2.5">
-                            {salaryType === 'Monthly' ? (
+                            {salaryType === 'Monthly' || salaryType === 'Daily' ? (
                                 <label className="block">
                                     <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{isArabic ? 'أيام العمل الفعلية' : 'Actual Days Worked'}</span>
                                     <input
@@ -296,7 +351,7 @@ export const SalarySimulatorModal = ({
                                         className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                     />
                                 </label>
-                            ) : (
+                            ) : salaryType === 'Hourly' ? (
                                 <label className="block">
                                     <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{isArabic ? 'ساعات العمل الفعلية' : 'Actual Hours Worked'}</span>
                                     <input
@@ -307,6 +362,27 @@ export const SalarySimulatorModal = ({
                                         className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                     />
                                 </label>
+                            ) : (
+                                <>
+                                    {['PerShift', 'ShiftAndCase'].includes(salaryType) && (
+                                        <label className="block">
+                                            <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{t('paidShifts')}</span>
+                                            <input type="number" min="0" value={shiftsWorked} onChange={(e) => setShiftsWorked(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" />
+                                        </label>
+                                    )}
+                                    {['PerCase', 'ShiftAndCase'].includes(salaryType) && (
+                                        <label className="block">
+                                            <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{t('completedCases')}</span>
+                                            <input type="number" min="0" value={casesCompleted} onChange={(e) => setCasesCompleted(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" />
+                                        </label>
+                                    )}
+                                    {salaryType === 'Percentage' && (
+                                        <label className="block">
+                                            <span className="mb-1 block text-[11px] font-bold text-slate-600 dark:text-slate-300">{t('netCollections')} ({currency})</span>
+                                            <input type="number" min="0" value={netCollections} onChange={(e) => setNetCollections(Number(e.target.value))} className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200" />
+                                        </label>
+                                    )}
+                                </>
                             )}
 
                             <label className="block">

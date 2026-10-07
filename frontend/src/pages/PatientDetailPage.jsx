@@ -8,7 +8,7 @@ import {
     ClipboardList, Contact, Copy, Database, Edit3, FileText, HeartPulse, KeyRound,
     Mail, MapPin, Phone, Plus, Receipt, RefreshCw, ShieldCheck, Stethoscope,
     UserRound, Printer, Download, Eye, EyeOff, Send, ExternalLink, Sparkles,
-    Droplets, Zap, Check,
+    Droplets, Zap, Check, MessageCircle, Share2, CheckCircle, AlertCircle, Info,
 } from 'lucide-react';
 import {
     useCreateInsurancePolicyMutation, useCreateInvoiceMutation,
@@ -156,7 +156,7 @@ const ReadinessCard = ({ icon: Icon, label, value, detail, tone = 'slate' }) => 
     );
 };
 
-const PortalAccessCard = ({ enabled, mrn, loginUrl, password, canOperate, loading, onActivate, t }) => {
+const PortalAccessCard = ({ enabled, mrn, loginUrl, password, canOperate, loading, onActivate, patientPhone, patientName, t }) => {
     const [showPassword, setShowPassword] = useState(false);
     const [copiedField, setCopiedField] = useState(null);
 
@@ -164,11 +164,28 @@ const PortalAccessCard = ({ enabled, mrn, loginUrl, password, canOperate, loadin
         try {
             await navigator.clipboard.writeText(value);
             setCopiedField(field);
-            toast.success(t('page.copied'));
+            toast.success(t('page.copied', { defaultValue: 'تم النسخ' }));
             setTimeout(() => setCopiedField(null), 2000);
         } catch {
-            toast.error(t('page.copyFailed'));
+            toast.error(t('page.copyFailed', { defaultValue: 'تعذر النسخ' }));
         }
+    };
+
+    const shareOnWhatsApp = () => {
+        if (!patientPhone) {
+            toast.error(t('page.noPhoneForWhatsApp', { defaultValue: 'لا يوجد رقم هاتف مسجل للمريض' }));
+            return;
+        }
+        const cleanPhone = patientPhone.replace(/[^0-9]/g, '');
+        const message = `مرحباً ${patientName || ''}،
+إليك بيانات الدخول إلى بوابة المرضى الخاصة بمركز طبية للأشعة والتحاليل:
+🔗 رابط البوابة: ${loginUrl}
+👤 اسم المستخدم (MRN): ${mrn}
+🔑 كلمة المرور المؤقتة: ${password || '(تم تفعيل حسابكم مسبقاً)'}
+
+يرجى تسجيل الدخول وتغيير كلمة المرور عند أول استخدام للحفاظ على خصوصيتك.`;
+
+        window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
     };
 
     return (
@@ -245,6 +262,16 @@ const PortalAccessCard = ({ enabled, mrn, loginUrl, password, canOperate, loadin
                             <KeyRound size={14} />
                             {enabled ? t('page.resetPortalAccess') : t('page.activatePortalAccess')}
                         </Button>
+                    )}
+                    {password && patientPhone && (
+                        <button
+                            type="button"
+                            onClick={shareOnWhatsApp}
+                            className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-emerald-300 bg-emerald-600 px-3 text-xs font-bold text-white transition hover:bg-emerald-700 shadow-2xs"
+                        >
+                            <MessageCircle size={14} />
+                            <span>مشاركة البيانات عبر واتساب</span>
+                        </button>
                     )}
                     <a
                         href={loginUrl}
@@ -540,6 +567,8 @@ const PatientDetailPage = () => {
         <div className="app-page pb-12 space-y-6">
 {/* 1. SHARED PAGE HEADER — identity, record indicators, and actions */}
             <PageHeader
+                eyebrow={t('page.eyebrow', { defaultValue: 'ملف المريض الإلكتروني الموحد · Patient Master Record' })}
+                EyebrowIcon={Activity}
                 leading={
                     <div className="relative shrink-0">
                         <span className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-2xl bg-gradient-to-tr from-[var(--VIARA-accent)] via-teal-600 to-teal-400 text-2xl sm:text-3xl font-black text-white shadow-md ring-4 ring-white/80 dark:ring-slate-800/80">
@@ -552,6 +581,7 @@ const PatientDetailPage = () => {
                     </div>
                 }
                 title={fullName}
+                description={`${t('fields.mrn', { defaultValue: 'الرقم الطبي' })}: ${patient.mrn || '—'} ${age != null ? `· ${age} ${t('units.years', { defaultValue: 'سنة' })}` : ''} ${patient.gender ? `· ${t(`gender.${patient.gender}`, { defaultValue: patient.gender })}` : ''}`}
                 meta={
                     <>
                         <span className={`inline-flex items-center rounded-full border px-3 py-0.5 text-[11px] font-black uppercase tracking-wider ${statusStyles[patient.patient_status || 'Active']}`}>
@@ -568,6 +598,14 @@ const PatientDetailPage = () => {
                                 <span>{t('page.noAlerts')}</span>
                             </span>
                         )}
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-[11px] font-bold ${
+                            portalReady || issuedPortalPassword
+                                ? 'border-teal-200 bg-teal-50 text-teal-800 dark:border-teal-900/60 dark:bg-teal-950/40 dark:text-teal-300'
+                                : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400'
+                        }`}>
+                            <KeyRound size={12} className={portalReady || issuedPortalPassword ? 'text-teal-600' : 'text-slate-400'} />
+                            <span>{portalReady || issuedPortalPassword ? t('page.portalActive', { defaultValue: 'البوابة مفعلة' }) : t('page.portalInactive', { defaultValue: 'البوابة غير مفعلة' })}</span>
+                        </span>
                     </>
                 }
                 metrics={[
@@ -607,6 +645,7 @@ const PatientDetailPage = () => {
                     },
                 ]}
                 metricsLabel={t('page.recordIndicators', { defaultValue: 'Patient record indicators' })}
+                metricsDefaultVisible={true}
                 actions={
                     <>
                         <Button
@@ -627,6 +666,10 @@ const PatientDetailPage = () => {
                                     <Receipt size={15} />
                                     <span>{t('createInvoice')}</span>
                                 </Button>
+                                <Button variant="ghost" onClick={handlePassword} loading={isGeneratingPassword} title={t('page.portalAccessTooltip', { defaultValue: 'إدارة وتسليم بيانات دخول البوابة' })}>
+                                    <KeyRound size={15} />
+                                    <span>{t('portal', { defaultValue: 'بيانات البوابة' })}</span>
+                                </Button>
                             </>
                         )}
                         <button
@@ -640,48 +683,68 @@ const PatientDetailPage = () => {
                         </button>
                     </>
                 }
-            >
-                <div className="mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs">
-                    <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-mono font-black text-[var(--VIARA-ink)] shadow-2xs">
-                        <ClipboardList size={13} className="text-[var(--VIARA-accent)]" />
-                        <span className="text-[10px] font-semibold text-[var(--VIARA-muted)]">MRN:</span>
-                        <span>{patient.mrn}</span>
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-bold text-[var(--VIARA-muted)]">
-                        <CalendarDays size={13} className="text-[var(--VIARA-accent)]" />
-                        {age != null ? t('page.ageWithDob', { age, dob: formatDate(patient.date_of_birth), defaultValue: `${age} years · ${formatDate(patient.date_of_birth)}` }) : formatDate(patient.date_of_birth)}
-                    </span>
-                    <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-bold text-[var(--VIARA-muted)]">
-                        <UserRound size={13} />
-                        {patient.gender ? t(`gender.${patient.gender}`) : t('fallback.unknown')}
-                    </span>
-                    {patient.phone && (
-                        <a
-                            href={`tel:${patient.phone}`}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-semibold text-[var(--VIARA-ink)] transition-colors hover:border-[var(--VIARA-accent)] hover:text-[var(--VIARA-accent)]"
-                        >
-                            <Phone size={13} className="text-emerald-600" />
-                            <span>{patient.phone}</span>
-                        </a>
-                    )}
-                    {patient.email && (
-                        <a
-                            href={`mailto:${patient.email}`}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-semibold text-[var(--VIARA-ink)] transition-colors hover:border-[var(--VIARA-accent)] hover:text-[var(--VIARA-accent)]"
-                        >
-                            <Mail size={13} className="text-cyan-600" />
-                            <span>{patient.email}</span>
-                        </a>
-                    )}
-                    {patient.national_id && (
-                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1 font-mono text-[var(--VIARA-muted)]">
-                            <span className="text-[10px] font-bold text-[var(--VIARA-muted)]">ID:</span>
-                            <span>{patient.national_id}</span>
-                        </span>
-                    )}
-                </div>
-            </PageHeader>
+            />
 
+            {/* 2. EXECUTIVE CLINICAL DEMOGRAPHICS & QUICK CONTACT STRIP */}
+            <section aria-label={t('page.quickDemographics', { defaultValue: 'بيانات الاتصال والهوية السريعة' })} className="rounded-2xl border border-slate-200/80 bg-white/90 p-3.5 backdrop-blur-md shadow-2xs dark:border-slate-800/80 dark:bg-slate-900/90">
+                <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1.5 font-mono font-black text-[var(--VIARA-ink)] shadow-2xs">
+                            <ClipboardList size={14} className="text-[var(--VIARA-accent)]" />
+                            <span className="text-[10px] font-bold uppercase text-[var(--VIARA-muted)]">MRN:</span>
+                            <span className="tracking-wide">{patient.mrn}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1.5 font-bold text-slate-700 dark:text-slate-300">
+                            <CalendarDays size={14} className="text-[var(--VIARA-accent)]" />
+                            <span>{age != null ? `${age} سنة (${formatDate(patient.date_of_birth)})` : formatDate(patient.date_of_birth)}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-1.5 font-bold text-slate-700 dark:text-slate-300">
+                            <UserRound size={14} className="text-[var(--VIARA-accent)]" />
+                            <span>{patient.gender ? t(`gender.${patient.gender}`) : t('fallback.unknown')}</span>
+                        </span>
+                        {patient.national_id && (
+                            <span className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-2.5 py-1.5 font-mono text-slate-700 dark:text-slate-300">
+                                <span className="text-[10px] font-bold text-[var(--VIARA-muted)]">الرقم القومي:</span>
+                                <span>{patient.national_id}</span>
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                        {patient.phone && (
+                            <a
+                                href={`tel:${patient.phone}`}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-1.5 font-mono font-bold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300"
+                                dir="ltr"
+                            >
+                                <Phone size={13} className="text-emerald-600" />
+                                <span>{patient.phone}</span>
+                            </a>
+                        )}
+                        {patient.phone && (
+                            <a
+                                href={`https://wa.me/${patient.phone.replace(/[^0-9]/g, '')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-teal-200 bg-teal-50/70 px-3 py-1.5 font-bold text-teal-800 transition hover:bg-teal-100 dark:border-teal-900/60 dark:bg-teal-950/30 dark:text-teal-300"
+                                title="مراسلة سريعة عبر واتساب"
+                            >
+                                <MessageCircle size={13} className="text-teal-600" />
+                                <span>واتساب</span>
+                            </a>
+                        )}
+                        {patient.email && (
+                            <a
+                                href={`mailto:${patient.email}`}
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-200 bg-cyan-50/70 px-3 py-1.5 font-medium text-cyan-800 transition hover:bg-cyan-100 dark:border-cyan-900/60 dark:bg-cyan-950/30 dark:text-cyan-300"
+                            >
+                                <Mail size={13} className="text-cyan-600" />
+                                <span className="max-w-[180px] truncate">{patient.email}</span>
+                            </a>
+                        )}
+                    </div>
+                </div>
+            </section>
 
             {/* 3. STICKY MODERN TABS BAR */}
             <nav aria-label={t('page.sections')} className="sticky top-2 z-20 flex gap-1.5 overflow-x-auto rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)]/95 backdrop-blur-md p-1.5 shadow-sm scrollbar-hide">
@@ -723,6 +786,122 @@ const PatientDetailPage = () => {
                 <div className="min-w-0 space-y-6">
                     {activeTab === 'overview' && (
                         <div className="space-y-6">
+                            {/* Quick Clinical Glance Bento */}
+                            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                                {/* Last Visit Card */}
+                                <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900">
+                                    <div className="flex items-center justify-between text-xs mb-2">
+                                        <span className="flex items-center gap-1.5 font-black uppercase text-teal-800 dark:text-teal-400">
+                                            <Clock size={13} />
+                                            <span>آخر فحص مسجل</span>
+                                        </span>
+                                        {latestAppointment?.status && (
+                                            <span className="rounded-md bg-teal-50 px-2 py-0.5 text-[10px] font-bold text-teal-700 dark:bg-teal-950/60 dark:text-teal-300">
+                                                {latestAppointment.status}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {latestAppointment ? (
+                                        <div>
+                                            <p className="font-black text-slate-900 dark:text-white text-sm truncate">
+                                                {latestAppointment.exam_type_name || latestAppointment.machine_name || 'فحص أشعة / تحاليل'}
+                                            </p>
+                                            <p className="mt-1 text-xs text-slate-500 font-semibold">
+                                                {formatDate(latestAppointment.start_time, true)}
+                                            </p>
+                                            <button
+                                                type="button"
+                                                onClick={() => selectTab('visits')}
+                                                className="mt-3 text-xs font-bold text-teal-600 hover:text-teal-800 dark:text-teal-400 inline-flex items-center gap-1"
+                                            >
+                                                <span>عرض تفاصيل الفحص</span>
+                                                <ArrowRight size={12} className="rtl:rotate-180" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <p className="mt-2 text-xs text-slate-400 font-medium">لا توجد زيارات سابقة مسجلة</p>
+                                    )}
+                                </div>
+
+                                {/* Insurance Policy Quick Glance */}
+                                <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900">
+                                    <div className="flex items-center justify-between text-xs mb-2">
+                                        <span className="flex items-center gap-1.5 font-black uppercase text-teal-800 dark:text-teal-400">
+                                            <ShieldCheck size={13} />
+                                            <span>التغطية التأمينية</span>
+                                        </span>
+                                        <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                            {policies.length > 0 ? `${policies.length} وثائق` : 'سداد شخصي'}
+                                        </span>
+                                    </div>
+                                    {policies.length > 0 ? (
+                                        <div>
+                                            <p className="font-black text-slate-900 dark:text-white text-sm truncate">
+                                                {policies[0].provider_name}
+                                            </p>
+                                            <p className="mt-1 font-mono text-xs font-bold text-slate-600 dark:text-slate-300">
+                                                {policies[0].policy_number}
+                                            </p>
+                                            <button
+                                                type="button"
+                                                onClick={() => selectTab('insurance')}
+                                                className="mt-3 text-xs font-bold text-teal-600 hover:text-teal-800 dark:text-teal-400 inline-flex items-center gap-1"
+                                            >
+                                                <span>إدارة وثائق التأمين</span>
+                                                <ArrowRight size={12} className="rtl:rotate-180" />
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <p className="font-bold text-slate-700 dark:text-slate-300 text-xs mt-1">سداد شخصي (نقدي / إلكتروني)</p>
+                                            {canOperate && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => selectTab('insurance')}
+                                                    className="mt-3 text-xs font-bold text-teal-600 hover:text-teal-800 dark:text-teal-400 inline-flex items-center gap-1"
+                                                >
+                                                    <Plus size={12} />
+                                                    <span>إضافة بوليصة تأمين</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Emergency Contact Quick Card */}
+                                <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs dark:border-slate-800/80 dark:bg-slate-900">
+                                    <div className="flex items-center justify-between text-xs mb-2">
+                                        <span className="flex items-center gap-1.5 font-black uppercase text-amber-800 dark:text-amber-400">
+                                            <Phone size={13} />
+                                            <span>جهة الطوارئ والمرافق</span>
+                                        </span>
+                                        {patient.emergency_contact_relationship && (
+                                            <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                                {patient.emergency_contact_relationship}
+                                            </span>
+                                        )}
+                                    </div>
+                                    {patient.emergency_contact_name || patient.emergency_contact_phone ? (
+                                        <div>
+                                            <p className="font-black text-slate-900 dark:text-white text-sm truncate">
+                                                {patient.emergency_contact_name || 'جهة اتصال مسجلة'}
+                                            </p>
+                                            {patient.emergency_contact_phone && (
+                                                <a
+                                                    href={`tel:${patient.emergency_contact_phone}`}
+                                                    className="mt-1 text-xs font-mono font-bold text-emerald-600 dark:text-emerald-400 hover:underline block"
+                                                    dir="ltr"
+                                                >
+                                                    {patient.emergency_contact_phone}
+                                                </a>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <p className="mt-2 text-xs text-slate-400 font-medium">لم يتم تسجيل مرافق طوارئ</p>
+                                    )}
+                                </div>
+                            </div>
+
                             <Panel icon={UserRound} title={t('sections.personal')}>
                                 <InfoGrid items={[[t('fields.fullName'), fullName], [t('fields.dob'), formatDate(patient.date_of_birth)], [t('fields.gender'), t(`gender.${patient.gender}`)], [t('fields.nationalId'), patient.national_id], [t('fields.passport'), patient.passport_number], [t('fields.status'), t(`status.${patient.patient_status || 'Active'}`)]]} />
                             </Panel>
@@ -732,7 +911,134 @@ const PatientDetailPage = () => {
                         </div>
                     )}
 
-                    {activeTab === 'medical' && <Panel icon={Stethoscope} title={t('sections.medical')} description={t('page.medicalHelp')}><InfoGrid empty={t('fallback.none')} items={[[t('fields.allergies'), patient.allergies], [t('fields.diseases'), patient.chronic_diseases], [t('fields.surgeries'), patient.prior_surgeries], [t('fields.pregnancy'), patient.pregnancy_status], [t('fields.implants'), patient.implants_devices], [t('fields.renal'), patient.renal_function_notes]]} /></Panel>}
+                    {activeTab === 'medical' && (
+                        <div className="space-y-6">
+                            {/* Clinical Safety Protocol Header */}
+                            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-xs dark:border-slate-800/80 dark:bg-slate-900">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div className="flex items-center gap-3">
+                                        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-teal-700 ring-1 ring-teal-600/20 dark:bg-teal-950 dark:text-teal-300">
+                                            <Stethoscope size={22} />
+                                        </span>
+                                        <div>
+                                            <h2 className="text-base font-black text-slate-900 dark:text-white">{t('sections.medical')}</h2>
+                                            <p className="mt-1 text-xs text-slate-500 font-semibold">{t('page.medicalHelp')}</p>
+                                        </div>
+                                    </div>
+                                    {canOperate && (
+                                        <Button variant="secondary" onClick={() => setEditing(true)} className="text-xs">
+                                            <Edit3 size={14} />
+                                            <span>تحديث السجل الطبي</span>
+                                        </Button>
+                                    )}
+                                </div>
+
+                                {/* Medical Contraindications Bento Grid */}
+                                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                                    {/* 1. Allergies & Contrast Safety */}
+                                    <div className={`rounded-2xl border p-4 transition-all ${
+                                        patient.allergies
+                                            ? 'border-rose-300 bg-rose-50/70 dark:border-rose-900/60 dark:bg-rose-950/30'
+                                            : 'border-emerald-200/80 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/20'
+                                    }`}>
+                                        <div className="flex items-center justify-between text-xs mb-1.5">
+                                            <span className="flex items-center gap-1.5 font-black uppercase text-slate-800 dark:text-slate-200">
+                                                <Droplets size={14} className={patient.allergies ? 'text-rose-600' : 'text-emerald-600'} />
+                                                <span>{t('fields.allergies')} وموانع الصبغة</span>
+                                            </span>
+                                            <span className={`text-[10px] font-black rounded-md px-2 py-0.5 ${
+                                                patient.allergies ? 'bg-rose-200 text-rose-800 dark:bg-rose-900 dark:text-rose-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
+                                            }`}>
+                                                {patient.allergies ? 'تحذير سريري' : 'آمن ومطابق'}
+                                            </span>
+                                        </div>
+                                        <p className={`mt-2 text-sm font-bold leading-relaxed ${patient.allergies ? 'text-rose-950 dark:text-rose-100' : 'text-slate-600 dark:text-slate-300'}`}>
+                                            {patient.allergies || 'لا توجد حساسيات دوائية أو تحسس لليود والصبغة مسجلة.'}
+                                        </p>
+                                    </div>
+
+                                    {/* 2. Implants & MRI Safety */}
+                                    <div className={`rounded-2xl border p-4 transition-all ${
+                                        patient.implants_devices
+                                            ? 'border-amber-300 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/30'
+                                            : 'border-emerald-200/80 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/20'
+                                    }`}>
+                                        <div className="flex items-center justify-between text-xs mb-1.5">
+                                            <span className="flex items-center gap-1.5 font-black uppercase text-slate-800 dark:text-slate-200">
+                                                <Zap size={14} className={patient.implants_devices ? 'text-amber-600' : 'text-emerald-600'} />
+                                                <span>{t('fields.implants')} وموانع الرنين</span>
+                                            </span>
+                                            <span className={`text-[10px] font-black rounded-md px-2 py-0.5 ${
+                                                patient.implants_devices ? 'bg-amber-200 text-amber-800 dark:bg-amber-900 dark:text-amber-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300'
+                                            }`}>
+                                                {patient.implants_devices ? 'يلزم فحص التوافق' : 'آمن للرنين (MRI Safe)'}
+                                            </span>
+                                        </div>
+                                        <p className={`mt-2 text-sm font-bold leading-relaxed ${patient.implants_devices ? 'text-amber-950 dark:text-amber-100' : 'text-slate-600 dark:text-slate-300'}`}>
+                                            {patient.implants_devices || 'خالٍ من أي منظم لضربات القلب أو صمامات ممغنطة أو شرائح معدنية غير متوافقة.'}
+                                        </p>
+                                    </div>
+
+                                    {/* 3. Renal Function */}
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 dark:border-slate-800/80 dark:bg-slate-800/40 p-4">
+                                        <div className="flex items-center justify-between text-xs mb-1.5">
+                                            <span className="flex items-center gap-1.5 font-black uppercase text-slate-800 dark:text-slate-200">
+                                                <Activity size={14} className="text-teal-600" />
+                                                <span>{t('fields.renal')} والترشيح الكلوي</span>
+                                            </span>
+                                        </div>
+                                        <p className="mt-2 text-sm font-bold leading-relaxed text-slate-800 dark:text-slate-200">
+                                            {patient.renal_function_notes || 'وظائف الكلى ضمن النطاق الطبيعي ومؤشر الترشيح يسمح بإجراءات الصبغة.'}
+                                        </p>
+                                    </div>
+
+                                    {/* 4. Pregnancy & Lactation */}
+                                    <div className={`rounded-2xl border p-4 ${
+                                        ['Pregnant', 'Possibly Pregnant'].includes(patient.pregnancy_status)
+                                            ? 'border-rose-300 bg-rose-50/70 dark:border-rose-900/60 dark:bg-rose-950/30'
+                                            : 'border-slate-200/80 bg-slate-50/60 dark:border-slate-800/80 dark:bg-slate-800/40'
+                                    }`}>
+                                        <div className="flex items-center justify-between text-xs mb-1.5">
+                                            <span className="flex items-center gap-1.5 font-black uppercase text-slate-800 dark:text-slate-200">
+                                                <HeartPulse size={14} className={['Pregnant', 'Possibly Pregnant'].includes(patient.pregnancy_status) ? 'text-rose-600' : 'text-teal-600'} />
+                                                <span>{t('fields.pregnancy')} والسلامة الإشعاعية</span>
+                                            </span>
+                                            {['Pregnant', 'Possibly Pregnant'].includes(patient.pregnancy_status) && (
+                                                <span className="text-[10px] font-black rounded-md px-2 py-0.5 bg-rose-200 text-rose-800 dark:bg-rose-900 dark:text-rose-200">
+                                                    تنبيه حمل
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="mt-2 text-sm font-bold leading-relaxed text-slate-800 dark:text-slate-200">
+                                            {patient.pregnancy_status ? t(`pregnancy.${patient.pregnancy_status}`, { defaultValue: patient.pregnancy_status }) : 'غير حامل / لا تنطبق موانع الحمل'}
+                                        </p>
+                                    </div>
+
+                                    {/* 5. Chronic Diseases */}
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 dark:border-slate-800/80 dark:bg-slate-800/40 p-4">
+                                        <span className="flex items-center gap-1.5 text-xs font-black uppercase text-slate-800 dark:text-slate-200 mb-1.5">
+                                            <ClipboardList size={14} className="text-teal-600" />
+                                            <span>{t('fields.diseases')}</span>
+                                        </span>
+                                        <p className="mt-2 text-sm font-bold leading-relaxed text-slate-800 dark:text-slate-200">
+                                            {patient.chronic_diseases || t('fallback.none', { defaultValue: 'لا توجد أمراض مزمنة مسجلة' })}
+                                        </p>
+                                    </div>
+
+                                    {/* 6. Prior Surgeries */}
+                                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 dark:border-slate-800/80 dark:bg-slate-800/40 p-4">
+                                        <span className="flex items-center gap-1.5 text-xs font-black uppercase text-slate-800 dark:text-slate-200 mb-1.5">
+                                            <History size={14} className="text-teal-600" />
+                                            <span>{t('fields.surgeries')}</span>
+                                        </span>
+                                        <p className="mt-2 text-sm font-bold leading-relaxed text-slate-800 dark:text-slate-200">
+                                            {patient.prior_surgeries || t('fallback.none', { defaultValue: 'لا توجد عمليات جراحية سابقة مسجلة' })}
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {activeTab === 'visits' && (
                         <div className="space-y-4">
@@ -1218,6 +1524,8 @@ const PatientDetailPage = () => {
                         canOperate={canOperate}
                         loading={isGeneratingPassword}
                         onActivate={handlePassword}
+                        patientPhone={patient.phone}
+                        patientName={fullName}
                         t={t}
                     />
 

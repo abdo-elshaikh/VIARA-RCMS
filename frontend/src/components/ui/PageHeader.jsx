@@ -163,6 +163,7 @@ const densityClasses = {
         description: 'mt-1.5 text-sm leading-relaxed max-w-3xl',
         meta: 'gap-2',
         actions: 'gap-2 sm:gap-2.5',
+        actionsBar: 'pt-3.5 mt-0.5 border-t border-slate-200/70 dark:border-slate-800/70',
         metric: 'gap-3 px-4 py-3.5',
         metricIcon: 'h-10 w-10 rounded-xl',
         metricValue: 'text-xl sm:text-2xl',
@@ -177,6 +178,7 @@ const densityClasses = {
         description: 'mt-1 text-xs leading-5 sm:text-[13px] max-w-2xl',
         meta: 'gap-1.5',
         actions: 'gap-1.5',
+        actionsBar: 'pt-2.5 mt-0.5 border-t border-slate-200/70 dark:border-slate-800/70',
         metric: 'gap-2 px-3 py-2',
         metricIcon: 'h-7 w-7 rounded-lg',
         metricValue: 'text-sm sm:text-base',
@@ -184,6 +186,31 @@ const densityClasses = {
 };
 
 const STORAGE_KEY = 'viara_show_header_metrics';
+
+const countActions = (node) => {
+    if (!node) return 0;
+    if (Array.isArray(node)) {
+        return node.reduce((sum, item) => sum + countActions(item), 0);
+    }
+    if (!React.isValidElement(node)) return 0;
+
+    // React Fragment
+    if (node.type === React.Fragment) {
+        const rawChildren = React.Children.toArray(node.props?.children);
+        return rawChildren.reduce((sum, item) => sum + countActions(item), 0);
+    }
+
+    // DOM Container (e.g., div, span, nav) with children
+    const children = node.props?.children;
+    if (typeof node.type === 'string' && ['div', 'span', 'nav', 'header', 'section'].includes(node.type) && children) {
+        const rawChildren = React.Children.toArray(children);
+        if (rawChildren.length > 0) {
+            return rawChildren.reduce((sum, item) => sum + countActions(item), 0);
+        }
+    }
+
+    return 1;
+};
 
 const PageHeader = ({
     icon: Icon,
@@ -194,9 +221,15 @@ const PageHeader = ({
     title,
     description,
     actions,
+    actionsLeading,
+    actionsLayout = 'auto',
+    actionsAlign = 'auto',
+    actionsVariant = 'docked',
     children,
     meta,
     metrics = [],
+    metricsDefaultVisible = true,
+    metricsStorageKey = STORAGE_KEY,
     metricsLabel,
     compact = false,
     className = '',
@@ -209,10 +242,10 @@ const PageHeader = ({
     const { t } = useTranslation('common');
     const [showMetrics, setShowMetrics] = useState(() => {
         try {
-            const saved = localStorage.getItem(STORAGE_KEY);
-            return saved !== null ? JSON.parse(saved) : true;
+            const saved = localStorage.getItem(metricsStorageKey);
+            return saved !== null ? JSON.parse(saved) : metricsDefaultVisible;
         } catch {
-            return true;
+            return metricsDefaultVisible;
         }
     });
 
@@ -220,7 +253,7 @@ const PageHeader = ({
         setShowMetrics((prev) => {
             const next = !prev;
             try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+                localStorage.setItem(metricsStorageKey, JSON.stringify(next));
             } catch {
                 // Ignore storage errors
             }
@@ -234,6 +267,28 @@ const PageHeader = ({
         ? metrics.filter(isValidMetric)
         : [];
     const hasMetrics = visibleMetrics.length > 0;
+
+    const actionCount = countActions(actions);
+    const isToolbar = Boolean(
+        actions && (
+            actionsLayout === 'toolbar' ||
+            actionsLayout === 'stack' ||
+            (actionsLayout === 'auto' && actionCount > 2)
+        )
+    );
+
+    const getActionsAlignClass = () => {
+        if (actionsAlign === 'start') return 'justify-start';
+        if (actionsAlign === 'end') return 'justify-end sm:ms-auto';
+        if (actionsAlign === 'between') return 'justify-between w-full';
+        if (actionsAlign === 'center') return 'justify-center';
+        // 'auto'
+        if (isToolbar) {
+            return 'justify-start';
+        }
+        return 'lg:justify-end';
+    };
+    const actionsAlignClass = getActionsAlignClass();
 
     const toggleLabel = showMetrics
         ? t('pageHeader.hideMetrics', { defaultValue: 'Hide statistics' })
@@ -250,9 +305,9 @@ const PageHeader = ({
 
             {/* Header Content Area */}
             <div className={`page-header-content relative flex flex-col gap-3.5 ${density.content} ${contentClassName}`}>
-                {/* Top Section: Title & Identity + Action Buttons */}
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className={`flex min-w-0 flex-1 items-start ${density.lead}`}>
+                {/* Top Section: Title & Identity + (Inline Actions when !isToolbar) */}
+                <div className={`flex flex-col gap-4 ${isToolbar ? '' : 'lg:flex-row lg:items-start lg:justify-between'}`}>
+                    <div className={`flex min-w-0 items-start ${density.lead} ${isToolbar ? 'w-full' : 'flex-1 min-w-[280px] sm:min-w-[340px]'}`}>
                         {leading ? (
                             <div className="shrink-0">{leading}</div>
                         ) : logoUrl ? (
@@ -291,19 +346,53 @@ const PageHeader = ({
                                     {description}
                                 </p>
                             )}
+                            {meta && isToolbar && (
+                                <div className={`page-header-meta flex min-w-0 flex-wrap items-center mt-2.5 ${density.meta}`}>
+                                    {meta}
+                                </div>
+                            )}
                         </div>
                     </div>
 
-                    {/* Right Action Section */}
-                    {actions && (
-                        <div className={`page-header-actions flex shrink-0 flex-wrap items-center ${density.actions} ${actionsClassName} lg:justify-end`}>
+                    {/* Inline Action Section (when !isToolbar) */}
+                    {actions && !isToolbar && (
+                        <div className={`page-header-actions flex min-w-0 flex-wrap items-center ${density.actions} ${actionsClassName} ${actionsAlignClass}`}>
                             {actions}
                         </div>
                     )}
                 </div>
 
-                {/* Secondary Section: Metadata Badges & Children */}
-                {(meta || children) && (
+                {/* Dedicated Action Toolbar Strip (when isToolbar) */}
+                {actions && isToolbar && (
+                    <div className={`page-header-actions-bar mt-1 transition-all duration-200 ${density.actionsBar}`}>
+                        <div
+                            className={`page-header-dock relative flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between ${
+                                actionsVariant === 'docked'
+                                    ? 'rounded-2xl border border-slate-200/80 bg-slate-50/80 p-2 shadow-2xs backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/65 sm:p-2.5'
+                                    : actionsVariant === 'subtle'
+                                    ? 'pt-2'
+                                    : ''
+                            }`}
+                        >
+                            {actionsLeading && (
+                                <div className="page-header-actions-leading flex min-w-0 shrink-0 items-center gap-2">
+                                    {actionsLeading}
+                                </div>
+                            )}
+
+                            <div
+                                className={`page-header-actions flex min-w-0 items-center overflow-x-auto no-scrollbar scroll-smooth -mx-0.5 px-0.5 sm:overflow-visible sm:flex-wrap ${density.actions} ${actionsClassName} ${actionsAlignClass} ${actionsLeading || children ? 'sm:ms-auto' : 'w-full'}`}
+                            >
+                                {actions}
+                            </div>
+
+                            {children && <div className="page-header-children min-w-0 flex-1">{children}</div>}
+                        </div>
+                    </div>
+                )}
+
+                {/* Secondary Section: Metadata Badges & Children (when !isToolbar) */}
+                {!isToolbar && (meta || children) && (
                     <div className="page-header-meta-row flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
                         {meta && (
                             <div className={`page-header-meta flex min-w-0 flex-wrap items-center ${density.meta}`}>
@@ -311,6 +400,13 @@ const PageHeader = ({
                             </div>
                         )}
                         {children && <div className="page-header-children flex-1">{children}</div>}
+                    </div>
+                )}
+
+                {/* Fallback for children when isToolbar and no actions */}
+                {isToolbar && !actions && children && (
+                    <div className="page-header-meta-row flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+                        <div className="page-header-children flex-1">{children}</div>
                     </div>
                 )}
             </div>

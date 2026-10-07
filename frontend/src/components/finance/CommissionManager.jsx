@@ -48,18 +48,20 @@ const CommissionManager = ({ dateRange }) => {
     }, [commissions, statusFilter, searchQuery]);
 
     const handlePay = async () => {
-        if (!selectedDoctor) return;
+        if (!selectedDoctor) return false;
         try {
             await payCommission({
                 doctorId: selectedDoctor.doctor_id,
                 amount: parseFloat(selectedDoctor.commission_pending),
-                transactionRef: `Payout-${new Date().getTime()}`,
+                transactionRef: `Payout-${selectedDoctor.idempotencyKey}`,
                 idempotencyKey: selectedDoctor.idempotencyKey
             }).unwrap();
             toast.success(t('finance.commissions.success'));
             setSelectedDoctor(null);
+            return true;
         } catch (error) {
             toast.error(error?.data?.message || t('finance.commissions.paymentError'));
+            return false;
         }
     };
 

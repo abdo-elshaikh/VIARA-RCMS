@@ -1,0 +1,7 @@
+{
+  "name": "portal",
+  "command": "npm.cmd test -- --reporter=json --outputFile=D:\\VIARA\\docs\\reviews\\system-readiness-2026-10-07\\portal-results.json",
+  "exitCode": 0,
+  "signal": null,
+  "durationSeconds": 32.806
+}

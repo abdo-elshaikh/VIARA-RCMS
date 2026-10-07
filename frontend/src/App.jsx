@@ -27,6 +27,7 @@ import AppLayout from './components/dashboard/AppLayout';
 import FeatureLocked from './components/FeatureLocked';
 import { useLicense, featureAllowed } from './hooks/useLicense';
 import Offline from './pages/Offline';
+import ToastHub from './components/ui/ToastHub';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -79,6 +80,7 @@ const DisplayBoardControl = lazyWithRetry(() => import('./pages/DisplayBoardCont
 const CommunicationCenter = lazyWithRetry(() => import('./components/communications/CommunicationCenter'), 'CommunicationCenter');
 const CaseReports = lazyWithRetry(() => import('./pages/CaseReports'), 'CaseReports');
 const CaseDetailsPage = lazyWithRetry(() => import('./pages/CaseDetailsPage'), 'CaseDetailsPage');
+const EndOfDayReview = lazyWithRetry(() => import('./pages/EndOfDayReview'), 'EndOfDayReview');
 const Onboarding = lazyWithRetry(() => import('./pages/Onboarding'), 'Onboarding');
 
 const PrintSticker = lazyWithRetry(() => import('./components/print/PrintSticker'), 'PrintSticker');
@@ -211,6 +213,14 @@ const ConnectivityWatcher = () => {
         let mounted = true;
         const goOffline = (reason) => {
             const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+            // Public pages keep their content and form inputs; their inline notice reports availability.
+            if (['/', '/landing', '/login'].includes(window.location.pathname)) return;
+            // If the user is on an active workspace route, keep them in place so their in-progress inputs,
+            // open drawers, and reports are not destroyed; AppLayout's NetworkStatusBanner notifies them non-destructively.
+            const isPublicRoute = ['/', '/landing', '/login', '/onboarding', '/offline'].includes(window.location.pathname);
+            if (!isPublicRoute) {
+                return;
+            }
             if (window.location.pathname !== '/offline') {
                 navigateRef.current(`/offline?reason=${reason}`, {
                     replace: true,
@@ -225,6 +235,7 @@ const ConnectivityWatcher = () => {
             try {
                 const result = await checkBackendHealth();
                 if (!mounted) return;
+                window.dispatchEvent(new CustomEvent('VIARA_PUBLIC_CONNECTION', { detail: { available: result.backendAvailable } }));
                 if (!result.online) {
                     goOffline('network');
                     return;
@@ -759,6 +770,9 @@ const App = () => {
                             borderRadius: 'var(--VIARA-radius-surface)',
                             padding: 'var(--VIARA-density-card-padding)',
                             fontFamily: 'var(--VIARA-font-family)',
+                            fontSize: '0.875rem',
+                            fontWeight: '600',
+                            maxWidth: '420px',
                         },
                         success: {
                             iconTheme: {
@@ -767,6 +781,7 @@ const App = () => {
                             },
                         },
                         error: {
+                            duration: 6000,
                             iconTheme: {
                                 primary: 'var(--VIARA-danger)',
                                 secondary: 'var(--VIARA-danger-soft)',
@@ -774,6 +789,7 @@ const App = () => {
                         },
                     }}
                 />
+                <ToastHub position="bottom-end" />
 
                 <Suspense fallback={<PageLoader />}>
                     <Routes>
@@ -1023,6 +1039,14 @@ const App = () => {
                             <ProtectedRoute allowedRoles={getRouteRoles('/patients/:patientId')}>
                                 <AppLayout role="Receptionist">
                                     <PatientDetailPage />
+                                </AppLayout>
+                            </ProtectedRoute>
+                        } />
+
+                        <Route path="/end-of-day" element={
+                            <ProtectedRoute allowedRoles={getRouteRoles('/end-of-day')}>
+                                <AppLayout role="Receptionist">
+                                    <EndOfDayReview />
                                 </AppLayout>
                             </ProtectedRoute>
                         } />

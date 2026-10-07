@@ -596,7 +596,7 @@ const recordAttendanceAudit = async (clientOrDb, {
 
 const getAttendance = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, activeOnly, status } = req.query;
+        const { startDate, endDate, startDateTime, endDateTime, activeOnly, status } = req.query;
         const canReviewAll = ['Developer', 'Admin', 'HR', 'Receptionist', 'Radiologist'].includes(req.user.role);
         let userId = canReviewAll ? req.query.userId : getAuthenticatedUserId(req);
         let teamUserIds = null;
@@ -621,7 +621,25 @@ const getAttendance = (db) => async (req, res, next) => {
             userId = null;
         }
         const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
-        if (startDate || endDate) ensureDateRange(startDate, endDate);
+        const hasExactDateRange = Boolean(startDateTime || endDateTime);
+        if (hasExactDateRange) {
+            const isoTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+            if (
+                startDate ||
+                endDate ||
+                !startDateTime ||
+                !endDateTime ||
+                !isoTimestampPattern.test(startDateTime) ||
+                !isoTimestampPattern.test(endDateTime) ||
+                Number.isNaN(Date.parse(startDateTime)) ||
+                Number.isNaN(Date.parse(endDateTime)) ||
+                Date.parse(startDateTime) >= Date.parse(endDateTime)
+            ) {
+                throw new AppError('Attendance timestamp range must be a valid ordered ISO date-time range', 400);
+            }
+        } else if (startDate || endDate) {
+            ensureDateRange(startDate, endDate);
+        }
         // Each ledger row is enriched with its linked shift window (expected
         // start/end) and derived duration so the UI can show punctuality
         // against the roster without a second request.
@@ -643,11 +661,16 @@ const getAttendance = (db) => async (req, res, next) => {
         const params = [];
         let paramCount = 1;
 
-        if (startDate) {
+        if (hasExactDateRange) {
+            query += ` AND a.clock_in >= $${paramCount++}::timestamptz`;
+            params.push(startDateTime);
+            query += ` AND a.clock_in < $${paramCount++}::timestamptz`;
+            params.push(endDateTime);
+        } else if (startDate) {
             query += ` AND a.clock_in >= $${paramCount++}::date`;
             params.push(startDate);
         }
-        if (endDate) {
+        if (!hasExactDateRange && endDate) {
             query += ` AND a.clock_in < ($${paramCount}::date + interval '1 day')`;
             params.push(endDate);
             paramCount++;

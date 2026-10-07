@@ -1,0 +1,7 @@
+{
+  "name": "portal-format",
+  "command": "npm.cmd run format:check",
+  "exitCode": 1,
+  "signal": null,
+  "durationSeconds": 10.946
+}

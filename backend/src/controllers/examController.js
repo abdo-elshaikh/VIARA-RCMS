@@ -8,6 +8,7 @@ const { triggerEvent } = require('../services/notificationJobService');
 const { logAction } = require('../services/auditService');
 const { decrypt } = require('../utils/crypto');
 const aiReportService = require('../services/aiReportService');
+const { isImageAnalysisUsable } = aiReportService;
 const { getReportStatusForSave, getReportTransitionError } = require('../utils/reportWorkflow');
 
 const parseJSONSafe = (value) => {
@@ -1375,7 +1376,7 @@ const amendReport = (db) => async (req, res, next) => {
  */
 const improveReportFormat = (db) => async (req, res, next) => {
     try {
-        const { reportText, examId, modality, examType, sectionType } = req.body;
+        const { reportText, examId, modality, examType, sectionType, language = 'en' } = req.body;
         if (examId) {
             const exam = await verifyReportExamAccess(db, examId, req.user);
             if (!exam) return next(new AppError('Exam not found or not assigned to this user', 404));
@@ -1387,7 +1388,7 @@ const improveReportFormat = (db) => async (req, res, next) => {
             modality,
             examType,
             sectionType,
-            language: 'en',
+            language,
         });
 
         await logAction(db, {
@@ -1396,7 +1397,7 @@ const improveReportFormat = (db) => async (req, res, next) => {
             resourceId: examId || null,
             resourceTable: 'examinations',
             ipAddress: req.ip,
-            details: { examId: examId || null, sectionType: sectionType || null, language: 'en' }
+            details: { examId: examId || null, sectionType: sectionType || null, language }
         });
 
         res.json({ improved });
@@ -1460,25 +1461,20 @@ const generatePreliminaryReportDraft = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
         const { templateId } = req.body || {};
-            const accessibleExam = await verifyReportExamAccess(db, id, req.user);
+        const language = req.body?.language || 'en';
+        const accessibleExam = await verifyReportExamAccess(db, id, req.user);
         if (!accessibleExam) return next(new AppError('Exam not found or not assigned to this user', 404));
         const { rows } = await db.query(
-            `SELECT e.exam_id, e.order_number, e.study_instance_uid, e.orthanc_study_id,
-                    e.clinical_indication, e.provisional_diagnosis, e.priority,
-                    e.body_part, e.contrast_required, e.status, e.report_locked,
-                    e.is_follow_up, e.prior_exam_id, e.follow_up_reason,
-                    p.gender, p.date_of_birth_enc,
+            `SELECT e.study_instance_uid,
+                    e.clinical_indication, e.provisional_diagnosis,
+                    e.body_part, e.contrast_required, e.report_locked,
+                    e.is_follow_up, e.prior_exam_id,
                     m.name AS modality_name, m.type AS modality_type,
                     et.name AS exam_type_name,
-                    prior_e.order_number AS prior_order_number,
-                    prior_e.report_status AS prior_report_status,
-                    prior_e.report_sections AS prior_report_sections,
-                    prior_e.report_content AS prior_report_content,
                     COALESCE(prior_a.start_time, prior_e.created_at) AS prior_exam_time,
                     prior_et.name AS prior_exam_type_name,
                     prior_m.name AS prior_modality_name
              FROM examinations e
-             JOIN patients p ON p.patient_id = e.patient_id
              LEFT JOIN modalities m ON m.modality_id = e.modality_id
              LEFT JOIN examination_types et ON et.type_id = e.exam_type_id
              LEFT JOIN examinations prior_e ON prior_e.exam_id = e.prior_exam_id
@@ -1493,11 +1489,6 @@ const generatePreliminaryReportDraft = (db) => async (req, res, next) => {
         if (!rows.length) return next(new AppError('Exam not found or not assigned to this user', 404));
         const exam = rows[0];
         if (exam.report_locked) return next(new AppError('Cannot generate an AI draft for a finalized locked report', 409));
-
-        const birthDate = exam.date_of_birth_enc ? decrypt(exam.date_of_birth_enc) : null;
-        const age = birthDate ? Math.max(0, Math.floor((Date.now() - new Date(birthDate).getTime()) / (365.25 * 24 * 60 * 60 * 1000))) : null;
-        exam.patient_age = Number.isFinite(age) ? age : null;
-        delete exam.date_of_birth_enc;
 
         let template = null;
         let resolvedTemplateId = templateId || null;
@@ -1548,6 +1539,10 @@ const generatePreliminaryReportDraft = (db) => async (req, res, next) => {
              WHERE ps.study_instance_uid = $1`,
             [exam.study_instance_uid || '']
         );
+        const imaging = {
+            instance_count: Number(imagingResult.rows[0]?.instance_count || 0),
+            series_count: Number(imagingResult.rows[0]?.series_count || 0)
+        };
 
         const pacsAiResult = await db.query(
             `SELECT result_summary, result_payload
@@ -1565,13 +1560,13 @@ const generatePreliminaryReportDraft = (db) => async (req, res, next) => {
         const draft = await aiReportService.generatePreliminaryDraft({
             exam,
             template,
-            imaging: imagingResult.rows[0] || {},
+            imaging,
             imageAnalysis,
-            language: 'en'
+            language
         });
         if (req.requestTimedOut || res.headersSent || res.writableEnded) return;
 
-        const includesStructuredImageAnalysis = imageAnalysis?.payload?.quality?.supported === true;
+        const includesStructuredImageAnalysis = isImageAnalysisUsable(imageAnalysis?.payload);
         const disclaimer = includesStructuredImageAnalysis
             ? 'This preliminary draft includes structured output from a PACS image-analysis worker. Independent radiologist review of every source image is required.'
             : 'AI preliminary draft generated from exam metadata only. Images were not interpreted by this feature and radiologist review is required.';
@@ -1590,20 +1585,20 @@ const generatePreliminaryReportDraft = (db) => async (req, res, next) => {
                 req.user?.user_id || null,
                 provider,
                 model,
-                'en',
+                language,
                 JSON.stringify(draft.sections),
                 JSON.stringify(draft.limitations || []),
                 disclaimer,
                 JSON.stringify({
-                    orderNumber: exam.order_number,
                     modality: exam.modality_type || exam.modality_name || null,
                     examType: exam.exam_type_name || null,
                     template: template?.name || null,
-                    imaging: imagingResult.rows[0] || {},
+                    imaging,
                     imageAnalysis: includesStructuredImageAnalysis ? {
                         model: imageAnalysis.payload?.model || null,
                         quality: imageAnalysis.payload?.quality || null,
-                        provenance: imageAnalysis.payload?.provenance || null
+                        provenance: imageAnalysis.payload?.provenance || null,
+                        evidenceCount: imageAnalysis.payload?.evidence?.length || 0
                     } : null,
                     draftProvenance: draft.provenance || null
                 })
@@ -1638,11 +1633,12 @@ const generatePreliminaryReportDraft = (db) => async (req, res, next) => {
             disclaimer,
             provenance: draft.provenance || null,
             sourceContext: {
-                imaging: imagingResult.rows[0] || {},
+                imaging,
                 imageAnalysis: includesStructuredImageAnalysis ? {
                     model: imageAnalysis.payload?.model || null,
                     quality: imageAnalysis.payload?.quality || null,
-                    provenance: imageAnalysis.payload?.provenance || null
+                    provenance: imageAnalysis.payload?.provenance || null,
+                    evidenceCount: imageAnalysis.payload?.evidence?.length || 0
                 } : null
             }
         });
@@ -1658,7 +1654,6 @@ const markAiReportDraftApplied = (db) => async (req, res, next) => {
         const { mode = 'fill_empty' } = req.body || {};
         const exam = await verifyReportExamAccess(db, id, req.user);
         if (!exam) return next(new AppError('Exam not found or not assigned to this user', 404));
-        if (exam.report_locked) return next(new AppError('Cannot apply an AI draft to a finalized locked report', 409));
 
         const { rows } = await db.query(
             `UPDATE report_ai_drafts

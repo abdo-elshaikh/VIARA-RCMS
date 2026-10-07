@@ -4,6 +4,8 @@ const {
     roundMoney,
     monthlyAccrualFactor,
     proratedMonthlyAmount,
+    calculateCompensationAmount,
+    netCollectionsForProfile,
     capLineAmounts,
     sumAmount,
     calculateRuleAmount,
@@ -17,10 +19,59 @@ const {
     enumerateDates,
     laterDate,
     earlierDate,
+    payableDaysForRange,
     dateFallsWithin
 } = require('../src/services/payrollCalculationService');
+const {
+    createCompensationProfileSchema,
+    createPayrollRuleSchema
+} = require('../src/schemas/payrollSchema');
 
 describe('Payroll Calculation Service Unit Tests', () => {
+    describe('Payroll Input Schemas', () => {
+        test('accepts all supported compensation bases and rejects incomplete or excessive percentage pay', () => {
+            const base = {
+                userId: '123e4567-e89b-12d3-a456-426614174000',
+                effectiveFrom: '2026-01-01'
+            };
+            const profiles = [
+                { salaryType: 'Monthly', baseSalary: 3000 },
+                { salaryType: 'Hourly', hourlyRate: 100 },
+                { salaryType: 'Daily', dailyRate: 500 },
+                { salaryType: 'PerShift', shiftRate: 400 },
+                { salaryType: 'PerCase', caseRate: 75 },
+                { salaryType: 'ShiftAndCase', shiftRate: 400, caseRate: 75 },
+                { salaryType: 'Percentage', percentageRate: 10 }
+            ];
+
+            for (const profile of profiles) {
+                expect(createCompensationProfileSchema.safeParse({ ...base, ...profile }).success).toBe(true);
+            }
+            expect(createCompensationProfileSchema.safeParse({
+                ...base, salaryType: 'ShiftAndCase', shiftRate: 400
+            }).success).toBe(false);
+            expect(createCompensationProfileSchema.safeParse({
+                ...base, salaryType: 'Percentage', percentageRate: 101
+            }).success).toBe(false);
+        });
+
+        test('validates percentage-based rule amounts and permits targeted recurring bonuses', () => {
+            const base = {
+                ruleType: 'Bonus',
+                name: 'Collection bonus',
+                calculationMethod: 'PercentageOfCollections',
+                value: 5,
+                effectiveFrom: '2026-01-01',
+                targetUserIds: ['123e4567-e89b-12d3-a456-426614174000'],
+                bonusFrequency: 'Recurring'
+            };
+
+            expect(createPayrollRuleSchema.safeParse(base).success).toBe(true);
+            expect(createPayrollRuleSchema.safeParse({ ...base, value: 101 }).success).toBe(false);
+            expect(createPayrollRuleSchema.safeParse({ ...base, ruleType: 'Deduction' }).success).toBe(false);
+        });
+    });
+
     describe('Date & Calendar Helpers', () => {
         test('inclusiveDays correctly computes day count including start and end', () => {
             expect(inclusiveDays('2026-01-01', '2026-01-01')).toBe(1);
@@ -60,7 +111,8 @@ describe('Payroll Calculation Service Unit Tests', () => {
             expect(roundMoney(10.555)).toBe(10.56);
             expect(roundMoney(10.554)).toBe(10.55);
             expect(roundMoney(null)).toBe(0);
-            expect(roundMoney('invalid')).toBe(0);
+            expect(() => roundMoney('invalid')).toThrow('Invalid monetary value encountered during payroll calculation');
+            expect(() => roundMoney('NaN')).toThrow('Invalid monetary value encountered during payroll calculation');
         });
 
         test('monthlyAccrualFactor and proratedMonthlyAmount', () => {
@@ -90,6 +142,7 @@ describe('Payroll Calculation Service Unit Tests', () => {
     describe('Payroll Rules & Deductions', () => {
         test('ruleLineType maps rule types to line item categories', () => {
             expect(ruleLineType('Allowance')).toBe('Earning');
+            expect(ruleLineType('Bonus')).toBe('Earning');
             expect(ruleLineType('Overtime')).toBe('Earning');
             expect(ruleLineType('Deduction')).toBe('Deduction');
             expect(ruleLineType('Late')).toBe('Deduction');
@@ -109,7 +162,11 @@ describe('Payroll Calculation Service Unit Tests', () => {
                 absenceDays: 2,
                 dailyRate: 400,
                 lateMinutes: 30,
-                earlyLeaveMinutes: 15
+                earlyLeaveMinutes: 15,
+                paidShifts: 4,
+                payableDays: 20,
+                completedCases: 12,
+                netCollections: 25000
             };
 
             // FixedAmount
@@ -129,6 +186,66 @@ describe('Payroll Calculation Service Unit Tests', () => {
 
             // PerMinute for late
             expect(calculateRuleAmount({ rule_type: 'Late', calculation_method: 'PerMinute', value: 2 }, context)).toBe(60);
+            expect(calculateRuleAmount({ rule_type: 'Allowance', calculation_method: 'PerShift', value: 125 }, context)).toBe(500);
+            expect(calculateRuleAmount({ rule_type: 'Bonus', calculation_method: 'PerCase', value: 50 }, context)).toBe(600);
+            expect(calculateRuleAmount({ rule_type: 'Bonus', calculation_method: 'PercentageOfCollections', value: 5 }, context)).toBe(1250);
+            expect(calculateRuleAmount({ rule_type: 'Allowance', calculation_method: 'PerDay', value: 25 }, context)).toBe(500);
+            expect(calculateRuleAmount({ rule_type: 'Absence', calculation_method: 'PerDay', value: 1 }, context)).toBe(800);
+        });
+
+        test('counts worked and approved-leave day units for daily allowances', () => {
+            const attendance = {
+                worked_day_units: [
+                    { date: '2026-01-02', units: 1 },
+                    { date: '2026-01-03', units: 0.5 }
+                ],
+                paid_leave_shifts: [
+                    { start_time: '2026-01-03T08:00:00.000Z' },
+                    { start_time: '2026-01-04T08:00:00.000Z' }
+                ]
+            };
+
+            expect(payableDaysForRange(attendance, '2026-01-01', '2026-01-31')).toBe(2.5);
+        });
+
+        test('calculates each compensation basis from its matching units', () => {
+            const context = {
+                segmentStart: '2026-01-01',
+                segmentEnd: '2026-01-31',
+                profileHoursWorked: 100,
+                paidLeaveHours: 8,
+                payableDays: 20,
+                paidShifts: 12,
+                completedCases: 30,
+                netCollections: 25000
+            };
+            expect(calculateCompensationAmount({ salary_type: 'Monthly', base_salary: 3000 }, context)).toBe(3000);
+            expect(calculateCompensationAmount({ salary_type: 'Hourly', hourly_rate: 100 }, context)).toBe(10800);
+            expect(calculateCompensationAmount({ salary_type: 'Daily', daily_rate: 500 }, context)).toBe(10000);
+            expect(calculateCompensationAmount({ salary_type: 'PerShift', shift_rate: 400 }, context)).toBe(4800);
+            expect(calculateCompensationAmount({ salary_type: 'PerCase', case_rate: 75 }, context)).toBe(2250);
+            expect(calculateCompensationAmount({ salary_type: 'ShiftAndCase', shift_rate: 400, case_rate: 75 }, context)).toBe(7050);
+            expect(calculateCompensationAmount({ salary_type: 'Percentage', percentage_rate: 10 }, context)).toBe(2500);
+            expect(calculateCompensationAmount({ salary_type: 'Percentage', percentage_rate: 10 }, { ...context, netCollections: -100 })).toBe(0);
+        });
+
+        test('allocates collected amounts to the compensation profile active when each case became eligible', () => {
+            const caseMetrics = [
+                { eligible_date: '2025-12-31', collection_date: '2026-02-04', net_collection_amount: 1000 },
+                { eligible_date: '2026-01-15', collection_date: '2026-02-05', net_collection_amount: 2000 },
+                { eligible_date: '2026-02-01', collection_date: '2026-02-06', net_collection_amount: 3000 },
+                { eligible_date: '2026-01-20', collection_date: null, net_collection_amount: 0 }
+            ];
+            const employee = { hire_date: '2025-01-01', termination_date: '2026-01-31' };
+            const previousProfile = { effective_from: '2025-01-01', effective_to: '2026-01-31' };
+            const nextProfile = { effective_from: '2026-02-01', effective_to: null };
+
+            expect(netCollectionsForProfile({
+                caseMetrics, profile: previousProfile, employee, payrollEndDate: '2026-02-28'
+            })).toBe(3000);
+            expect(netCollectionsForProfile({
+                caseMetrics, profile: nextProfile, employee: { hire_date: '2025-01-01' }, payrollEndDate: '2026-02-28'
+            })).toBe(3000);
         });
 
         test('calculateDeductionAmount handles percentage, installment, and fixed deductions', () => {

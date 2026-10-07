@@ -35,6 +35,7 @@ import {
 
 import { selectCurrentUser, selectCurrentToken } from '../store/authSlice';
 import PageHeader from '../components/ui/PageHeader';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -508,6 +509,9 @@ const ActionModal = ({ exam, onClose, onConfirm, loading, localeCopy = END_OF_DA
     return (
         <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-5"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="action-modal-title"
             onMouseDown={(event) => {
                 if (event.target === event.currentTarget && !loading) onClose();
             }}
@@ -519,7 +523,7 @@ const ActionModal = ({ exam, onClose, onConfirm, loading, localeCopy = END_OF_DA
                             <ClipboardCheck size={19} />
                         </span>
                         <div className="min-w-0">
-                            <h3 className="text-sm font-black text-[var(--VIARA-ink)]">{localeCopy.pendingReviewTitle}</h3>
+                            <h3 id="action-modal-title" className="text-sm font-black text-[var(--VIARA-ink)]">{localeCopy.pendingReviewTitle}</h3>
                             <p className="mt-0.5 text-[10.5px] font-medium text-[var(--VIARA-muted)]">{localeCopy.pendingReviewSubtitle}</p>
                         </div>
                     </div>
@@ -655,23 +659,37 @@ const ActionModal = ({ exam, onClose, onConfirm, loading, localeCopy = END_OF_DA
     );
 };
 
-const BulkConfirmModal = ({ intent, count, loading, onCancel, onConfirm }) => {
-    if (!intent) return null;
+export const BulkConfirmModal = ({ intent, count, loading, onCancel, onConfirm }) => {
     const action = typeof intent === 'string' ? intent : intent?.action;
     const localeCopy = intent?.localeCopy || END_OF_DAY_COPY.ar;
     const meta = getActionMeta(localeCopy)[action];
-    if (!meta) return null;
     const isDanger = action === 'no_show';
-    const Icon = meta.icon;
+    const Icon = meta?.icon;
+
+    useEffect(() => {
+        if (!meta) return;
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape' && !loading) onCancel();
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [loading, onCancel, meta]);
+
+    if (!meta) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bulk-confirm-title"
+        >
             <div className="w-full max-w-md overflow-hidden rounded-[24px] border border-white/20 bg-[var(--VIARA-surface)] shadow-2xl shadow-slate-950/30">
                 <div className="p-5 text-center">
                     <span className={`mx-auto grid h-12 w-12 place-items-center rounded-2xl ${isDanger ? 'bg-rose-500/10 text-rose-600 dark:text-rose-300' : 'bg-teal-500/10 text-teal-700 dark:text-teal-300'}`}>
                         <Icon size={21} />
                     </span>
-                    <h3 className="mt-3 text-sm font-black text-[var(--VIARA-ink)]">{meta.label} {localeCopy.selectedCasesQuestion}</h3>
+                    <h3 id="bulk-confirm-title" className="mt-3 text-sm font-black text-[var(--VIARA-ink)]">{meta.label} {localeCopy.selectedCasesQuestion}</h3>
                     <p className="mt-1 text-xs font-medium leading-6 text-[var(--VIARA-muted)]">
                         {localeCopy.bulkConfirmation(count)}
                     </p>
@@ -838,6 +856,7 @@ export default function EndOfDayReview({ embedded = false, sessionId: propSessio
     const [sessionLookupComplete, setSessionLookupComplete] = useState(!embedded || Boolean(propSessionId));
     const dataRequestIdRef = useRef(0);
     const [actionLoading, setActionLoading] = useState(false);
+    const [showCarryAllConfirm, setShowCarryAllConfirm] = useState(false);
     const [selected, setSelected] = useState(new Set());
     const [activeExam, setActiveExam] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
@@ -1091,9 +1110,13 @@ export default function EndOfDayReview({ embedded = false, sessionId: propSessio
         toast.success(localeCopy.logExportSuccess);
     };
 
-    const handleCarryForwardAll = async () => {
+    const handleCarryForwardAll = () => {
         if (filteredPending.length === 0) return;
-        if (!window.confirm(localeCopy.carryAllConfirm(filteredPending.length))) return;
+        setShowCarryAllConfirm(true);
+    };
+
+    const confirmCarryForwardAll = async () => {
+        setShowCarryAllConfirm(false);
         setActionLoading(true);
         try {
             const newDate = addDaysToDateInput(date, 1);
@@ -1515,7 +1538,7 @@ export default function EndOfDayReview({ embedded = false, sessionId: propSessio
                                 <table className="w-full min-w-[960px] border-collapse text-start">
                                     <thead>
                                         <tr className="border-b border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/45 text-[9.5px] font-black uppercase tracking-[0.05em] text-[var(--VIARA-muted)]">
-                                            <th className="w-12 px-4 py-3 text-center">
+                                            <th scope="col" className="w-12 px-4 py-3 text-center">
                                                 <input
                                                     type="checkbox"
                                                     checked={allVisibleSelected}
@@ -1524,13 +1547,13 @@ export default function EndOfDayReview({ embedded = false, sessionId: propSessio
                                                     aria-label={localeCopy.selectVisible}
                                                 />
                                             </th>
-                                            <th className="px-3 py-3 text-start">{localeCopy.patient}</th>
-                                            <th className="px-3 py-3 text-start">{localeCopy.exam}</th>
-                                            <th className="px-3 py-3 text-start">{localeCopy.appointmentStatus}</th>
-                                            <th className="px-3 py-3 text-start">{localeCopy.priority}</th>
-                                            <th className="px-3 py-3 text-start">{localeCopy.receptionist}</th>
-                                            <th className="px-3 py-3 text-start">{localeCopy.referringDoctor}</th>
-                                            <th className="w-36 px-3 py-3 text-center">{localeCopy.action}</th>
+                                            <th scope="col" className="px-3 py-3 text-start">{localeCopy.patient}</th>
+                                            <th scope="col" className="px-3 py-3 text-start">{localeCopy.exam}</th>
+                                            <th scope="col" className="px-3 py-3 text-start">{localeCopy.appointmentStatus}</th>
+                                            <th scope="col" className="px-3 py-3 text-start">{localeCopy.priority}</th>
+                                            <th scope="col" className="px-3 py-3 text-start">{localeCopy.receptionist}</th>
+                                            <th scope="col" className="px-3 py-3 text-start">{localeCopy.referringDoctor}</th>
+                                            <th scope="col" className="w-36 px-3 py-3 text-center">{localeCopy.action}</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-[var(--VIARA-line)]">
@@ -1728,12 +1751,12 @@ export default function EndOfDayReview({ embedded = false, sessionId: propSessio
                             <table className="w-full min-w-[900px] border-collapse">
                                 <thead>
                                     <tr className="border-b border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)]/45 text-[9.5px] font-black text-[var(--VIARA-muted)]">
-                                        <th className="px-4 py-3 text-start">{localeCopy.tableTime}</th>
-                                        <th className="px-3 py-3 text-start">{localeCopy.user}</th>
-                                        <th className="px-3 py-3 text-start">{localeCopy.action}</th>
-                                        <th className="px-3 py-3 text-start">{localeCopy.previousStatus}</th>
-                                        <th className="px-3 py-3 text-start">{localeCopy.notesColumn}</th>
-                                        {isAdmin && <th className="px-3 py-3 text-center">{localeCopy.risk}</th>}
+                                        <th scope="col" className="px-4 py-3 text-start">{localeCopy.tableTime}</th>
+                                        <th scope="col" className="px-3 py-3 text-start">{localeCopy.user}</th>
+                                        <th scope="col" className="px-3 py-3 text-start">{localeCopy.action}</th>
+                                        <th scope="col" className="px-3 py-3 text-start">{localeCopy.previousStatus}</th>
+                                        <th scope="col" className="px-3 py-3 text-start">{localeCopy.notesColumn}</th>
+                                        {isAdmin && <th scope="col" className="px-3 py-3 text-center">{localeCopy.risk}</th>}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[var(--VIARA-line)]">
@@ -1807,6 +1830,17 @@ export default function EndOfDayReview({ embedded = false, sessionId: propSessio
                 loading={actionLoading}
                 onCancel={() => !actionLoading && setBulkIntent(null)}
                 onConfirm={executeBulkAction}
+            />
+
+            <ConfirmDialog
+                isOpen={showCarryAllConfirm}
+                title={localeCopy.carryAllTomorrow}
+                message={localeCopy.carryAllConfirm(filteredPending.length)}
+                confirmText={localeCopy.actionConfirm}
+                cancelText={localeCopy.actionCancel}
+                variant="warning"
+                onConfirm={confirmCarryForwardAll}
+                onCancel={() => setShowCarryAllConfirm(false)}
             />
         </div>
     );

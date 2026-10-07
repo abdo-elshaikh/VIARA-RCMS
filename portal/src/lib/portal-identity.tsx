@@ -381,11 +381,15 @@ export const resolvePortalIdentity = ({
     theme === "dark"
       ? darkAccentSteps
           .map((step) => brandScale[step])
-          .find((color) => contrastRatio(color, "#171d20") >= 4.5) || "#ffffff"
+          .find((color) => contrastRatio(color, "#253137") >= 4.5) || "#ffffff"
       : brand;
   const brandAccentContrast =
     contrastCandidates.find((candidate) => contrastRatio(brandAccent, candidate) >= 4.5) ||
     "#000000";
+  const accentOnLight =
+    [brand, brandScale[700], brandScale[800], brandScale[900], "#000000"].find(
+      (color) => contrastRatio(color, "#f0f8f5") >= 4.5,
+    ) || "#000000";
   const brandAccentHover =
     theme === "dark"
       ? [300, 200, 100, 50, 400, 500, 600]
@@ -476,6 +480,7 @@ export const resolvePortalIdentity = ({
         "--ring": brandAccent,
         "--VIARA-accent": brandAccent,
         "--VIARA-accent-text": brandAccent,
+        "--portal-accent-on-light": accentOnLight,
         "--VIARA-accent-dark": brandAccentHover,
         "--VIARA-accent-soft": brandSoft,
         ...Object.fromEntries(

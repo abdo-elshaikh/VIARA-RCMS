@@ -47,7 +47,10 @@ const scanForMalware = async (filePath) => {
             maxBuffer: 1024 * 1024
         });
     } catch (error) {
-        throw new AppError(error.killed ? 'Document scan timed out' : 'Document failed malware screening', 400);
+        if (error.code === 1 && !error.killed) {
+            throw new AppError('Document failed malware screening', 400);
+        }
+        throw new AppError(error.killed ? 'Document scan timed out' : 'Document scanning service is unavailable', 503);
     }
 };
 
@@ -101,6 +104,7 @@ const documentScope = (role, patientExpression, userParameter) => {
 };
 
 const uploadDocument = (db) => async (req, res, next) => {
+    let persisted = false;
     try {
         const file = req.file;
         if (!file) return next(new AppError('No file uploaded', 400));
@@ -136,6 +140,7 @@ const uploadDocument = (db) => async (req, res, next) => {
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
             [data.patient_id, data.appointment_id || null, data.exam_id || null, userId, data.type, file.originalname, file.filename, file.mimetype, file.size, data.notes]
         );
+        persisted = true;
 
         await logAction(db, {
             userId, action: 'DOCUMENT_UPLOADED', resourceId: result.rows[0].document_id, resourceTable: 'documents',
@@ -144,7 +149,7 @@ const uploadDocument = (db) => async (req, res, next) => {
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
-        if (req.file?.path && fs.existsSync(req.file.path)) {
+        if (!persisted && req.file?.path && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path);
         }
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
@@ -220,6 +225,10 @@ const downloadDocument = (db) => async (req, res, next) => {
         res.setHeader('Content-Disposition', `attachment; filename="${path.basename(doc.file_name).replace(/["\r\n]/g, '_')}"`);
         
         const fileStream = fs.createReadStream(filePath);
+        fileStream.on('error', error => {
+            if (res.headersSent) res.destroy(error);
+            else next(new AppError('Document could not be read from storage', 503));
+        });
         fileStream.pipe(res);
 
     } catch (error) {
@@ -231,13 +240,19 @@ const updateDocument = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
         const data = updateDocumentSchema.parse(req.body);
+        const scope = documentScope(req.user.role, 'documents.patient_id', '$4');
 
         const result = await db.query(
-            `UPDATE documents SET type = COALESCE($1, type), notes = COALESCE($2, notes), updated_at = CURRENT_TIMESTAMP WHERE document_id = $3 AND is_deleted = FALSE RETURNING *`,
-            [data.type, data.notes, id]
+            `UPDATE documents SET type = COALESCE($1, type), notes = COALESCE($2, notes), updated_at = CURRENT_TIMESTAMP WHERE document_id = $3 AND is_deleted = FALSE AND ${scope} RETURNING *`,
+            [data.type, data.notes, id, req.user.user_id]
         );
 
         if (result.rows.length === 0) return next(new AppError('Document not found', 404));
+        await logAction(db, {
+            userId: req.user.user_id, action: 'DOCUMENT_UPDATED', resourceId: id,
+            resourceTable: 'documents', ipAddress: req.ip,
+            details: { changedFields: Object.keys(data) }
+        });
         res.json(result.rows[0]);
     } catch (error) {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));

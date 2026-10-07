@@ -139,7 +139,19 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
     const endDate = profile.effective_to ? profile.effective_to.slice(0, 10) : (t('indefiniteDurationAutoRenewing'));
     const standardHours = profile.standard_hours_per_day || 8;
     const standardDays = profile.standard_days_per_period || 22;
-    const monthlyRate = profile.salary_type === 'Monthly' ? Number(profile.base_salary || 0) : Number(profile.hourly_rate || 0) * standardHours * standardDays;
+    const salaryBasis = t(`salaryTypes.${profile.salary_type}`, { defaultValue: profile.salary_type });
+    const salaryAmount = {
+        Monthly: money(profile.base_salary, currency),
+        Hourly: `${money(profile.hourly_rate, currency)} / ${t('hourly')}`,
+        Daily: `${money(profile.daily_rate, currency)} / ${t('daily')}`,
+        PerShift: `${money(profile.shift_rate, currency)} / ${t('perShift')}`,
+        PerCase: `${money(profile.case_rate, currency)} / ${t('perCase')}`,
+        ShiftAndCase: `${money(profile.shift_rate, currency)} / ${t('perShift')} + ${money(profile.case_rate, currency)} / ${t('perCase')}`,
+        Percentage: `${Number(profile.percentage_rate || 0)}% ${t('ofCollections')}`
+    }[profile.salary_type] || '';
+    const contractedHourlyRate = Number(profile.hourly_rate || (
+        profile.base_salary ? profile.base_salary / (standardDays * standardHours) : 0
+    ));
     const legalName = isArabic
         ? (identity?.legal_name_ar || identity?.legal_name)
         : (identity?.legal_name || identity?.legal_name_ar);
@@ -165,7 +177,7 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                                     {t('unifiedOfficialEmploymentAppointmentContract')}
                                 </h2>
                                 <span className="rounded-full bg-teal-500/10 px-2 py-0.5 text-[10px] font-black text-teal-800 dark:text-teal-300 border border-teal-500/30">
-                                    {profile.salary_type === 'Monthly' ? (t('fullTime')) : (t('partTime'))}
+                                    {salaryBasis}
                                 </span>
                             </div>
                             <p className="text-xs font-semibold text-slate-400">
@@ -284,15 +296,15 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                         </h3>
                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                             <div className="rounded-xl bg-white p-3 border border-slate-200/80 dark:bg-slate-900 dark:border-slate-800">
-                                <p className="text-[10px] font-bold text-slate-400">{t('baseSalary')}</p>
+                                <p className="text-[10px] font-bold text-slate-400">{salaryBasis}</p>
                                 <p className="mt-1 font-mono text-sm font-black whitespace-nowrap text-teal-700 dark:text-teal-300">
-                                    {profile.salary_type === 'Monthly' ? money(profile.base_salary, currency) : `${money(profile.hourly_rate, currency)}/hr`}
+                                    {salaryAmount}
                                 </p>
                             </div>
                             <div className="rounded-xl bg-white p-3 border border-slate-200/80 dark:bg-slate-900 dark:border-slate-800">
                                 <p className="text-[10px] font-bold text-slate-400">{t('overtimeRate')}</p>
                                 <p className="mt-1 font-mono text-sm font-black whitespace-nowrap text-slate-800 dark:text-slate-200">
-                                    {money(Number(profile.hourly_rate || (profile.base_salary ? profile.base_salary / (standardDays * standardHours) : 0)), currency)}
+                                    {money(contractedHourlyRate, currency)}
                                 </p>
                             </div>
                             <div className="rounded-xl bg-white p-3 border border-slate-200/80 dark:bg-slate-900 dark:border-slate-800">
@@ -343,8 +355,8 @@ const ContractModal = ({ profile, currency, identity, onClose, isArabic }) => {
                             </h4>
                             <p className="text-slate-600 dark:text-slate-300">
                                 {isArabic
-                                    ? `يستحق الطرف الثاني نظير قيامه بواجباته راتباً تعاقدياً قدره (${profile.salary_type === 'Monthly' ? money(profile.base_salary, currency) : `${money(profile.hourly_rate, currency)} لكل ساعة عمل`})، ويتم الصرف شهرياً في نهاية كل شهر ميلادي عبر التحويل البنكي لحساب الموظف أو عبر الخزينة، بعد خصم الاستقطاعات والتأمينات القانونية وأي جزاءات معتمدة.`
-                                    : `The Second Party is entitled to a contracted salary of (${profile.salary_type === 'Monthly' ? money(profile.base_salary, currency) : `${money(profile.hourly_rate, currency)} per hour`}), disbursed monthly via bank transfer or cashier, net of mandatory deductions.`}
+                                    ? `يستحق الطرف الثاني تعويضاً تعاقدياً بنظام (${salaryBasis}) قدره (${salaryAmount})، ويتم الصرف وفق دورة الرواتب بعد خصم الاستقطاعات والتأمينات القانونية وأي جزاءات معتمدة.`
+                                    : `The Second Party is entitled to compensation under (${salaryBasis}) at (${salaryAmount}), paid according to the payroll cycle and net of mandatory deductions.`}
                             </p>
                         </div>
 
@@ -1232,6 +1244,10 @@ const Payroll = () => {
         salaryType: 'Monthly',
         baseSalary: '',
         hourlyRate: '',
+        dailyRate: '',
+        shiftRate: '',
+        caseRate: '',
+        percentageRate: '',
         standardHoursPerDay: 8,
         standardDaysPerPeriod: 22,
         effectiveFrom: initialToday,
@@ -1270,7 +1286,9 @@ const Payroll = () => {
         value: '',
         currencyCode: 'EGP',
         effectiveFrom: initialToday,
-        notes: '',
+        targetUserIds: [],
+        targetRoles: [],
+        bonusFrequency: 'OneTime',
     });
 
     const { data: rawCenterSettings, isLoading: centerSettingsLoading } = useGetCenterSettingsQuery();
@@ -1300,12 +1318,12 @@ const Payroll = () => {
     }, [centerSettings.currency]);
 
     // Queries
-    const { data: periods = [], isLoading: periodsLoading, refetch: refetchPeriods } = useGetPayrollPeriodsQuery(branchQuery);
-    const { data: staff = [] } = useGetPayrollEmployeesQuery();
-    const { data: compensation = [], refetch: refetchComp } = useGetPayrollCompensationQuery({ limit: 500 });
-    const { data: deductions = [], refetch: refetchDeductions } = useGetPayrollDeductionsQuery({ limit: 500 });
-    const { data: penalties = [], refetch: refetchPenalties } = useGetPayrollPenaltiesQuery({ limit: 500 });
-    const { data: rules = [], refetch: refetchRules } = useGetPayrollRulesQuery();
+    const { data: periods = [], isLoading: periodsLoading, refetch: refetchPeriods } = useGetPayrollPeriodsQuery({ ...branchQuery, limit: 500 });
+    const { data: staff = [] } = useGetPayrollEmployeesQuery(branchQuery);
+    const { data: compensation = [], refetch: refetchComp } = useGetPayrollCompensationQuery({ ...branchQuery, limit: 500 });
+    const { data: deductions = [], refetch: refetchDeductions } = useGetPayrollDeductionsQuery({ ...branchQuery, limit: 500 });
+    const { data: penalties = [], refetch: refetchPenalties } = useGetPayrollPenaltiesQuery({ ...branchQuery, limit: 500 });
+    const { data: rules = [], refetch: refetchRules } = useGetPayrollRulesQuery(branchQuery);
 
     const selectedPeriod = useMemo(
         () => periods.find((p) => p.period_id === selectedPeriodId) || periods[0] || null,
@@ -1407,20 +1425,51 @@ const Payroll = () => {
 
     // Pre-Flight Calculation Readiness Audit
     const preflightAudit = useMemo(() => {
-        const staffWithoutComp = staff.filter(emp => !compensation.some(cp => String(cp.user_id) === String(emp.user_id) && (!cp.effective_to || new Date(cp.effective_to) >= new Date())));
-        const pendingPenalties = penalties.filter(p => p.status === 'Pending Approval');
-        const disputedPenalties = penalties.filter(p => p.acknowledgement_status === 'Disputed');
-        const draftDeductions = deductions.filter(d => d.status === 'Draft');
-        const isReady = staffWithoutComp.length === 0 && pendingPenalties.length === 0 && disputedPenalties.length === 0 && draftDeductions.length === 0;
+        const periodStart = selectedPeriod?.start_date?.slice(0, 10);
+        const periodEnd = selectedPeriod?.end_date?.slice(0, 10);
+        const periodBranchId = String(selectedPeriod?.branch_id || '');
+        const periodCurrency = String(selectedPeriod?.currency_code || '').toUpperCase();
+        const isInPeriod = (record) => (
+            selectedPeriod
+            && (!record.payroll_period_id || String(record.payroll_period_id) === String(selectedPeriod.period_id))
+            && String(record.branch_id || '') === periodBranchId
+            && String(record.currency_code || '').toUpperCase() === periodCurrency
+        );
+        const staffInPeriod = selectedPeriod ? staff.filter((emp) => (
+            (!emp.hire_date || emp.hire_date.slice(0, 10) <= periodEnd)
+            && (!emp.termination_date || emp.termination_date.slice(0, 10) >= periodStart)
+        )) : [];
+        const staffWithoutComp = staffInPeriod.filter((emp) => !compensation.some((cp) => (
+            String(cp.user_id) === String(emp.user_id)
+            && cp.is_active
+            && String(cp.branch_id || '') === periodBranchId
+            && String(cp.currency_code || '').toUpperCase() === periodCurrency
+            && String(cp.effective_from || '').slice(0, 10) <= periodEnd
+            && (!cp.effective_to || String(cp.effective_to).slice(0, 10) >= periodStart)
+        )));
+        const pendingPenalties = penalties.filter((p) => p.status === 'Pending Approval' && isInPeriod(p));
+        const disputedPenalties = penalties.filter((p) => p.acknowledgement_status === 'Disputed' && isInPeriod(p));
+        const draftDeductions = deductions.filter((d) => (
+            d.status === 'Draft'
+            && isInPeriod(d)
+            && String(d.start_date || '').slice(0, 10) <= periodEnd
+            && (!d.end_date || String(d.end_date).slice(0, 10) >= periodStart)
+        ));
+        const isReady = Boolean(selectedPeriod)
+            && staffWithoutComp.length === 0
+            && pendingPenalties.length === 0
+            && disputedPenalties.length === 0
+            && draftDeductions.length === 0;
 
         return {
             staffWithoutComp,
             pendingPenalties,
             disputedPenalties,
             draftDeductions,
-            isReady
+            isReady,
+            hasPeriod: Boolean(selectedPeriod)
         };
-    }, [staff, compensation, penalties, deductions]);
+    }, [staff, compensation, penalties, deductions, selectedPeriod]);
 
     // Mutations
     const [createPeriod, { isLoading: creatingPeriod }] = useCreatePayrollPeriodMutation();
@@ -1583,7 +1632,7 @@ const Payroll = () => {
         toast.success(t('payrollBankRegisterExported'));
     };
 
-    const exportWpsFile = () => {
+    const exportPayrollDetailCsv = () => {
         if (!permissions.export) {
             toast.error(missingPermissionText);
             return;
@@ -1593,36 +1642,36 @@ const Payroll = () => {
             toast.error(t('noPayrollDataToExport'));
             return;
         }
-        const wpsHeaders = [
-            'Employee ID', 'Employee Name', 'Role', 'Fixed Pay', 'Variable / Allowances',
-            'Deductions', 'Penalties', 'Net Pay', 'Currency', 'Payment Method', 'Period Name', 'Disbursement Date'
-        ].map(h => csvCell(h));
+        const detailHeaders = [
+            'employeeId', 'employeeName', 'role', 'grossEarnings', 'earningLineItems',
+            'deductions', 'penalties', 'employerContributions', 'netPay', 'currency', 'period', 'runStatus'
+        ].map((key) => csvCell(t(`exportColumns.${key}`)));
 
         const lines = exportItems.map(it => {
-            const gross = Number(it.gross_earnings || 0);
-            const ded = Number(it.total_deductions || 0);
-            const pen = Number(it.total_penalties || 0);
-            const net = Number(it.net_pay || 0);
+            const earningDetails = (Array.isArray(it.line_items) ? it.line_items : [])
+                .filter((line) => line.item_type === 'Earning')
+                .map((line) => `${line.description || ''}: ${Number(line.amount || 0)} ${currency}`)
+                .join(' | ');
             return [
-                csvCell(it.user_id ? String(it.user_id).slice(0, 8).toUpperCase() : 'EMP'),
+                csvCell(it.employee_id),
                 csvCell(it.employee_name),
                 csvCell(it.role),
-                gross,
-                0,
-                ded,
-                pen,
-                net,
+                Number(it.gross_earnings || 0),
+                csvCell(earningDetails),
+                Number(it.total_deductions || 0),
+                Number(it.total_penalties || 0),
+                Number(it.total_employer_contributions || 0),
+                Number(it.net_pay || 0),
                 csvCell(currency),
-                csvCell(paymentMethod),
                 csvCell(selectedPeriod?.name),
-                csvCell(paymentDate)
+                csvCell(t(`payrollStatuses.${runStatus}`, { defaultValue: runStatus }))
             ].join(',');
         });
 
-        const blob = new Blob(['\uFEFF' + [wpsHeaders.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const blob = new Blob(['\uFEFF' + [detailHeaders.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const branchFilePart = String(branchCode || branchName || 'branch').replace(/[^\p{L}\p{N}-]+/gu, '-');
-        Object.assign(document.createElement('a'), { href: url, download: `WPS-SIF-Disbursement-${branchFilePart}-${selectedPeriod?.name || 'run'}-${new Date().toISOString().slice(0, 10)}.csv` }).click();
+        Object.assign(document.createElement('a'), { href: url, download: `payroll-detail-register-${branchFilePart}-${selectedPeriod?.name || 'run'}-${new Date().toISOString().slice(0, 10)}.csv` }).click();
         URL.revokeObjectURL(url);
         toast.success(t('exportWpsSuccess'));
     };
@@ -1634,9 +1683,18 @@ const Payroll = () => {
                 ...compForm,
                 baseSalary: Number(compForm.baseSalary || 0),
                 hourlyRate: Number(compForm.hourlyRate || 0),
+                dailyRate: Number(compForm.dailyRate || 0),
+                shiftRate: Number(compForm.shiftRate || 0),
+                caseRate: Number(compForm.caseRate || 0),
+                percentageRate: Number(compForm.percentageRate || 0),
+                branchId: configuredBranchId,
+                currencyCode: currency,
                 effectiveTo: compForm.effectiveTo || undefined,
             }).unwrap();
-            setCompForm(prev => ({ ...prev, baseSalary: '', hourlyRate: '', effectiveTo: '', notes: '' }));
+            setCompForm(prev => ({
+                ...prev, baseSalary: '', hourlyRate: '', dailyRate: '', shiftRate: '',
+                caseRate: '', percentageRate: '', effectiveTo: '', notes: ''
+            }));
             toast.success(t('toast.compensationSaved'));
         } catch (error) {
             toast.error(getErrorMessage(error, t('toast.saveFailed')));
@@ -1696,7 +1754,13 @@ const Payroll = () => {
     const onCreateRule = async (e) => {
         e.preventDefault();
         try {
-            await createRule({ ...ruleForm, value: Number(ruleForm.value || 0), metadata: {} }).unwrap();
+            await createRule({
+                ...ruleForm,
+                value: Number(ruleForm.value || 0),
+                branchId: configuredBranchId,
+                currencyCode: currency,
+                metadata: {}
+            }).unwrap();
             setRuleForm(prev => ({ ...prev, name: '', value: '' }));
             toast.success(t('toast.ruleSaved'));
         } catch (error) {
@@ -1748,6 +1812,18 @@ const Payroll = () => {
     const setupDecisionNeedsReason = setupDecision?.kind === 'penaltyDispute'
         || (setupDecision?.kind === 'penalty' && setupDecision.status === 'Cancelled');
     const updatingSetupStatus = updatingDeductionStatus || updatingPenaltyStatus || updatingRuleStatus || resolvingPenaltyDispute;
+    const calculationMethodsByRule = {
+        Overtime: ['HourlyMultiplier', 'FixedAmount', 'PercentageOfBase'],
+        Late: ['PerMinute', 'FixedAmount'],
+        EarlyLeave: ['PerMinute', 'FixedAmount'],
+        Absence: ['PerDay', 'FixedAmount'],
+        Allowance: ['FixedAmount', 'PercentageOfBase', 'PercentageOfGross', 'PercentageOfCollections', 'PerDay', 'PerShift', 'PerCase'],
+        Bonus: ['FixedAmount', 'PercentageOfBase', 'PercentageOfGross', 'PercentageOfCollections', 'PerDay', 'PerShift', 'PerCase'],
+        Deduction: ['FixedAmount', 'PercentageOfBase', 'PercentageOfGross'],
+        Penalty: ['FixedAmount', 'PercentageOfBase', 'PercentageOfGross'],
+        EmployerContribution: ['FixedAmount', 'PercentageOfBase', 'PercentageOfGross']
+    };
+    const employeeRoles = [...new Set(staff.map((employee) => employee.role).filter(Boolean))];
 
     // Tabs Definition
     const navTabs = [
@@ -1910,13 +1986,13 @@ const Payroll = () => {
                                         </button>
                                         <button
                                             type="button"
-                                            onClick={() => { setShowExportMenu(false); exportWpsFile(); }}
+                                            onClick={() => { setShowExportMenu(false); exportPayrollDetailCsv(); }}
                                             className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-start text-xs font-bold text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800 transition"
                                         >
                                             <Building2 size={15} className="text-emerald-600 shrink-0" />
                                             <div>
                                                 <div className="font-black">{t('exportWps')}</div>
-                                                <div className="text-[10px] font-normal text-slate-400">{isArabic ? 'مسير حماية الأجور والتحويل المباشر' : 'Wage Protection System (WPS / SIF)'}</div>
+                                                <div className="text-[10px] font-normal text-slate-400">{isArabic ? 'تقرير داخلي مفصل بصيغة CSV' : 'Internal itemized payroll CSV'}</div>
                                             </div>
                                         </button>
                                     </div>
@@ -2228,10 +2304,12 @@ const Payroll = () => {
                                     </div>
                                 )}
                                 {filteredRunItems.map((item) => (
-                                    <div
+                                    <button
+                                        type="button"
                                         key={item.item_id}
                                         onClick={() => setSelectedPayslipItem(item)}
-                                        className="group cursor-pointer rounded-xl border border-slate-100 bg-slate-50/70 p-3 transition-all hover:border-teal-500/40 hover:bg-white dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900"
+                                        aria-label={t('payslip.openForEmployee', { name: item.employee_name })}
+                                        className="group w-full cursor-pointer rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-start transition-all hover:border-teal-500/40 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:bg-slate-900"
                                     >
                                         <div className="flex items-start justify-between gap-3">
                                             <div className="min-w-0">
@@ -2262,7 +2340,7 @@ const Payroll = () => {
                                                 <b className="block font-mono font-black text-rose-600 dark:text-rose-400 whitespace-nowrap">{money(item.total_penalties, currency)}</b>
                                             </span>
                                         </div>
-                                    </div>
+                                    </button>
                                 ))}
                                 {!filteredRunItems.length && (
                                     <div className="rounded-xl border border-dashed border-slate-200 p-8 text-center dark:border-slate-800">
@@ -2343,6 +2421,9 @@ const Payroll = () => {
                                         </p>
                                     ) : (
                                         <div className="mt-2.5 space-y-1.5 text-[10.5px] font-bold">
+                                            {!preflightAudit.hasPeriod && !periodsLoading && (
+                                                <p className="text-amber-800 dark:text-amber-300">• {t('preflightCheck.selectPeriod')}</p>
+                                            )}
                                             {preflightAudit.staffWithoutComp.length > 0 && (
                                                 <div className="flex items-center justify-between gap-2 text-amber-800 dark:text-amber-300">
                                                     <span className="truncate">• {t('preflightCheck.missingComp', { count: preflightAudit.staffWithoutComp.length })}</span>
@@ -2477,7 +2558,6 @@ const Payroll = () => {
                                             <option value="Cash">{t('paymentMethods.Cash', { defaultValue: 'Cash' })}</option>
                                             <option value="Check">{t('paymentMethods.Check', { defaultValue: 'Check' })}</option>
                                             <option value="Wallet">{t('paymentMethods.Wallet', { defaultValue: 'Wallet' })}</option>
-                                            <option value="Other">{t('paymentMethods.Other', { defaultValue: 'Other' })}</option>
                                         </select>
                                     </div>
                                     <div className="flex gap-2">
@@ -2526,19 +2606,52 @@ const Payroll = () => {
                         <label className="block">
                             <span className="mb-1 block text-xs font-bold text-slate-500">{t('fields.salaryType')}</span>
                             <select className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" value={compForm.salaryType} onChange={(e) => setCompForm({ ...compForm, salaryType: e.target.value })}>
-                                <option value="Monthly">{t('monthlyBase')}</option>
-                                <option value="Hourly">{t('hourlyRate')}</option>
+                                {['Monthly', 'Hourly', 'Daily', 'PerShift', 'PerCase', 'ShiftAndCase', 'Percentage'].map((salaryType) => (
+                                    <option key={salaryType} value={salaryType}>{t(`salaryTypes.${salaryType}`)}</option>
+                                ))}
                             </select>
                         </label>
                         <div className="grid grid-cols-2 gap-2">
-                            <label className="block">
-                                <span className="mb-1 block text-xs font-bold text-slate-500">{t('fields.baseSalary')}</span>
-                                <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" min={compForm.salaryType === 'Monthly' ? '0.01' : '0'} step="0.01" required={compForm.salaryType === 'Monthly'} value={compForm.baseSalary} onChange={(e) => setCompForm({ ...compForm, baseSalary: e.target.value })} />
-                            </label>
-                            <label className="block">
-                                <span className="mb-1 block text-xs font-bold text-slate-500">{t('fields.hourlyRate')}</span>
-                                <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" min={compForm.salaryType === 'Hourly' ? '0.01' : '0'} step="0.01" required={compForm.salaryType === 'Hourly'} value={compForm.hourlyRate} onChange={(e) => setCompForm({ ...compForm, hourlyRate: e.target.value })} />
-                            </label>
+                            {compForm.salaryType === 'Monthly' && (
+                                <label className="block col-span-2">
+                                    <span className="mb-1 block text-xs font-bold text-slate-500">{t('monthlyBase')}</span>
+                                    <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" min="0.01" step="0.01" required value={compForm.baseSalary} onChange={(e) => setCompForm({ ...compForm, baseSalary: e.target.value })} />
+                                </label>
+                            )}
+                            {compForm.salaryType === 'Hourly' && (
+                                <label className="block col-span-2">
+                                    <span className="mb-1 block text-xs font-bold text-slate-500">{t('hourlyRate')}</span>
+                                    <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" min="0.01" step="0.01" required value={compForm.hourlyRate} onChange={(e) => setCompForm({ ...compForm, hourlyRate: e.target.value })} />
+                                </label>
+                            )}
+                            {['Daily', 'PerShift', 'PerCase', 'ShiftAndCase', 'Percentage'].includes(compForm.salaryType) && (
+                                <>
+                                    {compForm.salaryType === 'Daily' && (
+                                        <label className="block">
+                                            <span className="mb-1 block text-xs font-bold text-slate-500">{t('dailyRate')}</span>
+                                            <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" min={compForm.salaryType === 'Daily' ? '0.01' : '0'} step="0.01" required={compForm.salaryType === 'Daily'} value={compForm.dailyRate} onChange={(e) => setCompForm({ ...compForm, dailyRate: e.target.value })} />
+                                        </label>
+                                    )}
+                                    {['PerShift', 'ShiftAndCase'].includes(compForm.salaryType) && (
+                                        <label className="block">
+                                            <span className="mb-1 block text-xs font-bold text-slate-500">{t('shiftRate')}</span>
+                                            <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" min="0.01" step="0.01" required value={compForm.shiftRate} onChange={(e) => setCompForm({ ...compForm, shiftRate: e.target.value })} />
+                                        </label>
+                                    )}
+                                    {['PerCase', 'ShiftAndCase'].includes(compForm.salaryType) && (
+                                        <label className="block">
+                                            <span className="mb-1 block text-xs font-bold text-slate-500">{t('caseRate')}</span>
+                                            <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" min="0.01" step="0.01" required value={compForm.caseRate} onChange={(e) => setCompForm({ ...compForm, caseRate: e.target.value })} />
+                                        </label>
+                                    )}
+                                    {compForm.salaryType === 'Percentage' && (
+                                        <label className="block col-span-2">
+                                            <span className="mb-1 block text-xs font-bold text-slate-500">{t('percentageOfCollections')}</span>
+                                            <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" min="0.01" max="100" step="0.01" required value={compForm.percentageRate} onChange={(e) => setCompForm({ ...compForm, percentageRate: e.target.value })} />
+                                        </label>
+                                    )}
+                                </>
+                            )}
                         </div>
                         <div className="grid grid-cols-2 gap-2">
                             <label className="block">
@@ -2585,14 +2698,21 @@ const Payroll = () => {
                                             <div className="flex items-center gap-2">
                                                 <p className="truncate text-xs font-black text-slate-900 dark:text-white">{profile.employee_name}</p>
                                                 <span className="rounded-full border border-teal-500/30 bg-teal-500/10 px-2 py-0.2 text-[9px] font-black text-teal-800 dark:text-teal-300">
-                                                    {profile.salary_type === 'Monthly' ? (t('fullTime')) : (t('hourly'))}
+                                                    {t(`salaryTypes.${profile.salary_type}`, { defaultValue: profile.salary_type })}
                                                 </span>
                                             </div>
                                             <p className="mt-0.5 text-[10px] font-semibold text-slate-400">{profile.role} · {profile.standard_hours_per_day || 8}h/day</p>
                                         </div>
                                         <div className="text-end">
                                             <p className="font-mono text-xs font-black whitespace-nowrap text-slate-900 dark:text-white">
-                                                {profile.salary_type === 'Monthly' ? money(profile.base_salary, currency) : `${money(profile.hourly_rate, currency)}/hr`}
+                                                {profile.salary_type === 'Monthly' ? money(profile.base_salary, currency)
+                                                    : profile.salary_type === 'Hourly' ? `${money(profile.hourly_rate, currency)}/${t('hourly')}`
+                                                        : profile.salary_type === 'Daily' ? `${money(profile.daily_rate, currency)}/${t('daily')}`
+                                                            : profile.salary_type === 'PerShift' ? `${money(profile.shift_rate, currency)}/${t('perShift')}`
+                                                                : profile.salary_type === 'PerCase' ? `${money(profile.case_rate, currency)}/${t('perCase')}`
+                                                                    : profile.salary_type === 'ShiftAndCase'
+                                                                        ? `${money(profile.shift_rate, currency)}/${t('perShift')} + ${money(profile.case_rate, currency)}/${t('perCase')}`
+                                                                        : `${Number(profile.percentage_rate || 0)}% ${t('ofCollections')}`}
                                             </p>
                                             <span className={`inline-flex rounded-full px-2 py-0.2 text-[9px] font-black ${profile.is_active ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300' : 'bg-slate-100 text-slate-500'}`}>
                                                 {profile.is_active ? (t('active')) : (t('terminated'))}
@@ -3097,9 +3217,13 @@ const Payroll = () => {
                         </div>
                         <label className="block">
                             <span className="mb-1 block text-xs font-bold text-slate-500">{t('fields.ruleType')}</span>
-                            <select className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" value={ruleForm.ruleType} onChange={(e) => setRuleForm({ ...ruleForm, ruleType: e.target.value })}>
-                                {['Allowance', 'Overtime', 'Late', 'Absence', 'Deduction', 'Penalty', 'EmployerContribution'].map((rt) => (
-                                    <option key={rt} value={rt}>{rt}</option>
+                            <select className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" value={ruleForm.ruleType} onChange={(e) => setRuleForm({
+                                ...ruleForm,
+                                ruleType: e.target.value,
+                                calculationMethod: calculationMethodsByRule[e.target.value][0]
+                            })}>
+                                {['Allowance', 'Bonus', 'Overtime', 'Late', 'EarlyLeave', 'Absence', 'Deduction', 'Penalty', 'EmployerContribution'].map((rt) => (
+                                    <option key={rt} value={rt}>{t(`ruleTypes.${rt}`, { defaultValue: rt })}</option>
                                 ))}
                             </select>
                         </label>
@@ -3111,10 +3235,9 @@ const Payroll = () => {
                             <label className="block">
                                 <span className="mb-1 block text-xs font-bold text-slate-500">{t('fields.method')}</span>
                                 <select className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" value={ruleForm.calculationMethod} onChange={(e) => setRuleForm({ ...ruleForm, calculationMethod: e.target.value })}>
-                                    <option value="FixedAmount">FixedAmount</option>
-                                    <option value="PercentageOfBase">PercentageOfBase</option>
-                                    <option value="HourlyMultiplier">HourlyMultiplier</option>
-                                    <option value="PerDay">PerDay</option>
+                                    {calculationMethodsByRule[ruleForm.ruleType].map((method) => (
+                                        <option key={method} value={method}>{t(`calculationMethods.${method}`, { defaultValue: method })}</option>
+                                    ))}
                                 </select>
                             </label>
                             <label className="block">
@@ -3122,6 +3245,35 @@ const Payroll = () => {
                                 <input className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" type="number" step="0.01" value={ruleForm.value} onChange={(e) => setRuleForm({ ...ruleForm, value: e.target.value })} required />
                             </label>
                         </div>
+                        {['PercentageOfBase', 'PercentageOfGross', 'PercentageOfCollections'].includes(ruleForm.calculationMethod) && (
+                            <p className="text-[10px] font-semibold text-slate-500">
+                                {t(`calculationMethodHelp.${ruleForm.calculationMethod}`)}
+                            </p>
+                        )}
+                        {ruleForm.ruleType === 'Bonus' && (
+                            <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-900/60 dark:bg-amber-950/20">
+                                <label className="block">
+                                    <span className="mb-1 block text-xs font-bold text-slate-500">{t('bonusFrequency')}</span>
+                                    <select className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" value={ruleForm.bonusFrequency} onChange={(e) => setRuleForm({ ...ruleForm, bonusFrequency: e.target.value })}>
+                                        <option value="OneTime">{t('recurrenceTypes.OneTime')}</option>
+                                        <option value="Recurring">{t('recurrenceTypes.Recurring')}</option>
+                                    </select>
+                                </label>
+                                <label className="block">
+                                    <span className="mb-1 block text-xs font-bold text-slate-500">{t('bonusEmployees')}</span>
+                                    <select multiple size={4} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" value={ruleForm.targetUserIds} onChange={(e) => setRuleForm({ ...ruleForm, targetUserIds: [...e.target.selectedOptions].map((option) => option.value) })}>
+                                        {staff.map((employee) => <option key={employee.user_id} value={employee.user_id}>{employee.full_name} ({employee.role})</option>)}
+                                    </select>
+                                    <span className="mt-1 block text-[10px] text-slate-500">{t('bonusEmployeeHelp')}</span>
+                                </label>
+                                <label className="block">
+                                    <span className="mb-1 block text-xs font-bold text-slate-500">{t('bonusRoles')}</span>
+                                    <select multiple size={3} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-800 outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" value={ruleForm.targetRoles} onChange={(e) => setRuleForm({ ...ruleForm, targetRoles: [...e.target.selectedOptions].map((option) => option.value) })}>
+                                        {employeeRoles.map((role) => <option key={role} value={role}>{role}</option>)}
+                                    </select>
+                                </label>
+                            </div>
+                        )}
                         <button type="submit" disabled={savingRule} className="w-full h-9 rounded-xl bg-teal-600 text-xs font-black text-white shadow-xs hover:bg-teal-500 disabled:opacity-50">
                             {savingRule ? (t('saving')) : (t('saveRule'))}
                         </button>
@@ -3138,10 +3290,30 @@ const Payroll = () => {
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
                                             <p className="truncate text-xs font-black text-slate-900 dark:text-white">{rule.name}</p>
-                                            <p className="text-[10px] font-semibold text-slate-400">{rule.rule_type} · {rule.calculation_method}</p>
+                                            <p className="text-[10px] font-semibold text-slate-400">
+                                                {t(`ruleTypes.${rule.rule_type}`, { defaultValue: rule.rule_type })} · {t(`calculationMethods.${rule.calculation_method}`, { defaultValue: rule.calculation_method })} · {t(`payrollStatuses.${rule.status}`, { defaultValue: rule.status })}
+                                            </p>
                                         </div>
                                         <span className="font-mono text-xs font-black text-slate-900 dark:text-white">{rule.value}</span>
                                     </div>
+                                    {rule.rule_type === 'Bonus' && (
+                                        <p className="mt-1 text-[10px] text-slate-500">
+                                            {t(`recurrenceTypes.${rule.metadata?.bonusFrequency || 'OneTime'}`)}
+                                            {rule.metadata?.targetUserIds?.length ? ` · ${t('bonusEmployees')}: ${rule.metadata.targetUserIds.length}` : ''}
+                                            {rule.metadata?.targetRoles?.length ? ` · ${t('bonusRoles')}: ${rule.metadata.targetRoles.join(', ')}` : ''}
+                                        </p>
+                                    )}
+                                    {rule.status === 'Pending Approval' && permissions.rules
+                                        && (user?.role === 'Developer' || String(rule.created_by) !== String(user?.user_id)) && (
+                                            <div className="mt-2 flex justify-end gap-2">
+                                                <button type="button" disabled={updatingRuleStatus} onClick={() => setSetupDecision({ kind: 'rule', id: rule.rule_id, status: 'Rejected', name: rule.name })} className="rounded-lg bg-rose-100 px-2.5 py-1 text-[10px] font-black text-rose-800 disabled:opacity-50 dark:bg-rose-950/40 dark:text-rose-300">
+                                                    {t('reject')}
+                                                </button>
+                                                <button type="button" disabled={updatingRuleStatus} onClick={() => setSetupDecision({ kind: 'rule', id: rule.rule_id, status: 'Approved', name: rule.name })} className="rounded-lg bg-emerald-100 px-2.5 py-1 text-[10px] font-black text-emerald-800 disabled:opacity-50 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                                    {t('approve')}
+                                                </button>
+                                            </div>
+                                        )}
                                 </div>
                             ))}
                             {!rules.length && (

@@ -34,6 +34,8 @@ import { logOut } from '../../store/authSlice';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import { formatRelativeTime } from '../../utils/dateFormat';
 import { getPasskeyErrorKind, getPasskeySupport, registerPasskey } from '../../utils/passkeys';
+import ConfirmDialog from '../ui/ConfirmDialog';
+import TextPromptDialog from '../ui/TextPromptDialog';
 
 const emptyPwd = { currentPassword: '', newPassword: '', confirmPassword: '' };
 const panel = 'rounded-2xl border border-slate-200/80 bg-white shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/50';
@@ -65,6 +67,8 @@ const SecuritySettings = () => {
     const [isProc2FA, setIsProc2FA] = useState(false);
     const [passkeyForm, setPasskeyForm] = useState({ label: '', currentPassword: '' });
     const [isPasskeyBusy, setIsPasskeyBusy] = useState(false);
+    const [renamePasskeyTarget, setRenamePasskeyTarget] = useState(null);
+    const [revokePasskeyTarget, setRevokePasskeyTarget] = useState(null);
 
     const sessions = sessionData?.sessions || [];
     const passkeys = passkeyData?.passkeys || [];
@@ -171,23 +175,39 @@ const SecuritySettings = () => {
         }
     };
 
-    const handleRenamePasskey = async passkey => {
-        const label = window.prompt(securityT('passkeyRenamePrompt'), passkey.label);
-        if (!label?.trim() || label.trim() === passkey.label) return;
-        try {
-            await renamePasskey({ id: passkey.id, label: label.trim() }).unwrap();
-            toast.success(securityT('passkeyRenameSuccess'));
-        } catch (error) { toast.error(getErrorMessage(error, securityT('passkeyRenameFailed'))); }
+    const handleRenamePasskey = (passkey) => {
+        setRenamePasskeyTarget(passkey);
     };
 
-    const handleRevokePasskey = async passkey => {
-        if (!window.confirm(securityT('passkeyRemoveConfirm', { name: passkey.label }))) return;
-        const currentPassword = passkeys.length === 1 ? window.prompt(securityT('passkeyFinalPassword')) : '';
-        if (passkeys.length === 1 && !currentPassword) return;
+    const confirmRenamePasskey = async (newLabel) => {
+        if (!renamePasskeyTarget) return;
+        const trimmed = newLabel?.trim();
+        if (!trimmed || trimmed === renamePasskeyTarget.label) {
+            setRenamePasskeyTarget(null);
+            return;
+        }
         try {
-            await revokePasskey({ id: passkey.id, currentPassword }).unwrap();
+            await renamePasskey({ id: renamePasskeyTarget.id, label: trimmed }).unwrap();
+            toast.success(securityT('passkeyRenameSuccess'));
+            setRenamePasskeyTarget(null);
+        } catch (error) {
+            toast.error(getErrorMessage(error, securityT('passkeyRenameFailed')));
+        }
+    };
+
+    const handleRevokePasskey = (passkey) => {
+        setRevokePasskeyTarget(passkey);
+    };
+
+    const confirmRevokePasskey = async (currentPassword = '') => {
+        if (!revokePasskeyTarget) return;
+        try {
+            await revokePasskey({ id: revokePasskeyTarget.id, currentPassword }).unwrap();
             toast.success(securityT('passkeyRemoveSuccess'));
-        } catch (error) { toast.error(getErrorMessage(error, securityT('passkeyRemoveFailed'))); }
+            setRevokePasskeyTarget(null);
+        } catch (error) {
+            toast.error(getErrorMessage(error, securityT('passkeyRemoveFailed')));
+        }
     };
 
     return (
@@ -331,6 +351,41 @@ const SecuritySettings = () => {
                     ))}
                 </div>
             </section>
+
+            <TextPromptDialog
+                isOpen={Boolean(renamePasskeyTarget)}
+                title={securityT('passkeyRenamePrompt')}
+                initialValue={renamePasskeyTarget?.label || ''}
+                label={securityT('deviceLabel')}
+                confirmLabel={t('common:save', 'Save')}
+                cancelLabel={t('common:cancel', 'Cancel')}
+                onClose={() => setRenamePasskeyTarget(null)}
+                onConfirm={confirmRenamePasskey}
+            />
+
+            <ConfirmDialog
+                isOpen={Boolean(revokePasskeyTarget && passkeys.length > 1)}
+                title={securityT('remove')}
+                message={securityT('passkeyRemoveConfirm', { name: revokePasskeyTarget?.label })}
+                confirmText={securityT('remove')}
+                cancelText={t('common:cancel', 'Cancel')}
+                variant="danger"
+                onConfirm={() => confirmRevokePasskey('')}
+                onCancel={() => setRevokePasskeyTarget(null)}
+            />
+
+            <TextPromptDialog
+                isOpen={Boolean(revokePasskeyTarget && passkeys.length === 1)}
+                title={securityT('passkeyRemoveConfirm', { name: revokePasskeyTarget?.label })}
+                message={securityT('passkeyFinalPassword')}
+                label={securityT('currentPassword')}
+                type="password"
+                required={true}
+                confirmLabel={securityT('remove')}
+                cancelLabel={t('common:cancel', 'Cancel')}
+                onClose={() => setRevokePasskeyTarget(null)}
+                onConfirm={(pwd) => confirmRevokePasskey(pwd)}
+            />
         </div>
     );
 };

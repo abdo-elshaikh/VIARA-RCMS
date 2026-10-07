@@ -1998,6 +1998,7 @@ const reviewRefund = (db) => async (req, res, next) => {
                 failure_reason = CASE WHEN $1::varchar(20) = 'Failed' THEN $3 ELSE failure_reason END,
                 processed_by = CASE WHEN $1::varchar(20) = 'Processed' THEN $2 ELSE processed_by END,
                 cashier_shift_id = CASE WHEN $1::varchar(20) = 'Processed' THEN $5 ELSE cashier_shift_id END,
+                business_date = CASE WHEN $1::varchar(20) = 'Processed' THEN $6::date ELSE business_date END,
                 processed_at = CASE WHEN $1::varchar(20) = 'Processed' THEN NOW() ELSE processed_at END
             WHERE refund_id = $4
             RETURNING *
@@ -2006,7 +2007,8 @@ const reviewRefund = (db) => async (req, res, next) => {
             req.user.user_id,
             reason,
             refund.refund_id,
-            shiftId
+            shiftId,
+            processingDate ? processingDate.businessDate : null
         ]);
 
         if (processing) {

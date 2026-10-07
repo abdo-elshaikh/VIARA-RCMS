@@ -1,0 +1,7 @@
+{
+  "name": "backend-audit",
+  "command": "npm.cmd audit --json",
+  "exitCode": 1,
+  "signal": null,
+  "durationSeconds": 13.127
+}

@@ -15,12 +15,21 @@ jobs:
     name: Database (fresh migrations)
     runs-on: ubuntu-latest
     services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
       postgres:
         image: postgres:15-alpine
         env:
           POSTGRES_USER: VIARA
           POSTGRES_PASSWORD: viara_ci_password
-          POSTGRES_DB: VIARA
+          POSTGRES_DB: VIARA_release_test
         ports:
           - 5432:5432
         options: >-
@@ -40,13 +49,21 @@ jobs:
       - name: Apply schema and all migrations
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://VIARA:viara_ci_password@127.0.0.1:5432/VIARA
+          DATABASE_URL: postgresql://VIARA:viara_ci_password@127.0.0.1:5432/VIARA_release_test
         run: npm run migrate -- --fresh
       - name: Verify migration idempotency and checksums
         working-directory: backend
         env:
-          DATABASE_URL: postgresql://VIARA:viara_ci_password@127.0.0.1:5432/VIARA
+          DATABASE_URL: postgresql://VIARA:viara_ci_password@127.0.0.1:5432/VIARA_release_test
         run: npm run migrate
+      - name: Verify recovery token concurrency and session revocation on PostgreSQL
+        env:
+          VIARA_RELEASE_TEST_DATABASE_URL: postgresql://VIARA:viara_ci_password@127.0.0.1:5432/VIARA_release_test
+        run: node scripts/verify-release-database.cjs
+      - name: Verify shared quotas across API replicas
+        env:
+          VIARA_RELEASE_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+        run: node scripts/verify-release-redis.cjs
 
   backend:
     name: Backend (tests + audit)
@@ -65,7 +82,7 @@ jobs:
       - name: Dependency audit (fail on high/critical)
         run: npm audit --omit=dev --audit-level=high
       - name: Tests
-        run: npm run test:ci
+        run: npm run test:ci -- --coverage
 
   frontend:
     name: Frontend (lint + tests)
@@ -112,6 +129,8 @@ jobs:
         run: npm audit --omit=dev --audit-level=moderate
       - name: Lint
         run: npm run lint
+      - name: Formatting
+        run: npm run format:check
       - name: Production build
         run: npm run build
       - name: Tests

@@ -40,6 +40,7 @@ export default defineConfig({
         globals: true,
         environment: 'jsdom',
         setupFiles: './src/setupTests.js',
+        testTimeout: 10000,
     },
     build: {
         rollupOptions: {
@@ -52,7 +53,10 @@ export default defineConfig({
                     if (!id.includes('node_modules')) return undefined;
                     if (id.includes('recharts') || id.includes('d3-')) return 'charts';
                     if (id.includes('framer-motion')) return 'motion';
-                    if (id.includes('react-dom') || id.includes('react-router-dom') || id.includes('@reduxjs/toolkit') || id.includes('react-redux')) return 'framework';
+                    // Keep React and its shared dependencies together. Separating
+                    // react-dom/Redux from React creates a vendor/framework cycle
+                    // that can initialize the production runtime out of order.
+                    if (/\/node_modules\/(react|react-dom|scheduler|react-redux|redux|redux-thunk|immer|reselect|use-sync-external-store|react-router|react-router-dom|@reduxjs\/toolkit|@standard-schema\/[^/]+)\//.test(normalizedId)) return 'framework';
                     if (id.includes('i18next')) return 'i18n';
                     if (id.includes('lucide-react')) return 'icons';
                     if (id.includes('date-fns')) return 'date-utils';

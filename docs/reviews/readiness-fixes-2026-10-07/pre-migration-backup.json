@@ -1,0 +1,7 @@
+{
+  "backup": "VIARA_before_readiness_fixes_8899ffbc-f113-4167-9bd4-b7cd98666988.dump.enc",
+  "encrypted": true,
+  "archiveVerified": true,
+  "checksum": "aa63bca531b08d4f4239fa1e6f9e7a5cfe68c78f1c6d51aa07c5635837c1a0f7",
+  "scope": "SQL only; PACS companion not included"
+}

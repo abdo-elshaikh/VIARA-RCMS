@@ -122,6 +122,14 @@ const cleanupPublicPortalData = async (pool) => {
     };
 };
 
+const cleanupPasswordResetTokens = async (pool) => {
+    const result = await pool.query(`
+        DELETE FROM password_reset_tokens 
+        WHERE revoked = TRUE OR expires_at < NOW() - INTERVAL '90 days'
+    `);
+    return { deleted: result.rowCount || 0 };
+};
+
 const scheduleDataRetentionJobs = (pool) => {
     const runJob = async () => {
         logger.info('Running data retention cleanup jobs...');
@@ -130,9 +138,11 @@ const scheduleDataRetentionJobs = (pool) => {
             // Delete revoked refresh tokens older than 90 days
             const tokenResult = await pool.query(`
                 DELETE FROM refresh_tokens 
-                WHERE revoked = TRUE AND revoked_at < NOW() - INTERVAL '90 days'
+                WHERE (revoked = TRUE AND revoked_at < NOW() - INTERVAL '90 days') OR (expires_at < NOW() - INTERVAL '90 days')
             `);
             logger.info(`Cleaned up ${tokenResult.rowCount} expired refresh tokens.`);
+            const resetTokensResult = await cleanupPasswordResetTokens(pool);
+            logger.info(`Cleaned up ${resetTokensResult.deleted} expired password reset tokens.`);
 
             const privacyResult = await cleanupExpiredPrivacyExports(pool);
             logger.info('Cleaned up expired privacy export artifacts.', privacyResult);
@@ -178,4 +188,4 @@ const scheduleDataRetentionJobs = (pool) => {
     };
 };
 
-module.exports = { scheduleDataRetentionJobs, cleanupExpiredPrivacyExports, cleanupNotificationData, cleanupPublicPortalData };
+module.exports = { scheduleDataRetentionJobs, cleanupExpiredPrivacyExports, cleanupNotificationData, cleanupPublicPortalData, cleanupPasswordResetTokens };

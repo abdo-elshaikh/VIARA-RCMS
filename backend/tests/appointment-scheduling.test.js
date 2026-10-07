@@ -94,7 +94,7 @@ describe('patient conflict detection in appointment scheduling', () => {
                 if (text.includes('FROM modalities')) return { rows: [{ modality_id: 'modality-1', status: 'Active', room_status: 'Active' }] };
                 if (text.includes('FROM equipment_downtime')) return { rows: [] };
                 if (text.includes('FROM equipment_maintenance')) return { rows: [] };
-                if (text.includes('FROM examination_types WHERE type_id')) return { rows: [{ body_part: 'Brain', contrast_required: false, modality_id: 'modality-1', is_active: true, duration_minutes: 30 }] };
+                if (text.includes('FROM examination_types WHERE type_id')) return { rows: [{ body_part: 'Brain', contrast_required: false, modality_id: '00000000-0000-4000-8000-000000000101', is_active: true, duration_minutes: 30 }] };
                 if (text.includes('FROM appointments') && text.includes('modality_id = $1')) return { rows: [] };
                 if (text.includes('FROM appointments') && text.includes('patient_id = $1')) return { rows: [] };
                 if (text.includes('INSERT INTO appointments')) return { rows: [{ appointment_id: 'appt-1' }] };
@@ -117,6 +117,7 @@ describe('patient conflict detection in appointment scheduling', () => {
             connect: jest.fn().mockResolvedValue(mockClient)
         };
 
+        const next = jest.fn();
         await createAppointment(db)({
             body: {
                 patientId: '00000000-0000-4000-8000-000000000301',
@@ -128,7 +129,7 @@ describe('patient conflict detection in appointment scheduling', () => {
             user: { user_id: 'user-1' },
             get: jest.fn(),
             originalUrl: '/api/appointments'
-        }, { cookie: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn() }, jest.fn());
+        }, { cookie: jest.fn(), status: jest.fn().mockReturnThis(), json: jest.fn() }, next);
 
         const allQueries = mockClient.query.mock.calls.map(c => typeof c[0] === 'string' ? c[0] : '');
         const patientConflictQuery = allQueries.find(q => q.includes('patient_id = $1'));
@@ -136,6 +137,8 @@ describe('patient conflict detection in appointment scheduling', () => {
         expect(patientConflictQuery).toBeDefined();
         expect(patientConflictQuery).toContain('FOR UPDATE');
         expect(patientConflictQuery).toContain('FROM appointments');
+        expect(next).not.toHaveBeenCalled();
+        expect(mockClient.query).toHaveBeenCalledWith('COMMIT');
     });
 
     test('patient conflict triggers 409 conflict error', async () => {
@@ -187,6 +190,46 @@ describe('patient conflict detection in appointment scheduling', () => {
             message: expect.stringMatching(/patient.*already has an appointment/i),
             statusCode: 409
         }));
+        expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+    });
+
+    test('idempotency key cannot be reused for a different appointment payload', async () => {
+        const crypto = require('crypto');
+        const { createAppointment } = require('../src/controllers/appointmentController');
+        const body = { patientId: 'patient-2' };
+        const key = '11111111-1111-4111-8111-111111111111';
+        const mockClient = {
+            query: jest.fn().mockImplementation(async (sql) => {
+                if (String(sql).includes('SELECT resource_id AS appointment_id')) {
+                    return {
+                        rows: [{
+                            appointment_id: 'appointment-1',
+                            request_fingerprint: crypto.createHash('sha256').update(JSON.stringify({ patientId: 'patient-1' })).digest('hex')
+                        }]
+                    };
+                }
+                return { rows: [] };
+            }),
+            release: jest.fn()
+        };
+        const db = {
+            query: jest.fn().mockResolvedValue({ rows: [] }),
+            connect: jest.fn().mockResolvedValue(mockClient)
+        };
+        const next = jest.fn();
+
+        await createAppointment(db)({
+            body,
+            user: { user_id: 'user-1' },
+            get: (header) => header === 'Idempotency-Key' ? key : undefined,
+            originalUrl: '/api/appointments'
+        }, { status: jest.fn().mockReturnThis(), json: jest.fn() }, next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            message: expect.stringMatching(/different appointment request/i),
+            statusCode: 409
+        }));
+        expect(db.query).not.toHaveBeenCalled();
         expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
     });
 });

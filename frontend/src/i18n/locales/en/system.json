@@ -426,6 +426,7 @@
     "statAlertBanner": "STAT / Critical Clinical Alert",
     "insertCaseRef": "Insert study or case accession reference",
     "caseRefPrompt": "Enter Study Accession Number or Case ID (e.g. ACC-10928):",
+    "caseIdOrAcc": "Accession Number / Case ID",
     "broadcastChannelNotice": "Official Broadcast Channel: Visible to all medical staff; postings managed by admins.",
     "keyboardHint": "Enter ↵ to send · Shift+Enter for new line",
     "statActiveNotice": "STAT Alert mode active",

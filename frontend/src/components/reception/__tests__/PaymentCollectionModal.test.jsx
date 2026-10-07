@@ -10,7 +10,14 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../../ui/Modal', () => ({
-    default: ({ children, footer, isOpen, title }) => isOpen ? <section aria-label={title}>{children}{footer}</section> : null
+    default: ({ children, footer, isOpen, onClose, title }) => isOpen ? (
+        <section aria-label={title} onKeyDown={(event) => { if (event.key === 'Escape') onClose?.(); }}>
+            <button type="button" aria-label="Close dialog" onClick={onClose} />
+            <div data-testid="modal-backdrop" onMouseDown={onClose} />
+            {children}
+            {footer}
+        </section>
+    ) : null
 }));
 
 vi.mock('../../ui/StatusPill', () => ({
@@ -129,6 +136,18 @@ describe('PaymentCollectionModal', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
         expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays open when Escape, the close button, or the backdrop is used during payment submission', () => {
+        const onClose = vi.fn();
+        render(<PaymentCollectionModal {...baseProps} isLoading onClose={onClose} />);
+
+        fireEvent.keyDown(screen.getByText('INV-1').closest('section'), { key: 'Escape' });
+        fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+        fireEvent.mouseDown(screen.getByTestId('modal-backdrop'));
+
+        expect(onClose).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
     });
 
     it('does not render when isOpen is false', () => {

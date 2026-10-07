@@ -55,7 +55,29 @@ const CENTER_SETTING_KEYS = [
     'display.patient_display_mode',
     'display.call_announcement_mode',
     'display.show_ticker',
-    'display.board_title'
+    'display.board_title',
+    'display.privacy_mode',
+    'display.mute',
+    'display.quiet_mode',
+    'display.repeat_chime',
+    'display.theme',
+    'display.display_language',
+    'display.motion_mode',
+    'display.rotation_speed',
+    'display.show_summary_stats',
+    'display.announcement_rate',
+    'display.announcement_repeats',
+    'display.announcement_delay',
+    'display.announcement_volume',
+    'display.announcement_mode',
+    'display.announcement_preset',
+    'display.announcement_language',
+    'display.token_pronunciation',
+    'display.announcement_style',
+    'display.custom_template',
+    'display.pronunciation_dictionary',
+    'display.arabic_voice',
+    'display.english_voice'
 ];
 
 const toIso = (value) => {
@@ -315,7 +337,37 @@ const getDisplayBoard = (db) => async (req, res, next) => {
                 patientDisplayMode,
                 callAnnouncementMode,
                 showTicker,
-                boardTitle
+                boardTitle,
+                privacyMode: ['full', 'token_only', 'name_only'].includes(settings['display.privacy_mode'])
+                    ? settings['display.privacy_mode'] : 'full',
+                muteAll: settings['display.mute'] !== 'true',
+                quietMode: settings['display.quiet_mode'] === 'true',
+                repeatChime: settings['display.repeat_chime'] !== 'false',
+                theme: ['dark', 'light'].includes(settings['display.theme'])
+                    ? settings['display.theme'] : null,
+                displayLanguage: ['ar', 'en'].includes(settings['display.display_language'])
+                    ? settings['display.display_language'] : null,
+                motionMode: ['full', 'reduced'].includes(settings['display.motion_mode'])
+                    ? settings['display.motion_mode'] : null,
+                rotationSpeed: numberOrNull(settings['display.rotation_speed']) || null,
+                showSummaryStats: settings['display.show_summary_stats'] === 'true',
+                announcementRate: numberOrNull(settings['display.announcement_rate']) || null,
+                announcementRepeatCount: numberOrNull(settings['display.announcement_repeats']) || null,
+                announcementRepeatDelay: numberOrNull(settings['display.announcement_delay']) || null,
+                announcementVolume: numberOrNull(settings['display.announcement_volume']) || null,
+                announcementMode: ['token_only', 'name_only', 'token_and_name'].includes(settings['display.announcement_mode'])
+                    ? settings['display.announcement_mode'] : null,
+                announcementPreset: settings['display.announcement_preset'] || null,
+                announcementLanguage: ['ar', 'en', 'ar_then_en', 'en_then_ar'].includes(settings['display.announcement_language'])
+                    ? settings['display.announcement_language'] : null,
+                tokenPronunciation: ['auto', 'natural', 'digits'].includes(settings['display.token_pronunciation'])
+                    ? settings['display.token_pronunciation'] : null,
+                announcementStyle: ['formal', 'calm', 'short'].includes(settings['display.announcement_style'])
+                    ? settings['display.announcement_style'] : null,
+                customTemplate: settings['display.custom_template'] || null,
+                pronunciationDictionary: settings['display.pronunciation_dictionary'] || null,
+                arabicVoiceURI: settings['display.arabic_voice'] || null,
+                englishVoiceURI: settings['display.english_voice'] || null,
             },
             announcements: announcementsResult.rows.map((row) => ({
                 id: row.announcement_id,

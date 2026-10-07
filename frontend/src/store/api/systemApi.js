@@ -402,6 +402,36 @@ export const systemApi = api.injectEndpoints({
             }),
             invalidatesTags: ['License', 'Dashboard', 'Settings'],
         }),
+        getSystemUpdateStatus: builder.query({
+            query: () => '/system/updates/status',
+            providesTags: ['SystemUpdates'],
+        }),
+        checkSystemUpdates: builder.mutation({
+            query: (body) => ({
+                url: '/system/updates/check',
+                method: 'POST',
+                body,
+            }),
+        }),
+        uploadUpdatePatch: builder.mutation({
+            query: (formData) => ({
+                url: '/system/updates/upload-patch',
+                method: 'POST',
+                body: formData,
+            }),
+        }),
+        applySystemUpdate: builder.mutation({
+            query: (body) => ({
+                url: '/system/updates/apply',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['SystemUpdates', 'Settings', 'Dashboard'],
+        }),
+        getSystemUpdateHistory: builder.query({
+            query: (limit = 20) => `/system/updates/history?limit=${limit}`,
+            providesTags: ['SystemUpdates'],
+        }),
     }),
     overrideExisting: false,
 });

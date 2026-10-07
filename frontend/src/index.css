@@ -1,5 +1,5 @@
 /* Latin + Arabic healthcare UI fonts */
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Noto+Sans+Arabic:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Readex+Pro:wght@400;500;600;700&display=swap');
+@import './local-fonts.css';
 
 @tailwind base;
 @tailwind components;
@@ -453,7 +453,7 @@ body :where(.border-red-100, .border-red-200, .border-red-300, .border-rose-100,
   --surface-secondary: #182027;
   --surface-muted: #1F2A33;
   --border: #26333D;
-  --border-strong: #364958;
+  --border-strong: #526678;
   --text-primary: #F0F6FC;
   --text-secondary: #C5D1DE;
   --text-muted: #8292A2;
@@ -687,7 +687,7 @@ body :where(.border-red-100, .border-red-200, .border-red-300, .border-rose-100,
 }
 
 .dark body :where(input, textarea)::placeholder {
-  color: var(--text-muted);
+  color: var(--VIARA-muted);
   opacity: 1;
 }
 
@@ -829,25 +829,158 @@ body :where(tr[aria-selected="true"], tr.is-selected) {
   background-color: var(--VIARA-muted);
 }
 
-/* Global appearance contracts also cover portalled dialogs and menus. */
-body :where(.rounded, .rounded-md, .rounded-lg) {
+/* Global appearance contracts also cover portalled dialogs, menus, and compound components. */
+body :where(.rounded-none) {
+  border-radius: 0 !important;
+}
+
+body :where(.rounded-t-none) {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+
+body :where(.rounded-b-none) {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+body :where(.rounded-s-none) {
+  border-start-start-radius: 0 !important;
+  border-end-start-radius: 0 !important;
+}
+
+body :where(.rounded-e-none) {
+  border-start-end-radius: 0 !important;
+  border-end-end-radius: 0 !important;
+}
+
+body :where(.rounded-l-none) {
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+}
+
+body :where(.rounded-r-none) {
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+body :where(.rounded, .rounded-sm, .rounded-md, .rounded-lg, .rounded-xl, .rounded-\[11px\]) {
   border-radius: var(--VIARA-radius-control) !important;
 }
 
-body :where(.rounded-xl) {
-  border-radius: var(--VIARA-radius-control) !important;
-}
-
-body :where(.rounded-2xl) {
+body :where(.rounded-2xl, .rounded-\[18px\]) {
   border-radius: var(--VIARA-radius-surface) !important;
 }
 
-body :where(.rounded-3xl) {
+body :where(.rounded-3xl, .rounded-\[22px\], .rounded-\[24px\], .rounded-\[26px\], .rounded-\[28px\], .rounded-\[1\.75rem\], .rounded-\[2rem\]) {
   border-radius: var(--VIARA-radius-overlay) !important;
 }
 
 body :where(.rounded-full) {
   border-radius: var(--VIARA-radius-pill) !important;
+}
+
+/* Directional top radii */
+body :where(.rounded-t, .rounded-t-sm, .rounded-t-md, .rounded-t-lg, .rounded-t-xl) {
+  border-top-left-radius: var(--VIARA-radius-control) !important;
+  border-top-right-radius: var(--VIARA-radius-control) !important;
+}
+body :where(.rounded-t-2xl) {
+  border-top-left-radius: var(--VIARA-radius-surface) !important;
+  border-top-right-radius: var(--VIARA-radius-surface) !important;
+}
+body :where(.rounded-t-3xl) {
+  border-top-left-radius: var(--VIARA-radius-overlay) !important;
+  border-top-right-radius: var(--VIARA-radius-overlay) !important;
+}
+
+/* Directional bottom radii */
+body :where(.rounded-b, .rounded-b-sm, .rounded-b-md, .rounded-b-lg, .rounded-b-xl) {
+  border-bottom-left-radius: var(--VIARA-radius-control) !important;
+  border-bottom-right-radius: var(--VIARA-radius-control) !important;
+}
+body :where(.rounded-b-2xl) {
+  border-bottom-left-radius: var(--VIARA-radius-surface) !important;
+  border-bottom-right-radius: var(--VIARA-radius-surface) !important;
+}
+body :where(.rounded-b-3xl) {
+  border-bottom-left-radius: var(--VIARA-radius-overlay) !important;
+  border-bottom-right-radius: var(--VIARA-radius-overlay) !important;
+}
+
+/* Directional logical start radii */
+body :where(.rounded-s, .rounded-s-sm, .rounded-s-md, .rounded-s-lg, .rounded-s-xl) {
+  border-start-start-radius: var(--VIARA-radius-control) !important;
+  border-end-start-radius: var(--VIARA-radius-control) !important;
+}
+body :where(.rounded-s-2xl) {
+  border-start-start-radius: var(--VIARA-radius-surface) !important;
+  border-end-start-radius: var(--VIARA-radius-surface) !important;
+}
+body :where(.rounded-s-3xl) {
+  border-start-start-radius: var(--VIARA-radius-overlay) !important;
+  border-end-start-radius: var(--VIARA-radius-overlay) !important;
+}
+
+/* Directional logical end radii */
+body :where(.rounded-e, .rounded-e-sm, .rounded-e-md, .rounded-e-lg, .rounded-e-xl) {
+  border-start-end-radius: var(--VIARA-radius-control) !important;
+  border-end-end-radius: var(--VIARA-radius-control) !important;
+}
+body :where(.rounded-e-2xl) {
+  border-start-end-radius: var(--VIARA-radius-surface) !important;
+  border-end-end-radius: var(--VIARA-radius-surface) !important;
+}
+body :where(.rounded-e-3xl) {
+  border-start-end-radius: var(--VIARA-radius-overlay) !important;
+  border-end-end-radius: var(--VIARA-radius-overlay) !important;
+}
+
+/* Directional physical left radii */
+body :where(.rounded-l, .rounded-l-sm, .rounded-l-md, .rounded-l-lg, .rounded-l-xl) {
+  border-top-left-radius: var(--VIARA-radius-control) !important;
+  border-bottom-left-radius: var(--VIARA-radius-control) !important;
+}
+body :where(.rounded-l-2xl) {
+  border-top-left-radius: var(--VIARA-radius-surface) !important;
+  border-bottom-left-radius: var(--VIARA-radius-surface) !important;
+}
+body :where(.rounded-l-3xl) {
+  border-top-left-radius: var(--VIARA-radius-overlay) !important;
+  border-bottom-left-radius: var(--VIARA-radius-overlay) !important;
+}
+
+/* Directional physical right radii */
+body :where(.rounded-r, .rounded-r-sm, .rounded-r-md, .rounded-r-lg, .rounded-r-xl) {
+  border-top-right-radius: var(--VIARA-radius-control) !important;
+  border-bottom-right-radius: var(--VIARA-radius-control) !important;
+}
+body :where(.rounded-r-2xl) {
+  border-top-right-radius: var(--VIARA-radius-surface) !important;
+  border-bottom-right-radius: var(--VIARA-radius-surface) !important;
+}
+body :where(.rounded-r-3xl) {
+  border-top-right-radius: var(--VIARA-radius-overlay) !important;
+  border-bottom-right-radius: var(--VIARA-radius-overlay) !important;
+}
+
+/* Speech bubble corners */
+body :where(.rounded-ee-xs) {
+  border-end-end-radius: calc(var(--VIARA-radius-control) * 0.4) !important;
+}
+body :where(.rounded-es-xs) {
+  border-end-start-radius: calc(var(--VIARA-radius-control) * 0.4) !important;
+}
+body :where(.rounded-se-xs) {
+  border-start-end-radius: calc(var(--VIARA-radius-control) * 0.4) !important;
+}
+body :where(.rounded-ss-xs) {
+  border-start-start-radius: calc(var(--VIARA-radius-control) * 0.4) !important;
+}
+
+/* Fallback for native unstyled form controls */
+body :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea) {
+  border-radius: var(--VIARA-radius-control);
 }
 
 .app-shell {
@@ -1015,15 +1148,57 @@ body :where([class*="text-[17px]"]) {
 }
 
 .high-contrast body {
+  --background: #FFFFFF;
+  --surface: #FFFFFF;
+  --surface-secondary: #F8FAFC;
+  --surface-muted: #E2E8F0;
   --VIARA-line: #64748B;
   --VIARA-line-strong: #334155;
   --VIARA-muted: #334155;
+  --text-secondary: #334155;
+  --text-muted: #334155;
+  --text-inverse: #FFFFFF;
+  --VIARA-ink: #0F172A;
+  --text-primary: #0F172A;
+  --VIARA-surface: #FFFFFF;
+  --VIARA-surface-raised: #F8FAFC;
+  --VIARA-surface-muted: #E2E8F0;
+  --VIARA-surface-hover: #E2E8F0;
+  --VIARA-field: #FFFFFF;
+  --VIARA-canvas: #FFFFFF;
 }
 
 .dark.high-contrast body {
+  --background: #020617;
+  --surface: #0F172A;
+  --surface-secondary: #1E293B;
+  --surface-muted: #334155;
   --VIARA-line: #94A3B8;
   --VIARA-line-strong: #CBD5E1;
   --VIARA-muted: #E2E8F0;
+  --text-secondary: #E2E8F0;
+  --text-muted: #E2E8F0;
+  --text-inverse: #020617;
+  --VIARA-ink: #F8FAFC;
+  --text-primary: #F8FAFC;
+  --VIARA-surface: #0F172A;
+  --VIARA-surface-raised: #1E293B;
+  --VIARA-surface-muted: #334155;
+  --VIARA-surface-hover: #334155;
+  --VIARA-field: #1E293B;
+  --VIARA-canvas: #020617;
+}
+
+.high-contrast body {
+  --text-secondary: #334155;
+  --text-muted: #334155;
+  --VIARA-ink: #0F172A;
+  --text-primary: #0F172A;
+}
+
+.high-contrast body :where(input, textarea)::placeholder {
+  color: var(--VIARA-muted) !important;
+  opacity: 1;
 }
 
 .high-contrast body :where(button, input, select, textarea, [role="button"], .app-page-header, .page-header-metric, .app-panel, .app-panel-muted) {
@@ -1120,7 +1295,7 @@ body :where([class*="text-[17px]"]) {
     background:
       radial-gradient(ellipse at 100% 0%, rgba(var(--VIARA-accent-rgb), .14), transparent 45%),
       radial-gradient(ellipse at 0% 100%, rgba(var(--VIARA-accent-rgb), .08), transparent 40%),
-      linear-gradient(140deg, #0b1324 0%, #0f172a 60%, #111e38 100%);
+      linear-gradient(140deg, var(--VIARA-surface) 0%, color-mix(in srgb, var(--VIARA-surface) 86%, var(--VIARA-canvas)) 60%, var(--VIARA-surface) 100%);
     border-color: color-mix(in srgb, var(--VIARA-line) 60%, rgba(var(--VIARA-accent-rgb), .35));
   }
 
@@ -1195,6 +1370,32 @@ body :where([class*="text-[17px]"]) {
   .page-header-actions :where(button, a):focus-visible {
     --tw-ring-color: rgba(var(--VIARA-accent-rgb), .35);
     outline-color: var(--VIARA-accent-text);
+  }
+
+  .page-header-dock {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  @media (max-width: 639px) {
+    .page-header-dock .page-header-actions {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-x: contain;
+    }
+    .page-header-dock .page-header-actions > * {
+      flex-wrap: nowrap !important;
+      flex-shrink: 0;
+    }
+    .page-header-dock .page-header-actions :where(button, a, input, select, .btn) {
+      flex-shrink: 0;
+    }
   }
 
   .page-header-metrics {
@@ -1513,6 +1714,8 @@ body :where([class*="text-[17px]"]) {
   .ds-card-header {
     border-color: var(--VIARA-line);
     padding: var(--VIARA-density-card-padding);
+    border-top-left-radius: inherit;
+    border-top-right-radius: inherit;
   }
 
   .ds-card-body {
@@ -1523,6 +1726,8 @@ body :where([class*="text-[17px]"]) {
     border-color: var(--VIARA-line);
     background: var(--VIARA-surface-muted);
     padding: calc(var(--VIARA-density-card-padding) * .8) var(--VIARA-density-card-padding);
+    border-bottom-left-radius: inherit;
+    border-bottom-right-radius: inherit;
   }
 
   .ds-overlay {

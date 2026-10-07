@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import os
+import re
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -76,4 +77,6 @@ class Settings:
             errors.append(
                 "MODEL_BACKEND must be torchxrayvision, medgemma, or safe-placeholder."
             )
+        if self.model_backend == "medgemma" and not re.fullmatch(r"[0-9a-f]{40}", self.model_revision):
+            errors.append("MedGemma MODEL_REVISION must pin a reviewed 40-character Hugging Face commit.")
         return errors

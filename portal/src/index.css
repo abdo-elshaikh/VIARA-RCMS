@@ -1,4 +1,5 @@
-﻿@tailwind base;
+@import "./local-fonts.css";
+@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -82,7 +83,7 @@
     --VIARA-line-strong: rgba(16, 35, 63, 0.18);
     --VIARA-field: var(--surface);
     --VIARA-accent: rgb(var(--primary-600-rgb));
-    --VIARA-accent-text: var(--VIARA-accent);
+    --VIARA-accent-text: #006f55;
     --VIARA-accent-dark: rgb(var(--primary-700-rgb));
     --VIARA-accent-soft: var(--mint);
     --VIARA-coral: #ff6b57;
@@ -145,7 +146,7 @@
     --VIARA-line-strong: #566d75;
     --VIARA-field: var(--surface-secondary);
     --VIARA-accent: var(--green);
-    --VIARA-accent-text: var(--green);
+    --VIARA-accent-text: #68dfb7;
     --VIARA-accent-dark: var(--green-hover);
     --VIARA-accent-soft: var(--mint);
   }
@@ -295,38 +296,70 @@
 /* Semantic bridge for legacy portal mockup utilities. This keeps older landing
    and authentication sections on the same customizable surface palette while
    components migrate to semantic Tailwind tokens. */
-.portal-theme :where(
-  [class~="text-[#0B2348]"],
-  [class~="text-[#38516B]"],
-  [class~="text-[#5F7187]"]
-) {
+.portal-theme
+  :where([class~="text-[#0B2348]"], [class~="text-[#38516B]"], [class~="text-[#5F7187]"]) {
   color: var(--VIARA-ink);
 }
 
-.portal-theme :where(
-  [class~="border-[#DCE8E5]"],
-  [class~="border-[#D7E5E1]"],
-  [class~="border-[#DDE9E6]"],
-  [class~="border-[#E2ECE9]"]
-) {
+.portal-theme
+  :where(
+    [class~="border-[#DCE8E5]"],
+    [class~="border-[#D7E5E1]"],
+    [class~="border-[#DDE9E6]"],
+    [class~="border-[#E2ECE9]"]
+  ) {
   border-color: var(--VIARA-line);
 }
 
-.portal-theme :where(
-  [class~="bg-[#F4FAF8]"],
-  [class~="bg-[#F8FBFA]"],
-  [class~="bg-[#F7FBFA]"],
-  [class~="bg-[#F3F9F7]"]
-) {
+.portal-theme
+  :where(
+    [class~="bg-[#F4FAF8]"],
+    [class~="bg-[#F8FBFA]"],
+    [class~="bg-[#F7FBFA]"],
+    [class~="bg-[#F3F9F7]"]
+  ) {
   background-color: var(--VIARA-canvas);
 }
 
-.dark .portal-theme [class*="dark:bg-[#071224]"] { background-color: var(--VIARA-canvas); }
-.dark .portal-theme [class*="dark:bg-[#0A1728]"] { background-color: var(--VIARA-surface); }
-.dark .portal-theme [class*="dark:bg-[#0A1729]"] { background-color: var(--VIARA-surface-raised); }
-.dark .portal-theme [class*="dark:bg-[#071224]/86"] { background-color: color-mix(in srgb, var(--VIARA-canvas) 86%, transparent); }
-.dark .portal-theme [class*="dark:bg-[#0A1728]/82"] { background-color: color-mix(in srgb, var(--VIARA-surface) 82%, transparent); }
-.dark .portal-theme [class*="dark:bg-[#0A1728]/94"] { background-color: color-mix(in srgb, var(--VIARA-surface) 94%, transparent); }
-.dark .portal-theme [class*="dark:from-[#071224]/35"] { --tw-gradient-from: color-mix(in srgb, var(--VIARA-canvas) 35%, transparent) var(--tw-gradient-from-position); }
-.dark .portal-theme [class*="dark:via-[#071224]/80"] { --tw-gradient-to: color-mix(in srgb, var(--VIARA-canvas) 0%, transparent) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), color-mix(in srgb, var(--VIARA-canvas) 80%, transparent) var(--tw-gradient-via-position), var(--tw-gradient-to); }
-.dark .portal-theme [class*="dark:to-[#071224]"] { --tw-gradient-to: var(--VIARA-canvas) var(--tw-gradient-to-position); }
+.dark .portal-theme [class*="dark:bg-[#071224]"] {
+  background-color: var(--VIARA-canvas);
+}
+.dark .portal-theme [class*="dark:bg-[#0A1728]"] {
+  background-color: var(--VIARA-surface);
+}
+.dark .portal-theme [class*="dark:bg-[#0A1729]"] {
+  background-color: var(--VIARA-surface-raised);
+}
+.dark .portal-theme [class*="dark:bg-[#071224]/86"] {
+  background-color: color-mix(in srgb, var(--VIARA-canvas) 86%, transparent);
+}
+.dark .portal-theme [class*="dark:bg-[#0A1728]/82"] {
+  background-color: color-mix(in srgb, var(--VIARA-surface) 82%, transparent);
+}
+.dark .portal-theme [class*="dark:bg-[#0A1728]/94"] {
+  background-color: color-mix(in srgb, var(--VIARA-surface) 94%, transparent);
+}
+.dark .portal-theme [class*="dark:from-[#071224]/35"] {
+  --tw-gradient-from: color-mix(in srgb, var(--VIARA-canvas) 35%, transparent)
+    var(--tw-gradient-from-position);
+}
+.dark .portal-theme [class*="dark:via-[#071224]/80"] {
+  --tw-gradient-to: color-mix(in srgb, var(--VIARA-canvas) 0%, transparent)
+    var(--tw-gradient-to-position);
+  --tw-gradient-stops:
+    var(--tw-gradient-from),
+    color-mix(in srgb, var(--VIARA-canvas) 80%, transparent) var(--tw-gradient-via-position),
+    var(--tw-gradient-to);
+}
+.dark .portal-theme [class*="dark:to-[#071224]"] {
+  --tw-gradient-to: var(--VIARA-canvas) var(--tw-gradient-to-position);
+}
+
+/* Accent text has its own contrast token; button backgrounds retain the brand palette. */
+@layer utilities {
+  .text-primary,
+  .text-primary\/75,
+  .text-primary\/80 {
+    color: var(--VIARA-accent-text);
+  }
+}

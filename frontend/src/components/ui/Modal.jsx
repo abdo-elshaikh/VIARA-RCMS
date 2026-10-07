@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import useFocusTrap from '../../hooks/useFocusTrap';
+
 const modalWidths = {
     sm: 'max-w-md',
     default: 'max-w-lg',
@@ -14,58 +16,13 @@ const Modal = ({ isOpen, onClose, title, children, size = 'default', footer, wid
     const { t } = useTranslation('common');
     const titleId = useId();
     const dialogRef = useRef(null);
-    const previousFocusRef = useRef(null);
-    const wasOpenRef = useRef(false);
-    const onCloseRef = useRef(onClose);
-    onCloseRef.current = onClose;
 
-    if (isOpen && !wasOpenRef.current) previousFocusRef.current = document.activeElement;
-    wasOpenRef.current = isOpen;
-
-    useEffect(() => {
-        const handleKeyDown = (event) => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                event.stopPropagation();
-                onCloseRef.current?.();
-                return;
-            }
-            if (event.key !== 'Tab' || !dialogRef.current) return;
-
-            const focusable = [...dialogRef.current.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')];
-            if (!focusable.length) {
-                event.preventDefault();
-                dialogRef.current.focus();
-                return;
-            }
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first.focus();
-            }
-        };
-
-        if (isOpen) {
-            const previousOverflow = document.body.style.overflow;
-            document.addEventListener('keydown', handleKeyDown);
-            document.body.style.overflow = 'hidden';
-            window.requestAnimationFrame(() => {
-                const firstFocusable = dialogRef.current?.querySelector('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
-                (firstFocusable || dialogRef.current)?.focus();
-            });
-            return () => {
-                document.removeEventListener('keydown', handleKeyDown);
-                document.body.style.overflow = previousOverflow;
-                const focusTarget = previousFocusRef.current;
-                window.requestAnimationFrame(() => focusTarget?.focus?.());
-            };
-        }
-        return undefined;
-    }, [isOpen]);
+    useFocusTrap({
+        containerRef: dialogRef,
+        isActive: Boolean(isOpen),
+        onEscape: onClose,
+        lockScroll: true,
+    });
 
     if (!isOpen) return null;
 

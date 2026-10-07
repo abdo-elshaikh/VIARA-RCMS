@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "postgresMajor": 15,
+  "redisMajor": 7,
+  "freshMigrations": true,
+  "idempotency": true,
+  "tokenConcurrency": true,
+  "sessionRevocation": true,
+  "sharedReplicaQuotas": true,
+  "quotaExpiry": true,
+  "durationSeconds": 34.308
+}

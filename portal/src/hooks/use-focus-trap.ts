@@ -14,10 +14,7 @@ const FOCUSABLE_SELECTOR = [
  * dialog's Escape/scroll-lock handling; the caller is responsible for moving
  * focus into the dialog on open and restoring it on close.
  */
-export const useFocusTrap = (
-  containerRef: RefObject<HTMLElement | null>,
-  enabled = true,
-): void => {
+export const useFocusTrap = (containerRef: RefObject<HTMLElement | null>, enabled = true): void => {
   useEffect(() => {
     if (!enabled) return undefined;
 
@@ -26,9 +23,7 @@ export const useFocusTrap = (
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Tab") return;
-      const focusables = Array.from(
-        container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-      );
+      const focusables = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
       if (!focusables.length) return;
 
       const first = focusables[0];

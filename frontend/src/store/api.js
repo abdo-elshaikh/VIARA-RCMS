@@ -58,6 +58,8 @@ export const {
     useGetProfileQuery,
     useUpdateProfileMutation,
     useChangePasswordMutation,
+    useForgotPasswordMutation,
+    useResetPasswordMutation,
     useGetPreferencesQuery,
     useUpdatePreferencesMutation,
     useExportPersonalDataMutation,
@@ -498,5 +500,11 @@ export const {
     useLazyGetLicenseInfoQuery,
     useGetLicenseQuotaQuery,
     useInspectLicenseMutation,
-    useActivateLicenseMutation
+    useActivateLicenseMutation,
+    useGetSystemUpdateStatusQuery,
+    useCheckSystemUpdatesMutation,
+    useUploadUpdatePatchMutation,
+    useApplySystemUpdateMutation,
+    useGetSystemUpdateHistoryQuery,
+    useLazyGetSystemUpdateHistoryQuery
 } = api;

@@ -437,6 +437,15 @@ const exportAccounting = (db) => async (req, res, next) => {
             ...row,
             patient_name: [decrypt(first_name_enc), decrypt(last_name_enc)].filter(Boolean).join(' ')
         }));
+        // CSV quoting alone does not prevent spreadsheet formula execution.
+        for (const row of exportRows) {
+            for (const key of Object.keys(row)) {
+                if (typeof row[key] === 'string' && /^[\s\uFEFF]*[=+@-]/u.test(row[key])
+                    && !/^-?\d+(?:\.\d+)?$/.test(row[key])) {
+                    row[key] = `'${row[key]}`;
+                }
+            }
+        }
         const parser = new Parser();
         const csv = parser.parse(exportRows);
 

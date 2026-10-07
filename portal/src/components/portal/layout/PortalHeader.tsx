@@ -126,15 +126,15 @@ export const PortalHeader = ({
   return (
     <header
       className={`pointer-events-none fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
-        navStyle === "solid" ? "border-b border-border bg-surface/96 backdrop-blur-xl py-2" : "py-3 sm:py-4"
+        navStyle === "solid"
+          ? "border-b border-border bg-surface/96 backdrop-blur-xl py-2"
+          : "py-3 sm:py-4"
       }`}
     >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div
           className={`pointer-events-auto relative flex items-center justify-between gap-3 rounded-2xl border px-3 backdrop-blur-2xl transition-all duration-300 sm:gap-4 sm:px-5 ${
-            navStyle === "solid"
-              ? "border-border/80 bg-surface"
-              : "bg-white/92 dark:bg-surface/92"
+            navStyle === "solid" ? "border-border/80 bg-surface" : "bg-white/92 dark:bg-surface/92"
           } ${
             scrolled
               ? "h-[3.25rem] border-border/80 shadow-[0_14px_40px_rgba(11,35,72,0.13)] sm:h-14"

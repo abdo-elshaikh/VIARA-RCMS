@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     cashier: { summary: { varianceAmount: 50, openShifts: 1 }, data: [] },
     commissions: [{ commission_pending: 150 }],
     closures: [{ open_shifts: 0, unresolved_variances: 1, pending_refunds: 0 }],
+    closureQueryArgs: [],
     discount: { summary: { flagged_invoices: 2, total_discount: 75 }, items: [] },
     trialBalance: { is_balanced: true, difference: 0 },
     plQueryArgs: [],
@@ -39,7 +40,7 @@ vi.mock('../../store/api', () => ({
     useGetReceivablesAgingQuery: () => ({ data: mocks.aging, isFetching: false, isLoading: false, isError: false, refetch: vi.fn() }),
     useGetCashierReconciliationQuery: () => ({ data: mocks.cashier, isFetching: false, isLoading: false, isError: false, refetch: vi.fn() }),
     useGetDoctorCommissionsQuery: () => ({ data: mocks.commissions, isFetching: false, isLoading: false, isError: false, refetch: vi.fn() }),
-    useGetFinancialClosuresQuery: () => ({ data: mocks.closures, isFetching: false, isLoading: false, isError: false, refetch: vi.fn() }),
+    useGetFinancialClosuresQuery: (args) => { mocks.closureQueryArgs.push(args); return { data: mocks.closures, isFetching: false, isLoading: false, isError: false, refetch: vi.fn() }; },
     useGetDiscountReportQuery: (args) => {
         mocks.discountQueryArgs.push(args);
         return { data: mocks.discount, isFetching: false, isLoading: false, isError: false, refetch: vi.fn() };
@@ -81,6 +82,29 @@ const renderWithRouter = (ui, { route = '/financials' } = {}) => {
 };
 
 describe('Financials grouped navigation and action queue', () => {
+    it('restores a shared date period from the URL and retains it across tabs', async () => {
+        renderWithRouter(<Financials />, { route: '/financials?tab=expenses&startDate=2026-09-01&endDate=2026-09-30&period=custom' });
+        expect(screen.getByLabelText('finance.pl.startDate')).toHaveValue('2026-09-01');
+        expect(screen.getByLabelText('finance.pl.endDate')).toHaveValue('2026-09-30');
+        fireEvent.click(screen.getByRole('button', { name: /finance\.tabs\.closures/ }));
+        await waitFor(() => expect(mocks.closureQueryArgs.at(-1)).toEqual({ startDate: '2026-09-01', endDate: '2026-09-30' }));
+    });
+    it('explains an invalid custom period instead of rendering reports for it', () => {
+        renderWithRouter(<Financials />);
+        fireEvent.click(screen.getByRole('button', { name: 'finance.common.presets.custom' }));
+        fireEvent.change(screen.getAllByLabelText('finance.pl.startDate')[0], { target: { value: '2099-12-31' } });
+        expect(screen.getByRole('alert')).toHaveTextContent('Choose valid start and end dates');
+    });
+    it('applies the shared period to both closure overview and closure list', () => {
+        mocks.closureQueryArgs = [];
+        renderWithRouter(<Financials />, { route: '/financials?tab=closures' });
+        expect(mocks.closureQueryArgs.length).toBeGreaterThanOrEqual(2);
+        expect(mocks.closureQueryArgs.every(args => args.startDate && args.endDate)).toBe(true);
+    });
+    it('falls back to reports for an unknown tab instead of a blank workspace', () => {
+        renderWithRouter(<Financials />, { route: '/financials?tab=unknown' });
+        expect(screen.getByRole('button', { name: /finance\.tabs\.reports/ })).toHaveAttribute('aria-current', 'page');
+    });
     beforeEach(() => {
         mocks.pl = { gross_revenue: 1000, net_profit: 200, total_expenses: 800, commission_expense: 100 };
         mocks.aging = { total_outstanding: 500, '90_plus': 100, '0_30': 300, '31_60': 100, '61_90': 50 };

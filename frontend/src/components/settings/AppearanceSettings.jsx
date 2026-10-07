@@ -22,7 +22,10 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_PREFERENCES, selectPreferences, updateAllPreferences } from '../../store/preferencesSlice';
 import { useUpdatePreferencesMutation } from '../../store/api';
 import { getErrorMessage } from '../../utils/getErrorMessage';
-import { SEMANTIC_PALETTE_DEFAULTS } from '../../utils/themePalette';
+import {
+    getPaletteTextContrastStatus,
+    SEMANTIC_PALETTE_DEFAULTS,
+} from '../../utils/themePalette';
 import {
     SettingsChoice as ChoiceButton,
     SettingsFact as Fact,
@@ -175,6 +178,19 @@ const AppearanceSettings = () => {
             },
         });
     };
+
+    const paletteContrastWarnings = ['light', 'dark'].reduce((warnings, mode) => {
+        const palette = {
+            ...SEMANTIC_PALETTE_DEFAULTS[mode],
+            ...(preferences.colorOverrides?.[mode] || {}),
+        };
+        const contrastStatus = getPaletteTextContrastStatus(palette);
+        warnings[mode] = {
+            adjustedText: contrastStatus.some(({ adjusted }) => adjusted),
+            incompatibleSurfaces: contrastStatus.some(({ passes }) => !passes),
+        };
+        return warnings;
+    }, {});
 
     const commitCustomColor = () => {
         if (!isHexColor(customColorDraft)) {
@@ -363,6 +379,21 @@ const AppearanceSettings = () => {
                         <div className="grid gap-4 xl:grid-cols-2">
                             {['light', 'dark'].map((mode) => (
                                 <section key={mode} className="min-w-0 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-3 sm:p-4">
+                                    {(paletteContrastWarnings[mode].adjustedText || paletteContrastWarnings[mode].incompatibleSurfaces) && (
+                                            <p
+                                                className={`mb-3 rounded-xl border px-3 py-2 text-xs leading-5 ${
+                                                    paletteContrastWarnings[mode].incompatibleSurfaces
+                                                        ? 'border-amber-400 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100'
+                                                        : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)]'
+                                                }`}
+                                                role={paletteContrastWarnings[mode].incompatibleSurfaces ? 'alert' : 'status'}
+                                                aria-live={paletteContrastWarnings[mode].incompatibleSurfaces ? 'assertive' : 'polite'}
+                                            >
+                                                {paletteContrastWarnings[mode].incompatibleSurfaces
+                                                    ? t('settings.appearance.semanticPalette.incompatibleSurfaces', { defaultValue: 'These surface colors are too different for one text color to meet contrast requirements everywhere. Adjust the surfaces or restore the defaults; text colors are adjusted to the best available contrast.' })
+                                                    : t('settings.appearance.semanticPalette.adjustedText', { defaultValue: 'Text colors are automatically adjusted when needed to maintain readable contrast across the selected surfaces.' })}
+                                            </p>
+                                    )}
                                     <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                                         <h3 className="text-sm font-black text-[var(--VIARA-ink)]">
                                             {t(`settings.appearance.semanticPalette.${mode}`, { defaultValue: mode === 'light' ? 'Light palette' : 'Dark palette' })}
@@ -452,7 +483,7 @@ const AppearanceSettings = () => {
                                             onClick={() => persist({ borderRadius: radius.id })}
                                             center
                                         >
-                                            <div className={`h-8 w-8 border-2 border-slate-300 dark:border-slate-600 ${radius.class}`} />
+                                            <div className="h-8 w-8 border-2 border-slate-300 dark:border-slate-600" style={{ borderRadius: radius.value }} />
                                             <span className="mt-2 block text-[10px] font-bold text-slate-500 dark:text-slate-400">
                                                 {t(`settings.appearance.radii.${radius.id}`, { defaultValue: radius.name })}
                                             </span>

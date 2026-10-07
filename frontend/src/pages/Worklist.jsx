@@ -44,6 +44,8 @@ import { TextPromptDialog } from '../components/ui';
 import Pagination from '../components/ui/Pagination';
 import ClinicalTaskScope, { AssignmentBadge } from '../components/clinical/ClinicalTaskScope';
 import { selectCurrentUser } from '../store/authSlice';
+import useFocusTrap from '../hooks/useFocusTrap';
+import usePageTitle from '../hooks/usePageTitle';
 import {
     useGetAppointmentsQuery,
     useClaimQueueTaskMutation,
@@ -373,7 +375,7 @@ const QueueInsightPanel = React.memo(({ metrics, nextCase, locale, t, onOpen, on
                                     <Icon size={17} />
                                 </span>
                                 <span className="min-w-0">
-                                    <span className="block truncate text-[9px] font-black uppercase tracking-[.1em] text-slate-400 dark:text-slate-500">{label}</span>
+                                    <span className="block truncate text-[9px] font-black uppercase tracking-[.1em] text-slate-400 dark:text-slate-400">{label}</span>
                                     <span className="mt-0.5 block text-lg font-black tabular-nums text-slate-950 dark:text-white">{value}</span>
                                 </span>
                             </Component>
@@ -417,7 +419,7 @@ const QueueInsightPanel = React.memo(({ metrics, nextCase, locale, t, onOpen, on
 
 const DataCell = React.memo(({ icon: Icon, label, value, alert = false }) => (
     <div className="min-w-0">
-        <p className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.06em] text-slate-400 dark:text-slate-500">
+        <p className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.06em] text-slate-400 dark:text-slate-400">
             <Icon size={12} strokeWidth={2} />
             <span>{label}</span>
         </p>
@@ -463,7 +465,7 @@ const PatientBlock = React.memo(({ item, t, onClick, compact = false, showExam =
                         {item.exam_type_name || item.modality_name || t('fallback.unspecifiedExam')}
                     </p>
                 )}
-                <p className="mt-0.5 font-mono text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                <p className="mt-0.5 font-mono text-[10px] font-semibold text-slate-400 dark:text-slate-400">
                     MRN: {item.mrn || '—'} · #{item.order_number || item.exam_id}
                 </p>
             </div>
@@ -521,7 +523,7 @@ const QueueRow = React.memo(({
         (Number(item.image_count) > 0) ||
         (item.pacs_status && !['No Images', 'Not Received', 'Pending', 'No Study', 'None'].includes(item.pacs_status))
     );
-    const isCritical = item.priority === 'Emergency' || item.is_overdue;
+    const isCritical = item.priority === 'Emergency' || item.is_overdue || Boolean(item.critical_result);
     const isUrgent = item.priority === 'Urgent';
     const compact = density === 'compact';
     const rowPadding = compact ? 'px-4 py-2.5 ps-6' : 'px-5 py-4 ps-6';
@@ -558,6 +560,12 @@ const QueueRow = React.memo(({
                         </span>
                         <SafetySummary item={item} t={t} />
                         <AssignmentBadge status={item.assignment_status} t={t} />
+                        {Boolean(item.critical_result) && (
+                            <Badge tone="danger">
+                                <AlertTriangle size={12} strokeWidth={2.5} />
+                                <span>{t('criticalResultRequiringAcknowledgement')}</span>
+                            </Badge>
+                        )}
                         {isReadyForRole(item, role) && (
                             <Badge tone="info">
                                 <ClipboardCheck size={12} />
@@ -648,6 +656,12 @@ const QueueRow = React.memo(({
                             </span>
                             <SafetySummary item={item} t={t} />
                             <AssignmentBadge status={item.assignment_status} t={t} />
+                            {Boolean(item.critical_result) && (
+                                <Badge tone="danger">
+                                    <AlertTriangle size={12} strokeWidth={2.5} />
+                                    <span>{t('criticalResultRequiringAcknowledgement')}</span>
+                                </Badge>
+                            )}
                         </div>
                         <div className="mt-2 flex items-center gap-2 text-[10px] font-bold">
                             <span className={`inline-flex items-center gap-1 ${item.is_overdue ? 'text-rose-600 dark:text-rose-300' : 'text-slate-500 dark:text-slate-400'}`}>
@@ -749,16 +763,16 @@ const QueueTable = React.memo((props) => (
     <section className="rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 overflow-hidden">
         {/* Desktop Header */}
         <div className="hidden border-b border-slate-100 bg-slate-50/80 px-6 py-2.5 xl:grid xl:grid-cols-[minmax(240px,1.05fr)_minmax(210px,.8fr)_minmax(240px,.9fr)_minmax(190px,.72fr)] xl:gap-4 dark:border-slate-800 dark:bg-slate-950/40">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-400">
                 {props.t('table.patient')}
             </span>
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-400">
                 {props.t('table.study')}
             </span>
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-400">
                 {props.t('table.queueState')}
             </span>
-            <span className="text-end text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            <span className="text-end text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-400">
                 {props.t('table.actions')}
             </span>
         </div>
@@ -774,6 +788,43 @@ const QueueTable = React.memo((props) => (
             ))}
         </div>
     </section>
+));
+
+const KeyboardControlBar = React.memo(({ t }) => (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-2 shadow-xs backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/70">
+        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-teal-600 dark:text-teal-400">
+                <SlidersHorizontal size={13} />
+                <span>{t('keyboard.shortcutsTitle')}</span>
+            </span>
+            <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 shadow-xs">
+                ↑/↓
+            </span>
+            <span className="text-[11px]">{t('keyboard.navigate')}</span>
+            <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 shadow-xs">
+                Enter
+            </span>
+            <span className="text-[11px]">{t('keyboard.open')}</span>
+            <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 shadow-xs">
+                D
+            </span>
+            <span className="text-[11px]">{t('keyboard.dicom')}</span>
+            <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 shadow-xs">
+                C
+            </span>
+            <span className="text-[11px]">{t('keyboard.case')}</span>
+            <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 shadow-xs">
+                /
+            </span>
+            <span className="text-[11px]">{t('keyboard.search')}</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs text-slate-400">
+            <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[10px] font-black text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 shadow-xs">
+                Esc
+            </span>
+            <span className="text-[11px]">{t('keyboard.close')}</span>
+        </div>
+    </div>
 ));
 
 // ─── Detail Slide-over Drawer ───────────────────────────────────────
@@ -792,7 +843,7 @@ const DetailSection = React.memo(({ title, icon: Icon, children, className = '' 
 
 const DetailField = ({ label, value, highlight = false }) => (
     <div className="min-w-0 py-2">
-        <p className="text-[10px] font-black uppercase tracking-[0.06em] text-slate-400 dark:text-slate-500">{label}</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.06em] text-slate-400 dark:text-slate-400">{label}</p>
         <p className={`mt-0.5 break-words text-xs font-bold ${highlight ? 'text-teal-600 dark:text-teal-400' : 'text-slate-800 dark:text-slate-200'}`}>
             {value || '—'}
         </p>
@@ -833,16 +884,16 @@ const AppointmentDetails = ({
     isMoving
 }) => {
     const [detailTab, setDetailTab] = useState('overview');
+    const drawerRef = useRef(null);
+    const closeBtnRef = useRef(null);
 
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (e.key === 'Escape' && item) {
-                onClose();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [item, onClose]);
+    useFocusTrap({
+        containerRef: drawerRef,
+        isActive: Boolean(item),
+        onEscape: onClose,
+        lockScroll: true,
+        initialFocusRef: closeBtnRef,
+    });
 
     if (!item) return null;
 
@@ -876,6 +927,8 @@ const AppointmentDetails = ({
             <div className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm transition-opacity animate-in fade-in" />
 
             <aside
+                ref={drawerRef}
+                tabIndex={-1}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="detail-title"
@@ -898,6 +951,12 @@ const AppointmentDetails = ({
                                     <span className={`inline-flex items-center rounded-full border px-2 py-0.2 text-[9px] font-black uppercase ${priorityToneStyles[item.priority] || priorityToneStyles.Routine}`}>
                                         {priorityLabel}
                                     </span>
+                                    {Boolean(item.critical_result) && (
+                                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.2 text-[9px] font-black uppercase text-rose-700 dark:text-rose-300">
+                                            <AlertTriangle size={10} />
+                                            <span>{t('criticalResultRequiringAcknowledgement')}</span>
+                                        </span>
+                                    )}
                                 </div>
                                 <h2 id="detail-title" className="mt-0.5 truncate text-lg font-black text-slate-900 dark:text-white">
                                     {item.patient_name || t('fallback.patient')}
@@ -908,8 +967,10 @@ const AppointmentDetails = ({
                             </div>
                         </div>
                         <button
+                            ref={closeBtnRef}
                             type="button"
                             onClick={onClose}
+                            aria-label={t('modal.close', { defaultValue: 'Close' })}
                             className="grid h-8 w-8 place-items-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 transition"
                         >
                             <X size={16} />
@@ -965,7 +1026,7 @@ const AppointmentDetails = ({
                         <DetailSection title={t('details.followUpContext', { defaultValue: 'Follow-up Context' })} icon={Clock3}>
                             <div className="grid gap-2 text-xs sm:grid-cols-2">
                                 <p className="font-bold text-slate-700 dark:text-slate-300">{item.prior_exam_type_name || t('details.priorStudy', { defaultValue: 'Prior study' })}</p>
-                                <p className="font-mono text-[11px] text-slate-500 sm:text-end">{item.prior_order_number || item.prior_exam_id}</p>
+                                <p className="font-mono text-[11px] text-slate-500 dark:text-slate-400 sm:text-end">{item.prior_order_number || item.prior_exam_id}</p>
                             </div>
                             {item.follow_up_reason && (
                                 <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-600 dark:text-slate-400">
@@ -1119,7 +1180,7 @@ const AppointmentDetails = ({
 
 const FilterSelect = React.memo(({ label, value, onChange, options, t, translation }) => (
     <label className="block">
-        <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
+        <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-400">
             {label}
         </span>
         <select
@@ -1200,7 +1261,7 @@ const ViewTabs = React.memo(({ tab, onChange, counts, t, role, isArabic }) => {
                 }`}
             >
                 <ListChecks size={15} />
-                <span>{t(`roleCommand.${role}.title`, { defaultValue: isArabic ? 'طابور العمل السريري' : 'Clinical Queue' })}</span>
+                <span>{t(`roleCommand.${role}.title`, { defaultValue: isArabic ? 'قائمة المهام' : 'Clinical Queue' })}</span>
                 <span className={`rounded-lg px-2 py-0.5 text-[10px] font-black ${
                     tab === 'queue' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                 }`}>
@@ -1242,6 +1303,8 @@ const Worklist = () => {
     const isArabic = i18n.resolvedLanguage?.startsWith('ar') || i18n.language?.startsWith('ar');
     const locale = isArabic ? 'ar-EG' : 'en-US';
 
+    usePageTitle(t('header.title', 'قائمة العمل الموحدة'));
+
     // View States
     const [tab, setTab] = useState('queue');
     const [viewMode, setViewMode] = useState('day');
@@ -1261,6 +1324,7 @@ const Worklist = () => {
     const isClinicalTaskRole = ['Radiologist', 'Technician', 'Nurse'].includes(role);
     const [taskScope, setTaskScope] = useState('all');
     const [releaseAssignmentItem, setReleaseAssignmentItem] = useState(null);
+    const [confirmPending, setConfirmPending] = useState(null); // { item, toStage } — awaiting user confirmation
     const canSwitchScope = ['Developer', 'Admin'].includes(role);
     const [allCenter, setAllCenter] = useState(canSwitchScope);
     const [focusedRowIndex, setFocusedRowIndex] = useState(-1);
@@ -1442,7 +1506,11 @@ const Worklist = () => {
         refetchQueue();
     }, [refetchSchedule, refetchQueue]);
 
-    const advance = useCallback(async (item, toStage) => {
+    // Stages that require explicit confirmation before transitioning.
+    // These represent formal handovers or irreversible workflow steps.
+    const CONFIRM_STAGES = new Set(['In Exam', 'Reporting', 'Finalized']);
+
+    const executeAdvance = useCallback(async (item, toStage) => {
         try {
             await transitionQueue({ examId: item.exam_id, toStage }).unwrap();
             toast.success(t('roleCommand.transitionSuccess', { stage: t(`roleCommand.stages.${toStage}`, { defaultValue: toStage }) }));
@@ -1450,6 +1518,15 @@ const Worklist = () => {
             toast.error(getErrorMessage(error, t('roleCommand.transitionError')));
         }
     }, [transitionQueue, t]);
+
+    const advance = useCallback((item, toStage) => {
+        // Require confirmation for critical stage transitions
+        if (CONFIRM_STAGES.has(toStage)) {
+            setConfirmPending({ item, toStage });
+            return;
+        }
+        executeAdvance(item, toStage);
+    }, [executeAdvance]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const claim = useCallback(async (item) => {
         try {
@@ -1492,6 +1569,27 @@ const Worklist = () => {
     const roleTitle = t(`header.roles.${role}.title`, { defaultValue: t('header.title') });
     const roleDescription = t(`header.roles.${role}.description`, { defaultValue: t('header.description') });
 
+    // Stable ref for action handlers prevents keydown event listener thrashing
+    const actionContextRef = useRef({
+        pagedQueue,
+        role,
+        openItem,
+        onNavigate,
+        onViewCase,
+        setSelected
+    });
+
+    useEffect(() => {
+        actionContextRef.current = {
+            pagedQueue,
+            role,
+            openItem,
+            onNavigate,
+            onViewCase,
+            setSelected
+        };
+    }, [pagedQueue, role, openItem, onNavigate, onViewCase, setSelected]);
+
     // Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -1522,14 +1620,78 @@ const Worklist = () => {
                     break;
                 case 'escape':
                     e.preventDefault();
-                    setSelected(null);
+                    actionContextRef.current.setSelected(null);
+                    break;
+                case 'enter':
+                    if (tab === 'queue') {
+                        e.preventDefault();
+                        setFocusedRowIndex((current) => {
+                            const { pagedQueue: items, role: userRole, openItem: doOpenItem } = actionContextRef.current;
+                            if (current >= 0 && current < items.length) {
+                                const item = items[current];
+                                if (userRole === 'Radiologist' && item.queue_stage === 'Reporting') {
+                                    doOpenItem(item, true);
+                                } else {
+                                    doOpenItem(item);
+                                }
+                            }
+                            return current;
+                        });
+                    }
+                    break;
+                case 'd':
+                case 'v':
+                    if (tab === 'queue') {
+                        e.preventDefault();
+                        setFocusedRowIndex((current) => {
+                            const { pagedQueue: items, onNavigate: doNavigate } = actionContextRef.current;
+                            if (current >= 0 && current < items.length) {
+                                const item = items[current];
+                                if (item.exam_id) {
+                                    doNavigate(`/pacs/viewer?examId=${item.exam_id}`);
+                                }
+                            }
+                            return current;
+                        });
+                    }
+                    break;
+                case 'c':
+                    if (tab === 'queue') {
+                        e.preventDefault();
+                        setFocusedRowIndex((current) => {
+                            const { pagedQueue: items, onViewCase: doViewCase } = actionContextRef.current;
+                            if (current >= 0 && current < items.length) {
+                                const item = items[current];
+                                if (item.exam_id) {
+                                    doViewCase(item);
+                                }
+                            }
+                            return current;
+                        });
+                    }
+                    break;
+                case ' ':
+                    if (tab === 'queue') {
+                        e.preventDefault();
+                        setFocusedRowIndex((current) => {
+                            const { pagedQueue: items, setSelected: doSelect } = actionContextRef.current;
+                            if (current >= 0 && current < items.length) {
+                                doSelect(items[current]);
+                            }
+                            return current;
+                        });
+                    }
                     break;
                 case 'arrowdown':
                     if (tab === 'queue') {
                         e.preventDefault();
                         setFocusedRowIndex((prev) => {
-                            const next = Math.min(pagedQueue.length - 1, prev + 1);
-                            document.querySelector(`[data-row-index="${next}"]`)?.scrollIntoView({ block: 'nearest' });
+                            const items = actionContextRef.current.pagedQueue;
+                            const next = Math.min(items.length - 1, prev + 1);
+                            const el = document.querySelector(`[data-row-index="${next}"]`);
+                            if (typeof el?.scrollIntoView === 'function') {
+                                el.scrollIntoView({ block: 'nearest' });
+                            }
                             return next;
                         });
                     }
@@ -1539,7 +1701,10 @@ const Worklist = () => {
                         e.preventDefault();
                         setFocusedRowIndex((prev) => {
                             const next = Math.max(0, prev - 1);
-                            document.querySelector(`[data-row-index="${next}"]`)?.scrollIntoView({ block: 'nearest' });
+                            const el = document.querySelector(`[data-row-index="${next}"]`);
+                            if (typeof el?.scrollIntoView === 'function') {
+                                el.scrollIntoView({ block: 'nearest' });
+                            }
                             return next;
                         });
                     }
@@ -1551,7 +1716,7 @@ const Worklist = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [refresh, tab, pagedQueue.length]);
+    }, [refresh, tab]);
 
     return (
         <main className="mx-auto max-w-[1540px] space-y-4 pb-12" dir={isArabic ? 'rtl' : 'ltr'}>
@@ -1820,6 +1985,7 @@ const Worklist = () => {
                         <EmptyQueue role={role} t={t} hasFilters={hasFilters} onClearFilters={clearFilters} taskScope={taskScope} />
                     ) : (
                         <>
+                            <KeyboardControlBar t={t} />
                             <QueueTable
                                 items={pagedQueue}
                                 role={role}
@@ -1907,6 +2073,92 @@ const Worklist = () => {
                 inputProps={{ minLength: 3, maxLength: 1000 }}
                 isLoading={isReleasingAssignment}
             />
+
+            {/* ── Stage Transition Confirm Dialog ───────────────────────────── */}
+            {confirmPending && (
+                <div
+                    className="fixed inset-0 z-[120] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center p-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="viara-stage-confirm-title"
+                    onClick={(e) => { if (e.target === e.currentTarget) setConfirmPending(null); }}
+                >
+                    <div className="w-full max-w-sm overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900 animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="flex items-center gap-3 border-b border-slate-100 dark:border-slate-800 px-5 py-4">
+                            <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-2xl text-sm font-black ${
+                                confirmPending.toStage === 'Finalized'
+                                    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30'
+                                    : 'bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/30'
+                            }`}>
+                                <ChevronRight size={20} className={isArabic ? 'rotate-180' : ''} />
+                            </span>
+                            <div className="min-w-0">
+                                <h2 id="viara-stage-confirm-title" className="text-sm font-black text-slate-900 dark:text-white">
+                                    {isArabic ? 'تأكيد انتقال المرحلة' : 'Confirm Stage Transition'}
+                                </h2>
+                                <p className="mt-0.5 truncate text-xs font-semibold text-slate-400">
+                                    {confirmPending.item.patient_name || confirmPending.item.mrn}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Body */}
+                        <div className="px-5 py-4 space-y-3">
+                            <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                                {isArabic
+                                    ? <>سيتم تحويل الحالة من <strong className="text-slate-900 dark:text-white">«{t(`roleCommand.stages.${confirmPending.item.queue_stage}`, { defaultValue: confirmPending.item.queue_stage })}»</strong> إلى <strong className="text-teal-700 dark:text-teal-300">«{t(`roleCommand.stages.${confirmPending.toStage}`, { defaultValue: confirmPending.toStage })}»</strong>. هل أنت متأكد؟</>
+                                    : <>Move <strong className="text-slate-900 dark:text-white">{confirmPending.item.patient_name || confirmPending.item.mrn}</strong> from <strong>«{t(`roleCommand.stages.${confirmPending.item.queue_stage}`, { defaultValue: confirmPending.item.queue_stage })}»</strong> to <strong className="text-teal-700 dark:text-teal-300">«{t(`roleCommand.stages.${confirmPending.toStage}`, { defaultValue: confirmPending.toStage })}»</strong>?</>
+                                }
+                            </p>
+                            {/* Patient context pill */}
+                            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/80 dark:border-slate-800 dark:bg-slate-800/40 px-3 py-2">
+                                <span className="font-mono text-[11px] font-black text-teal-700 dark:text-teal-400">{confirmPending.item.mrn || '—'}</span>
+                                {confirmPending.item.exam_type_name && <>
+                                    <span className="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
+                                    <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">{confirmPending.item.exam_type_name}</span>
+                                </>}
+                                {confirmPending.item.priority && confirmPending.item.priority !== 'Routine' && (
+                                    <span className={`rounded-lg px-2 py-0.5 text-[10px] font-black ${
+                                        confirmPending.item.priority === 'Emergency'
+                                            ? 'bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                                            : 'bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                    }`}>
+                                        {t(`priorities.${confirmPending.item.priority}`, { defaultValue: confirmPending.item.priority })}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-2 border-t border-slate-100 dark:border-slate-800 px-5 py-3">
+                            <button
+                                type="button"
+                                onClick={() => setConfirmPending(null)}
+                                className="flex-1 inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 transition"
+                            >
+                                {isArabic ? 'إلغاء' : 'Cancel'}
+                            </button>
+                            <button
+                                type="button"
+                                disabled={isMoving}
+                                onClick={() => {
+                                    const { item, toStage } = confirmPending;
+                                    setConfirmPending(null);
+                                    executeAdvance(item, toStage);
+                                }}
+                                className="flex-1 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-600 text-sm font-black text-white shadow-xs hover:bg-teal-500 disabled:opacity-60 transition"
+                            >
+                                {isMoving
+                                    ? <Loader2 size={15} className="animate-spin" aria-hidden="true" />
+                                    : <ChevronRight size={15} className={isArabic ? 'rotate-180' : ''} aria-hidden="true" />
+                                }
+                                {isArabic ? 'تأكيد الانتقال' : 'Confirm'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </main>
     );
 };

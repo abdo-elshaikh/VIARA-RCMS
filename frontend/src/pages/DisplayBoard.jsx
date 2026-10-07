@@ -22,6 +22,7 @@ import React, {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
+import usePageTitle from '../hooks/usePageTitle';
 import { AnimatePresence, motion, MotionConfig, useReducedMotion } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -29,46 +30,32 @@ import {
     ArrowLeft,
     ArrowRight,
     Ban,
-    BarChart3,
     Bell,
-    Check,
     CheckCircle2,
-    ChevronDown,
-    ChevronUp,
     DoorOpen,
-    ExternalLink,
     FileText,
-    Filter,
     Footprints,
     Hash,
-    Languages,
-    Layers,
     MapPin,
     Maximize,
     Megaphone,
     Minimize,
-    Monitor,
-    Moon,
     Pause,
     Play,
     QrCode,
     Radio,
     Settings2,
     ShieldCheck,
-    SlidersHorizontal,
     Smartphone,
     Sparkles,
     Stethoscope,
-    Sun,
-    User,
     Users,
     Volume2,
-    VolumeX,
     WifiOff,
     X,
 } from 'lucide-react';
-import './DisplayBoard.css';
-import './DisplayBoardDesign.css';
+import '../styles/DisplayBoard.css';
+import '../styles/DisplayBoardDesign.css';
 import { useGetDisplayBoardQuery } from '../store/api';
 import {
     ANNOUNCEMENT_PRESETS,
@@ -102,17 +89,6 @@ const HANDLED_CALLS_KEEP = 150;
 const ROOMS_PER_VIEW = 4;
 const FALLBACK_LOGO = '/center-logo.png';
 
-const ROTATION_SPEEDS = [6000, 9000, 12000];
-const ANNOUNCEMENT_RATES = [0.85, 1, 1.1];
-const ANNOUNCEMENT_REPEATS = [1, 2, 3];
-const ANNOUNCEMENT_DELAYS = [1000, 1500, 2200];
-const ANNOUNCEMENT_VOLUMES = [0.65, 0.85, 1];
-const ANNOUNCEMENT_PITCHES = [0.9, 1, 1.1];
-const ANNOUNCEMENT_LANGUAGES = ['ar', 'en', 'ar_then_en', 'en_then_ar'];
-const TOKEN_PRONUNCIATIONS = ['auto', 'natural', 'digits'];
-const ANNOUNCEMENT_STYLES = ['formal', 'calm', 'short'];
-const CALL_MODES = ['token_only', 'name_only', 'token_and_name'];
-
 /* ═══════════════════════════════════════════════════════════════════════
    UTILITIES
    ═══════════════════════════════════════════════════════════════════════ */
@@ -130,35 +106,6 @@ const storage = {
         try { localStorage.removeItem(key); } catch { /* noop */ }
     },
 };
-
-/**
- * useState mirrored into localStorage. `revive` converts the raw string,
- * `validate` guards against stale or corrupt values, `serialize` writes back.
- */
-function usePersistentState(key, fallback, { revive = (v) => v, validate = () => true } = {}) {
-    const [value, setValue] = useState(() => {
-        const raw = storage.get(key);
-        if (raw === null) return fallback;
-        const parsed = revive(raw);
-        return validate(parsed) ? parsed : fallback;
-    });
-    const ref = useRef(value);
-    ref.current = value;
-    const set = useCallback((next) => {
-        const resolved = typeof next === 'function' ? next(ref.current) : next;
-        ref.current = resolved;
-        storage.set(key, String(resolved));
-        setValue(resolved);
-    }, [key]);
-    return [value, set];
-}
-
-const numberIn = (list, fallback) => (raw) => {
-    const parsed = Number(raw);
-    return list.includes(parsed) ? parsed : fallback;
-};
-
-const enumOf = (list, fallback) => (raw) => (list.includes(raw) ? raw : fallback);
 
 const handleLogoError = (event) => {
     const img = event.currentTarget;
@@ -380,7 +327,33 @@ const PREVIEW_BOARD = {
         addressAr: 'صالة الانتظار الرئيسية',
         logoUrl: '/center-logo.png',
     },
-    config: { patientDisplayMode: 'name_and_order', callAnnouncementMode: 'token_and_name', showTicker: true },
+    config: {
+        patientDisplayMode: 'name_and_order',
+        callAnnouncementMode: 'token_and_name',
+        showTicker: true,
+        privacyMode: 'full',
+        muteAll: false,
+        quietMode: false,
+        repeatChime: true,
+        theme: 'light',
+        displayLanguage: 'ar',
+        motionMode: 'full',
+        rotationSpeed: 9000,
+        showSummaryStats: false,
+        announcementMode: null,
+        announcementPreset: 'standard',
+        announcementRate: 1,
+        announcementRepeatCount: 2,
+        announcementRepeatDelay: 1500,
+        announcementVolume: 1,
+        announcementLanguage: 'ar',
+        tokenPronunciation: 'auto',
+        announcementStyle: 'formal',
+        customTemplate: null,
+        pronunciationDictionary: null,
+        arabicVoiceURI: null,
+        englishVoiceURI: null,
+    },
     summary: { waiting: 12, inExam: 4, completedToday: 38, averageWaitingMinutes: 14 },
     announcements: [
         { id: 'ann-1', title: 'تنبيه الفحص', message: 'يرجى متابعة رقم الدور على الشاشة والتوجه إلى الجناح فور سماع النداء', tone: 'info' },
@@ -1119,517 +1092,10 @@ const TickerFooter = memo(({
 TickerFooter.displayName = 'TickerFooter';
 
 /* ═══════════════════════════════════════════════════════════════════════
-   CONTROL DRAWER — atoms
-   ═══════════════════════════════════════════════════════════════════════ */
-const CompactGroup = ({ label, icon: Icon, children }) => (
-    <div className="vb-dgroup">
-        <div className="vb-dgroup__label">
-            {Icon && <Icon size="0.95em" aria-hidden="true" />}
-            <span>{label}</span>
-        </div>
-        <div className="vb-dgroup__body">
-            {children}
-        </div>
-    </div>
-);
-
-const Chip = ({ active, icon: Icon, label, onClick }) => (
-    <button type="button" onClick={onClick} aria-pressed={active} className={`vb-chip${active ? ' vb-chip--active' : ''}`}>
-        {Icon && <Icon size="0.95em" aria-hidden="true" />}
-        <span>{label}</span>
-    </button>
-);
-
-const TestCallButton = ({ tone, icon: Icon, label, onClick }) => (
-    <button type="button" onClick={onClick} className={`vb-test-call vb-test-call--${tone}`}>
-        <Icon size="1em" aria-hidden="true" />
-        <span>{label}</span>
-    </button>
-);
-
-const TuneItem = ({ title, options, current, onSelect, format = (v) => v }) => (
-    <div className="vb-tune">
-        <span className="vb-tune__label">{title}</span>
-        <div className="vb-tune__opts" role="group" aria-label={title}>
-            {options.map((opt) => (
-                <button
-                    key={opt}
-                    type="button"
-                    onClick={() => onSelect(opt)}
-                    aria-pressed={current === opt}
-                    className={`vb-tune__opt${current === opt ? ' vb-tune__opt--active' : ''}`}
-                >
-                    {format(opt)}
-                </button>
-            ))}
-        </div>
-    </div>
-);
-
-const TogglePill = ({ active, icon: Icon, label, onClick }) => (
-    <button type="button" onClick={onClick} aria-pressed={active} className={`vb-toggle${active ? ' vb-toggle--active' : ''}`}>
-        <Icon size="0.9em" aria-hidden="true" />
-        <span>{label}</span>
-    </button>
-);
-
-const ActionCard = ({ icon: Icon, label, onClick, active }) => (
-    <button type="button" onClick={onClick} aria-pressed={active} className={`vb-action${active ? ' vb-action--active' : ''}`}>
-        <Icon size="1.1em" aria-hidden="true" />
-        <span>{label}</span>
-    </button>
-);
-
-const Field = ({ label, value, onChange, children }) => (
-    <label className="vb-field">
-        <span className="vb-field__label">{label}</span>
-        <select className="vb-field__control" value={value} onChange={(e) => onChange(e.target.value)}>
-            {children}
-        </select>
-    </label>
-);
-
-const NavLink = ({ icon: Icon, title, sub, onClick }) => (
-    <button type="button" onClick={onClick} className="vb-navlink">
-        <Icon size="1.05em" aria-hidden="true" />
-        <span className="vb-navlink__text">
-            <span className="vb-navlink__title">{title}</span>
-            <span className="vb-navlink__sub">{sub}</span>
-        </span>
-        <ExternalLink size="0.85em" className="vb-navlink__cue" aria-hidden="true" />
-    </button>
-);
-
-const PRESET_LABELS = {
-    standard: ['قياسي', 'Standard'],
-    quiet: ['هادئ', 'Quiet'],
-    concise: ['مختصر', 'Concise'],
-    clarity: ['وضوح', 'Clarity'],
-};
-
-/* ═══════════════════════════════════════════════════════════════════════
-   CONTROL DRAWER
-   ═══════════════════════════════════════════════════════════════════════ */
-const ControlDrawer = memo(({
-    open, onClose, isArabic, theme, displayLanguage,
-    onSetLanguage, onSetTheme, onToggleSound, muteAll,
-    quietMode, onToggleQuiet, isFullscreen, onToggleFullscreen,
-    isRotationPaused, onTogglePause, showSummaryStats, onToggleStats,
-    rotationSpeed, onSetSpeed, selectedRooms, allRooms, onToggleRoom, onClearRooms,
-    isDemoMode, onToggleDemoMode,
-    callAnnouncementMode, onSetCallAnnouncementMode,
-    announcementPreset, onApplyPreset,
-    announcementRate, onSetRate, announcementRepeatCount, onSetRepeats,
-    announcementRepeatDelay, onSetDelay, announcementVolume, onSetVolume,
-    repeatChime, onToggleRepeatChime,
-    announcementLanguage, onSetLanguageMode, tokenPronunciation, onSetDigits,
-    announcementStyle, onSetStyle,
-    customTemplate, onSetTemplate, pronunciationDictionary, onSetDictionary,
-    arabicVoiceURI, englishVoiceURI, availableVoices, onSetArabicVoice, onSetEnglishVoice,
-    onTestCall, onTestChime,
-}) => {
-    const t = (ar, en) => (isArabic ? ar : en);
-    const slideFrom = isArabic ? '100%' : '-100%';
-    const drawerRef = useRef(null);
-    const closeRef = useRef(null);
-    const [activeTab, setActiveTab] = useState('audio');
-    const [showTemplate, setShowTemplate] = useState(false);
-
-    // Focus trap + initial focus + focus restore while the drawer is open.
-    useEffect(() => {
-        if (!open) return undefined;
-        const previouslyFocused = document.activeElement;
-        const frame = requestAnimationFrame(() => closeRef.current?.focus());
-        const trap = (event) => {
-            if (event.key !== 'Tab' || !drawerRef.current) return;
-            const focusable = Array.from(drawerRef.current.querySelectorAll(
-                'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
-            ));
-            if (focusable.length === 0) return;
-            const first = focusable[0];
-            const last = focusable[focusable.length - 1];
-            if (event.shiftKey && document.activeElement === first) {
-                event.preventDefault();
-                last.focus();
-            } else if (!event.shiftKey && document.activeElement === last) {
-                event.preventDefault();
-                first.focus();
-            }
-        };
-        document.addEventListener('keydown', trap);
-        return () => {
-            cancelAnimationFrame(frame);
-            document.removeEventListener('keydown', trap);
-            previouslyFocused?.focus?.();
-        };
-    }, [open]);
-
-    const tabs = [
-        { id: 'audio', icon: Volume2, label: t('الصوت والنداء', 'Voice & Call') },
-        { id: 'display', icon: Monitor, label: t('الشاشة والغرف', 'Display & Suites') },
-        { id: 'advanced', icon: Settings2, label: t('متقدم وروابط', 'Advanced') },
-    ];
-
-    const callModes = [
-        { value: 'token_and_name', icon: Layers, label: t('الدور + الاسم', 'Token + Name') },
-        { value: 'token_only', icon: Hash, label: t('رقم الدور فقط', 'Token only') },
-        { value: 'name_only', icon: User, label: t('الاسم فقط', 'Name only') },
-    ];
-
-    return (
-        <AnimatePresence>
-            {open && (
-                <>
-                    <motion.div
-                        key="backdrop"
-                        className="vb-drawer-backdrop"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.22 }}
-                        onClick={onClose}
-                        aria-hidden="true"
-                    />
-                    <motion.aside
-                        ref={drawerRef}
-                        key="drawer"
-                        className="vb-drawer"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-label={t('لوحة تحكم شاشة العرض', 'Display controls')}
-                        dir={isArabic ? 'rtl' : 'ltr'}
-                        initial={{ x: slideFrom }}
-                        animate={{ x: 0 }}
-                        exit={{ x: slideFrom }}
-                        transition={{ type: 'spring', damping: 28, stiffness: 320 }}
-                    >
-                        <div className="vb-drawer__head">
-                            <div className="vb-drawer__headings">
-                                <SlidersHorizontal size="1.15em" aria-hidden="true" />
-                                <div>
-                                    <h2>{t('تحكم الشاشة', 'Display Controls')}</h2>
-                                    <span>{t('إعدادات الصوت، العرض، والأجنحة', 'Audio, display & suites')}</span>
-                                </div>
-                            </div>
-                            <div className="vb-drawer__quick">
-                                <button type="button" className="vb-drawer__icon-btn" onClick={() => onSetLanguage(displayLanguage === 'ar' ? 'en' : 'ar')}>
-                                    {displayLanguage === 'ar' ? 'EN' : 'ع'}
-                                </button>
-                                <button
-                                    type="button"
-                                    className="vb-drawer__icon-btn"
-                                    onClick={() => onSetTheme(theme === 'dark' ? 'light' : 'dark')}
-                                    aria-label={theme === 'dark' ? t('الوضع الفاتح', 'Light mode') : t('الوضع الداكن', 'Dark mode')}
-                                >
-                                    {theme === 'dark' ? <Sun size="1.05em" /> : <Moon size="1.05em" />}
-                                </button>
-                                <button
-                                    type="button"
-                                    className={`vb-drawer__icon-btn${muteAll ? ' vb-drawer__icon-btn--muted' : ''}`}
-                                    onClick={onToggleSound}
-                                    aria-label={muteAll ? t('إلغاء الكتم', 'Unmute') : t('كتم الصوت', 'Mute')}
-                                >
-                                    {muteAll ? <VolumeX size="1.05em" /> : <Volume2 size="1.05em" />}
-                                </button>
-                                <button
-                                    type="button"
-                                    className="vb-drawer__icon-btn"
-                                    onClick={onToggleFullscreen}
-                                    aria-label={isFullscreen ? t('إنهاء ملء الشاشة', 'Exit fullscreen') : t('ملء الشاشة', 'Fullscreen')}
-                                >
-                                    {isFullscreen ? <Minimize size="1.05em" /> : <Maximize size="1.05em" />}
-                                </button>
-                                <button ref={closeRef} type="button" className="vb-drawer__icon-btn" onClick={onClose} aria-label={t('إغلاق', 'Close')}>
-                                    <X size="1.15em" />
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="vb-drawer__tabs" role="tablist">
-                            {tabs.map(({ id, icon: Icon, label }) => (
-                                <button
-                                    key={id}
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={activeTab === id}
-                                    onClick={() => setActiveTab(id)}
-                                    className={`vb-drawer__tab${activeTab === id ? ' vb-drawer__tab--active' : ''}`}
-                                >
-                                    <Icon size="1em" aria-hidden="true" />
-                                    <span>{label}</span>
-                                </button>
-                            ))}
-                        </div>
-
-                        <div className="vb-drawer__body">
-                            {activeTab === 'audio' && (
-                                <>
-                                    <CompactGroup label={t('نمط النداء الآلي', 'Announcement mode')} icon={Megaphone}>
-                                        <div className="vb-drow vb-drow--3">
-                                            {callModes.map(({ value, icon, label }) => (
-                                                <Chip
-                                                    key={value}
-                                                    active={callAnnouncementMode === value}
-                                                    icon={icon}
-                                                    label={label}
-                                                    onClick={() => onSetCallAnnouncementMode(value)}
-                                                />
-                                            ))}
-                                        </div>
-                                    </CompactGroup>
-
-                                    <CompactGroup label={t('القوالب الجاهزة', 'Presets')} icon={Sparkles}>
-                                        <div className="vb-drow vb-drow--4">
-                                            {Object.keys(ANNOUNCEMENT_PRESETS).map((preset) => (
-                                                <Chip
-                                                    key={preset}
-                                                    active={announcementPreset === preset}
-                                                    label={t(...(PRESET_LABELS[preset] || [preset, preset]))}
-                                                    onClick={() => onApplyPreset(preset)}
-                                                />
-                                            ))}
-                                        </div>
-                                    </CompactGroup>
-
-                                    <CompactGroup label={t('تجارب النداء الفورية', 'Live test calls')} icon={Bell}>
-                                        <div className="vb-drow vb-drow--test">
-                                            <TestCallButton
-                                                tone="male"
-                                                icon={Megaphone}
-                                                label={t('نداء: السيد', 'Call: Mr.')}
-                                                onClick={() => onTestCall('105', t('محمد أحمد', 'Mohamed Ahmed'), t('جناح 03', 'Suite 03'), 'male')}
-                                            />
-                                            <TestCallButton
-                                                tone="female"
-                                                icon={Megaphone}
-                                                label={t('نداء: السيدة', 'Call: Ms.')}
-                                                onClick={() => onTestCall('108', t('سارة محمود', 'Sarah Mahmoud'), t('جناح 02', 'Suite 02'), 'female')}
-                                            />
-                                            <TestCallButton tone="chime" icon={Bell} label={t('النغمة', 'Chime')} onClick={onTestChime} />
-                                        </div>
-                                    </CompactGroup>
-
-                                    <CompactGroup label={t('ضبط الصوت والتكرار', 'Voice tuning')} icon={SlidersHorizontal}>
-                                        <div className="vb-dgrid vb-dgrid--2">
-                                            <TuneItem title={t('السرعة', 'Speed')} options={ANNOUNCEMENT_RATES} current={announcementRate} onSelect={onSetRate} format={(v) => `${v}x`} />
-                                            <TuneItem title={t('التكرار', 'Repeats')} options={ANNOUNCEMENT_REPEATS} current={announcementRepeatCount} onSelect={onSetRepeats} format={(v) => `${v}x`} />
-                                            <TuneItem title={t('الفاصل', 'Delay')} options={ANNOUNCEMENT_DELAYS} current={announcementRepeatDelay} onSelect={onSetDelay} format={(v) => `${v / 1000}s`} />
-                                            <TuneItem title={t('المستوى', 'Volume')} options={ANNOUNCEMENT_VOLUMES} current={announcementVolume} onSelect={onSetVolume} format={(v) => `${Math.round(v * 100)}%`} />
-                                        </div>
-                                        <div className="vb-dgrid vb-dgrid--2">
-                                            <TogglePill
-                                                active={quietMode}
-                                                icon={Moon}
-                                                onClick={onToggleQuiet}
-                                                label={quietMode ? t('الوضع الهادئ: مفعل', 'Quiet: On') : t('الوضع الهادئ', 'Quiet: Off')}
-                                            />
-                                            <TogglePill
-                                                active={repeatChime}
-                                                icon={Bell}
-                                                onClick={onToggleRepeatChime}
-                                                label={repeatChime ? t('نغمة مع التكرار', 'Chime repeats') : t('نغمة أولى فقط', '1st chime only')}
-                                            />
-                                        </div>
-                                    </CompactGroup>
-                                </>
-                            )}
-
-                            {activeTab === 'display' && (
-                                <>
-                                    <CompactGroup label={t('تدوير الشاشة والإحصائيات', 'Rotation & stats')} icon={Monitor}>
-                                        <div className="vb-dgrid vb-dgrid--2">
-                                            <ActionCard
-                                                icon={isRotationPaused ? Play : Pause}
-                                                label={isRotationPaused ? t('استئناف التدوير', 'Resume') : t('إيقاف التدوير', 'Pause')}
-                                                onClick={onTogglePause}
-                                            />
-                                            <ActionCard
-                                                icon={BarChart3}
-                                                label={showSummaryStats ? t('إخفاء الإحصائيات', 'Hide stats') : t('إظهار الإحصائيات', 'Show stats')}
-                                                active={showSummaryStats}
-                                                onClick={onToggleStats}
-                                            />
-                                        </div>
-                                        <TuneItem title={t('سرعة تدوير الأجنحة', 'Rotation interval')} options={ROTATION_SPEEDS} current={rotationSpeed} onSelect={onSetSpeed} format={(v) => `${v / 1000}s`} />
-                                    </CompactGroup>
-
-                                    <CompactGroup label={t('تصفية الأجنحة المعروضة', 'Filter suites')} icon={Filter}>
-                                        {selectedRooms.length > 0 && (
-                                            <button type="button" className="vb-dlink" onClick={onClearRooms}>
-                                                {t('عرض الكل', 'Show all')}
-                                            </button>
-                                        )}
-                                        <div className="vb-drooms">
-                                            {allRooms.map((room) => {
-                                                const code = stripRoomLabel(room.room_number);
-                                                const isSelected = selectedRooms.includes(code) || selectedRooms.includes(String(room.room_number));
-                                                const checked = selectedRooms.length > 0 && isSelected;
-                                                return (
-                                                    <button
-                                                        key={room.room_id || room.room_number}
-                                                        type="button"
-                                                        onClick={() => onToggleRoom(code)}
-                                                        aria-pressed={checked}
-                                                        className={`vb-droom${checked ? ' vb-droom--checked' : ''}`}
-                                                    >
-                                                        <span className="vb-droom__code">{code}</span>
-                                                        <span className="vb-droom__name">
-                                                            {room.room_name || `${t('جناح', 'Suite')} ${room.room_number}`}
-                                                        </span>
-                                                        {checked && <Check size="0.9em" aria-hidden="true" />}
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </CompactGroup>
-
-                                    <CompactGroup label={t('وضع المعاينة الآمنة', 'Safe Demo Mode')} icon={Radio}>
-                                        <div className="vb-ddemo">
-                                            <p>{t('يعرض كافة الأجنحة المرجعية دون المساس بالبيانات الحية.', 'Shows reference suites without touching live patient data.')}</p>
-                                            <button
-                                                type="button"
-                                                onClick={() => onToggleDemoMode()}
-                                                className={`vb-ddemo__btn${isDemoMode ? ' vb-ddemo__btn--on' : ''}`}
-                                            >
-                                                {isDemoMode ? t('إنهاء المعاينة', 'Exit') : t('تفعيل', 'Enable')}
-                                            </button>
-                                        </div>
-                                    </CompactGroup>
-                                </>
-                            )}
-
-                            {activeTab === 'advanced' && (
-                                <>
-                                    <CompactGroup label={t('خيارات لغة وصيغة النداء', 'Speech options')} icon={Sparkles}>
-                                        <div className="vb-dgrid vb-dgrid--3">
-                                            <Field label={t('اللغة', 'Language')} value={announcementLanguage} onChange={onSetLanguageMode}>
-                                                <option value="ar">{t('العربية', 'Arabic')}</option>
-                                                <option value="en">English</option>
-                                                <option value="ar_then_en">{t('عربي ثم إنجليزي', 'Ar then En')}</option>
-                                                <option value="en_then_ar">{t('إنجليزي ثم عربي', 'En then Ar')}</option>
-                                            </Field>
-                                            <Field label={t('نطق الرقم', 'Digits')} value={tokenPronunciation} onChange={onSetDigits}>
-                                                <option value="auto">{t('تلقائي', 'Auto')}</option>
-                                                <option value="natural">{t('طبيعي', 'Natural')}</option>
-                                                <option value="digits">{t('رقمًا رقمًا', 'Digits')}</option>
-                                            </Field>
-                                            <Field label={t('الصيغة', 'Style')} value={announcementStyle} onChange={onSetStyle}>
-                                                <option value="formal">{t('رسمي', 'Formal')}</option>
-                                                <option value="calm">{t('هادئ', 'Calm')}</option>
-                                                <option value="short">{t('مختصر', 'Short')}</option>
-                                            </Field>
-                                        </div>
-                                    </CompactGroup>
-
-                                    {availableVoices.length > 0 && (
-                                        <CompactGroup label={t('أصوات النظام', 'System voices')} icon={Languages}>
-                                            <div className="vb-dgrid vb-dgrid--2">
-                                                <Field label={t('الصوت العربي', 'Arabic Voice')} value={arabicVoiceURI} onChange={onSetArabicVoice}>
-                                                    <option value="">{t('تلقائي (الأفضل)', 'Auto')}</option>
-                                                    {availableVoices.filter((v) => v.lang.toLowerCase().startsWith('ar')).map((v) => (
-                                                        <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>
-                                                    ))}
-                                                </Field>
-                                                <Field label={t('الصوت الإنجليزي', 'English Voice')} value={englishVoiceURI} onChange={onSetEnglishVoice}>
-                                                    <option value="">{t('تلقائي (الأفضل)', 'Auto')}</option>
-                                                    {availableVoices.filter((v) => v.lang.toLowerCase().startsWith('en')).map((v) => (
-                                                        <option key={v.voiceURI} value={v.voiceURI}>{v.name}</option>
-                                                    ))}
-                                                </Field>
-                                            </div>
-                                        </CompactGroup>
-                                    )}
-
-                                    <CompactGroup label={t('القالب المخصص وقاموس النطق', 'Custom template & dictionary')} icon={Settings2}>
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowTemplate((s) => !s)}
-                                            className="vb-dcollapse"
-                                            aria-expanded={showTemplate}
-                                        >
-                                            <span>{showTemplate ? t('إخفاء المحرر', 'Hide editor') : t('إظهار المحرر', 'Show editor')}</span>
-                                            {showTemplate ? <ChevronUp size="1em" aria-hidden="true" /> : <ChevronDown size="1em" aria-hidden="true" />}
-                                        </button>
-
-                                        <AnimatePresence initial={false}>
-                                            {showTemplate && (
-                                                <motion.div
-                                                    initial={{ opacity: 0, height: 0 }}
-                                                    animate={{ opacity: 1, height: 'auto' }}
-                                                    exit={{ opacity: 0, height: 0 }}
-                                                    transition={{ duration: 0.2 }}
-                                                    style={{ overflow: 'hidden' }}
-                                                >
-                                                    <div className="vb-dtemplate">
-                                                        <label className="vb-field">
-                                                            <span className="vb-field__label">{t('قالب النداء', 'Template')}</span>
-                                                            <input
-                                                                className="vb-field__input"
-                                                                type="text"
-                                                                value={customTemplate}
-                                                                onChange={(e) => onSetTemplate(e.target.value)}
-                                                                placeholder="{title} {patient}، الدور {token}، جناح {room}"
-                                                            />
-                                                        </label>
-                                                        <label className="vb-field">
-                                                            <span className="vb-field__label">{t('قاموس النطق (كلمة=نطق)', 'Dictionary')}</span>
-                                                            <input
-                                                                className="vb-field__input"
-                                                                type="text"
-                                                                value={pronunciationDictionary}
-                                                                onChange={(e) => onSetDictionary(e.target.value)}
-                                                                placeholder="VIARA=فيارا"
-                                                            />
-                                                        </label>
-                                                    </div>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
-                                    </CompactGroup>
-
-                                    <CompactGroup label={t('روابط الإدارة والإعدادات', 'Management links')} icon={ExternalLink}>
-                                        <NavLink
-                                            icon={SlidersHorizontal}
-                                            title={t('تحكم الشاشات والإعلانات', 'Display & Notices')}
-                                            sub="/display/control"
-                                            onClick={() => window.open('/display/control', '_blank', 'noopener,noreferrer')}
-                                        />
-                                        <NavLink
-                                            icon={Settings2}
-                                            title={t('إعدادات النظام العامة', 'System Settings')}
-                                            sub="/settings"
-                                            onClick={() => window.open('/settings', '_blank', 'noopener,noreferrer')}
-                                        />
-                                    </CompactGroup>
-                                </>
-                            )}
-                        </div>
-
-                        <div className="vb-drawer__foot">
-                            <span className="vb-drawer__hint">
-                                <kbd>Shift</kbd> + <kbd>D</kbd> {t('للتبديل السريع', 'toggle')}
-                            </span>
-                            <button type="button" className="vb-drawer__done" onClick={onClose}>
-                                {t('تم وإغلاق', 'Done')}
-                            </button>
-                        </div>
-                    </motion.aside>
-                </>
-            )}
-        </AnimatePresence>
-    );
-});
-ControlDrawer.displayName = 'ControlDrawer';
-
-/* ═══════════════════════════════════════════════════════════════════════
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════════════════ */
 const DisplayBoard = () => {
     const systemReducedMotion = useReducedMotion();
-    const [motionMode, setMotionMode] = usePersistentState('viara_tv_motion', 'full', {
-        revive: enumOf(['full', 'reduced'], 'full'),
-    });
-    const reduceMotion = systemReducedMotion || motionMode === 'reduced';
     const { i18n } = useTranslation('display');
     const [searchParams, setSearchParams] = useSearchParams();
 
@@ -1655,19 +1121,27 @@ const DisplayBoard = () => {
         });
     }, [setSearchParams]);
 
+    /* ── Live data (skipped in preview) ─────────────────────────────────── */
+    const { data: board, isLoading, isError, fulfilledTimeStamp } = useGetDisplayBoardQuery(undefined, {
+        pollingInterval: POLL_INTERVAL_MS,
+        refetchOnFocus: true,
+        refetchOnReconnect: true,
+        skip: isPreview,
+    });
+    const displayBoard = isPreview ? PREVIEW_BOARD : board;
+
+    /* ── Config-driven settings (moved from localStorage to backend) ──── */
+    const cfg = displayBoard?.config || PREVIEW_BOARD.config;
+    const urlTheme = searchParams.get('theme');
+    const theme = urlTheme || cfg.theme || 'light';
+
     /* ── Language ───────────────────────────────────────────────────────── */
     const systemLanguage = i18n.language?.startsWith('ar') ? 'ar' : 'en';
-    const [displayLanguage, handleSetLanguage] = usePersistentState('viara_tv_language', systemLanguage, {
-        revive: enumOf(['ar', 'en'], systemLanguage),
-    });
-    useEffect(() => {
-        const requested = searchParams.get('lang');
-        if (requested === 'ar' || requested === 'en') handleSetLanguage(requested);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
+    const urlLang = searchParams.get('lang');
+    const displayLanguage = urlLang || cfg.displayLanguage || systemLanguage;
     const isArabic = displayLanguage === 'ar';
     const t = useCallback((ar, en) => (isArabic ? ar : en), [isArabic]);
+    usePageTitle(t('شاشة الانتظار والنداء الآلي', 'Clinical Signage & Patient Calling Board'));
 
     useEffect(() => {
         const previousLanguage = document.documentElement.lang;
@@ -1676,15 +1150,6 @@ const DisplayBoard = () => {
     }, [displayLanguage]);
 
     /* ── Theme (data-theme + tailwind .dark for coexisting components) ──── */
-    const [theme, handleSetTheme] = usePersistentState('viara_tv_theme', 'light', {
-        revive: enumOf(['dark', 'light'], 'light'),
-    });
-    useEffect(() => {
-        const urlTheme = searchParams.get('theme');
-        if (urlTheme === 'dark' || urlTheme === 'light') handleSetTheme(urlTheme);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
-
     useEffect(() => {
         const root = document.documentElement;
         root.classList.add('vb-lock');
@@ -1698,8 +1163,6 @@ const DisplayBoard = () => {
         const prevBg = document.body.style.backgroundColor;
 
         root.setAttribute('data-theme', theme);
-        // Keep Tailwind's class-based dark mode in sync so components rendered
-        // alongside the board pick up the right palette.
         root.classList.toggle('dark', theme === 'dark');
         document.body.style.backgroundColor = theme === 'dark' ? '#051210' : '#eef7f6';
 
@@ -1710,6 +1173,23 @@ const DisplayBoard = () => {
             document.body.style.backgroundColor = prevBg;
         };
     }, [theme]);
+
+    /* ── Motion mode: local override initialized from config ────────────── */
+    const cfgMotionMode = cfg.motionMode || 'full';
+    const [motionMode, setMotionMode] = useState(() => storage.get('viara_tv_motion', cfgMotionMode));
+    useEffect(() => {
+        if (!storage.get('viara_tv_motion')) {
+            setMotionMode(cfgMotionMode);
+        }
+    }, [cfgMotionMode]);
+    const handleSetMotionMode = useCallback((mode) => {
+        setMotionMode((prev) => {
+            const next = typeof mode === 'function' ? mode(prev) : mode;
+            storage.set('viara_tv_motion', next);
+            return next;
+        });
+    }, []);
+    const reduceMotion = systemReducedMotion || motionMode === 'reduced';
 
     /* ── Clock / connectivity / fullscreen ──────────────────────────────── */
     const [now, setNow] = useState(() => new Date());
@@ -1743,24 +1223,47 @@ const DisplayBoard = () => {
         } catch { /* denied or unsupported */ }
     }, []);
 
-    /* ── Sound settings (persisted) ─────────────────────────────────────── */
-    const [muteAll, setMuteAll] = usePersistentState('viara_tv_mute', false, { revive: (v) => v === 'true' });
-    const [quietMode, setQuietMode] = usePersistentState('viara_tv_quiet', false, { revive: (v) => v === 'true' });
-    const [repeatChime, setRepeatChime] = usePersistentState('viara_tv_repeat_chime', true, { revive: (v) => v !== 'false' });
-    const [announcementRate, setAnnouncementRate] = usePersistentState('viara_tv_announcement_rate', 1, { revive: numberIn(ANNOUNCEMENT_RATES, 1) });
-    const [announcementRepeatCount, setAnnouncementRepeatCount] = usePersistentState('viara_tv_announcement_repeats', 2, { revive: numberIn(ANNOUNCEMENT_REPEATS, 2) });
-    const [announcementRepeatDelay, setAnnouncementRepeatDelay] = usePersistentState('viara_tv_announcement_delay', 1500, { revive: numberIn(ANNOUNCEMENT_DELAYS, 1500) });
-    const [announcementVolume, setAnnouncementVolume] = usePersistentState('viara_tv_announcement_volume', 1, { revive: numberIn(ANNOUNCEMENT_VOLUMES, 1) });
-    const [announcementPitch] = usePersistentState('viara_tv_announcement_pitch', 1, { revive: numberIn(ANNOUNCEMENT_PITCHES, 1) });
-    const [announcementModeOverride, setAnnouncementModeOverride] = usePersistentState('viara_tv_announcement_mode', null, { revive: enumOf(CALL_MODES, null) });
-    const [announcementPreset, setAnnouncementPreset] = usePersistentState('viara_tv_announcement_preset', 'standard');
-    const [announcementLanguage, setAnnouncementLanguage] = usePersistentState('viara_tv_announcement_language', 'ar', { revive: enumOf(ANNOUNCEMENT_LANGUAGES, 'ar') });
-    const [tokenPronunciation, setTokenPronunciation] = usePersistentState('viara_tv_token_pronunciation', 'auto', { revive: enumOf(TOKEN_PRONUNCIATIONS, 'auto') });
-    const [announcementStyle, setAnnouncementStyle] = usePersistentState('viara_tv_announcement_style', 'formal', { revive: enumOf(ANNOUNCEMENT_STYLES, 'formal') });
-    const [customTemplate, setCustomTemplate] = usePersistentState('viara_tv_custom_template', '');
-    const [pronunciationDictionary, setPronunciationDictionary] = usePersistentState('viara_tv_pronunciation_dictionary', '');
-    const [arabicVoiceURI, setArabicVoiceURI] = usePersistentState('viara_tv_arabic_voice', '');
-    const [englishVoiceURI, setEnglishVoiceURI] = usePersistentState('viara_tv_english_voice', '');
+    /* ── Prevent display sleep (Screen Wake Lock API) ─────────────────────── */
+    useEffect(() => {
+        let wakeLock = null;
+        const requestWakeLock = async () => {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                } catch { /* unsupported or battery policy */ }
+            }
+        };
+        requestWakeLock();
+        const handleVisibility = () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                requestWakeLock();
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibility);
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibility);
+            wakeLock?.release().catch(() => {});
+        };
+    }, []);
+
+    /* ── Sound settings (from config) ───────────────────────────────────── */
+    const muteAll = cfg.muteAll === true;
+    const quietMode = cfg.quietMode === true;
+    const repeatChime = cfg.repeatChime !== false;
+    const announcementRate = cfg.announcementRate || 1;
+    const announcementRepeatCount = cfg.announcementRepeatCount || 2;
+    const announcementRepeatDelay = cfg.announcementRepeatDelay || 1500;
+    const announcementVolume = cfg.announcementVolume || 1;
+    const announcementPitch = 1;
+    const announcementMode = cfg.announcementMode || null;
+    const announcementPreset = cfg.announcementPreset || 'standard';
+    const announcementLanguage = cfg.announcementLanguage || 'ar';
+    const tokenPronunciation = cfg.tokenPronunciation || 'auto';
+    const announcementStyle = cfg.announcementStyle || 'formal';
+    const customTemplate = cfg.customTemplate || '';
+    const pronunciationDictionary = cfg.pronunciationDictionary || '';
+    const arabicVoiceURI = cfg.arabicVoiceURI || '';
+    const englishVoiceURI = cfg.englishVoiceURI || '';
 
     const soundEnabled = !muteAll;
     const voiceEnabled = !muteAll && !quietMode;
@@ -1776,10 +1279,9 @@ const DisplayBoard = () => {
     }, []);
 
     /* ── Display settings / UI state ────────────────────────────────────── */
-    const [rotationSpeed, handleSetRotationSpeed] = usePersistentState('viara_tv_rotation_speed', ROOM_PAGE_INTERVAL_MS, { revive: numberIn(ROTATION_SPEEDS, ROOM_PAGE_INTERVAL_MS) });
+    const rotationSpeed = cfg.rotationSpeed || ROOM_PAGE_INTERVAL_MS;
+    const showSummaryStats = cfg.showSummaryStats === true;
     const [isRotationPaused, setIsRotationPaused] = useState(false);
-    const [showSummaryStats, setShowSummaryStats] = useState(false);
-    const [showControlDrawer, setShowControlDrawer] = useState(false);
     const [headerControlsVisible, setHeaderControlsVisible] = useState(false);
     const headerToolsRef = useRef(null);
     const headerToolsTimerRef = useRef(null);
@@ -1801,58 +1303,14 @@ const DisplayBoard = () => {
     }, []);
     useEffect(() => () => clearTimeout(headerToolsTimerRef.current), []);
 
-    const toggleSound = useCallback(() => {
-        setMuteAll((prev) => !prev);
-        cancelAnnouncement();
-    }, [setMuteAll]);
-
-    const toggleQuietMode = useCallback(() => {
-        setQuietMode((prev) => {
-            if (!prev) cancelAnnouncement();
-            return !prev;
-        });
-    }, [setQuietMode]);
-
-    const toggleRepeatChime = useCallback(() => setRepeatChime((prev) => !prev), [setRepeatChime]);
-
-    /* Preset-aware tuners: touching a value drops the preset label to custom */
-    const tuner = useCallback((setter) => (value) => {
-        setAnnouncementPreset('custom');
-        setter(value);
-    }, [setAnnouncementPreset]);
-
-    const handleSetAnnouncementRate = useMemo(() => tuner(setAnnouncementRate), [tuner, setAnnouncementRate]);
-    const handleSetAnnouncementRepeats = useMemo(() => tuner(setAnnouncementRepeatCount), [tuner, setAnnouncementRepeatCount]);
-    const handleSetAnnouncementDelay = useMemo(() => tuner(setAnnouncementRepeatDelay), [tuner, setAnnouncementRepeatDelay]);
-    const handleSetAnnouncementVolume = useMemo(() => tuner(setAnnouncementVolume), [tuner, setAnnouncementVolume]);
-
-    const handleApplyPreset = useCallback((name) => {
-        const preset = ANNOUNCEMENT_PRESETS[name];
-        if (!preset) return;
-        setAnnouncementPreset(name);
-        setAnnouncementRate(preset.speechRate);
-        setAnnouncementRepeatCount(preset.repeatCount);
-        setAnnouncementRepeatDelay(preset.repeatDelayMs);
-        setAnnouncementVolume(preset.speechVolume);
-        if (preset.tokenPronunciation) setTokenPronunciation(preset.tokenPronunciation);
-    }, [
-        setAnnouncementPreset, setAnnouncementRate, setAnnouncementRepeatCount,
-        setAnnouncementRepeatDelay, setAnnouncementVolume, setTokenPronunciation,
-    ]);
-
-    const handleSetCallMode = useCallback((mode) => {
-        if (!CALL_MODES.includes(mode)) return;
-        setAnnouncementModeOverride(mode);
-    }, [setAnnouncementModeOverride]);
-
     /* ── Keyboard shortcuts ─────────────────────────────────────────────── */
     useEffect(() => {
         const onKey = (event) => {
             if (event.key === 'Tab') headerKeyboardFocusRef.current = true;
-            if (event.key === 'Escape') setShowControlDrawer(false);
-            if (event.shiftKey && event.key.toLowerCase() === 'd') {
-                event.preventDefault();
-                setShowControlDrawer((open) => !open);
+            if (event.key === 'Escape') {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                }
             }
         };
         window.addEventListener('keydown', onKey);
@@ -1877,15 +1335,6 @@ const DisplayBoard = () => {
             window.removeEventListener('touchstart', gesture);
         };
     }, [muteAll]);
-
-    /* ── Live data (skipped in preview) ─────────────────────────────────── */
-    const { data: board, isLoading, isError, fulfilledTimeStamp } = useGetDisplayBoardQuery(undefined, {
-        pollingInterval: POLL_INTERVAL_MS,
-        refetchOnFocus: true,
-        refetchOnReconnect: true,
-        skip: isPreview,
-    });
-    const displayBoard = isPreview ? PREVIEW_BOARD : board;
 
     const lastUpdatedAt = fulfilledTimeStamp
         || (displayBoard?.generatedAt ? new Date(displayBoard.generatedAt).getTime() : 0);
@@ -1959,9 +1408,9 @@ const DisplayBoard = () => {
     const privacyMode = displayBoard?.config?.privacyMode || 'full';
     const showPatientNames = namesAllowed && privacyMode !== 'token_only';
     const configuredCallMode = displayBoard?.config?.callAnnouncementMode || 'token_only';
-    // Local override only applies while names are allowed: token-only display
-    // can never name patients, whatever the on-site drawer says.
-    const callAnnouncementMode = showPatientNames ? (announcementModeOverride || configuredCallMode) : 'token_only';
+    // Config override only applies while names are allowed: token-only display
+    // can never name patients, whatever the control page says.
+    const callAnnouncementMode = showPatientNames ? (announcementMode || configuredCallMode) : 'token_only';
 
     const formatPatientName = useCallback((name) => {
         if (!name) return '';
@@ -2071,19 +1520,6 @@ const DisplayBoard = () => {
         arabicVoiceURI, callAnnouncementMode, customTemplate, englishVoiceURI, isArabic,
         pronunciationDictionary, repeatChime, tokenPronunciation,
     ]);
-
-    const handleTestCall = useCallback((tokenNumber, patientName, roomName, gender) => {
-        announcePatientCall({
-            ...announcementOptions,
-            tokenNumber,
-            patientName,
-            roomName,
-            gender,
-            withChime: true,
-        });
-    }, [announcementOptions]);
-
-    const handleTestChime = useCallback(() => playHospitalChime(), []);
 
     /* ── Call queue processing ──────────────────────────────────────────── */
     const processNextCall = useCallback(() => {
@@ -2275,9 +1711,6 @@ const DisplayBoard = () => {
                 )}
 
                 <header className="vb-header" onPointerMove={revealHeaderControls} onPointerDown={revealHeaderControls}>
-                    <button type="button" className="vb-header-access" onFocus={() => { headerKeyboardFocusRef.current = true; revealHeaderControls(); }} onClick={() => setShowControlDrawer(true)} aria-keyshortcuts="Shift+D">
-                        {t('إعدادات الشاشة', 'Display settings')}
-                    </button>
                     <div className="vb-header__brand">
                         <div className="vb-header__logo-card">
                             <img src={centerLogo} alt={centerName} className="vb-header__logo" onError={handleLogoError} />
@@ -2317,47 +1750,7 @@ const DisplayBoard = () => {
                     </div>
 
                     <div className="vb-header-tools" ref={headerToolsRef} hidden={!headerControlsVisible} onFocusCapture={revealHeaderControls} onBlurCapture={revealHeaderControls} role="group" aria-label={t('أدوات التحكم بالشاشة', 'Display controls')}>
-                        <button
-                            type="button"
-                            className="vb-control-pill"
-                            onClick={() => setShowControlDrawer(true)}
-                            title={t('لوحة تحكم الشاشة (Shift+D)', 'Display Controls (Shift+D)')}
-                            aria-keyshortcuts="Shift+D"
-                        >
-                            <SlidersHorizontal size="1.05em" aria-hidden="true" />
-                            <span>{t('لوحة التحكم', 'Control Panel')}</span>
-                        </button>
-
                         <div className="vb-dock">
-                            <button
-                                type="button"
-                                className={`vb-dock__btn${muteAll ? ' vb-dock__btn--muted' : ''}`}
-                                onClick={toggleSound}
-                                title={muteAll ? t('إلغاء كتم الصوت', 'Unmute') : t('كتم الصوت', 'Mute')}
-                                aria-label={muteAll ? t('إلغاء كتم الصوت', 'Unmute') : t('كتم الصوت', 'Mute')}
-                            >
-                                {muteAll ? <VolumeX size="1.05em" /> : <Volume2 size="1.05em" />}
-                            </button>
-
-                            <button
-                                type="button"
-                                className="vb-dock__btn vb-dock__btn--lang"
-                                onClick={() => handleSetLanguage(isArabic ? 'en' : 'ar')}
-                                aria-label={isArabic ? 'Switch to English' : 'التبديل إلى العربية'}
-                            >
-                                <Languages size="1.02em" aria-hidden="true" />
-                                <span className="vb-dock__btn-label">{isArabic ? 'EN' : 'ع'}</span>
-                            </button>
-
-                            <button
-                                type="button"
-                                className="vb-dock__btn"
-                                onClick={() => handleSetTheme(theme === 'dark' ? 'light' : 'dark')}
-                                aria-label={theme === 'dark' ? t('الوضع الفاتح', 'Light mode') : t('الوضع الداكن', 'Dark mode')}
-                            >
-                                {theme === 'dark' ? <Sun size="1.05em" /> : <Moon size="1.05em" />}
-                            </button>
-
                             <button
                                 type="button"
                                 className="vb-dock__btn"
@@ -2366,11 +1759,10 @@ const DisplayBoard = () => {
                             >
                                 {isFullscreen ? <Minimize size="1.05em" /> : <Maximize size="1.05em" />}
                             </button>
-                            <button type="button" className={`vb-dock__btn ${reduceMotion ? 'vb-dock__btn--active' : ''}`} onClick={() => setMotionMode(mode => mode === 'full' ? 'reduced' : 'full')} aria-pressed={reduceMotion} disabled={Boolean(systemReducedMotion)} aria-label={t('تقليل الحركة', 'Reduce motion')} title={t('تقليل الحركة', 'Reduce motion')}>
+                            <button type="button" className={`vb-dock__btn ${reduceMotion ? 'vb-dock__btn--active' : ''}`} onClick={() => handleSetMotionMode(mode => mode === 'full' ? 'reduced' : 'full')} aria-pressed={reduceMotion} disabled={Boolean(systemReducedMotion)} aria-label={t('تقليل الحركة', 'Reduce motion')} title={t('تقليل الحركة', 'Reduce motion')}>
                                 <Sparkles size="1.05em" aria-hidden="true" />
                             </button>
                         </div>
-
                     </div>
                     <div className="vb-header__left">
                         <div className="vb-header__clock">
@@ -2398,7 +1790,7 @@ const DisplayBoard = () => {
                 </AnimatePresence>
 
                 {isStale && (
-                    <div className="vb-offline" role="status">
+                    <div className="vb-offline" role="status" aria-live="polite">
                         <WifiOff size="1.1em" aria-hidden="true" />
                         <span>{t('انقطع الاتصال بالخادم — قد لا تكون البيانات المعروضة محدّثة', 'Connection lost — displayed data may be out of date')}</span>
                     </div>
@@ -2587,64 +1979,6 @@ const DisplayBoard = () => {
                     </aside>
                 )}
 
-                <ControlDrawer
-                    open={showControlDrawer}
-                    onClose={() => setShowControlDrawer(false)}
-                    isArabic={isArabic}
-                    theme={theme}
-                    displayLanguage={displayLanguage}
-                    onSetLanguage={handleSetLanguage}
-                    onSetTheme={handleSetTheme}
-                    muteAll={muteAll}
-                    onToggleSound={toggleSound}
-                    quietMode={quietMode}
-                    onToggleQuiet={toggleQuietMode}
-                    isFullscreen={isFullscreen}
-                    onToggleFullscreen={toggleFullscreen}
-                    isRotationPaused={isRotationPaused}
-                    onTogglePause={() => setIsRotationPaused((p) => !p)}
-                    showSummaryStats={showSummaryStats}
-                    onToggleStats={() => setShowSummaryStats((p) => !p)}
-                    rotationSpeed={rotationSpeed}
-                    onSetSpeed={handleSetRotationSpeed}
-                    allRooms={allRooms}
-                    selectedRooms={selectedRooms}
-                    onToggleRoom={handleToggleRoom}
-                    onClearRooms={handleClearRoomFilter}
-                    isDemoMode={isDemoMode}
-                    onToggleDemoMode={toggleDemoMode}
-                    callAnnouncementMode={callAnnouncementMode}
-                    onSetCallAnnouncementMode={handleSetCallMode}
-                    announcementPreset={announcementPreset}
-                    onApplyPreset={handleApplyPreset}
-                    announcementRate={announcementRate}
-                    onSetRate={handleSetAnnouncementRate}
-                    announcementRepeatCount={announcementRepeatCount}
-                    onSetRepeats={handleSetAnnouncementRepeats}
-                    announcementRepeatDelay={announcementRepeatDelay}
-                    onSetDelay={handleSetAnnouncementDelay}
-                    announcementVolume={announcementVolume}
-                    onSetVolume={handleSetAnnouncementVolume}
-                    repeatChime={repeatChime}
-                    onToggleRepeatChime={toggleRepeatChime}
-                    announcementLanguage={announcementLanguage}
-                    onSetLanguageMode={setAnnouncementLanguage}
-                    tokenPronunciation={tokenPronunciation}
-                    onSetDigits={setTokenPronunciation}
-                    announcementStyle={announcementStyle}
-                    onSetStyle={setAnnouncementStyle}
-                    customTemplate={customTemplate}
-                    onSetTemplate={setCustomTemplate}
-                    pronunciationDictionary={pronunciationDictionary}
-                    onSetDictionary={setPronunciationDictionary}
-                    availableVoices={availableVoices}
-                    arabicVoiceURI={arabicVoiceURI}
-                    englishVoiceURI={englishVoiceURI}
-                    onSetArabicVoice={setArabicVoiceURI}
-                    onSetEnglishVoice={setEnglishVoiceURI}
-                    onTestCall={handleTestCall}
-                    onTestChime={handleTestChime}
-                />
             </div>
         </MotionConfig>
     );

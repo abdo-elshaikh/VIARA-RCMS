@@ -169,6 +169,7 @@ const Nurse = () => {
     const [expandedIds, setExpandedIds] = useState(() => new Set());
     const [taskScope, setTaskScope] = useState('all');
     const [releaseAssignmentItem, setReleaseAssignmentItem] = useState(null);
+    const [stickerPrintItem, setStickerPrintItem] = useState(null);
 
     // Advanced Filters State
     const [searchQuery, setSearchQuery] = useState('');
@@ -843,12 +844,7 @@ const Nurse = () => {
                                                                 icon={Printer}
                                                                 label={t('common.printSticker', { defaultValue: 'Print Sticker' })}
                                                                 tone="slate"
-                                                                onClick={() => {
-                                                                    const copies = window.prompt(t('common.stickerCopiesPrompt'), t('common.stickerCopiesDefault'));
-                                                                    if (copies && parseInt(copies, 10) > 0) {
-                                                                        window.open(`/print/sticker/${item.appointment_id}?copies=${parseInt(copies, 10)}`, '_blank');
-                                                                    }
-                                                                }}
+                                                                onClick={() => setStickerPrintItem(item)}
                                                             />
                                                         </>
                                                     )}
@@ -933,6 +929,7 @@ const Nurse = () => {
                             onReturn={() => setReleaseAssignmentItem(item)}
                             onRequestPaymentException={() => requestPaymentException(item)}
                             onCallPatient={handleCallPatient}
+                            onPrintSticker={() => setStickerPrintItem(item)}
                             isArabic={isRtl}
                              isClaiming={isClaiming}
                             isReleasingAssignment={isReleasingAssignment}
@@ -1024,6 +1021,31 @@ const Nurse = () => {
                     inputProps={{ minLength: 3, maxLength: 1000 }}
                     isLoading={isReleasingAssignment}
                 />
+
+                <TextPromptDialog
+                    isOpen={Boolean(stickerPrintItem)}
+                    onClose={() => setStickerPrintItem(null)}
+                    onConfirm={(copies) => {
+                        const num = parseInt(copies, 10);
+                        if (num > 0 && stickerPrintItem?.appointment_id) {
+                            window.open(`/print/sticker/${stickerPrintItem.appointment_id}?copies=${num}`, '_blank');
+                        }
+                        setStickerPrintItem(null);
+                    }}
+                    title={t('common.printSticker', { defaultValue: 'Print Sticker' })}
+                    message={t('common.stickerCopiesPrompt', { defaultValue: 'Enter number of sticker copies to print:' })}
+                    label={t('common.stickerCopies', { defaultValue: 'Copies' })}
+                    type="number"
+                    initialValue="1"
+                    confirmLabel={t('common.print', { defaultValue: 'Print' })}
+                    cancelLabel={t('common.cancel', { defaultValue: 'Cancel' })}
+                    validate={(val) => {
+                        const num = parseInt(val, 10);
+                        if (isNaN(num) || num < 1) return t('common.invalidCopies', { defaultValue: 'Must be at least 1' });
+                        if (num > 20) return t('common.maxCopies', { defaultValue: 'Maximum 20 copies' });
+                        return '';
+                    }}
+                />
             </div>
         </div>
     );
@@ -1090,6 +1112,7 @@ const NurseQueueCard = ({
     onReturn,
     onRequestPaymentException,
     onCallPatient,
+    onPrintSticker,
     isArabic,
     expanded,
     onToggleDetails
@@ -1231,12 +1254,7 @@ const NurseQueueCard = ({
                             icon={Printer}
                             label={t('common.printSticker', { defaultValue: 'Print Sticker' })}
                             tone="slate"
-                            onClick={() => {
-                                const copies = window.prompt(t('common.stickerCopiesPrompt'), t('common.stickerCopiesDefault'));
-                                if (copies && parseInt(copies, 10) > 0) {
-                                    window.open(`/print/sticker/${item.appointment_id}?copies=${parseInt(copies, 10)}`, '_blank');
-                                }
-                            }}
+                            onClick={onPrintSticker}
                         />
                         {onCallPatient && (
                             <button

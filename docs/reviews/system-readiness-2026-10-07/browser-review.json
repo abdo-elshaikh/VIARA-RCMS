@@ -1,0 +1,2906 @@
+[
+  {
+    "name": "staff-landing",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".vlp__modality:nth-child(1) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(2) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(3) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(4) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(5) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-workflow > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq-trigger-0 > .vlp__faq-trigger-content > .vlp__faq-num[aria-hidden=\"true\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"ماموجرام: عرض تفاصيل الفحص\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".self-start"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".items-start.justify-between.gap-4 > div > .uppercase.text-primary.font-bold"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"ماموجرام: عرض تفاصيل الفحص\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:grid-cols-\\[0\\.9fr_1\\.1fr\\] > div[dir=\"rtl\"]:nth-child(2) > .font-semibold.text-primary.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #087f5b, background color: #0a1729, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:sticky > .font-semibold.gap-2.inline-flex"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".tabular-nums.transition-colors.text-primary"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 320,
+    "height": 720,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".vlp__modality:nth-child(1) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(2) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(3) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(4) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(5) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-features > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__pill--done.vlp__pill:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.45 (foreground color: #0d7a5a, background color: #e0eeea, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__pill--done.vlp__pill:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.45 (foreground color: #0d7a5a, background color: #e0eeea, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__pill--wait"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.72 (foreground color: #a86a0a, background color: #f3eadd, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-workflow > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq-trigger-0 > .vlp__faq-trigger-content > .vlp__faq-num[aria-hidden=\"true\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 6.8pt (9px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-label=\"CT: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Mammography: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".max-w-2xl > .gap-2.inline-flex.text-primary"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".self-start"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".items-start.justify-between.gap-4 > div > .uppercase.text-primary.font-bold"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".pt-5.mt-auto.gap-2"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"CT: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"CT: View exam details\"] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Mammography: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Mammography: View exam details\"] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mb-4 > div > .uppercase.text-primary.font-bold"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:grid-cols-\\[0\\.9fr_1\\.1fr\\] > div[dir=\"ltr\"]:nth-child(2) > .font-semibold.text-primary.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #087f5b, background color: #0a1729, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mb-8.sm\\:mb-10.max-w-2xl > .font-semibold.text-primary.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".py-8.sm\\:px-8.lg\\:px-10:nth-child(2) > .text-primary.font-bold.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:sticky > .font-semibold.gap-2.inline-flex"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".tabular-nums.transition-colors.text-primary"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-controls=\"faq-answer-0\"] > .sm\\:text-base.flex-1.transition-colors"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".max-w-xl[dir=\"ltr\"] > .font-semibold.gap-2.inline-flex"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #087f5b, background color: #0a1729, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 320,
+    "height": 720,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".vlp__modality:nth-child(1) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(2) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(3) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(4) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(5) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-workflow > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq-trigger-0 > .vlp__faq-trigger-content > .vlp__faq-num[aria-hidden=\"true\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"ماموجرام: عرض تفاصيل الفحص\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".self-start"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".items-start.justify-between.gap-4 > div > .uppercase.text-primary.font-bold"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"ماموجرام: عرض تفاصيل الفحص\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:grid-cols-\\[0\\.9fr_1\\.1fr\\] > div[dir=\"rtl\"]:nth-child(2) > .font-semibold.text-primary.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #087f5b, background color: #0a1729, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:sticky > .font-semibold.gap-2.inline-flex"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".tabular-nums.transition-colors.text-primary"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 768,
+    "height": 1024,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".vlp__modality:nth-child(1) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(2) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(3) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(4) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(5) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-features > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__pill--done.vlp__pill:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.45 (foreground color: #0d7a5a, background color: #e0eeea, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__pill--done.vlp__pill:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.45 (foreground color: #0d7a5a, background color: #e0eeea, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__pill--wait"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.72 (foreground color: #a86a0a, background color: #f3eadd, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-workflow > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq-trigger-0 > .vlp__faq-trigger-content > .vlp__faq-num[aria-hidden=\"true\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-label=\"CT: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Mammography: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".max-w-2xl > .gap-2.inline-flex.text-primary"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".self-start"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".items-start.justify-between.gap-4 > div > .uppercase.text-primary.font-bold"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".pt-5.mt-auto.gap-2"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"CT: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"CT: View exam details\"] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Mammography: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Mammography: View exam details\"] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mb-4 > div > .uppercase.text-primary.font-bold"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:grid-cols-\\[0\\.9fr_1\\.1fr\\] > div[dir=\"ltr\"]:nth-child(2) > .font-semibold.text-primary.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #087f5b, background color: #0a1729, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mb-8.sm\\:mb-10.max-w-2xl > .font-semibold.text-primary.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".py-8.sm\\:px-8.lg\\:px-10:nth-child(2) > .text-primary.font-bold.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:sticky > .font-semibold.gap-2.inline-flex"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".tabular-nums.transition-colors.text-primary"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-controls=\"faq-answer-0\"] > .sm\\:text-base.flex-1.transition-colors"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 12.0pt (16px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".max-w-xl[dir=\"ltr\"] > .font-semibold.gap-2.inline-flex"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #087f5b, background color: #0a1729, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 768,
+    "height": 1024,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".vlp__modality:nth-child(1) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(2) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(3) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(4) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(5) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-workflow > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq-trigger-0 > .vlp__faq-trigger-content > .vlp__faq-num[aria-hidden=\"true\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"ماموجرام: عرض تفاصيل الفحص\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".self-start"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".items-start.justify-between.gap-4 > div > .uppercase.text-primary.font-bold"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"ماموجرام: عرض تفاصيل الفحص\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:grid-cols-\\[0\\.9fr_1\\.1fr\\] > div[dir=\"rtl\"]:nth-child(2) > .font-semibold.text-primary.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #087f5b, background color: #0a1729, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:sticky > .font-semibold.gap-2.inline-flex"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".tabular-nums.transition-colors.text-primary"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 1536,
+    "height": 704,
+    "language": "ar",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "rtl",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                ".vlp__modality:nth-child(1) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(2) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(3) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(4) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__modality:nth-child(5) > b"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 9.8pt (13px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-features > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__pill--done.vlp__pill:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.45 (foreground color: #0d7a5a, background color: #e0eeea, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__pill--done.vlp__pill:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.45 (foreground color: #0d7a5a, background color: #e0eeea, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".vlp__pill--wait"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.72 (foreground color: #a86a0a, background color: #f3eadd, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-workflow > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq > .vlp__section-head > .vlp__section-kicker"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "#vlp-faq-trigger-0 > .vlp__faq-trigger-content > .vlp__faq-num[aria-hidden=\"true\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.24 (foreground color: #008365, background color: #eaf5f0, font size: 7.5pt (10px), font weight: bold). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-label=\"CT: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Mammography: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.48 (foreground color: #39997c, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.2 (foreground color: #469f84, background color: #ffffff, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "light",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "staff-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "aria-prohibited-attr",
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "portal-landing",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "description": "Ensure the contrast between foreground and background colors meets WCAG 2 AA minimum contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.14/color-contrast?application=axeAPI",
+          "nodes": [
+            {
+              "target": [
+                "button[aria-label=\"English\"]"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 8.3pt (11px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".max-w-2xl > .gap-2.inline-flex.text-primary"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".self-start"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".items-start.justify-between.gap-4 > div > .uppercase.text-primary.font-bold"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".pt-5.mt-auto.gap-2"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 10.5pt (14px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"CT: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"CT: View exam details\"] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-1.lg\\:row-start-2.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:col-start-3.lg\\:row-start-1.border-\\[\\#DDE9E6\\] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Mammography: View exam details\"] > .p-4.flex-1.flex-col > .mb-1\\.5.text-primary\\/80.uppercase"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.78 (foreground color: #0a6a4e, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-label=\"Mammography: View exam details\"] > .p-4.flex-1.flex-col > .pt-3.mt-auto.border-\\[\\#E5EEEC\\] > .gap-1\\.5.min-w-0.items-center > .truncate"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.67 (foreground color: #087f5b, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mb-4 > div > .uppercase.text-primary.font-bold"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(1) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".min-h-\\[112px\\].hover\\:bg-\\[\\#F3F9F7\\].focus-visible\\:ring-primary\\/35:nth-child(2) > .min-w-0 > .text-primary\\/75.uppercase.block"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 2.6 (foreground color: #0a654a, background color: #101518, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:grid-cols-\\[0\\.9fr_1\\.1fr\\] > div[dir=\"ltr\"]:nth-child(2) > .font-semibold.text-primary.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #087f5b, background color: #0a1729, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mb-8.sm\\:mb-10.max-w-2xl > .font-semibold.text-primary.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".py-8.sm\\:px-8.lg\\:px-10:nth-child(2) > .text-primary.font-bold.text-xs"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".lg\\:sticky > .font-semibold.gap-2.inline-flex"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".tabular-nums.transition-colors.text-primary"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 9.0pt (12px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                "button[aria-controls=\"faq-answer-0\"] > .sm\\:text-base.flex-1.transition-colors"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.4 (foreground color: #087f5b, background color: #171d20, font size: 12.0pt (16px), font weight: bold). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".max-w-xl[dir=\"ltr\"] > .font-semibold.gap-2.inline-flex"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 3.59 (foreground color: #087f5b, background color: #0a1729, font size: 9.0pt (12px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > p"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(1)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            },
+            {
+              "target": [
+                ".mt-10 > .gap-4.items-center.flex > span:nth-child(2)"
+              ],
+              "summary": "Fix any of the following:\n  Element has insufficient color contrast of 4.15 (foreground color: #799c95, background color: #063b35, font size: 8.3pt (11px), font weight: normal). Expected contrast ratio of 4.5:1"
+            }
+          ]
+        }
+      ],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "patient-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  },
+  {
+    "name": "doctor-login",
+    "width": 1536,
+    "height": 704,
+    "language": "en",
+    "theme": "dark",
+    "externalFontsUnavailable": true,
+    "overflow": false,
+    "outside": [],
+    "h1": 1,
+    "demoPanelPresent": false,
+    "direction": "ltr",
+    "brokenImages": [],
+    "accessibility": {
+      "engine": "4.14.0",
+      "violations": [],
+      "incompleteRules": [
+        "color-contrast"
+      ]
+    },
+    "errors": [],
+    "failures": []
+  }
+]

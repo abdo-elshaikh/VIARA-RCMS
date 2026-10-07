@@ -1,8 +1,9 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import useDebounce from '../hooks/useDebounce';
 import toast from 'react-hot-toast';
+import useFocusTrap from '../hooks/useFocusTrap';
 import {
     Activity,
     AlertCircle,
@@ -713,14 +714,14 @@ const PacsReconciliation = () => {
                                 <table className="w-full text-start text-xs">
                                     <thead className="border-b border-slate-200/80 bg-slate-50/80 text-[11px] font-black uppercase text-slate-500 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-field)] dark:text-slate-400">
                                         <tr>
-                                            <th className="py-3 px-3 text-start w-12">#</th>
-                                            <th className="py-3 px-3 text-start">{tx('patient')}</th>
-                                            <th className="py-3 px-3 text-start">{tx('modality')}</th>
-                                            <th className="py-3 px-3 text-start">{tx('accession')}</th>
-                                            <th className="py-3 px-3 text-start">{tx('reason')}</th>
-                                            <th className="py-3 px-3 text-start">{tx('readiness')}</th>
-                                            <th className="py-3 px-3 text-start">{tx('receivedAt')}</th>
-                                            <th className="py-3 px-3 text-end">{tx('actions')}</th>
+                                            <th scope="col" className="py-3 px-3 text-start w-12">#</th>
+                                            <th scope="col" className="py-3 px-3 text-start">{tx('patient')}</th>
+                                            <th scope="col" className="py-3 px-3 text-start">{tx('modality')}</th>
+                                            <th scope="col" className="py-3 px-3 text-start">{tx('accession')}</th>
+                                            <th scope="col" className="py-3 px-3 text-start">{tx('reason')}</th>
+                                            <th scope="col" className="py-3 px-3 text-start">{tx('readiness')}</th>
+                                            <th scope="col" className="py-3 px-3 text-start">{tx('receivedAt')}</th>
+                                            <th scope="col" className="py-3 px-3 text-end">{tx('actions')}</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100 dark:divide-[var(--VIARA-line)]">
@@ -959,6 +960,8 @@ const PacsReconciliation = () => {
 /* ─── Match & Reconciliation Station Modal ─── */
 const ReconcileDialog = ({ study, onClose, onConfirm, locale, isAr, t }) => {
     const tx = useCallback((key, options) => getReconciliationText(t, key, options), [t]);
+    const dialogRef = useRef(null);
+    const titleId = useId();
     const initialSearchTerm = study.raw_accession_number || study.raw_patient_id || '';
     const [searchTerm, setSearchTerm] = useState(initialSearchTerm);
     const [searchQuery, { data: searchResults, isFetching }] = useLazySearchScheduledExamsQuery();
@@ -979,6 +982,13 @@ const ReconcileDialog = ({ study, onClose, onConfirm, locale, isAr, t }) => {
 
     const results = searchResults?.data || searchResults || [];
     const modalityTheme = getModalityTheme(study.modality);
+
+    useFocusTrap({
+        containerRef: dialogRef,
+        isActive: true,
+        onEscape: onClose,
+        lockScroll: true,
+    });
 
     // Compute live verification diff
     const diff = useMemo(() => {
@@ -1006,7 +1016,7 @@ const ReconcileDialog = ({ study, onClose, onConfirm, locale, isAr, t }) => {
 
     return createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-3 sm:p-4 backdrop-blur-md animate-in fade-in duration-150" dir={isAr ? 'rtl' : 'ltr'} onClick={onClose}>
-            <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
+            <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
                 {/* Header */}
                 <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
                     <div className="flex items-center gap-2.5">
@@ -1014,7 +1024,7 @@ const ReconcileDialog = ({ study, onClose, onConfirm, locale, isAr, t }) => {
                             <Link2 size={18} />
                         </span>
                         <div>
-                            <h2 className="text-sm font-black text-slate-900 dark:text-white sm:text-base">
+                            <h2 id={titleId} className="text-sm font-black text-slate-900 dark:text-white sm:text-base">
                                 {tx('linkDialogTitle')}
                             </h2>
                             <p className="text-[11px] font-medium text-slate-500">
@@ -1283,15 +1293,25 @@ const ReconcileDialog = ({ study, onClose, onConfirm, locale, isAr, t }) => {
 /* ─── Discard Confirmation Modal ─── */
 const ConfirmDiscardDialog = ({ study, busy, onClose, onConfirm, isAr, t }) => {
     const tx = useCallback((key, options) => getReconciliationText(t, key, options), [t]);
+    const dialogRef = useRef(null);
+    const titleId = useId();
+
+    useFocusTrap({
+        containerRef: dialogRef,
+        isActive: true,
+        onEscape: onClose,
+        lockScroll: true,
+    });
+
     return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-md animate-in fade-in duration-150" dir={isAr ? 'rtl' : 'ltr'} onClick={onClose}>
-        <div className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
+        <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xl backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900 animate-in zoom-in-95 duration-150" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 text-rose-600">
                 <span className="grid h-10 w-10 place-items-center rounded-xl bg-rose-500/15">
                     <Trash2 size={20} />
                 </span>
                 <div>
-                    <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                    <h3 id={titleId} className="text-sm font-black text-slate-900 dark:text-white">
                         {tx('discardTitle')}
                     </h3>
                     <p className="text-[11px] text-slate-500">

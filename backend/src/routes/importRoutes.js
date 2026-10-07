@@ -1,16 +1,19 @@
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
 const { importPatients, importInsuranceContracts, findImportDuplicates } = require('../controllers/importController');
 const { hasPermission } = require('../middleware/rbacMiddleware');
 
 // Multer config for CSV uploads
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, path.join(__dirname, '../../uploads/documents')); // reuse docs folder for temp CSV storage
+        const directory = path.join(__dirname, '../../uploads/.quarantine/imports');
+        fs.mkdir(directory, { recursive: true }, error => cb(error, directory));
     },
     filename: (req, file, cb) => {
-        cb(null, `import_${Date.now()}_${file.originalname}`);
+        cb(null, `import_${crypto.randomBytes(16).toString('hex')}.csv`);
     }
 });
 

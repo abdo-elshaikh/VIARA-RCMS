@@ -6,14 +6,14 @@ import { useCreateFinancialClosureMutation, useFinalizeFinancialClosureMutation,
 import { formatFinancialCurrency, formatFinancialDate, toFinancialDateInput } from '../../utils/financialFormat';
 import ConfirmDialog from '../ui/ConfirmDialog';
 
-const FinancialClosures = () => {
+const FinancialClosures = ({ dateRange }) => {
     const { t, i18n } = useTranslation('workspace');
     const [statusFilter, setStatusFilter] = useState('');
     const [closureDate, setClosureDate] = useState(toFinancialDateInput());
     const [showForm, setShowForm] = useState(false);
     const [finalizeTarget, setFinalizeTarget] = useState(null);
 
-    const queryArgs = useMemo(() => (statusFilter ? { status: statusFilter } : {}), [statusFilter]);
+    const queryArgs = useMemo(() => ({ ...dateRange, ...(statusFilter ? { status: statusFilter } : {}) }), [statusFilter, dateRange]);
     const { data: closures = [], isLoading, isError } = useGetFinancialClosuresQuery(queryArgs);
     const [createClosure, { isLoading: creating }] = useCreateFinancialClosureMutation();
     const [finalizeClosure, { isLoading: finalizing }] = useFinalizeFinancialClosureMutation();
@@ -136,9 +136,9 @@ const FinancialClosures = () => {
             ) : (
                 <>
                     <div className="divide-y divide-slate-100/80 dark:divide-white/5 md:hidden">
-                        {closures.map((closure) => (
+                        {closures.map((closure, idx) => (
                             <ClosureCard
-                                key={closure.closure_id}
+                                key={closure.closure_id || closure.id || `${closure.closure_date}-${idx}`}
                                 closure={closure}
                                 onFinalize={() => setFinalizeTarget(closure)}
                                 finalizing={finalizing}
@@ -165,9 +165,9 @@ const FinancialClosures = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100/80 dark:divide-white/5">
-                                {closures.map((closure) => (
+                                {closures.map((closure, idx) => (
                                     <ClosureRow
-                                        key={closure.closure_id}
+                                        key={closure.closure_id || closure.id || `${closure.closure_date}-${idx}`}
                                         closure={closure}
                                         onFinalize={() => setFinalizeTarget(closure)}
                                         finalizing={finalizing}

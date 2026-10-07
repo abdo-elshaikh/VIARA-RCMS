@@ -1,0 +1,31 @@
+{
+  "sourceManifestCount": 194,
+  "bundleManifestCount": 194,
+  "unregisteredMigrations": [],
+  "missingBundleMigrations": [],
+  "manifestsEqual": true,
+  "rootConfigurationError": {
+    "code": "28P01",
+    "message": "password authentication failed for user \"postgres\""
+  },
+  "configurationSource": "backend/.env fallback, read only",
+  "liveResetColumns": [],
+  "liveAppliedCount": 193,
+  "liveAppliedNotInManifest": [],
+  "pendingRegisteredMigrations": [
+    "193_password_reset_tokens.sql"
+  ],
+  "checksumMismatches": [],
+  "databaseSizeMiB": 48,
+  "maxConnections": "100",
+  "connectionCounts": [
+    {
+      "state": null,
+      "count": 8
+    },
+    {
+      "state": "active",
+      "count": 1
+    }
+  ]
+}

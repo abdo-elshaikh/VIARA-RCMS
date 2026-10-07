@@ -62,4 +62,22 @@ describe('data retention privacy export cleanup', () => {
 
         await fs.rm(outsideDir, { recursive: true, force: true });
     });
+
+    test('purges revoked and expired password reset tokens older than 90 days', async () => {
+        let executedSql = '';
+        const pool = {
+            query: jest.fn(async (sql) => {
+                executedSql = sql;
+                return { rowCount: 4 };
+            })
+        };
+
+        const { cleanupPasswordResetTokens } = require('../src/jobs/dataRetentionJob');
+        const result = await cleanupPasswordResetTokens(pool);
+
+        expect(executedSql).toContain('DELETE FROM password_reset_tokens');
+        expect(executedSql).toContain('revoked = TRUE');
+        expect(executedSql).toContain("expires_at < NOW() - INTERVAL '90 days'");
+        expect(result).toEqual({ deleted: 4 });
+    });
 });

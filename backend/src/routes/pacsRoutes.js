@@ -43,7 +43,7 @@ const { verifyPacsWebhook,
     retryAllPacsAiJobs,
     cancelAllPacsAiJobs
 } = require('../controllers/pacsController');
-const { pacsWebhookLimiter } = require('../middleware/rateLimiters');
+const { pacsWebhookLimiter, pacsAiLimiter } = require('../middleware/rateLimiters');
 
 const PACS_QUARANTINE_DIR = path.resolve(
     process.env.PACS_UPLOAD_QUARANTINE_DIR || path.join(__dirname, '../../uploads/.quarantine/pacs')
@@ -185,12 +185,14 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.post(
         '/exams/:examId/ai-analysis',
         hasAnyPermission(pool, ['RECONCILE_STUDIES', 'MANAGE_PACS']),
+        pacsAiLimiter,
         requestExamAiAnalysis(pool)
     );
 
     router.post(
         '/ai-analysis/jobs/:jobId/retry',
         hasAnyPermission(pool, ['RECONCILE_STUDIES', 'MANAGE_PACS']),
+        pacsAiLimiter,
         retryPacsAiJob(pool)
     );
 
@@ -209,6 +211,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.post(
         '/ai-analysis/queue/retry-all',
         hasAnyPermission(pool, ['MANAGE_PACS']),
+        pacsAiLimiter,
         retryAllPacsAiJobs(pool)
     );
 
@@ -338,6 +341,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.post(
         '/ai-analysis/process',
         hasAnyPermission(pool, ['MANAGE_PACS']),
+        pacsAiLimiter,
         runPacsAiAnalysisQueue(pool)
     );
 

@@ -117,6 +117,14 @@ export const authApi = api.injectEndpoints({
         verify2FA: builder.mutation({
             query: (data) => ({ url: '/auth/verify-2fa', method: 'POST', body: data }),
         }),
+
+        // ── Password Reset ────────────────────────────────────────────────────
+        forgotPassword: builder.mutation({
+            query: (data) => ({ url: '/auth/forgot-password', method: 'POST', body: data }),
+        }),
+        resetPassword: builder.mutation({
+            query: (data) => ({ url: '/auth/reset-password', method: 'POST', body: data }),
+        }),
     }),
     overrideExisting: false,
 });

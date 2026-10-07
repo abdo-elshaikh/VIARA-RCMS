@@ -1,15 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { useImportPatientsMutation } from '../../store/api';
 import { Upload, X, FileText, AlertCircle, CheckCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
+import useFocusTrap from '../../hooks/useFocusTrap';
 
 const PatientImportModal = ({ isOpen, onClose }) => {
     const { t } = useTranslation('patients');
     const [file, setFile] = useState(null);
     const [importPatients, { isLoading }] = useImportPatientsMutation();
     const [result, setResult] = useState(null);
+    const dialogRef = useRef(null);
+    const titleId = useId();
+
+    useFocusTrap({
+        containerRef: dialogRef,
+        isActive: Boolean(isOpen),
+        onEscape: onClose,
+        lockScroll: true,
+    });
 
     if (!isOpen) return null;
 
@@ -47,18 +57,25 @@ const PatientImportModal = ({ isOpen, onClose }) => {
 
     return createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-md animate-in fade-in duration-200">
-            <div className="bg-white rounded-3xl shadow-xl w-full max-w-lg mx-4 overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+            <div
+                ref={dialogRef}
+                tabIndex={-1}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby={titleId}
+                className="bg-white rounded-3xl shadow-xl w-full max-w-lg mx-4 overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200"
+            >
                 <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
                             <Upload size={24} />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-slate-800">{t('importModal.title')}</h2>
+                            <h2 id={titleId} className="text-xl font-bold text-slate-800">{t('importModal.title')}</h2>
                             <p className="text-sm text-slate-500 font-medium">{t('importModal.subtitle')}</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-white rounded-lg transition-colors">
+                    <button type="button" onClick={onClose} aria-label={t('importModal.close')} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-white rounded-lg transition-colors">
                         <X size={20} />
                     </button>
                 </div>
@@ -108,7 +125,7 @@ const PatientImportModal = ({ isOpen, onClose }) => {
                                 <AlertCircle className="shrink-0 mt-0.5" size={20} />
                                 <div className="text-sm font-medium">
                                     {t('importModal.instructions')}
-                                    <button onClick={downloadTemplate} className="block mt-2 text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 underline">
+                                    <button type="button" onClick={downloadTemplate} className="block mt-2 text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 underline">
                                         <FileText size={14}/> {t('importModal.downloadTemplate')}
                                     </button>
                                 </div>
@@ -138,6 +155,7 @@ const PatientImportModal = ({ isOpen, onClose }) => {
 
                 <div className="flex justify-end gap-3 p-4 bg-slate-50 border-t border-slate-200">
                     <button 
+                        type="button"
                         onClick={onClose} 
                         className="px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors"
                     >
@@ -145,6 +163,7 @@ const PatientImportModal = ({ isOpen, onClose }) => {
                     </button>
                     {!result && (
                         <button 
+                            type="button"
                             onClick={handleImport}
                             disabled={!file || isLoading}
                             className="px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl flex items-center gap-2 transition-colors disabled:opacity-50"

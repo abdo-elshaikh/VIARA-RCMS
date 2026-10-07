@@ -1,15 +1,15 @@
-import React from 'react';
-import { Inbox, RefreshCw, LucideIcon } from 'lucide-react';
+import React from "react";
+import { Inbox, RefreshCw, LucideIcon } from "lucide-react";
 
 export interface LoadingProps {
   label?: string;
   compact?: boolean;
 }
 
-export const Loading = ({ label = 'Loading...', compact = false }: LoadingProps) => (
+export const Loading = ({ label = "Loading...", compact = false }: LoadingProps) => (
   <div
     className={`flex flex-col items-center justify-center rounded-2xl border border-border bg-surface p-6 text-muted-foreground ${
-      compact ? 'min-h-28' : 'min-h-[150px]'
+      compact ? "min-h-28" : "min-h-[150px]"
     }`}
     aria-live="polite"
   >
@@ -42,7 +42,9 @@ export const EmptyState = ({ icon: Icon = Inbox, title, description }: EmptyStat
       <Icon size={24} strokeWidth={1.7} />
     </span>
     <h3 className="mt-3 text-sm font-extrabold text-foreground">{title}</h3>
-    {description && <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">{description}</p>}
+    {description && (
+      <p className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">{description}</p>
+    )}
   </div>
 );
 

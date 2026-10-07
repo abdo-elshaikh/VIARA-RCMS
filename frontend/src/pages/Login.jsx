@@ -14,18 +14,16 @@ import {
     Eye,
     EyeOff,
     Fingerprint,
-    Home,
+    FileText,
+    Globe,
     KeyRound,
-    Languages,
     Loader2,
     Lock,
     LogIn,
     Mail,
     Moon,
-    Phone,
     ScanLine,
     Search,
-    Shield,
     ShieldCheck,
     Sparkles,
     Sun,
@@ -41,7 +39,8 @@ import {
     useLoginMutation,
     usePasskeyAuthenticationOptionsMutation,
     usePasskeyAuthenticationVerifyMutation,
-    useGetPublicCenterSettingsQuery,
+    useForgotPasswordMutation,
+    useResetPasswordMutation,
 } from '../store/api';
 import { setCredentials } from '../store/authSlice';
 import {
@@ -57,10 +56,17 @@ import {
     getPasskeySupport,
 } from '../utils/passkeys';
 import { VIARA_BRAND } from '../config/brand';
+import usePageTitle from '../hooks/usePageTitle';
+import usePublicAppearance from '../hooks/usePublicAppearance';
+import PublicDialog from '../components/public/PublicDialog';
+import PublicSupportDialog from '../components/public/PublicSupportDialog';
+import PublicConnectionNotice from '../components/public/PublicConnectionNotice';
 import { resolvePreferredStartPage } from '../utils/startPage';
 import LandingServiceHealthModal from './LandingServiceHealthModal';
-import './LoginIllustrative.css';
-import './LoginReference.css';
+import '../styles/LoginIllustrative.css';
+import '../styles/LoginReference.css';
+import '../styles/LoginModern.css';
+import '../styles/LoginReferenceDesign.css';
 
 const ROLE_DESTINATIONS = {
     Developer: '/admin',
@@ -192,160 +198,6 @@ const DEMO_ACCOUNTS = import.meta.env.DEV
     ]
     : [];
 
-const COPY = {
-    ar: {
-        title: 'أهلًا بعودتك',
-        subtitle: 'سجّل دخولك للمتابعة إلى مساحة عملك.',
-        email: 'البريد الإلكتروني',
-        password: 'كلمة المرور',
-        remember: 'تذكرني على هذا الجهاز',
-        help: 'تحتاج مساعدة؟',
-        signIn: 'تسجيل الدخول',
-        authenticating: 'جارٍ تسجيل الدخول...',
-        or: 'أو',
-        passkey: 'الدخول بمفتاح مرور',
-        verifying: 'جارٍ التحقق من مفتاح المرور...',
-        back: 'العودة للرئيسية',
-        home: 'الرئيسية',
-        services: 'الخدمات',
-        serviceHealth: 'حالة الخدمات والنظام',
-        sideTag: 'بوابة الكوادر السريرية والإدارية',
-        sideTitle: 'الأشعة الحديثة،',
-        sideAccent: 'برؤية جديدة لك.',
-        sideDescription:
-            'توحّد مسارات المرضى، ودقة التشخيص، والذكاء التشغيلي في مساحة عمل آمنة واحدة.',
-        telemetryNode: 'محطة العمل التشخيصية',
-        telemetryStatus: 'متصل بالخادم الآمن',
-        telemetryPill: 'مشفر بالكامل',
-        telemetryPacs: 'ربط أنظمة PACS',
-        telemetryPacsVal: 'متزامن وفوري',
-        telemetryAi: 'المساعد الذكي',
-        telemetryAiVal: 'v2.4 نشط',
-        telemetrySecurity: 'مستوى الأمان',
-        telemetrySecurityVal: 'TLS 1.3 / HIPAA',
-        showPassword: 'إظهار كلمة المرور',
-        hidePassword: 'إخفاء كلمة المرور',
-        caps: 'مفتاح Caps Lock مفعّل',
-        emailRequired: 'أدخل بريدك الإلكتروني.',
-        invalidEmail: 'أدخل بريدًا إلكترونيًا صحيحًا.',
-        passwordRequired: 'أدخل كلمة المرور.',
-        loginFailed: 'تعذر تسجيل الدخول. راجع بياناتك وحاول مرة أخرى.',
-        network: 'تعذر الاتصال بالخادم. تحقق من الاتصال وحاول مرة أخرى.',
-        rateLimit: 'محاولات كثيرة. انتظر قليلًا ثم أعد المحاولة.',
-        invalidCredentials: 'البريد الإلكتروني أو كلمة المرور غير صحيحة.',
-        welcome: 'أهلًا بعودتك،',
-        light: 'المظهر الفاتح',
-        dark: 'المظهر الداكن',
-        helpTitle: 'مساعدة تسجيل الدخول',
-        helpDescription:
-            'للمساعدة في استعادة الوصول إلى حسابك، تواصل مع مسؤول النظام أو فريق الدعم في مركزك.',
-        noContact:
-            'بيانات التواصل غير متاحة حاليًا. يرجى التواصل مباشرةً مع مسؤول النظام.',
-        close: 'إغلاق',
-        unsupported:
-            'مفتاح المرور غير متاح في هذا المتصفح. يمكنك الدخول بكلمة المرور.',
-        insecure:
-            'يتطلب مفتاح المرور اتصال HTTPS آمنًا. يمكنك الدخول بكلمة المرور.',
-        passkeyHint:
-            'أدخل بريدك الإلكتروني أولًا، ثم استخدم مفتاح المرور المسجّل لحسابك.',
-        mismatch: 'مفتاح المرور لا يطابق الحساب. تحقق من البريد الإلكتروني.',
-        passkeyFailed:
-            'تعذر التحقق من مفتاح المرور. حاول مجددًا أو استخدم كلمة المرور.',
-        sceneAlt: 'Radiologist reviewing studies in a modern, intelligent workspace',
-        demoAccounts: 'حسابات تجريبية',
-        demoSubtitle: 'اختر حسابًا لتعبئة بياناته أو للدخول الفوري.',
-        demoPasswordLabel: 'كلمة المرور المشتركة:',
-        demoSearchPlaceholder: 'ابحث بالاسم أو الدور أو البريد...',
-        demoCopyPassword: 'نسخ كلمة المرور',
-        demoPasswordCopied: 'تم نسخ كلمة المرور',
-        useAccount: 'تعبئة فقط',
-        signInShort: 'دخول سريع',
-        copy: 'نسخ',
-        demoNoResults: 'لا توجد حسابات مطابقة للبحث',
-        allCategories: 'الكل',
-        clinicalCat: 'سريري وطبي',
-        operationsCat: 'تشغيلي ومالي',
-        adminCat: 'إدارة ونظم',
-    },
-    en: {
-        title: 'Welcome back',
-        subtitle: 'Sign in to continue to your workspace.',
-        email: 'Email address',
-        password: 'Password',
-        remember: 'Remember me on this device',
-        help: 'Need help?',
-        signIn: 'Sign in',
-        authenticating: 'Signing you in...',
-        or: 'or',
-        passkey: 'Sign in with a passkey',
-        verifying: 'Verifying your passkey...',
-        back: 'Back to home',
-        home: 'Home',
-        services: 'Services',
-        serviceHealth: 'System & Service Health',
-        sideTag: 'Clinical & Administrative Gateway',
-        sideTitle: 'Modern Radiology,',
-        sideAccent: 'reimagined for you.',
-        sideDescription:
-            'Connecting patient workflows, diagnostic precision, and operational intelligence in one secure workspace.',
-        telemetryNode: 'Diagnostic Workstation',
-        telemetryStatus: 'Connected to Secure Node',
-        telemetryPill: 'End-to-End Encrypted',
-        telemetryPacs: 'PACS Integration',
-        telemetryPacsVal: 'Synced & Active',
-        telemetryAi: 'AI Diagnostic Copilot',
-        telemetryAiVal: 'v2.4 Online',
-        telemetrySecurity: 'Security Protocol',
-        telemetrySecurityVal: 'TLS 1.3 / HIPAA',
-        showPassword: 'Show password',
-        hidePassword: 'Hide password',
-        caps: 'Caps Lock is on',
-        emailRequired: 'Enter your email address.',
-        invalidEmail: 'Enter a valid email address.',
-        passwordRequired: 'Enter your password.',
-        loginFailed: 'Unable to sign in. Check your details and try again.',
-        network:
-            'Unable to reach the server. Check your connection and try again.',
-        rateLimit: 'Too many attempts. Please wait a moment and try again.',
-        invalidCredentials: 'The email address or password is incorrect.',
-        welcome: 'Welcome back,',
-        light: 'Light appearance',
-        dark: 'Dark appearance',
-        helpTitle: 'Sign-in support',
-        helpDescription:
-            'For help restoring access to your account, contact your center’s system administrator or support team.',
-        noContact:
-            'Contact details are currently unavailable. Please contact your system administrator directly.',
-        close: 'Close',
-        unsupported:
-            'Passkeys are unavailable in this browser. You can sign in with your password.',
-        insecure:
-            'Passkeys require a secure HTTPS connection. You can sign in with your password.',
-        passkeyHint:
-            'Enter your email first, then use the passkey registered to your account.',
-        mismatch:
-            'This passkey does not match the account. Check your email address.',
-        passkeyFailed:
-            'Passkey verification failed. Try again or use your password.',
-        sceneAlt:
-            'A radiologist reviewing studies in a modern, intelligent workspace',
-        demoAccounts: 'Demo Accounts',
-        demoSubtitle: 'Pick an account to fill the form or sign in instantly.',
-        demoPasswordLabel: 'Shared password:',
-        demoSearchPlaceholder: 'Search by name, role, or email...',
-        demoCopyPassword: 'Copy password',
-        demoPasswordCopied: 'Password copied',
-        useAccount: 'Fill only',
-        signInShort: 'Quick Sign In',
-        copy: 'Copy',
-        demoNoResults: 'No demo accounts match your search',
-        allCategories: 'All',
-        clinicalCat: 'Clinical',
-        operationsCat: 'Operations',
-        adminCat: 'Administration',
-    },
-};
-
 function getReturnDestination(from) {
     const destination =
         typeof from === 'string'
@@ -368,11 +220,17 @@ export default function Login() {
     const dispatch = useDispatch();
     const navigate = useNavigate();
     const location = useLocation();
+
+    // ── Password Reset via URL token ───────────────────────────────────────────
+    const urlSearchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+    const urlResetToken = urlSearchParams.get('resetToken') || '';
+    const urlResetEmail = urlSearchParams.get('email') || '';
     const preferences = useSelector(selectPreferences);
-    const { i18n } = useTranslation(['auth', 'common']);
+    const { i18n, t } = useTranslation(['auth', 'common']);
     const isRtl = i18n.dir() === 'rtl';
-    const c = COPY[isRtl ? 'ar' : 'en'];
-    const dark = preferences.theme === 'dark';
+    const c = t('publicLogin', { returnObjects: true });
+    usePageTitle(c.signIn);
+    const { dark, reduceMotion } = usePublicAppearance();
     const DirectionArrow = isRtl ? ArrowLeft : ArrowRight;
     const BackArrow = isRtl ? ArrowRight : ArrowLeft;
 
@@ -381,11 +239,8 @@ export default function Login() {
         usePasskeyAuthenticationOptionsMutation();
     const [verifyPasskey, { isLoading: isPasskeyVerifyLoading }] =
         usePasskeyAuthenticationVerifyMutation();
-    const { data: publicSettings } = useGetPublicCenterSettingsQuery();
-
-    const helpdeskEmail =
-        publicSettings?.support_email || publicSettings?.email;
-    const helpdeskPhone = publicSettings?.hotline || publicSettings?.phone;
+    const [forgotPasswordMutation, { isLoading: isSendingResetLink }] = useForgotPasswordMutation();
+    const [resetPasswordMutation, { isLoading: isResettingPassword }] = useResetPasswordMutation();
 
     const [selectedRole, setSelectedRole] = useState('Radiologist');
     const [showPassword, setShowPassword] = useState(false);
@@ -397,16 +252,27 @@ export default function Login() {
     const [serviceModalOpen, setServiceModalOpen] = useState(false);
     const [serverError, setServerError] = useState('');
     const [brandFailed, setBrandFailed] = useState(false);
-    const [imageFailed, setImageFailed] = useState(false);
+    // Forgot / Reset password dialog state
+    const [forgotOpen, setForgotOpen] = useState(false);
+    const [forgotEmail, setForgotEmail] = useState('');
+    const [forgotSent, setForgotSent] = useState(false);
+    const [forgotError, setForgotError] = useState('');
+    const [resetNewPw, setResetNewPw] = useState('');
+    const [resetConfirmPw, setResetConfirmPw] = useState('');
+    const [resetError, setResetError] = useState('');
+    const [resetSuccess, setResetSuccess] = useState(false);
+    const [showResetPw, setShowResetPw] = useState(false);
     const [languageBusy, setLanguageBusy] = useState(false);
     const [demoSearch, setDemoSearch] = useState('');
     const [demoCategory, setDemoCategory] = useState('all');
     const [copiedField, setCopiedField] = useState(null);
 
-    const helpDialogRef = useRef(null);
-    const helpTriggerRef = useRef(null);
+    const forgotEmailRef = useRef(null);
+    const resetPasswordRef = useRef(null);
     const demoDialogRef = useRef(null);
     const demoTriggerRef = useRef(null);
+    const serviceTriggerRef = useRef(null);
+    const supportTriggerRef = useRef(null);
     const authenticationLock = useRef(false);
     const appliedPresetRef = useRef(false);
 
@@ -439,18 +305,10 @@ export default function Login() {
     const brandName = VIARA_BRAND.name || 'VIARA';
 
     useEffect(() => {
-        if (!helpOpen) return undefined;
-        const dialog = helpDialogRef.current;
-        const trigger = helpTriggerRef.current;
-        if (dialog && !dialog.open) dialog.showModal();
-        const previousOverflow = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-        return () => {
-            if (dialog && dialog.open) dialog.close();
-            document.body.style.overflow = previousOverflow;
-            trigger?.focus();
-        };
-    }, [helpOpen]);
+        if (!resetSuccess || urlResetToken) return undefined;
+        const frame = window.requestAnimationFrame(() => setFocus('email'));
+        return () => window.cancelAnimationFrame(frame);
+    }, [resetSuccess, urlResetToken, setFocus]);
 
     useEffect(() => {
         if (!demoOpen) return undefined;
@@ -611,11 +469,12 @@ export default function Login() {
             toast.success(toastMsg);
             setTimeout(() => setCopiedField(null), 2500);
         } catch {
-            toast.error('Copy failed');
+            toast.error(c.copyFailed);
         }
     };
 
     const fillAndLoginDemo = (account) => {
+        setSelectedRole(account.role);
         setValue('email', account.email, { shouldValidate: true });
         setValue('password', DEMO_PASSWORD, { shouldValidate: true });
         clearErrors();
@@ -630,12 +489,73 @@ export default function Login() {
 
     const fillOnlyDemo = (account, event) => {
         event.stopPropagation();
+        setSelectedRole(account.role);
         setValue('email', account.email, { shouldValidate: true });
         setValue('password', DEMO_PASSWORD, { shouldValidate: true });
         clearErrors();
         setServerError('');
         setDemoOpen(false);
         toast.success(isRtl ? `تمت تعبئة بيانات: ${account.nameAr}` : `Filled: ${account.nameEn}`);
+    };
+
+    // ── Forgot Password handlers ───────────────────────────────────────────────
+    const handleForgotOpen = () => {
+        // Pre-fill email from the login form if already typed
+        const emailInForm = getValues('email')?.trim() || '';
+        setForgotEmail(emailInForm);
+        setForgotSent(false);
+        setForgotError('');
+        setForgotOpen(true);
+    };
+
+    const openServices = (event) => {
+        serviceTriggerRef.current = event.currentTarget;
+        setServiceModalOpen(true);
+    };
+    const openSupport = (event) => {
+        supportTriggerRef.current = event?.currentTarget || serviceTriggerRef.current;
+        setHelpOpen(true);
+    };
+
+    const handleForgotSubmit = async (e) => {
+        e.preventDefault();
+        setForgotError('');
+        const email = forgotEmail.trim().toLowerCase();
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            setForgotError(c.forgotInvalidEmail);
+            return;
+        }
+        try {
+            await forgotPasswordMutation({ email }).unwrap();
+            setForgotSent(true);
+        } catch {
+            setForgotError(c.forgotFailed);
+        }
+    };
+
+    // ── Reset Password with token (from URL) ──────────────────────────────────
+    const handleResetPasswordSubmit = async (e) => {
+        e.preventDefault();
+        setResetError('');
+        if (resetNewPw.length < 8 || !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/.test(resetNewPw)) {
+            setResetError(c.passwordTooWeak);
+            return;
+        }
+        if (resetNewPw !== resetConfirmPw) {
+            setResetError(c.passwordMismatch);
+            return;
+        }
+        try {
+            await resetPasswordMutation({ token: urlResetToken, email: urlResetEmail, newPassword: resetNewPw }).unwrap();
+            setResetSuccess(true);
+            setResetNewPw('');
+            setResetConfirmPw('');
+            setShowResetPw(false);
+            // Clean the URL so the token isn't reused
+            navigate('/login', { replace: true });
+        } catch (err) {
+            setResetError(getErrorMessage(err, c.resetFailed));
+        }
     };
 
     const filteredAccounts = useMemo(() => {
@@ -657,12 +577,13 @@ export default function Login() {
 
     return (
         <main
-            className={`vlogin ${dark ? 'vlogin--dark' : ''}`}
+            className={`vlogin${import.meta.env.DEV ? ' vlogin--developer' : ''}${dark ? ' vlogin--dark' : ''}${reduceMotion ? ' vlogin--reduce-motion' : ''}`}
             dir={isRtl ? 'rtl' : 'ltr'}
             lang={isRtl ? 'ar' : 'en'}
         >
             {/* Ambient Background Glow matching Landing Page */}
             <div className="vlogin__ambient" aria-hidden="true">
+                <div className="vlogin__ambient-backdrop" />
                 <div className="vlogin__ambient-orb-1" />
                 <div className="vlogin__ambient-orb-2" />
             </div>
@@ -698,7 +619,7 @@ export default function Login() {
                     <button
                         type="button"
                         className="vlogin__util-service"
-                        onClick={() => setServiceModalOpen(true)}
+                        onClick={openServices}
                         aria-label={c.serviceHealth}
                         title={c.serviceHealth}
                     >
@@ -736,10 +657,10 @@ export default function Login() {
                         <AnimatePresence mode="wait" initial={false}>
                             <motion.span
                                 key={dark ? 'sun' : 'moon'}
-                                initial={{ rotate: -90, opacity: 0, scale: 0.7 }}
+                                initial={reduceMotion ? false : { rotate: -90, opacity: 0, scale: 0.7 }}
                                 animate={{ rotate: 0, opacity: 1, scale: 1 }}
-                                exit={{ rotate: 90, opacity: 0, scale: 0.7 }}
-                                transition={{ duration: 0.22 }}
+                                exit={reduceMotion ? { opacity: 0 } : { rotate: 90, opacity: 0, scale: 0.7 }}
+                                transition={{ duration: reduceMotion ? 0 : 0.22 }}
                                 style={{ display: 'flex' }}
                             >
                                 {dark ? <Sun size={18} /> : <Moon size={18} />}
@@ -756,7 +677,7 @@ export default function Login() {
                         title={isRtl ? 'Switch to English' : '\u0627\u0644\u062a\u0628\u062f\u064a\u0644 \u0625\u0644\u0649 \u0627\u0644\u0639\u0631\u0628\u064a\u0629'}
                         aria-label={isRtl ? 'Switch to English' : 'التبديل إلى العربية'}
                     >
-                        <Languages size={15} aria-hidden="true" />
+                        <Globe size={18} aria-hidden="true" /><span>{isRtl ? 'العربية' : 'English'}</span>
                     </button>
 
                     <span className="vlogin__util-sep" aria-hidden="true" />
@@ -768,6 +689,7 @@ export default function Login() {
                     </Link>
                 </div>
             </header>
+            <PublicConnectionNotice onSupport={openSupport} />
 
             {/* ════════════════════════════════════════════════
                 MAIN STAGE (Card with Form & Medical Showcase)
@@ -776,84 +698,38 @@ export default function Login() {
                 <div className="vlogin__card">
                     {/* Visual Showcase Side (Desktop Medical Intelligence) */}
                     <aside className="vlogin__visual" aria-label={c.sceneAlt}>
-                        {!imageFailed ? (
-                            <img
-                                className="vlogin__scene"
-                                src="/images/viara/login-backdrop-premium.jpg"
-                                alt=""
-                                width="1086"
-                                height="1448"
-                                decoding="async"
-                                onError={() => setImageFailed(true)}
-                            />
-                        ) : (
-                            <div className="vlogin__scene" style={{ background: 'var(--vlp-deep)' }} />
-                        )}
-                        <div className="vlogin__visual-overlay" />
-
                         {/* Top Visual Headline */}
                         <div className="vlogin__visual-header">
                             <div className="vlogin__visual-tag">
-                                <i aria-hidden="true" />
-                                <span>{c.sideTag}</span>
+                                <span>{isRtl ? 'بوابة الدخول إلى النظام' : 'Your connected workspace'}</span>
                             </div>
                             <h2 className="vlogin__visual-title">
                                 {isRtl ? 'إدارة أكثر سلاسة' : 'Simpler management'}
                                 <span>{isRtl ? 'لمراكز الأشعة.' : 'for radiology centers.'}</span>
                             </h2>
-                            <p className="vlogin__visual-desc">{isRtl ? 'من استقبال المريض إلى تسليم التقرير، كل خدمات مركزك في مساحة عمل واحدة.' : 'From patient reception to report delivery, bring your center together in one workspace.'}</p>
+                            <p className="vlogin__visual-desc"><strong>{isRtl ? 'من استقبال المريض إلى تسليم التقرير،' : 'From patient reception to report delivery,'}</strong><br />{isRtl ? 'كل خدمات مركزك في منصة عمل واحدة.' : 'all your center’s services in one workspace.'}</p>
                             <div className="vlogin__benefits">
                                 {[
-                                    [Activity, 'متابعة التقارير', 'Report tracking'],
+                                    [Activity, 'متابعة التشغيل', 'Operations overview'],
                                     [Users, 'المرضى والمواعيد', 'Patients & appointments'],
                                     [ShieldCheck, 'إدارة الصلاحيات', 'Access management'],
-                                    [Building2, 'خدمات المركز', 'Center services'],
-                                ].map(([Icon, ar, en]) => <div key={en}><span><Icon size={26} aria-hidden="true" /></span><strong>{isRtl ? ar : en}</strong></div>)}
+                                    [Building2, 'تقارير دقيقة وسريعة', 'Clear, connected reports'],
+                                ].map(([Icon, ar, en]) => <div key={en}><span><Icon size={22} aria-hidden="true" /></span><strong>{isRtl ? ar : en}</strong></div>)}
+                            </div>
+                            <div className="vlogin__scene-summary" aria-label={isRtl ? 'منظومة عمل متكاملة' : 'One connected workflow'}>
+                                {[
+                                    [Building2, 'RIS + PACS', 'مركزك في منصة واحدة', 'Your center, connected'],
+                                    [Users, 'RBAC', 'مساحة عمل لكل دور', 'A workspace for every role'],
+                                    [FileText, 'DICOM', 'من الفحص إلى التقرير', 'From imaging to reporting'],
+                                ].map(([Icon, value, ar, en]) => (
+                                    <div key={en}>
+                                        <span className="vlogin__scene-summary-icon"><Icon size={26} aria-hidden="true" /></span>
+                                        <span><strong dir="ltr">{value}</strong><small>{isRtl ? ar : en}</small></span>
+                                    </div>
+                                ))}
                             </div>
                         </div>
 
-                        <div className="vlogin__journey" aria-label={isRtl ? 'رحلة العمل' : 'Your workflow'}>
-                            {[
-                                [Users, 'استقبال المريض', 'Patient reception'],
-                                [ScanLine, 'إجراء الفحص', 'Imaging'],
-                                [Check, 'اعتماد التقرير', 'Report approval'],
-                            ].map(([Icon, ar, en], index) => (
-                                <div key={en}><Icon size={23} aria-hidden="true" /><span><small>0{index + 1}</small><strong>{isRtl ? ar : en}</strong></span></div>
-                            ))}
-                        </div>
-
-                        {/* Floating Diagnostic Telemetry Card (matching Landing Worklist Card) */}
-                        <div className="vlogin__telemetry-card">
-                            <div className="vlogin__telemetry-top">
-                                <div className="vlogin__telemetry-node">
-                                    <div className="vlogin__telemetry-icon">
-                                        <Activity size={17} />
-                                    </div>
-                                    <div className="vlogin__telemetry-node-text">
-                                        <strong>{c.telemetryNode}</strong>
-                                        <span>{c.telemetryStatus}</span>
-                                    </div>
-                                </div>
-                                <div className="vlogin__telemetry-badge">
-                                    <Shield size={12} />
-                                    <span>{c.telemetryPill}</span>
-                                </div>
-                            </div>
-                            <div className="vlogin__telemetry-grid">
-                                <div className="vlogin__telemetry-item">
-                                    <span className="vlogin__telemetry-label">{c.telemetryPacs}</span>
-                                    <span className="vlogin__telemetry-val">{c.telemetryPacsVal}</span>
-                                </div>
-                                <div className="vlogin__telemetry-item">
-                                    <span className="vlogin__telemetry-label">{c.telemetryAi}</span>
-                                    <span className="vlogin__telemetry-val">{c.telemetryAiVal}</span>
-                                </div>
-                                <div className="vlogin__telemetry-item">
-                                    <span className="vlogin__telemetry-label">{c.telemetrySecurity}</span>
-                                    <span className="vlogin__telemetry-val">{c.telemetrySecurityVal}</span>
-                                </div>
-                            </div>
-                        </div>
                     </aside>
 
                     {/* Authentication Form Side */}
@@ -862,17 +738,31 @@ export default function Login() {
                         aria-labelledby="viara-login-title"
                     >
                         <div className="vlogin__form-inner">
+                            <div className="vlogin__form-brand" aria-label={brandName}>
+                                {!brandFailed && (
+                                    <img
+                                        src={VIARA_BRAND.iconUrl || VIARA_BRAND.logoUrl || '/logo.png'}
+                                        alt=""
+                                        width="44"
+                                        height="44"
+                                        onError={() => setBrandFailed(true)}
+                                    />
+                                )}
+                                <span dir="ltr">{brandName}</span>
+                            </div>
+                            <p className="vlogin__form-descriptor">{isRtl ? 'نظام متكامل لإدارة مراكز الأشعة' : 'Connected radiology management'}</p>
                             <div className="vlogin__form-header">
-                                <div className="vlogin__form-brand">
-                                    {!brandFailed && <img src={VIARA_BRAND.iconUrl || VIARA_BRAND.logoUrl || '/logo.png'} alt="" onError={() => setBrandFailed(true)} />}
-                                    <strong dir="ltr">{brandName}</strong>
-                                </div>
-                                <div className="vlogin__eyebrow">
-                                    <span>{c.title}</span>
-                                </div>
-                                <h1 id="viara-login-title">{isRtl ? 'تسجيل الدخول' : 'Sign in'}</h1>
+                                <h1 id="viara-login-title">{isRtl ? 'مرحبًا بعودتك' : 'Welcome back'}</h1>
                                 <p className="vlogin__subtitle">{c.subtitle}</p>
                             </div>
+
+                            {resetSuccess && (
+                                <div className="vlogin__reset-success" role="status">
+                                    <Check size={22} aria-hidden="true" />
+                                    <div><strong>{c.resetSuccessTitle}</strong><p>{c.resetPasswordSuccess}</p></div>
+                                    <button type="button" onClick={() => { setResetSuccess(false); window.requestAnimationFrame(() => setFocus('email')); }}>{c.continueSignIn}</button>
+                                </div>
+                            )}
 
                             <form
                                 onSubmit={handleSubmit(onSubmit)}
@@ -1026,14 +916,16 @@ export default function Login() {
                                         />
                                         <span>{c.remember}</span>
                                     </label>
-                                    <button
-                                        ref={helpTriggerRef}
-                                        type="button"
-                                        className="vlogin__help-btn"
-                                        onClick={() => setHelpOpen(true)}
-                                    >
-                                        {c.help}
-                                    </button>
+                                    <div className="vlogin__recovery-actions">
+                                        <button
+                                            type="button"
+                                            className="vlogin__help-btn"
+                                            onClick={handleForgotOpen}
+                                            style={{ fontWeight: 700 }}
+                                        >
+                                            {c.forgotPassword}
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Server Error Banner */}
@@ -1101,17 +993,37 @@ export default function Login() {
                             <p id="viara-passkey-note" className="vlogin__passkey-note">
                                 {passkeyNote}
                             </p>
-
-                            {/* Portal Bridge: Friendly routing for patients and referring physicians */}
-                            <div className="vlogin__portal-bridge">
-                                <span>{isRtl ? 'هل أنت مريض أو طبيب محوّل؟' : 'Are you a patient or referring doctor?'}</span>
-                                <Link to="/portal" className="vlogin__portal-bridge-link">
-                                    <span>{isRtl ? 'بوابة النتائج والتقارير' : 'Patient & Doctor Portal'}</span>
-                                    <DirectionArrow size={14} aria-hidden="true" />
-                                </Link>
-                            </div>
+                            <div className="vlogin__security-note"><span><ShieldCheck size={30} strokeWidth={1.7} aria-hidden="true" /></span><div><strong>{isRtl ? 'وصول آمن إلى مساحة عملك' : 'Secure access to your workspace'}</strong><small>{isRtl ? 'صلاحيات حسب الدور لحماية بيانات المرضى' : 'Role-based access to protect patient information'}</small></div></div>
                         </div>
                     </section>
+                    {import.meta.env.DEV && (
+                        <section className="vlogin__developer-panel" dir={isRtl ? 'rtl' : 'ltr'} aria-labelledby="viara-demo-panel-title">
+                            <div className="vlogin__developer-head">
+                                <span className="vlogin__developer-icon"><Sparkles size={20} aria-hidden="true" /></span>
+                                <div>
+                                    <h2 id="viara-demo-panel-title">{c.demoAccounts}</h2>
+                                    <p>{isRtl ? 'اختر الدور لتعبئة بيانات الدخول.' : 'Choose a role to fill the sign-in form.'}</p>
+                                </div>
+                                <span className="vlogin__developer-badge">DEV</span>
+                            </div>
+                            <div className="vlogin__developer-controls">
+                                <label className="vlogin__developer-select">
+                                    <span className="vlogin__sr-only">{isRtl ? 'الحساب التجريبي' : 'Demo account'}</span>
+                                    <select value={selectedRole} onChange={event => setSelectedRole(event.target.value)} disabled={busy}>
+                                        {DEMO_ACCOUNTS.map(account => <option key={account.id} value={account.role}>{isRtl ? account.titleAr : account.titleEn}</option>)}
+                                    </select>
+                                </label>
+                                <button type="button" className="vlogin__developer-fill" disabled={busy} onClick={event => {
+                                    const account = DEMO_ACCOUNTS.find(account => account.role === selectedRole);
+                                    if (account) fillOnlyDemo(account, event);
+                                }}><UserCheck size={16} aria-hidden="true" />{isRtl ? 'تعبئة النموذج' : 'Fill form'}</button>
+                            </div>
+                            <button type="button" className="vlogin__developer-browse" disabled={busy} aria-haspopup="dialog" aria-controls="viara-demo-dialog" onClick={event => {
+                                demoTriggerRef.current = event.currentTarget;
+                                setDemoOpen(true);
+                            }}>{isRtl ? `عرض كل الحسابات (${DEMO_ACCOUNTS.length})` : `Browse all accounts (${DEMO_ACCOUNTS.length})`}<DirectionArrow size={14} aria-hidden="true" /></button>
+                        </section>
+                    )}
                 </div>
             </div>
 
@@ -1122,11 +1034,15 @@ export default function Login() {
                 <span dir="ltr">© {new Date().getFullYear()} {brandName}</span>
                 <span>{isRtl ? 'جميع الحقوق محفوظة' : 'All rights reserved'}</span>
                 <span className="vlogin__footer-line" aria-hidden="true" />
+                <button type="button" onClick={openSupport}>{c.help}</button>
+                <button type="button" onClick={openServices}>{c.serviceHealth}</button>
+                {import.meta.env.DEV && <button type="button" onClick={(event) => { demoTriggerRef.current = event.currentTarget; setDemoOpen(true); }}>{isRtl ? 'معاينة التطوير' : 'Developer preview'}</button>}
             </footer>
 
             {serviceModalOpen && (
                 <LandingServiceHealthModal
                     onClose={() => setServiceModalOpen(false)}
+                    onSupport={() => { setServiceModalOpen(false); openSupport(); }}
                     isRtl={isRtl}
                 />
             )}
@@ -1136,6 +1052,7 @@ export default function Login() {
                 ════════════════════════════════════════════════ */}
             {import.meta.env.DEV && (
                 <dialog
+                    id="viara-demo-dialog"
                     ref={demoDialogRef}
                     className="vlogin__dialog"
                     aria-labelledby="viara-login-demo-title"
@@ -1146,6 +1063,7 @@ export default function Login() {
                     }}
                 >
                     <div className="vlogin__dialog-card vlogin__dialog-card--demo">
+                        <div className="vlogin__sheet-handle" aria-hidden="true" />
                         <div className="vlogin__dialog-head">
                             <div className="vlogin__dialog-head-title">
                                 <div className="vlogin__dialog-head-icon">
@@ -1317,108 +1235,51 @@ export default function Login() {
                 </dialog>
             )}
 
-            {/* ════════════════════════════════════════════════
-                ACCESSIBLE SUPPORT / HELP MODAL
-                ════════════════════════════════════════════════ */}
-            <dialog
-                ref={helpDialogRef}
-                className="vlogin__dialog"
-                aria-labelledby="viara-login-help-title"
-                aria-describedby="viara-login-help-description"
-                onKeyDown={(event) => {
-                    if (event.key !== 'Tab') return;
-                    const controls = Array.from(
-                        event.currentTarget.querySelectorAll(
-                            'button:not(:disabled), a[href]',
-                        ),
-                    );
-                    const first = controls[0];
-                    const last = controls[controls.length - 1];
-                    if (event.shiftKey && document.activeElement === first) {
-                        event.preventDefault();
-                        last?.focus();
-                    } else if (
-                        !event.shiftKey &&
-                        document.activeElement === last
-                    ) {
-                        event.preventDefault();
-                        first?.focus();
-                    }
-                }}
-                onCancel={() => setHelpOpen(false)}
-                onClose={() => setHelpOpen(false)}
-                onClick={(event) => {
-                    if (event.target === event.currentTarget) setHelpOpen(false);
-                }}
-            >
-                <div className="vlogin__dialog-card">
-                    <div className="vlogin__dialog-head">
-                        <div className="vlogin__dialog-head-title">
-                            <div className="vlogin__dialog-head-icon">
-                                <ShieldCheck size={20} />
-                            </div>
-                            <div>
-                                <h2 id="viara-login-help-title">{c.helpTitle}</h2>
-                                <p>{brandName} Support</p>
-                            </div>
+            {forgotOpen && (
+                <PublicDialog title={forgotSent ? c.forgotSentTitle : c.forgotPasswordTitle} titleId="viara-forgot-title" closeLabel={c.close} initialFocusRef={forgotEmailRef} onClose={() => setForgotOpen(false)}>
+                    {forgotSent ? (
+                        <div className="vlogin__recovery-success">
+                            <Check size={28} aria-hidden="true" />
+                            <p role="status">{c.forgotSentDesc}</p>
+                            <button type="button" className="vlogin__submit" onClick={() => setForgotOpen(false)}>{c.forgotBackToLogin}</button>
                         </div>
-                        <button
-                            type="button"
-                            className="vlogin__dialog-close"
-                            onClick={() => setHelpOpen(false)}
-                            aria-label={c.close}
-                        >
-                            <X size={18} />
+                    ) : (
+                        <form onSubmit={handleForgotSubmit} noValidate className="vlogin__recovery-form" aria-busy={isSendingResetLink}>
+                            <p>{c.forgotPasswordDesc}</p>
+                            <label htmlFor="forgot-email">{c.forgotEmailLabel}</label>
+                            <input ref={forgotEmailRef} id="forgot-email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} dir="ltr" value={forgotEmail} readOnly={isSendingResetLink} aria-invalid={Boolean(forgotError)} aria-describedby={forgotError ? 'forgot-email-error' : undefined} onChange={(event) => { setForgotEmail(event.target.value); setForgotError(''); }} placeholder="name@center.com" />
+                            {forgotError && <p id="forgot-email-error" className="public-dialog__error" role="alert">{forgotError}</p>}
+                            <button type="submit" className="vlogin__submit" disabled={isSendingResetLink}>
+                                {isSendingResetLink && <Loader2 size={18} className="vlogin__spinner" aria-hidden="true" />}
+                                {isSendingResetLink ? c.forgotSending : c.forgotSendLink}
+                            </button>
+                            <button type="button" className="public-dialog__secondary" onClick={() => setForgotOpen(false)}>{c.forgotBackToLogin}</button>
+                        </form>
+                    )}
+                </PublicDialog>
+            )}
+
+            {urlResetToken && !resetSuccess && (
+                <PublicDialog title={c.resetPasswordTitle} titleId="viara-reset-title" closeLabel={c.close} initialFocusRef={resetPasswordRef} onClose={() => navigate('/login', { replace: true })}>
+                    <form onSubmit={handleResetPasswordSubmit} noValidate className="vlogin__recovery-form" aria-busy={isResettingPassword}>
+                        <p id="reset-password-rules">{c.passwordRules}</p>
+                        <label htmlFor="reset-new-pw">{c.newPasswordLabel}</label>
+                        <div className="vlogin__recovery-password">
+                            <input ref={resetPasswordRef} id="reset-new-pw" type={showResetPw ? 'text' : 'password'} dir="ltr" autoComplete="new-password" value={resetNewPw} readOnly={isResettingPassword} aria-invalid={Boolean(resetError)} aria-describedby={`reset-password-rules${resetError ? ' reset-password-error' : ''}`} onChange={(event) => { setResetNewPw(event.target.value); setResetError(''); }} />
+                            <button type="button" className="vlogin__eye" onClick={() => setShowResetPw(value => !value)} aria-pressed={showResetPw} aria-label={showResetPw ? c.hidePassword : c.showPassword}>{showResetPw ? <EyeOff size={20} /> : <Eye size={20} />}</button>
+                        </div>
+                        <label htmlFor="reset-confirm-pw">{c.confirmPasswordLabel}</label>
+                        <input id="reset-confirm-pw" type={showResetPw ? 'text' : 'password'} dir="ltr" autoComplete="new-password" value={resetConfirmPw} readOnly={isResettingPassword} aria-invalid={Boolean(resetError)} aria-describedby={resetError ? 'reset-password-error' : undefined} onChange={(event) => { setResetConfirmPw(event.target.value); setResetError(''); }} />
+                        {resetError && <p id="reset-password-error" className="public-dialog__error" role="alert">{resetError}</p>}
+                        <button type="submit" className="vlogin__submit" disabled={isResettingPassword}>
+                            {isResettingPassword && <Loader2 size={18} className="vlogin__spinner" aria-hidden="true" />}
+                            {isResettingPassword ? c.resetPasswordSaving : c.resetPasswordBtn}
                         </button>
-                    </div>
-
-                    <div className="vlogin__dialog-body">
-                        <p
-                            id="viara-login-help-description"
-                            style={{ margin: '0 0 16px', lineHeight: 1.7, color: 'var(--vlp-muted)', fontSize: '13.5px' }}
-                        >
-                            {c.helpDescription}
-                        </p>
-
-                        <div className="vlogin__help-content">
-                            {helpdeskEmail && (
-                                <div className="vlogin__help-card">
-                                    <div className="vlogin__help-card-icon">
-                                        <Mail size={18} />
-                                    </div>
-                                    <div className="vlogin__help-card-info">
-                                        <strong>{isRtl ? 'البريد الإلكتروني للدعم الفني' : 'Technical Support Email'}</strong>
-                                        <a href={`mailto:${helpdeskEmail}`} dir="ltr">
-                                            {helpdeskEmail}
-                                        </a>
-                                    </div>
-                                </div>
-                            )}
-
-                            {helpdeskPhone && (
-                                <div className="vlogin__help-card">
-                                    <div className="vlogin__help-card-icon">
-                                        <Phone size={18} />
-                                    </div>
-                                    <div className="vlogin__help-card-info">
-                                        <strong>{isRtl ? 'الخط الساخن للمركز' : 'Center Support Hotline'}</strong>
-                                        <a
-                                            href={`tel:${String(helpdeskPhone).replace(/[^+\d]/g, '')}`}
-                                            dir="ltr"
-                                        >
-                                            {helpdeskPhone}
-                                        </a>
-                                    </div>
-                                </div>
-                            )}
-
-                            {!helpdeskEmail && !helpdeskPhone && (
-                                <p style={{ color: 'var(--vlp-muted)', fontSize: '13px' }}>{c.noContact}</p>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </dialog>
+                        <button type="button" className="public-dialog__secondary" onClick={() => navigate('/login', { replace: true })}>{c.forgotBackToLogin}</button>
+                    </form>
+                </PublicDialog>
+            )}
+            {helpOpen && <PublicSupportDialog onClose={() => setHelpOpen(false)} returnFocusRef={supportTriggerRef} />}
         </main>
     );
 }

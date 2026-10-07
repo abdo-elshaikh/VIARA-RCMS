@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     AlertCircle, ArrowLeftRight, ArrowUpDown, Banknote, CalendarClock, CalendarDays, Check,
     CheckCircle2, ChevronRight, CircleDollarSign, Clock3, DoorOpen, FileKey2, FileText, Inbox,
@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
+import usePageTitle from '../hooks/usePageTitle';
 import {
     useGetAttendancePermissionsQuery,
     useGetClaimsQuery,
@@ -263,6 +264,7 @@ const formatAge = (hours, t) => {
 
 const PendingRequests = () => {
     const { t, i18n } = useTranslation('approvals');
+    usePageTitle(t('header.title', 'صندوق الموافقات الموحد'));
     const navigate = useNavigate();
     const user = useSelector(selectCurrentUser);
     const locale = i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-GB';
@@ -368,6 +370,7 @@ const PendingRequests = () => {
     const [updateShiftRequestStatus, shiftRequestMutation] = useUpdateShiftRequestStatusMutation();
 
     const [search, setSearch] = useState('');
+    const requestDetailRef = useRef(null);
     const [sourceFilter, setSourceFilter] = useState('all');
     const [riskFilter, setRiskFilter] = useState('all');
     const [sort, setSort] = useState('priority');
@@ -983,6 +986,14 @@ const PendingRequests = () => {
     const loading = enabledQueries.some((query) => query.isLoading);
     const fetching = enabledQueries.some((query) => query.isFetching);
     const failedSources = enabledQueries.filter((query) => query.isError).length;
+    const cappedSources = [
+        [canReviewRefund, refundQuery, 'refund', '/reception'],
+        [canReviewClaims, claimQuery, 'claim', '/insurance'],
+        [canApprovePayroll, deductionQuery, 'deduction', '/payroll'],
+        [canApprovePayroll, penaltyQuery, 'penalty', '/payroll'],
+        [canUsePayrollQueue, payrollQuery, 'payroll', '/payroll'],
+        [canReviewPartialPayment, partialPaymentQuery, 'partialPayment', '/reception'],
+    ].filter(([enabled, query]) => enabled && Array.isArray(query.data) && query.data.length >= 100);
     const busy = leaveMutation.isLoading
         || privacyMutation.isLoading
         || refundMutation.isLoading
@@ -1233,6 +1244,14 @@ const PendingRequests = () => {
                         <span>{t('errors.partial', { count: failedSources })}</span>
                     </div>
                 )}
+                {cappedSources.length > 0 && (
+                    <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                        <p>{t('errors.sourceLimit', { defaultValue: i18n.language?.startsWith('ar') ? 'وصل تحميل بعض المصادر إلى حد 100 سجل؛ قد توجد طلبات إضافية. راجع صفحة المصدر لاستكمال المراجعة.' : 'Some sources reached the 100-record loading limit; more requests may exist. Open the source page to continue reviewing.' })}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            {cappedSources.map(([, , source, link]) => <button key={source} type="button" onClick={() => navigate(link)} className="rounded-lg border border-amber-300 px-3 py-1.5 font-bold underline">{sourceLabels[source]}</button>)}
+                        </div>
+                    </div>
+                )}
 
                 <section className="approval-inbox-workspace overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xl shadow-slate-200/30 dark:border-white/10 dark:bg-[#07111f] dark:shadow-none">
                     <div className="border-b border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.025]">
@@ -1296,6 +1315,11 @@ const PendingRequests = () => {
 
                     {loading ? (
                         <LoadingState />
+                    ) : filteredItems.length === 0 && failedSources > 0 ? (
+                        <div role="alert" className="px-6 py-16 text-center">
+                            <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">{t('errors.partial', { count: failedSources })}</p>
+                            <button type="button" onClick={refreshAll} disabled={fetching} className="mt-4 rounded-xl border px-4 py-2 text-sm font-bold disabled:opacity-50">{t('actions.refresh')}</button>
+                        </div>
                     ) : filteredItems.length === 0 ? (
                         <EmptyState
                             filtered={Boolean(search || sourceFilter !== 'all' || riskFilter !== 'all')}
@@ -1326,13 +1350,22 @@ const PendingRequests = () => {
                                             sourceLabel={sourceLabels[item.source]}
                                             locale={locale}
                                             t={t}
-                                            onSelect={() => setSelectedKey(item.key)}
+                                            onSelect={() => {
+                                                setSelectedKey(item.key);
+                                                if (window.matchMedia('(max-width: 1023px)').matches) {
+                                                    window.requestAnimationFrame(() => {
+                                                        requestDetailRef.current?.focus({ preventScroll: true });
+                                                        requestDetailRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+                                                    });
+                                                }
+                                            }}
                                         />
                                     ))}
                                 </div>
                             </div>
 
                             <RequestDetail
+                                detailRef={requestDetailRef}
                                 item={selectedItem}
                                 sourceLabel={sourceLabels[selectedItem?.source]}
                                 locale={locale}
@@ -1512,13 +1545,13 @@ const QueueItem = ({ item, active, sourceLabel, locale, t, onSelect }) => {
     );
 };
 
-const RequestDetail = ({ item, sourceLabel, locale, t, busy, onNavigate, onApprove, onReject }) => {
+const RequestDetail = ({ item, detailRef, sourceLabel, locale, t, busy, onNavigate, onApprove, onReject }) => {
     if (!item) return null;
     const style = SOURCE_STYLES[item.source];
     const Icon = style.icon;
 
     return (
-        <article className="flex min-h-[560px] flex-col">
+        <article ref={detailRef} tabIndex={-1} className="flex min-h-[560px] scroll-mt-20 flex-col outline-none">
             <header className="border-b border-slate-200/80 p-5 dark:border-white/10 sm:p-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex min-w-0 items-start gap-3.5">

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BookAppointment from '../BookAppointment';
+import { dateTimeInTimezone } from '../../utils/centerTimezone';
 
 const createAppointmentMock = vi.hoisted(() => vi.fn());
 const createInsuranceApprovalMock = vi.hoisted(() => vi.fn());
@@ -23,6 +24,9 @@ const historyFixture = vi.hoisted(() => ({
         exam_type_name: 'MRI Brain'
     }]
 }));
+const appointmentsFixture = vi.hoisted(() => []);
+const centerSettingsFixture = vi.hoisted(() => ({ timezone: 'America/New_York' }));
+const centerSettingsErrorFixture = vi.hoisted(() => ({ current: false }));
 
 vi.mock('react-router-dom', async (importOriginal) => ({
     ...(await importOriginal()),
@@ -49,7 +53,7 @@ vi.mock('react-redux', async (importOriginal) => {
 vi.mock('../../store/api', () => ({
     useGetPatientsQuery: () => ({ data: patientsFixture }),
     useGetPatientHistoryQuery: () => ({ data: historyFixture }),
-    useGetAppointmentsQuery: () => ({ data: [] }),
+    useGetAppointmentsQuery: () => ({ data: appointmentsFixture }),
     useGetRoomsQuery: () => ({ data: [{ room_id: 'room-1', name: 'MRI Suite 1', room_number: '101', status: 'Active' }] }),
     useGetShiftsQuery: () => ({ data: [] }),
     useGetAttendanceQuery: () => ({ data: [] }),
@@ -59,6 +63,11 @@ vi.mock('../../store/api', () => ({
     useGetExamTypesQuery: () => ({ data: [{ type_id: 'exam-1', name: 'MRI Brain', duration_minutes: 30, price: 750, body_part: 'Brain', contrast_required: false }] }),
     useGetReferringDoctorsQuery: () => ({ data: [] }),
     useGetInsuranceProvidersQuery: () => ({ data: [{ provider_id: 'provider-1', name: 'Health Plan' }] }),
+    useGetCenterSettingsQuery: () => ({
+        data: centerSettingsFixture,
+        isError: centerSettingsErrorFixture.current,
+        isLoading: false
+    }),
     useCreateAppointmentMutation: () => [createAppointmentMock, { isLoading: false }],
     useCreateInsuranceApprovalMutation: () => [createInsuranceApprovalMock, { isLoading: false }],
     useCreatePatientMutation: () => [vi.fn().mockReturnValue({ unwrap: vi.fn().mockResolvedValue({ patient_id: 'new-patient-1' }) }), { isLoading: false }]
@@ -103,6 +112,9 @@ function openAdvancedTab(label) {
 
 describe('BookAppointment page', () => {
     beforeEach(() => {
+        appointmentsFixture.length = 0;
+        centerSettingsErrorFixture.current = false;
+        centerSettingsFixture.timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
         createAppointmentMock.mockReset();
         createAppointmentMock.mockReturnValue({
             unwrap: vi.fn().mockResolvedValue({ appointment_id: 'appointment-1' })
@@ -139,6 +151,14 @@ describe('BookAppointment page', () => {
         expect(createAppointmentMock).not.toHaveBeenCalled();
     });
 
+    it('blocks confirmation and reports an error when center timezone settings cannot load', () => {
+        centerSettingsErrorFixture.current = true;
+        renderPage();
+
+        expect(confirmButton()).toBeDisabled();
+        expect(screen.getByRole('alert')).toHaveTextContent(/Could not load the center timezone/i);
+    });
+
     it('supports quick scheduling and visual priority controls', async () => {
         renderPage();
 
@@ -149,6 +169,44 @@ describe('BookAppointment page', () => {
         const urgentButton = screen.getByRole('button', { name: 'Urgent' });
         fireEvent.click(urgentButton);
         await waitFor(() => expect(urgentButton).toHaveAttribute('aria-pressed', 'true'));
+    });
+
+    it('shows no-show appointments as unavailable, matching server scheduling rules', async () => {
+        renderPage();
+
+        pickDevice();
+        pickExam();
+        fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
+        const selectedDate = document.getElementById('appointment-date').value;
+        appointmentsFixture.push({
+            modality_id: 'machine-1',
+            status: 'No-Show',
+            start_time: new Date(`${selectedDate}T08:00:00`).toISOString(),
+            end_time: new Date(`${selectedDate}T08:30:00`).toISOString()
+        });
+        fireEvent.click(screen.getByRole('button', { name: '+2 Days' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Show all slots' }));
+
+        const slot = await screen.findByRole('button', { name: '08:00' });
+        expect(slot).toBeDisabled();
+    });
+
+    it('submits the selected center-local appointment time as the matching UTC instant', async () => {
+        centerSettingsFixture.timezone = 'America/New_York';
+        renderPage();
+
+        await pickPatient('Amina', 'Amina Hassan');
+        pickDevice();
+        pickExam();
+        fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
+        const selectedDate = document.getElementById('appointment-date').value;
+        fireEvent.change(screen.getByLabelText(/Custom time/i), { target: { value: '08:00' } });
+        fireEvent.click(confirmButton());
+
+        await waitFor(() => expect(createAppointmentMock).toHaveBeenCalledTimes(1));
+        expect(createAppointmentMock.mock.calls[0][0].startTime)
+            .toBe(dateTimeInTimezone(selectedDate, '08:00', 'America/New_York').toISOString());
     });
 
     it('filters patients by partial details and keeps the chosen patient selected', async () => {
@@ -224,6 +282,7 @@ describe('BookAppointment page', () => {
         openAdvancedTab('Referral & source');
         fireEvent.click(screen.getByRole('button', { name: 'Custom' }));
         fireEvent.change(screen.getByPlaceholderText('Doctor name or clinic'), { target: { value: 'Dr. Custom Referrer' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
         await pickSlot();
         fireEvent.click(confirmButton());
 
@@ -249,9 +308,8 @@ describe('BookAppointment page', () => {
         pickDevice();
         pickExam();
 
-        expect(screen.getByText('Ready')).toBeInTheDocument();
-
         fireEvent.click(screen.getByRole('button', { name: 'Insurance / payer' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
 
         const providerSelect = await waitFor(() => {
             const match = Array.from(document.querySelectorAll('select'))
@@ -260,14 +318,17 @@ describe('BookAppointment page', () => {
             return match;
         });
         expect(screen.getByText(/Insurance Provider/)).toBeInTheDocument();
+        await pickSlot();
+        expect(confirmButton()).toBeDisabled();
         fireEvent.change(providerSelect, { target: { value: 'provider-1' } });
 
-        await pickSlot();
+        await waitFor(() => expect(confirmButton()).toBeEnabled());
         fireEvent.click(confirmButton());
 
         await waitFor(() => expect(createInsuranceApprovalMock).toHaveBeenCalledWith(expect.objectContaining({
             appointmentId: 'appointment-1',
-            providerId: 'provider-1'
+            providerId: 'provider-1',
+            requestedAmount: 750
         })));
         expect(createAppointmentMock).toHaveBeenCalledTimes(1);
         expect(createAppointmentMock.mock.calls[0][0].idempotencyKey).toMatch(/^[0-9a-f-]{36}$/i);
@@ -291,5 +352,57 @@ describe('BookAppointment page', () => {
         // turns to "Ready" once the essentials are in place.
         expect(screen.getByText('Ready')).toBeInTheDocument();
         expect(screen.getByText('Ready')).toBeInTheDocument();
+    });
+
+    it('uses a fresh idempotency key when booking another exam for the same patient', async () => {
+        renderPage();
+
+        await pickPatient('Amina', 'Amina Hassan');
+        pickDevice();
+        pickExam();
+        fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
+        await pickSlot();
+        fireEvent.click(confirmButton());
+        await waitFor(() => expect(createAppointmentMock).toHaveBeenCalledTimes(1));
+
+        fireEvent.click(screen.getByRole('button', { name: /Book Another Exam for this Patient/i }));
+        pickDevice();
+        pickExam();
+        await pickSlot();
+        fireEvent.click(confirmButton());
+        await waitFor(() => expect(createAppointmentMock).toHaveBeenCalledTimes(2));
+
+        const firstKey = createAppointmentMock.mock.calls[0][0].idempotencyKey;
+        const secondKey = createAppointmentMock.mock.calls[1][0].idempotencyKey;
+        expect(firstKey).not.toBe(secondKey);
+    });
+
+    it('preserves a zero amount and uses it for insurance authorization', async () => {
+        createInsuranceApprovalMock.mockReturnValue({
+            unwrap: vi.fn().mockResolvedValue({})
+        });
+        renderPage();
+
+        await pickPatient('Amina', 'Amina Hassan');
+        pickDevice();
+        pickExam();
+        fireEvent.click(screen.getByRole('button', { name: 'Insurance / payer' }));
+        const providerSelect = await waitFor(() => {
+            const match = Array.from(document.querySelectorAll('select'))
+                .find((select) => Array.from(select.options).some((option) => option.textContent === 'Health Plan'));
+            if (!match) throw new Error('insurance provider select not rendered');
+            return match;
+        });
+        fireEvent.change(providerSelect, { target: { value: 'provider-1' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Tomorrow' }));
+        await pickSlot();
+        fireEvent.change(screen.getByRole('spinbutton'), { target: { value: '0' } });
+        fireEvent.click(confirmButton());
+
+        await waitFor(() => expect(createAppointmentMock).toHaveBeenCalledTimes(1));
+        expect(createAppointmentMock.mock.calls[0][0].paymentAmount).toBe(0);
+        expect(createInsuranceApprovalMock).toHaveBeenCalledWith(expect.objectContaining({
+            requestedAmount: 0
+        }));
     });
 });

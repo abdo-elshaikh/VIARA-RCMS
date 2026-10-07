@@ -1,0 +1,57 @@
+{
+  "source": "backend-coverage.log (global summary); selected values captured from the generated Istanbul summary during this review",
+  "total": {
+    "statements": {
+      "pct": 53.09,
+      "covered": 12668,
+      "total": 23861
+    },
+    "branches": {
+      "pct": 41.06,
+      "covered": 8518,
+      "total": 20741
+    },
+    "functions": {
+      "pct": 61.33,
+      "covered": 1870,
+      "total": 3049
+    },
+    "lines": {
+      "pct": 54.23,
+      "covered": 11514,
+      "total": 21230
+    }
+  },
+  "selected": [
+    {
+      "file": "backend/src/controllers/authController.js",
+      "lines": 19.79,
+      "branches": 9.45
+    },
+    {
+      "file": "backend/src/controllers/invoiceController.js",
+      "lines": 31.61,
+      "branches": 19.66
+    },
+    {
+      "file": "backend/src/controllers/pacsController.js",
+      "lines": 18.84,
+      "branches": 2.93
+    },
+    {
+      "file": "backend/src/controllers/payrollController.js",
+      "lines": 47.75,
+      "branches": 36.2
+    },
+    {
+      "file": "backend/src/middleware/rbacMiddleware.js",
+      "lines": 81.92,
+      "branches": 63.15
+    },
+    {
+      "file": "backend/src/services/systemUpdateService.js",
+      "lines": 66.41,
+      "branches": 41.89
+    }
+  ]
+}

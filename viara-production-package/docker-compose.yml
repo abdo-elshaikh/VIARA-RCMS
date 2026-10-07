@@ -73,6 +73,22 @@ services:
       start_period: 180s
 
   # ── Backend Application Server ────────────────────────────────────────────
+  redis:
+    image: ${REDIS_IMAGE:?Set REDIS_IMAGE to an approved pinned image reference}
+    restart: unless-stopped
+    command: ["sh", "-c", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    networks: [data]
+    volumes: [redis_data:/data]
+    mem_limit: 512m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD-SHELL", 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   backend:
     image: ${VIARA_BACKEND_IMAGE:?Set VIARA_BACKEND_IMAGE to an approved immutable image reference}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-backend
@@ -84,6 +100,10 @@ services:
     cpus: 2.0
     stop_grace_period: 45s
     environment:
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      RATE_LIMIT_STORE: redis
+      PACS_AI_ENABLED: ${PACS_AI_ENABLED:-false}
+      PACS_AI_RELEASE_APPROVED: ${PACS_AI_RELEASE_APPROVED:-false}
       PORT: 3000
       NODE_ENV: production
       LICENSE_KEY: ${LICENSE_KEY:?A signed license key is required}
@@ -95,6 +115,8 @@ services:
       LICENSE_STORAGE_FILE: /app/license/.viara-license
       LICENSE_ACTIVATION_FILE: /app/license/.viara-activation
       CLIENT_URL: ${CLIENT_URL:?Set CLIENT_URL to the approved HTTPS staff origin}
+      TRUST_PROXY: ${TRUST_PROXY:-loopback,172.28.0.10,172.28.0.11}
+      DB_POOL_MAX: ${DB_POOL_MAX:-20}
       PORTAL_CLIENT_URL: ${PORTAL_CLIENT_URL:?Set PORTAL_CLIENT_URL to the approved HTTPS portal origin}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set ALLOWED_ORIGINS to the approved browser origins}
       WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:?Set WEBAUTHN_ORIGIN to the approved HTTPS staff origin}
@@ -118,7 +140,7 @@ services:
       BACKUP_OFFSITE_PREFIX: ${BACKUP_OFFSITE_PREFIX:-}
       BACKUP_OFFSITE_ACCESS_KEY: ${BACKUP_OFFSITE_ACCESS_KEY:-}
       BACKUP_OFFSITE_SECRET_KEY: ${BACKUP_OFFSITE_SECRET_KEY:-}
-      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:?Set METRICS_TOKEN in .env}
       PACS_COLD_STORAGE_DIR: /app/pacs-cold
       PACS_BACKUP_ENABLED: "true"
       ORTHANC_URL: http://orthanc:8042
@@ -135,6 +157,8 @@ services:
       - pacs_cold_archive:/app/pacs-cold
       - ./pacs-worklists:/app/pacs-worklists
     depends_on:
+      redis:
+        condition: service_healthy
       migrate:
         condition: service_completed_successfully
       clamav:
@@ -155,7 +179,9 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
-    networks: [app]
+    networks:
+      app:
+        ipv4_address: 172.28.0.10
     mem_limit: 256m
     cpus: 1.0
     stop_grace_period: 15s
@@ -176,7 +202,9 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:${PORTAL_PORT:-5174}:80"
-    networks: [app]
+    networks:
+      app:
+        ipv4_address: 172.28.0.11
     mem_limit: 256m
     cpus: 1.0
     stop_grace_period: 15s
@@ -255,6 +283,7 @@ services:
       start_period: 10s
 
 volumes:
+  redis_data:
   postgres_data:
   backup_data:
   license_data:
@@ -265,6 +294,9 @@ volumes:
 
 networks:
   app:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
   data:
     internal: true
   scanner-egress:

@@ -67,7 +67,12 @@ interface PatientJourneyProps {
   subheading?: string;
 }
 
-export const PatientJourney = ({ onBook, onCheckResults, heading, subheading }: PatientJourneyProps) => {
+export const PatientJourney = ({
+  onBook,
+  onCheckResults,
+  heading,
+  subheading,
+}: PatientJourneyProps) => {
   const { i18n } = useTranslation();
   const isRtl = i18n.language?.startsWith("ar");
   const reduceMotion = useReducedMotion();
@@ -108,9 +113,7 @@ export const PatientJourney = ({ onBook, onCheckResults, heading, subheading }: 
           </p>
         </div>
 
-        <div
-          className="mx-auto w-full min-w-0 max-w-6xl overflow-hidden rounded-lg border border-[#DCE8E5] bg-[#F8FBFA] shadow-[0_18px_45px_rgba(11,35,72,0.08)] dark:border-border dark:bg-background"
-        >
+        <div className="mx-auto w-full min-w-0 max-w-6xl overflow-hidden rounded-lg border border-[#DCE8E5] bg-[#F8FBFA] shadow-[0_18px_45px_rgba(11,35,72,0.08)] dark:border-border dark:bg-background">
           <div className="relative grid min-w-0 grid-cols-2 border-b border-[#DCE8E5] bg-white dark:border-border dark:bg-surface lg:grid-cols-4">
             <div
               className="absolute inset-x-0 bottom-0 h-0.5 bg-[#E1ECE9] dark:bg-border"
@@ -137,7 +140,7 @@ export const PatientJourney = ({ onBook, onCheckResults, heading, subheading }: 
                     index % 2 === 0 ? "border-e" : ""
                   } ${index < 2 ? "border-b lg:border-b-0" : ""} ${index < STEPS.length - 1 ? "lg:border-e" : "lg:border-e-0"} ${
                     isActive
-                      ? "bg-[#F0F8F5] dark:bg-primary-soft/15"
+                      ? "bg-[#F0F8F5] dark:bg-[var(--VIARA-surface-muted)]"
                       : "hover:bg-[#F8FBFA] dark:hover:bg-background"
                   }`}
                 >

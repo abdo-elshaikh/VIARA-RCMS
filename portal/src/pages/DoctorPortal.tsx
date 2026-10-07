@@ -94,10 +94,12 @@ const DoctorPortal = () => {
   });
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [selectedCaseKey, setSelectedCaseKey] = useState<string | null>(() => searchParams.get("entityId"));
-  const [selectedExamId, setSelectedExamId] = useState<string | null>(() => (
-    searchParams.get("tab") === "reports" ? searchParams.get("entityId") : null
-  ));
+  const [selectedCaseKey, setSelectedCaseKey] = useState<string | null>(() =>
+    searchParams.get("entityId"),
+  );
+  const [selectedExamId, setSelectedExamId] = useState<string | null>(() =>
+    searchParams.get("tab") === "reports" ? searchParams.get("entityId") : null,
+  );
   const [orderForm, setOrderForm] = useState(emptyOrder);
   const [messageForm, setMessageForm] = useState({
     subject: "",
@@ -144,9 +146,11 @@ const DoctorPortal = () => {
           navigate("/doctor/login", { replace: true });
           return;
         }
-        window.dispatchEvent(new CustomEvent("VIARA_FORCE_LOGOUT_WARNING", {
-          detail: { message: data?.message, remainingSeconds: remaining },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("VIARA_FORCE_LOGOUT_WARNING", {
+            detail: { message: data?.message, remainingSeconds: remaining },
+          }),
+        );
         window.setTimeout(finishLogout, 1000);
       };
       finishLogout();
@@ -159,9 +163,13 @@ const DoctorPortal = () => {
       );
     } else if (realtimeEvent === "NEW_NOTIFICATION") {
       dispatch(api.util.invalidateTags(["DoctorNotifications"]));
-      toast(data?.content || t("doctor.notifications.newUpdate", { defaultValue: "New portal update." }), {
-        icon: <Bell size={16} />,
-      });
+      toast(
+        data?.content ||
+          t("doctor.notifications.newUpdate", { defaultValue: "New portal update." }),
+        {
+          icon: <Bell size={16} />,
+        },
+      );
     }
   });
 
@@ -197,16 +205,12 @@ const DoctorPortal = () => {
     if (!sortedCases.length) return null;
     return sortedCases.find((item: any) => getCaseKey(item) === selectedCaseKey) || sortedCases[0];
   }, [selectedCaseKey, sortedCases]);
-  const finalizedCases = useMemo(
-    () => sortedCases.filter(isFinalizedRecord),
-    [sortedCases],
-  );
+  const finalizedCases = useMemo(() => sortedCases.filter(isFinalizedRecord), [sortedCases]);
   const pendingCases = useMemo(
     () =>
       sortedCases.filter(
         (item: any) =>
-          !isFinalizedRecord(item) &&
-          !["Completed", "Cancelled"].includes(item.appointment_status),
+          !isFinalizedRecord(item) && !["Completed", "Cancelled"].includes(item.appointment_status),
       ),
     [sortedCases],
   );
@@ -331,7 +335,9 @@ const DoctorPortal = () => {
       return;
     }
     if (isPastDate(orderForm.preferredDate)) {
-      toast.error(t("doctor.order.pastDate", { defaultValue: "The preferred date cannot be in the past." }));
+      toast.error(
+        t("doctor.order.pastDate", { defaultValue: "The preferred date cannot be in the past." }),
+      );
       return;
     }
     try {
@@ -545,7 +551,12 @@ const DoctorPortal = () => {
                 defaultValue: "Track case status changes, report completion, and center updates.",
               })}
             />
-            <PortalNotificationsView role="doctor" locale={locale} t={t} onNavigate={openPortalTab} />
+            <PortalNotificationsView
+              role="doctor"
+              locale={locale}
+              t={t}
+              onNavigate={openPortalTab}
+            />
           </div>
         )}
 
@@ -722,7 +733,9 @@ const ReportDetail = ({
                   title={t("doctor.report.download", "Download PDF")}
                 >
                   <Download size={15} />
-                  <span className="hidden sm:inline">{t("doctor.report.download", "Download PDF")}</span>
+                  <span className="hidden sm:inline">
+                    {t("doctor.report.download", "Download PDF")}
+                  </span>
                 </button>
               </>
             )}

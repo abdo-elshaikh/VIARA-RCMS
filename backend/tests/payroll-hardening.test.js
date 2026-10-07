@@ -23,13 +23,17 @@ const {
     getMyPayrollHistory,
     updateDeductionStatus,
     calculatePayroll,
+    cancelPayrollPeriod,
+    getPayrollRun,
+    updatePayrollRunStatus,
     _private
 } = require('../src/controllers/payrollController');
 const {
     createDeductionSchema,
     createPenaltySchema,
     updatePenaltyStatusSchema,
-    resolvePenaltyDisputeSchema
+    resolvePenaltyDisputeSchema,
+    updatePayrollRunStatusSchema
 } = require('../src/schemas/payrollSchema');
 
 const USER_ID = '00000000-0000-4000-8000-000000000a01';
@@ -341,6 +345,7 @@ describe('payroll hardening', () => {
                 ['FROM attendance_logs a', () => ok([])],
                 ['FROM staff_shifts s', () => ok([])],
                 ['FROM leave_requests l', () => ok([])],
+                ['WITH eligible_cases AS', () => ok([])],
                 ['FROM employee_deductions', () => ok([])],
                 ['FROM employee_penalties', () => ok([])],
                 ['FROM payroll_rules', () => ok([])],
@@ -370,6 +375,74 @@ describe('payroll hardening', () => {
             const rulesCall = findCall('FROM payroll_rules');
             expect(rulesCall.text).toContain('branch_id = $3::uuid');
             expect(rulesCall.text).toContain('currency_code = $4');
+        });
+
+        describe('payroll branch access', () => {
+            const branchRestrictedRequest = (overrides = {}) => makeReq({
+                user: { user_id: USER_ID, role: 'HR', branch_id: BRANCH_ID },
+                ...overrides
+            });
+
+            test.each([
+                ['read a run', (db, req, res, next) => getPayrollRun(db)(req, res, next), 'query'],
+                ['calculate a period', (db, req, res, next) => calculatePayroll(db)(req, res, next), 'connect'],
+                ['cancel a period', (db, req, res, next) => cancelPayrollPeriod(db)(req, res, next), 'connect'],
+                ['change run status', (db, req, res, next) => updatePayrollRunStatus(db)(req, res, next), 'connect']
+            ])('denies a branch user who tries to %s outside their branch', async (_description, invoke, dbMethod) => {
+                const foreignRun = {
+                    run_id: 'run-1',
+                    period_id: PERIOD_ID,
+                    branch_id: OTHER_BRANCH_ID,
+                    status: 'Calculated',
+                    period_status: 'Calculated'
+                };
+                const foreignPeriod = {
+                    period_id: PERIOD_ID,
+                    branch_id: OTHER_BRANCH_ID,
+                    status: 'Draft'
+                };
+                const client = makeClient([
+                    ['SELECT * FROM payroll_periods WHERE period_id', () => ok([foreignPeriod])],
+                    ['FROM payroll_runs r', () => ok([foreignRun])],
+                    ['SELECT * FROM payroll_periods WHERE period_id', () => ok([foreignPeriod])]
+                ]);
+                const db = {
+                    query: jest.fn(async () => ok([foreignRun])),
+                    connect: jest.fn(async () => client)
+                };
+                const req = branchRestrictedRequest({
+                    params: { periodId: PERIOD_ID, runId: 'run-1' },
+                    body: { periodId: PERIOD_ID, status: 'Reviewed', notes: 'review attempt' }
+                });
+                const res = createResponse();
+                const next = jest.fn();
+
+                await invoke(db, req, res, next);
+
+                expect(next).toHaveBeenCalledTimes(1);
+                expect(next.mock.calls[0][0].statusCode).toBe(403);
+                expect(res.json).not.toHaveBeenCalled();
+                if (dbMethod === 'connect') {
+                    expect(client.calls.some((call) => call.text === 'COMMIT')).toBe(false);
+                    expect(client.calls.some((call) => call.text === 'ROLLBACK')).toBe(true);
+                    expect(client.release).toHaveBeenCalled();
+                }
+            });
+        });
+
+        test('rejects unsupported payment methods instead of posting them to bank clearing', () => {
+            expect(updatePayrollRunStatusSchema.safeParse({
+                status: 'Paid',
+                paymentMethod: 'Other',
+                idempotencyKey: '00000000-0000-4000-8000-000000000099'
+            }).success).toBe(false);
+            expect(() => _private.payrollPaymentJournalEntries({
+                total_gross: 100,
+                total_deductions: 0,
+                total_penalties: 0,
+                total_employer_contributions: 0,
+                total_net: 100
+            }, 'Other')).toThrow('Unsupported payroll payment method');
         });
     });
 
@@ -449,6 +522,7 @@ describe('payroll hardening', () => {
                 ['FROM attendance_logs a', () => ok([])],
                 ['FROM staff_shifts s', () => ok([])],
                 ['FROM leave_requests l', () => ok([])],
+                ['WITH eligible_cases AS', () => ok([])],
                 ['FROM employee_deductions', () => ok([])],
                 ['FROM employee_penalties', () => ok([])],
                 ['FROM payroll_rules', () => ok([])],
@@ -472,6 +546,11 @@ describe('payroll hardening', () => {
             expect(skipped).toEqual([
                 { userId: 'emp-without-profile', fullName: 'No Profile', reason: 'missing_compensation_profile' }
             ]);
+            const caseMetricsQuery = client.calls.find((call) => call.text.includes('WITH eligible_cases AS'));
+            expect(caseMetricsQuery.text).toContain('p.business_date BETWEEN $1::date AND $2::date');
+            expect(caseMetricsQuery.text).toContain('r.business_date BETWEEN $1::date AND $2::date');
+            expect(caseMetricsQuery.text).not.toContain('transaction_date::date');
+            expect(caseMetricsQuery.text).not.toContain('processed_at::date');
             expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
                 status: 'Calculated',
                 skipped_employees: expect.arrayContaining([expect.objectContaining({ userId: 'emp-without-profile' })])

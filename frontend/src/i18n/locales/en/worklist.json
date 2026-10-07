@@ -520,6 +520,7 @@
     "readOnly": "Read-only clinical record",
     "readOnlyHelp": "Only the assigned radiologist can author or sign this report.",
     "signedLocked": "Signed report - editing is locked",
+    "finalizedAndLocked": "Finalized & Locked",
     "signedLockedHelp": "Start a documented amendment to make a clinically traceable correction.",
     "amendmentMode": "Documented amendment mode",
     "write": "Write",
@@ -580,6 +581,10 @@
     "clearSection": "Clear this section",
     "improve": "Improve",
     "improveTooltip": "Rephrase this section with AI",
+    "dictate": "Voice dictation",
+    "dictating": "Listening...",
+    "dictationUnsupported": "Voice dictation unsupported in this browser",
+    "quickPhrases": "Clinical macros",
     "tabs": {
       "editor": "Editor",
       "sidebar": "Study tools",
@@ -762,6 +767,7 @@
       "nothingToApply": "No eligible sections to apply.",
       "skipped": "Sections with existing text were skipped.",
       "accessDenied": "You do not have permission to generate an AI draft for this report.",
+      "statusSaveError": "Failed to save review status.",
       "error": "Failed to generate preliminary draft."
     },
     "preview": {
@@ -866,6 +872,8 @@
     },
     "method": "Delivery method",
     "newDelivery": "New delivery",
+    "openWhatsApp": "Open WhatsApp",
+    "fillPatient": "Use patient info",
     "noHistory": "No delivery history yet.",
     "notesPlaceholder": "Optional notes",
     "recipientName": "Recipient name",
@@ -1074,5 +1082,28 @@
   "saveAsReportTemplate": "Save As Report Template",
   "templateName": "Template Name",
   "eGNormalKneeMri": "e.g. Normal Knee MRI",
-  "patientDocs": "Patient Documents"
+  "patientDocs": "Patient Documents",
+  "keyboard": {
+    "shortcutsTitle": "Keyboard controls",
+    "navigate": "Navigate rows",
+    "open": "Open / Report",
+    "dicom": "PACS DICOM",
+    "case": "Case File",
+    "search": "Search",
+    "saveDraft": "Save Draft",
+    "finalize": "Finalize & Sign",
+    "templates": "Templates",
+    "closeModal": "Close modal",
+    "close": "Close"
+  },
+  "quickPhrases": {
+    "title": "Clinical Macros",
+    "normalExam": "Normal examination for age",
+    "noAcute": "No acute abnormality identified",
+    "clearLungs": "Clear lung fields bilaterally",
+    "noFracture": "No fracture or dislocation noted",
+    "stablePriors": "Stable compared to prior study",
+    "contrastGiven": "With IV contrast enhancement",
+    "clinicalCorrelation": "Clinical correlation recommended"
+  }
 }

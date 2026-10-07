@@ -1,0 +1,27 @@
+.public-dialog {
+    width: min(480px, calc(100% - 32px));
+    max-height: calc(100dvh - 32px);
+    margin: auto;
+    padding: 0;
+    border: 1px solid var(--vlp-line, #dde8e3);
+    border-radius: 24px;
+    overflow: auto;
+    color: var(--vlp-ink, #0e2b22);
+    background: var(--vlp-paper, #fff);
+    font-family: 'Viara Cairo', system-ui, sans-serif;
+    box-shadow: 0 28px 80px rgba(0, 0, 0, .25);
+}
+.public-dialog::backdrop { background: rgba(5, 24, 19, .6); backdrop-filter: blur(6px); }
+.public-dialog__header { display: flex; align-items: center; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--vlp-line, #dde8e3); }
+.public-dialog__header h2 { margin: 0; font-size: 20px; font-weight: 800; }
+.public-dialog__close { display: grid; place-items: center; flex: none; margin-inline-start: auto; width: 44px; height: 44px; border: 1px solid var(--vlp-line, #dde8e3); border-radius: 12px; background: transparent; color: inherit; cursor: pointer; }
+.public-dialog__body { padding: 20px; font-size: 14px; line-height: 1.8; }
+.public-dialog__body > p { margin: 0 0 18px; color: var(--vlp-muted, #5a7068); }
+.public-dialog__contacts { display: grid; gap: 12px; }
+.public-dialog__contacts a { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--vlp-line, #dde8e3); border-radius: 12px; color: var(--vlp-green, #087f5b); overflow-wrap: anywhere; }
+.public-dialog__secondary { min-height: 44px; padding: 8px 16px; border: 1px solid var(--vlp-line, #dde8e3); border-radius: 12px; color: inherit; background: var(--vlp-soft, #e8f3ed); cursor: pointer; }
+.public-dialog :is(a, button, input):focus-visible { outline: 2px solid var(--vlp-green, #087f5b); outline-offset: 3px; }
+.public-dialog__error { color: var(--vlp-danger, #b42335); }
+.public-connection { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 8px 16px; width: min(100% - 32px, 1200px); margin: 16px auto; padding: 12px 16px; border: 1px solid var(--vlp-line); border-radius: 14px; color: var(--vlp-ink); background: var(--vlp-soft); font-size: 14px; }
+.public-connection button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--vlp-line); border-radius: 10px; color: var(--vlp-green); background: var(--vlp-paper); cursor: pointer; }
+.public-connection button:disabled { opacity: .6; cursor: wait; }

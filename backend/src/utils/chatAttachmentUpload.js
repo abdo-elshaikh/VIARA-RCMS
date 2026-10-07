@@ -77,7 +77,8 @@ const scanChatAttachment = async (filePath) => {
             maxBuffer: 1024 * 1024
         });
     } catch (error) {
-        throw new AppError(error.killed ? 'Attachment scan timed out' : 'Attachment failed malware screening', 400);
+        if (error.code === 1 && !error.killed) throw new AppError('Attachment failed malware screening', 400);
+        throw new AppError(error.killed ? 'Attachment scan timed out' : 'Attachment scanning service is unavailable', 503);
     }
 };
 

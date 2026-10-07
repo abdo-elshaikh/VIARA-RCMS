@@ -32,6 +32,7 @@ import FinancialClosures from '../components/finance/FinancialClosures';
 import GeneralLedger from '../components/finance/GeneralLedger';
 import PLDashboard from '../components/finance/PLDashboard';
 import PageHeader from '../components/ui/PageHeader';
+import usePageTitle from '../hooks/usePageTitle';
 import {
     useGetCashierReconciliationQuery,
     useGetDiscountReportQuery,
@@ -78,33 +79,39 @@ const CATEGORY_KEYS = {
 };
 
 const TAB_IDS = ['reports', 'pl', 'expenses', 'commissions', 'discounts', 'receivables', 'cashier', 'ledger', 'closures'];
+const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(value || '') && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 
 const Financials = () => {
     const [searchParams, setSearchParams] = useSearchParams();
-    const activeTab = searchParams.get('tab') || 'reports';
+    const requestedTab = searchParams.get('tab');
+    const activeTab = TAB_IDS.includes(requestedTab) ? requestedTab : 'reports';
     const { t, i18n } = useTranslation(['workspace', 'common']);
     const isRtl = i18n.dir() === 'rtl';
 
-    const [preset, setPreset] = useState('thisMonth');
-    const [dateRange, setDateRange] = useState({ startDate: monthStart(), endDate: today() });
-    const [showCustomDates, setShowCustomDates] = useState(false);
+    const dateRange = { startDate: searchParams.get('startDate') ?? monthStart(), endDate: searchParams.get('endDate') ?? today() };
+    const requestedPreset = searchParams.get('period');
+    const preset = DATE_PRESETS.includes(requestedPreset) ? requestedPreset : searchParams.has('startDate') || searchParams.has('endDate') ? 'custom' : 'thisMonth';
+    const showCustomDates = preset === 'custom';
     const [selectedCategory, setSelectedCategory] = useState('all');
 
     const updateDateRange = useCallback((nextRange, nextPreset = 'custom') => {
-        setDateRange(nextRange);
-        setPreset(nextPreset);
-        setShowCustomDates(nextPreset === 'custom');
-    }, []);
+        setSearchParams(prev => {
+            const next = new URLSearchParams(prev);
+            next.set('startDate', nextRange.startDate);
+            next.set('endDate', nextRange.endDate);
+            next.set('period', nextPreset);
+            return next;
+        }, { replace: true });
+    }, [setSearchParams]);
 
     const hub = useCallback((key, fallback = undefined) => t(`finance.common.hub.${key}`, { defaultValue: fallback }), [t]);
+    usePageTitle(hub('title', 'Executive Financials & Governance'));
 
     const handlePresetChange = (key) => {
-        setPreset(key);
         if (key === 'custom') {
-            setShowCustomDates(true);
+            updateDateRange(dateRange, 'custom');
             return;
         }
-        setShowCustomDates(false);
         const ranges = {
             today: () => ({ startDate: today(), endDate: today() }),
             thisWeek: () => ({ startDate: weekStart(), endDate: today() }),
@@ -112,20 +119,22 @@ const Financials = () => {
             lastMonth: () => ({ startDate: lastMonthStart(), endDate: lastMonthEnd() }),
             thisYear: () => ({ startDate: yearStart(), endDate: today() })
         };
-        setDateRange(ranges[key]());
+        updateDateRange(ranges[key](), key);
     };
 
     const money = useCallback((value) => formatFinancialCurrency(value, i18n.language), [i18n.language]);
     const date = (value) => formatFinancialDate(value, i18n.language);
+    const dateRangeValid = validDate(dateRange.startDate) && validDate(dateRange.endDate) && dateRange.startDate <= dateRange.endDate;
+    const queryOptions = { skip: !dateRangeValid };
 
     const queries = {
-        pl: useGetProfitAndLossQuery(dateRange),
-        aging: useGetReceivablesAgingQuery({ asOfDate: dateRange.endDate }),
-        cashier: useGetCashierReconciliationQuery(dateRange),
-        commissions: useGetDoctorCommissionsQuery(dateRange),
-        closures: useGetFinancialClosuresQuery({}),
-        discounts: useGetDiscountReportQuery(dateRange),
-        trialBalance: useGetTrialBalanceQuery(dateRange)
+        pl: useGetProfitAndLossQuery(dateRange, queryOptions),
+        aging: useGetReceivablesAgingQuery({ asOfDate: dateRange.endDate }, queryOptions),
+        cashier: useGetCashierReconciliationQuery(dateRange, queryOptions),
+        commissions: useGetDoctorCommissionsQuery(dateRange, queryOptions),
+        closures: useGetFinancialClosuresQuery(dateRange, queryOptions),
+        discounts: useGetDiscountReportQuery(dateRange, queryOptions),
+        trialBalance: useGetTrialBalanceQuery(dateRange, queryOptions)
     };
     const queryList = Object.values(queries);
 
@@ -222,8 +231,8 @@ const Financials = () => {
     ].filter(Boolean);
 
     const pulseLoading = queryList.some((q) => q.isLoading || q.isFetching);
-    const pulseError = queryList.some((q) => q.isError);
-    const refreshAll = () => queryList.forEach((query) => query.refetch());
+    const pulseError = !dateRangeValid || queryList.some((q) => q.isError);
+    const refreshAll = () => { if (dateRangeValid) queryList.forEach((query) => query.refetch()); };
 
     const headerMetrics = [
         {
@@ -292,7 +301,7 @@ const Financials = () => {
                         </span>
                         <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold ${pulseError ? 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'}`}>
                             <span className={`h-2 w-2 rounded-full ${pulseError ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                            {pulseError ? hub('dataNeedsAttention') : hub('dataUpToDate')}
+                            {pulseLoading ? t('common:status.loading') : pulseError ? hub('dataNeedsAttention') : hub('dataUpToDate')}
                         </span>
                     </div>
                 }
@@ -309,7 +318,7 @@ const Financials = () => {
                         <button
                             type="button"
                             onClick={refreshAll}
-                            disabled={pulseLoading}
+                            disabled={pulseLoading || !dateRangeValid}
                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 cursor-pointer"
                         >
                             <RefreshCw size={14} className={pulseLoading ? 'animate-spin' : ''} />
@@ -317,11 +326,13 @@ const Financials = () => {
                         </button>
                     </div>
                 }
-                metrics={headerMetrics}
+                metrics={headerMetrics.map(metric => ({ ...metric, error: metric.error || !dateRangeValid }))}
+                metricsStorageKey="viara_financials_header_metrics"
+                metricsDefaultVisible={typeof window === 'undefined' || !window.matchMedia?.('(max-width: 639px)')?.matches}
                 metricsLabel={hub('keyIndicators', 'Key financial indicators')}
             />
 
-            {actionQueue.length > 0 && (
+            {dateRangeValid && actionQueue.length > 0 && (
                 <div className="rounded-2xl border border-amber-200/90 bg-amber-50/90 p-3 shadow-sm dark:border-amber-500/20 dark:bg-amber-950/30" role="region" aria-label={hub('actionQueue', 'Action queue')}>
                     <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-2">
@@ -349,6 +360,8 @@ const Financials = () => {
             )}
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-3 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                <details open={typeof window === 'undefined' || !window.matchMedia?.('(max-width: 639px)')?.matches} className="w-full sm:w-auto">
+                <summary className="cursor-pointer text-xs font-bold text-teal-700 sm:hidden dark:text-teal-300">{hub('categoriesAria', 'Filter financial sections by category')}</summary>
                 <div className="flex flex-wrap items-center gap-1" role="group" aria-label={hub('categoriesAria', 'Filter financial sections by category')}>
                     {categoriesList.map((cat) => (
                         <button
@@ -365,6 +378,7 @@ const Financials = () => {
                         </button>
                     ))}
                 </div>
+                </details>
 
                 <div className="flex flex-wrap items-center gap-1.5">
                     <CalendarDays size={15} className="text-teal-600 dark:text-teal-400" aria-hidden="true" />
@@ -390,7 +404,9 @@ const Financials = () => {
                                 <input
                                     type="date"
                                     value={dateRange.startDate}
-                                    onChange={(e) => { setPreset('custom'); setDateRange((r) => ({ ...r, startDate: e.target.value })); }}
+                                    required
+                                    max={dateRange.endDate}
+                                    onChange={(e) => updateDateRange({ ...dateRange, startDate: e.target.value })}
                                     className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </label>
@@ -400,7 +416,9 @@ const Financials = () => {
                                 <input
                                     type="date"
                                     value={dateRange.endDate}
-                                    onChange={(e) => { setPreset('custom'); setDateRange((r) => ({ ...r, endDate: e.target.value })); }}
+                                    required
+                                    min={dateRange.startDate}
+                                    onChange={(e) => updateDateRange({ ...dateRange, endDate: e.target.value })}
                                     className="h-7 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </label>
@@ -442,6 +460,7 @@ const Financials = () => {
             </div>
 
             <div className="min-h-[500px] w-full">
+                {!dateRangeValid ? <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-bold text-amber-900">{isRtl ? 'اختر تاريخ بداية ونهاية صحيحين، على أن تكون النهاية بعد البداية أو في اليوم نفسه.' : 'Choose valid start and end dates, with the end on or after the start.'}</div> : <>
                 {activeTab === 'reports' && <AdvancedFinancialReports dateRange={dateRange} onDateRangeChange={updateDateRange} />}
                 {activeTab === 'pl' && <PLDashboard dateRange={dateRange} onDateRangeChange={updateDateRange} selectedDatePreset={preset} />}
                 {activeTab === 'expenses' && <ExpenseManager dateRange={dateRange} />}
@@ -451,6 +470,7 @@ const Financials = () => {
                 {activeTab === 'cashier' && <CashReconciliation dateRange={dateRange} />}
                 {activeTab === 'ledger' && <GeneralLedger dateRange={dateRange} onDateRangeChange={updateDateRange} />}
                 {activeTab === 'closures' && <FinancialClosures dateRange={dateRange} />}
+                </>}
             </div>
         </main>
     );

@@ -1,0 +1,14 @@
+{
+  "database": "disposable loopback instance",
+  "postgresVersion": "18",
+  "productionComposeVersion": "15",
+  "freshMigrationSuccess": true,
+  "idempotent": true,
+  "appliedMigrations": 194,
+  "passwordResetColumns": [
+    "password_reset_expires",
+    "password_reset_token"
+  ],
+  "resetQueryError": null,
+  "stopped": true
+}

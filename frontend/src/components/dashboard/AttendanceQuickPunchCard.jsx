@@ -52,7 +52,7 @@ export const AttendanceQuickPunchCard = ({
     const isOnBreak = Boolean(isClockedIn && activeSession?.break_start && !activeSession?.break_end);
     const [breakElapsedSeconds, setBreakElapsedSeconds] = useState(0);
 
-    // Break duration ticker
+    // Break duration ticker — 5s resolution is enough for HH:MM:SS display
     useEffect(() => {
         if (!isOpen || !isOnBreak || !activeSession?.break_start) {
             setBreakElapsedSeconds(0);
@@ -61,13 +61,11 @@ export const AttendanceQuickPunchCard = ({
 
         const breakStartTime = new Date(activeSession.break_start).getTime();
         const updateBreakElapsed = () => {
-            const now = Date.now();
-            const diff = Math.max(0, Math.floor((now - breakStartTime) / 1000));
-            setBreakElapsedSeconds(diff);
+            setBreakElapsedSeconds(Math.max(0, Math.floor((Date.now() - breakStartTime) / 1000)));
         };
 
         updateBreakElapsed();
-        const interval = setInterval(updateBreakElapsed, 1000);
+        const interval = setInterval(updateBreakElapsed, 5000);
         return () => clearInterval(interval);
     }, [isOpen, isOnBreak, activeSession?.break_start]);
 
@@ -94,7 +92,7 @@ export const AttendanceQuickPunchCard = ({
         return () => clearInterval(timer);
     }, [isOpen]);
 
-    // Active session duration counter
+    // Active session duration counter — 30s is enough for HH:MM:SS granularity visible to user
     useEffect(() => {
         if (!isOpen || !isClockedIn || !activeSession?.clock_in) {
             setElapsedSeconds(0);
@@ -103,13 +101,11 @@ export const AttendanceQuickPunchCard = ({
 
         const clockInTime = new Date(activeSession.clock_in).getTime();
         const updateElapsed = () => {
-            const now = Date.now();
-            const diff = Math.max(0, Math.floor((now - clockInTime) / 1000));
-            setElapsedSeconds(diff);
+            setElapsedSeconds(Math.max(0, Math.floor((Date.now() - clockInTime) / 1000)));
         };
 
         updateElapsed();
-        const interval = setInterval(updateElapsed, 1000);
+        const interval = setInterval(updateElapsed, 30000);
         return () => clearInterval(interval);
     }, [isOpen, isClockedIn, activeSession?.clock_in]);
 

@@ -1,16 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import {
     Activity,
     ArrowLeft,
     ArrowRight,
+    ArrowUpRight,
+    BarChart3,
+    Building2,
     CalendarCheck,
     CalendarDays,
     Check,
     ChevronDown,
     FileText,
+    Database,
     Info,
     Globe,
     LayoutDashboard,
@@ -18,6 +22,8 @@ import {
     Lock,
     MoreHorizontal,
     Moon,
+    Menu,
+    PlayCircle,
     ScanLine,
     Search,
     Send,
@@ -28,24 +34,29 @@ import {
     UserRound,
     Users,
     Zap,
+    X,
 } from 'lucide-react';
 import {
     AnimatePresence,
-    animate,
     motion,
     useInView,
-    useMotionValue,
-    useReducedMotion,
     useScroll,
     useSpring,
-    useTransform,
 } from 'framer-motion';
-import { selectPreferences, setLanguage, setTheme } from '../store/preferencesSlice';
+import { setLanguage, setTheme } from '../store/preferencesSlice';
 import { VIARA_BRAND } from '../config/brand';
 import LandingServiceHealthModal from './LandingServiceHealthModal';
-import './LandingIllustrative.css';
+import usePublicAppearance from '../hooks/usePublicAppearance';
+import '../styles/LandingIllustrative.css';
+import '../styles/LandingReference.css';
 
 const EASE = [0.22, 0.68, 0.2, 1];
+
+const demoStudyDate = (time) => {
+    const now = new Date();
+    const date = [now.getFullYear(), String(now.getMonth() + 1).padStart(2, '0'), String(now.getDate()).padStart(2, '0')].join('/');
+    return `${date} - ${time}`;
+};
 
 /* ─────────────────────────── Content ─────────────────────────── */
 
@@ -54,7 +65,7 @@ const WORKLIST_ROWS = [
         id: 'VR-240421',
         patientAr: 'مريض 001', patientEn: 'Patient 001',
         modalityAr: 'CT\nأشعة مقطعية', modalityEn: 'CT\nComputed Tomography',
-        date: '2024/04/21 - 10:30',
+        date: demoStudyDate('10:30'),
         statusAr: 'مكتمل', statusEn: 'Completed', statusType: 'done',
         thumb: '/images/suite-ct.jpg',
     },
@@ -62,7 +73,7 @@ const WORKLIST_ROWS = [
         id: 'VR-240422',
         patientAr: 'مريض 002', patientEn: 'Patient 002',
         modalityAr: 'MR\nرنين مغناطيسي', modalityEn: 'MR\nMagnetic Resonance',
-        date: '2024/04/21 - 14:15',
+        date: demoStudyDate('14:15'),
         statusAr: 'قيد التنفيذ', statusEn: 'In Progress', statusType: 'progress',
         thumb: '/images/suite-mri.jpg',
     },
@@ -70,7 +81,7 @@ const WORKLIST_ROWS = [
         id: 'VR-240423',
         patientAr: 'مريض 003', patientEn: 'Patient 003',
         modalityAr: 'US\nموجات فوق صوتية', modalityEn: 'US\nUltrasound',
-        date: '2024/04/22 - 09:00',
+        date: demoStudyDate('09:00'),
         statusAr: 'مجدول', statusEn: 'Scheduled', statusType: 'scheduled',
         thumb: '/images/ultrasound-suite.jpg',
     },
@@ -221,7 +232,7 @@ function WordLine({ text, delay = 0, gradient = false, reduce }) {
 
 /* Section headings: words rise out of a mask on scroll (word-level keeps Arabic joining intact) */
 function WordReveal({ text, className, delay = 0 }) {
-    const reduce = useReducedMotion();
+    const { reduceMotion: reduce } = usePublicAppearance();
     const ref = useRef(null);
     const inView = useInView(ref, { once: true, margin: '0px 0px -12% 0px' });
     return (
@@ -246,7 +257,7 @@ function WordReveal({ text, className, delay = 0 }) {
 
 /* Blur-in on scroll — used for section headings and short copy */
 function Reveal({ children, className, delay = 0, as = 'div' }) {
-    const reduce = useReducedMotion();
+    const { reduceMotion: reduce } = usePublicAppearance();
     const ref = useRef(null);
     const inView = useInView(ref, { once: true, margin: '0px 0px -12% 0px' });
     const Tag = motion[as] || motion.div;
@@ -264,54 +275,6 @@ function Reveal({ children, className, delay = 0, as = 'div' }) {
 }
 
 /* ─────────────────────────── Hero visual ─────────────────────────── */
-
-function ScanHud({ t, reduce }) {
-    const [index, setIndex] = useState(0);
-    const slice = useMotionValue(1);
-    const sliceText = useTransform(slice, (v) => String(Math.round(v)).padStart(3, '0'));
-
-    useEffect(() => {
-        if (reduce) return undefined;
-        const id = setInterval(() => setIndex((v) => (v + 1) % MODALITIES.length), 3800);
-        return () => clearInterval(id);
-    }, [reduce]);
-
-    useEffect(() => {
-        if (reduce) return undefined;
-        const controls = animate(slice, 320, { duration: 20, ease: 'linear', repeat: Infinity, repeatType: 'loop' });
-        return () => controls.stop();
-    }, [reduce, slice]);
-
-    const m = MODALITIES[index];
-
-    return (
-        <>
-            <div className="vlp__hud vlp__hud--modality">
-                <span className="vlp__hud-live" aria-hidden="true" />
-                <AnimatePresence mode="wait" initial={false}>
-                    <motion.span
-                        key={m.code}
-                        className="vlp__hud-text"
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        transition={{ duration: 0.28 }}
-                    >
-                        <b dir="ltr">{m.code}</b>
-                        <span>{t(m.ar, m.en)}</span>
-                        <em>{t(m.planeAr, m.planeEn)}</em>
-                    </motion.span>
-                </AnimatePresence>
-            </div>
-
-            <div className="vlp__hud vlp__hud--slice" dir="ltr" aria-hidden="true">
-                <span>Slice</span>
-                <motion.b>{sliceText}</motion.b>
-                <span>/ 320</span>
-            </div>
-        </>
-    );
-}
 
 function WorklistCard({ isRtl, t }) {
     const railIcons = [LayoutDashboard, Users, CalendarDays, FileText, Settings];
@@ -365,6 +328,10 @@ function WorklistCard({ isRtl, t }) {
                                     className="vlp__wl-thumb"
                                     src={row.thumb}
                                     alt=""
+                                    width="38"
+                                    height="38"
+                                    loading="lazy"
+                                    decoding="async"
                                     onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
                                 />
                                 <span>
@@ -400,72 +367,22 @@ function WorklistCard({ isRtl, t }) {
     );
 }
 
-function ScanStage({ isRtl, t, reduce }) {
-    const stageRef = useRef(null);
-    const { scrollYProgress } = useScroll({ target: stageRef, offset: ['start end', 'end start'] });
-    const imgY = useTransform(scrollYProgress, [0, 1], ['-5%', '5%']);
-
-    const floatLoop = (offset) => (reduce
-        ? undefined
-        : { y: [0, -9, 0], transition: { duration: 5.5, ease: 'easeInOut', repeat: Infinity, delay: offset } });
-
+function ScanStage({ isRtl, t }) {
     return (
-        <div className="vlp__stage" ref={stageRef}>
-            <motion.div
-                className="vlp__monitor"
-                initial={reduce ? false : { opacity: 0, scale: 1.04, clipPath: 'inset(8% 8% 8% 8% round 28px)' }}
-                animate={{ opacity: 1, scale: 1, clipPath: 'inset(0% 0% 0% 0% round 28px)' }}
-                transition={{ duration: 1.15, ease: EASE, delay: 0.25 }}
-            >
-                <motion.div className="vlp__monitor-img" style={reduce ? undefined : { y: imgY }} aria-hidden="true" />
-                <div className="vlp__monitor-tint" aria-hidden="true" />
-                <div className="vlp__monitor-grid" aria-hidden="true" />
-                <span className="vlp__reticle vlp__reticle--tl" aria-hidden="true" />
-                <span className="vlp__reticle vlp__reticle--tr" aria-hidden="true" />
-                <span className="vlp__reticle vlp__reticle--bl" aria-hidden="true" />
-                <span className="vlp__reticle vlp__reticle--br" aria-hidden="true" />
-                {!reduce && <div className="vlp__sweep" aria-hidden="true" />}
-                <ScanHud t={t} reduce={reduce} />
-            </motion.div>
-
-            <motion.div
-                className="vlp__chip vlp__chip--a"
-                initial={{ opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1, ...(floatLoop(0) || {}) }}
-                transition={{ duration: 0.6, ease: EASE, delay: 1.4 }}
-            >
-                <span className="vlp__chip-icon"><ScanLine size={15} aria-hidden="true" /></span>
-                <span>
-                    <b>{t('تم استلام DICOM', 'DICOM received')}</b>
-                    <small>{t('CT - 320 مقطع', 'CT - 320 slices')}</small>
-                </span>
-            </motion.div>
-
-            <motion.div
-                className="vlp__chip vlp__chip--b"
-                initial={{ opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1, ...(floatLoop(1.6) || {}) }}
-                transition={{ duration: 0.6, ease: EASE, delay: 1.7 }}
-            >
-                <span className="vlp__chip-icon vlp__chip-icon--ok"><Check size={15} strokeWidth={3} aria-hidden="true" /></span>
-                <span>
-                    <b>{t('تم اعتماد التقرير', 'Report signed')}</b>
-                    <small>{t('جاهز للتسليم', 'Ready for delivery')}</small>
-                </span>
-            </motion.div>
-
+        <div className="vlp__stage">
+            <div className="vlp__preview-caption"><ScanLine size={16} aria-hidden="true" /><span>{t('CT الأشعة المقطعية · مقطع محوري', 'CT Computed tomography · Axial view')}</span><i aria-hidden="true" /></div>
             <WorklistCard isRtl={isRtl} t={t} />
         </div>
     );
 }
 
-/* ─────────────────────────── Modality marquee ─────────────────────────── */
+/* ─────────────────────────── Supported modalities ─────────────────────────── */
 
-function ModalityMarquee({ t }) {
-    const group = (suffix) => (
-        <div className="vlp__marquee-group" aria-hidden={suffix === 'b' ? 'true' : undefined} key={suffix}>
+function SupportedModalities({ t }) {
+    const group = (
+        <div className="vlp__marquee-group">
             {MODALITIES.map((m) => (
-                <span className="vlp__modality" key={`${suffix}-${m.code}`}>
+                <span className="vlp__modality" key={m.code}>
                     <b dir="ltr">{m.code}</b>
                     <span>{t(m.ar, m.en)}</span>
                 </span>
@@ -474,13 +391,15 @@ function ModalityMarquee({ t }) {
     );
     return (
         <section className="vlp__marquee-wrap" aria-label={t('أنواع الفحوصات المدعومة', 'Supported modalities')}>
-            <p className="vlp__marquee-caption">
-                {t('يدعم جميع أنواع الفحوصات التصويرية', 'Built for every imaging modality')}
-            </p>
-            <div className="vlp__marquee">
-                <div className="vlp__marquee-track">
-                    {group('a')}
-                    {group('b')}
+            <div className="vlp__modality-inner">
+                <div className="vlp__modality-heading">
+                    <ScanLine size={23} strokeWidth={1.7} aria-hidden="true" />
+                    <p className="vlp__marquee-caption">{t('أنواع الفحوصات المدعومة', 'Supported imaging modalities')}</p>
+                </div>
+                <div className="vlp__marquee">
+                    <div className="vlp__marquee-track">
+                        {group}
+                    </div>
                 </div>
             </div>
         </section>
@@ -530,30 +449,19 @@ function FeatureVisual({ type, t }) {
     );
 }
 
-function FeatureCard({ feature, t }) {
+function FeatureCard({ feature, t, reduce }) {
     const { Icon, titleAr, titleEn, descAr, descEn, visual, tone } = feature;
-    const ref = useRef(null);
-
-    const onMove = (e) => {
-        const el = ref.current;
-        if (!el) return;
-        const r = el.getBoundingClientRect();
-        el.style.setProperty('--mx', `${e.clientX - r.left}px`);
-        el.style.setProperty('--my', `${e.clientY - r.top}px`);
-    };
 
     return (
         <motion.article
-            ref={ref}
             className="vlp__feature-card"
             data-tone={tone}
             variants={featureVariant}
-            onMouseMove={onMove}
-            whileHover={{ y: -6, transition: { duration: 0.25, ease: 'easeOut' } }}
+            whileHover={reduce ? undefined : { y: -3, transition: { duration: 0.2, ease: 'easeOut' } }}
         >
             <motion.span
                 className="vlp__feature-icon"
-                whileHover={{ scale: 1.1, rotate: -6 }}
+                whileHover={reduce ? undefined : { scale: 1.04 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 16 }}
             >
                 <Icon size={26} strokeWidth={1.7} aria-hidden="true" />
@@ -568,11 +476,13 @@ function FeatureCard({ feature, t }) {
 }
 
 function FeaturesSection({ t }) {
+    const { reduceMotion: reduce } = usePublicAppearance();
     const ref = useRef(null);
     const inView = useInView(ref, { once: true, margin: '0px 0px -10% 0px' });
     return (
         <section id="vlp-features" className="vlp__section" aria-label={t('المميزات', 'Features')}>
             <div className="vlp__section-head">
+                <p className="vlp__section-kicker">{t('أدوات فريقك', 'Built for your team')}</p>
                 <WordReveal text={t('أدوات واضحة لكل فريق المركز', 'Clear tools for your whole team')} />
                 <Reveal as="p" delay={0.1}>
                     {t(
@@ -585,11 +495,11 @@ function FeaturesSection({ t }) {
                 ref={ref}
                 className="vlp__features-grid"
                 variants={staggerContainer}
-                initial="hidden"
-                animate={inView ? 'visible' : 'hidden'}
+                initial={reduce ? false : 'hidden'}
+                animate={inView || reduce ? 'visible' : 'hidden'}
             >
                 {FEATURES.map((feature) => (
-                    <FeatureCard key={feature.id} feature={feature} t={t} />
+                    <FeatureCard key={feature.id} feature={feature} t={t} reduce={reduce} />
                 ))}
             </motion.div>
         </section>
@@ -605,8 +515,9 @@ function FlowSection({ t, reduce }) {
     const progress = useSpring(scrollYProgress, { stiffness: 110, damping: 26, restDelta: 0.001 });
 
     return (
-        <section id="vlp-workflow" className="vlp__section" aria-label={t('مسار العمل', 'Workflow')}>
+        <section id="vlp-workflow" className="vlp__section vlp__section--workflow" aria-label={t('مسار العمل', 'Workflow')}>
             <div className="vlp__section-head">
+                <p className="vlp__section-kicker">{t('رحلة عمل واضحة', 'One connected workflow')}</p>
                 <WordReveal text={t('من الحجز حتى التسليم', 'From booking to delivery')} />
                 <Reveal as="p" delay={0.1}>
                     {t(
@@ -620,7 +531,7 @@ function FlowSection({ t, reduce }) {
                 ref={sectionRef}
                 className="vlp__flow"
                 variants={staggerContainer}
-                initial="hidden"
+                initial={reduce ? false : 'hidden'}
                 animate={inView || reduce ? 'visible' : 'hidden'}
             >
                 <li className="vlp__flow-track" aria-hidden="true">
@@ -631,7 +542,7 @@ function FlowSection({ t, reduce }) {
                     <motion.li className="vlp__step" key={id} variants={stepVariant}>
                         <span className="vlp__step-node">
                             <Icon size={22} strokeWidth={1.8} aria-hidden="true" />
-                            <em aria-hidden="true">{i + 1}</em>
+                            <em aria-hidden="true">{String(i + 1).padStart(2, '0')}</em>
                         </span>
                         <div className="vlp__step-text">
                             <h3>{t(titleAr, titleEn)}</h3>
@@ -644,21 +555,22 @@ function FlowSection({ t, reduce }) {
     );
 }
 
-/* ─────────────────────────── Live Metrics Strip ─────────────────────────── */
+/* ─────────────────────────── Platform capabilities ─────────────────────────── */
 
-function MetricsSection({ t, isRtl }) {
+function PlatformCapabilities({ t, isRtl }) {
+    const { reduceMotion: reduce } = usePublicAppearance();
     return (
-        <section className="vlp__metrics-strip" aria-label={t('مؤشرات الأداء', 'Key Metrics')}>
+        <section className="vlp__metrics-strip" aria-label={t('قدرات المنصة', 'Platform capabilities')}>
             <div className="vlp__metrics-grid">
                 {METRICS.map((m, i) => (
                     <motion.div
                         key={i}
                         className="vlp__metric-card"
-                        initial={{ opacity: 0, y: 20 }}
+                        initial={reduce ? false : { opacity: 0, y: 20 }}
                         whileInView={{ opacity: 1, y: 0 }}
                         viewport={{ once: true, margin: '-40px' }}
                         transition={{ duration: 0.5, delay: i * 0.1 }}
-                        whileHover={{ y: -5, transition: { duration: 0.22 } }}
+                        whileHover={reduce ? undefined : { y: -2, transition: { duration: 0.2 } }}
                     >
                         <div className="vlp__metric-header">
                             <span className="vlp__metric-icon" aria-hidden="true">
@@ -679,10 +591,12 @@ function MetricsSection({ t, isRtl }) {
 
 function FaqSection({ t, isRtl }) {
     const [openIndex, setOpenIndex] = useState(0);
+    const { reduceMotion: reduce } = usePublicAppearance();
 
     return (
-        <section id="vlp-faq" className="vlp__section" aria-label={t('الأسئلة الشائعة', 'Frequently Asked Questions')}>
+        <section id="vlp-faq" className="vlp__section vlp__section--faq" aria-label={t('الأسئلة الشائعة', 'Frequently Asked Questions')}>
             <div className="vlp__section-head">
+                <p className="vlp__section-kicker">{t('إجابات تهمك', 'Good to know')}</p>
                 <WordReveal text={t('كل ما يهمك معرفته عن VIARA', 'Frequently Asked Questions')} />
                 <Reveal as="p" delay={0.1}>
                     {t(
@@ -727,10 +641,10 @@ function FaqSection({ t, isRtl }) {
                                         role="region"
                                         aria-labelledby={`vlp-faq-trigger-${i}`}
                                         className="vlp__faq-answer"
-                                        initial={{ opacity: 0, height: 0 }}
+                                        initial={reduce ? false : { opacity: 0, height: 0 }}
                                         animate={{ opacity: 1, height: 'auto' }}
                                         exit={{ opacity: 0, height: 0 }}
-                                        transition={{ duration: 0.28, ease: 'easeInOut' }}
+                                        transition={{ duration: reduce ? 0 : 0.22, ease: 'easeInOut' }}
                                     >
                                         <p>{isRtl ? item.aAr : item.aEn}</p>
                                     </motion.div>
@@ -747,12 +661,14 @@ function FaqSection({ t, isRtl }) {
 /* ─────────────────────────── Closing CTA ─────────────────────────── */
 
 function CtaBand({ t, DirectionArrow, onOpenServices }) {
+    const { reduceMotion: reduce } = usePublicAppearance();
     return (
         <section className="vlp__cta" aria-label={t('ابدأ الآن', 'Get started')}>
             <Reveal className="vlp__cta-panel">
                 <span className="vlp__cta-aurora" aria-hidden="true" />
                 <span className="vlp__cta-grid" aria-hidden="true" />
                 <div className="vlp__cta-copy">
+                    <span className="vlp__cta-kicker">{t('مساحة عملك تبدأ هنا', 'Your workspace starts here')}</span>
                     <h2>{t('أدِر مركزك من مكان واحد', 'Run your center from one place')}</h2>
                     <p>
                         {t(
@@ -762,7 +678,7 @@ function CtaBand({ t, DirectionArrow, onOpenServices }) {
                     </p>
                 </div>
                 <div className="vlp__cta-actions">
-                    <motion.div whileHover={{ y: -3 }} whileTap={{ scale: 0.97 }}>
+                    <motion.div whileHover={reduce ? undefined : { y: -2 }} whileTap={reduce ? undefined : { scale: 0.98 }}>
                         <Link to="/login" className="vlp__button vlp__button--light vlp__button--large">
                             {t('الدخول إلى النظام', 'Open the System')}
                             <DirectionArrow size={20} aria-hidden="true" />
@@ -782,14 +698,12 @@ function CtaBand({ t, DirectionArrow, onOpenServices }) {
 
 export default function Landing() {
     const dispatch = useDispatch();
-    const preferences = useSelector(selectPreferences);
     const { i18n } = useTranslation();
-    const reduce = useReducedMotion();
+    const { dark, reduceMotion: reduce } = usePublicAppearance();
     const isRtl = i18n.dir() === 'rtl';
-    const [systemDark] = useState(
-        () => window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false,
-    );
-    const dark = preferences.theme === 'dark' || (preferences.theme === 'system' && systemDark);
+    const [menuOpen, setMenuOpen] = useState(false);
+    const menuTriggerRef = useRef(null);
+    const headerRef = useRef(null);
     const [languageBusy, setLanguageBusy] = useState(false);
     const [brandFailed, setBrandFailed] = useState(false);
     const [serviceModalOpen, setServiceModalOpen] = useState(false);
@@ -816,6 +730,25 @@ export default function Landing() {
         document.getElementById(id)?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
     };
 
+    useEffect(() => {
+        if (!menuOpen) return undefined;
+        const onPointerDown = (event) => {
+            if (!headerRef.current?.contains(event.target)) setMenuOpen(false);
+        };
+        const onKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                setMenuOpen(false);
+                menuTriggerRef.current?.focus();
+            }
+        };
+        document.addEventListener('pointerdown', onPointerDown);
+        document.addEventListener('keydown', onKeyDown);
+        return () => {
+            document.removeEventListener('pointerdown', onPointerDown);
+            document.removeEventListener('keydown', onKeyDown);
+        };
+    }, [menuOpen]);
+
     const toggleLanguage = async () => {
         if (languageBusy) return;
         const next = isRtl ? 'en' : 'ar';
@@ -833,7 +766,7 @@ export default function Landing() {
 
     return (
         <div
-            className={`vlp ${dark ? 'vlp--dark' : ''}`}
+            className={`vlp vlp--refined-header vlp--polished-sections ${dark ? 'vlp--dark' : ''}${reduce ? ' vlp--reduce-motion' : ''}`}
             dir={isRtl ? 'rtl' : 'ltr'}
             lang={isRtl ? 'ar' : 'en'}
         >
@@ -845,12 +778,14 @@ export default function Landing() {
                 <span className="vlp__aurora vlp__aurora--b" />
             </div>
 
+            <div className="vlp__masthead">
             {/* ── Header ── */}
             <motion.header
-                className={`vlp__header${stuck ? ' vlp__header--stuck' : ''}`}
-                initial={{ y: -80, opacity: 0 }}
+                ref={headerRef}
+                className={`vlp__header${stuck ? ' vlp__header--stuck' : ''}${menuOpen ? ' vlp__header--menu-open' : ''}`}
+                initial={reduce ? false : { y: -24, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
-                transition={{ duration: 0.65, ease: EASE }}
+                transition={{ duration: reduce ? 0 : 0.45, ease: EASE }}
             >
                 <motion.div
                     className="vlp__brand-wrap"
@@ -865,81 +800,86 @@ export default function Landing() {
                                 alt=""
                                 width="40"
                                 height="40"
+                                decoding="async"
                                 onError={() => setBrandFailed(true)}
                             />
                         ) : (
                             <span className="vlp__brand-fallback" aria-hidden="true">V</span>
                         )}
-                        <strong dir="ltr">{brandName}</strong>
+                        <span className="vlp__brand-lockup"><strong dir="ltr">{brandName}</strong><small>{t('نظام متكامل لإدارة مراكز الأشعة', 'Connected radiology management')}</small></span>
                     </Link>
                 </motion.div>
 
-                <nav className="vlp__nav" aria-label={t('التنقل', 'Navigation')}>
-                    <a href="#vlp-features" onClick={goTo('vlp-features')}>{t('المميزات', 'Features')}</a>
-                    <a href="#vlp-workflow" onClick={goTo('vlp-workflow')}>{t('مسار العمل', 'Workflow')}</a>
-                    <a href="#vlp-faq" onClick={goTo('vlp-faq')}>{t('الأسئلة الشائعة', 'FAQ')}</a>
-                    <Link to="/portal" className="vlp__nav-portal">{t('بوابة النتائج', 'Results Portal')}</Link>
-                </nav>
+                <div id="public-navigation-panel" className="vlp__navigation">
+                    <nav id="public-navigation" className={`vlp__nav${menuOpen ? ' vlp__nav--open' : ''}`} aria-label={t('التنقل', 'Navigation')} onClick={() => setMenuOpen(false)}>
+                        <a href="#vlp-features" onClick={goTo('vlp-features')}>{t('المميزات', 'Features')}</a>
+                        <a href="#vlp-workflow" onClick={goTo('vlp-workflow')}>{t('مسار العمل', 'Workflow')}</a>
+                        <a href="#vlp-faq" onClick={goTo('vlp-faq')}>{t('الأسئلة الشائعة', 'FAQ')}</a>
+                        <Link to="/portal" className="vlp__nav-portal"><span>{t('بوابة النتائج', 'Results Portal')}</span><ArrowUpRight size={15} aria-hidden="true" /></Link>
+                        <Link to="/doctor-portal" className="vlp__nav-doctor"><span>{t('بوابة الأطباء', 'Doctor Portal')}</span><Stethoscope size={16} aria-hidden="true" /></Link>
+                    </nav>
 
+                    <div className="vlp__utilities" role="group" aria-label={t('إعدادات العرض والخدمات', 'Display settings and services')}>
+                        <motion.button
+                            className="vlp__util-service"
+                            type="button"
+                            onClick={() => setServiceModalOpen(true)}
+                            aria-label={t('حالة الخدمات', 'Service health')}
+                            whileHover={{ y: -1 }}
+                            whileTap={{ scale: 0.96 }}
+                        >
+                            <Activity size={16} aria-hidden="true" />
+                            <span>{t('الخدمات', 'Services')}</span>
+                            <i aria-hidden="true" />
+                        </motion.button>
+
+                        <motion.button
+                            className="vlp__util-icon"
+                            type="button"
+                            onClick={() => dispatch(setTheme(dark ? 'light' : 'dark'))}
+                            aria-label={dark ? t('المظهر الفاتح', 'Light mode') : t('المظهر الداكن', 'Dark mode')}
+                            whileHover={{ rotate: 14 }}
+                            whileTap={{ scale: 0.9 }}
+                            transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+                        >
+                            <AnimatePresence mode="wait" initial={false}>
+                                <motion.span
+                                    key={dark ? 'sun' : 'moon'}
+                                    initial={{ rotate: -90, opacity: 0, scale: 0.7 }}
+                                    animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                                    exit={{ rotate: 90, opacity: 0, scale: 0.7 }}
+                                    transition={{ duration: 0.24 }}
+                                    style={{ display: 'flex' }}
+                                >
+                                    {dark ? <Sun size={18} /> : <Moon size={18} />}
+                                </motion.span>
+                            </AnimatePresence>
+                        </motion.button>
+
+                        <motion.button
+                            className="vlp__util-lang"
+                            type="button"
+                            onClick={toggleLanguage}
+                            disabled={languageBusy}
+                            aria-label={isRtl
+                                ? t('التبديل إلى الإنجليزية', 'Switch to English')
+                                : t('التبديل إلى العربية', 'Switch to Arabic')}
+                            whileTap={{ scale: 0.96 }}
+                        >
+                            <Globe size={19} aria-hidden="true" />
+                            <span>{isRtl ? 'EN' : 'عربي'}</span>
+                        </motion.button>
+
+                    </div>
+                </div>
                 <div className="vlp__actions">
-                    <motion.button
-                        className="vlp__util-service"
-                        type="button"
-                        onClick={() => setServiceModalOpen(true)}
-                        aria-label={t('حالة الخدمات', 'Service health')}
-                        whileHover={{ y: -1 }}
-                        whileTap={{ scale: 0.96 }}
-                    >
-                        <Activity size={16} aria-hidden="true" />
-                        <span>{t('الخدمات', 'Services')}</span>
-                        <i aria-hidden="true" />
-                    </motion.button>
-
-                    <motion.button
-                        className="vlp__util-icon"
-                        type="button"
-                        onClick={() => dispatch(setTheme(dark ? 'light' : 'dark'))}
-                        aria-label={dark ? t('المظهر الفاتح', 'Light mode') : t('المظهر الداكن', 'Dark mode')}
-                        whileHover={{ rotate: 14 }}
-                        whileTap={{ scale: 0.9 }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 18 }}
-                    >
-                        <AnimatePresence mode="wait" initial={false}>
-                            <motion.span
-                                key={dark ? 'sun' : 'moon'}
-                                initial={{ rotate: -90, opacity: 0, scale: 0.7 }}
-                                animate={{ rotate: 0, opacity: 1, scale: 1 }}
-                                exit={{ rotate: 90, opacity: 0, scale: 0.7 }}
-                                transition={{ duration: 0.24 }}
-                                style={{ display: 'flex' }}
-                            >
-                                {dark ? <Sun size={18} /> : <Moon size={18} />}
-                            </motion.span>
-                        </AnimatePresence>
-                    </motion.button>
-
-                    <motion.button
-                        className="vlp__util-lang"
-                        type="button"
-                        onClick={toggleLanguage}
-                        disabled={languageBusy}
-                        aria-label={isRtl
-                            ? t('التبديل إلى الإنجليزية', 'Switch to English')
-                            : t('التبديل إلى العربية', 'Switch to Arabic')}
-                        whileTap={{ scale: 0.96 }}
-                    >
-                        <Globe size={19} aria-hidden="true" />
-                        <span>{isRtl ? 'EN' : 'عربي'}</span>
-                    </motion.button>
-
-                    <span className="vlp__util-sep" aria-hidden="true" />
-
-                    <motion.div whileHover={{ y: -2 }} whileTap={{ scale: 0.97 }}>
+                    <motion.div className="vlp__signin-wrap" whileHover={reduce ? undefined : { y: -1 }} whileTap={reduce ? undefined : { scale: 0.98 }}>
                         <Link className="vlp__button vlp__header-signin" to="/login">
                             <UserRound size={15} aria-hidden="true" />
                             {t('تسجيل الدخول', 'Sign In')}
                         </Link>
                     </motion.div>
+                    <button type="button" ref={menuTriggerRef} className="vlp__menu" aria-label={menuOpen ? t('إغلاق القائمة', 'Close menu') : t('فتح القائمة', 'Open menu')} aria-expanded={menuOpen} aria-controls="public-navigation-panel" onClick={() => setMenuOpen(value => !value)}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
                 </div>
             </motion.header>
 
@@ -994,29 +934,43 @@ export default function Landing() {
                         </motion.div>
                         <a href="#vlp-features" className="vlp__explore" onClick={goTo('vlp-features')}>
                             {t('استكشف المنصة', 'Explore Platform')}
-                            <DirectionArrow size={17} aria-hidden="true" />
+                            <PlayCircle size={22} aria-hidden="true" />
                         </a>
                     </motion.div>
 
                     <motion.ul
-                        className="vlp__trust"
+                        className="vlp__capabilities"
                         variants={riseIn}
                         custom={1.05}
                         initial={reduce ? false : 'hidden'}
                         animate="visible"
-                        aria-label={t('الأمان والمعايير', 'Security and standards')}
+                        aria-label={t('خدمات المنصة', 'Platform capabilities')}
                     >
-                        <li><ShieldCheck size={15} aria-hidden="true" /><span dir="ltr">RBAC</span></li>
-                        <li><Lock size={15} aria-hidden="true" /><span dir="ltr">Audit Trail</span></li>
-                        <li><ScanLine size={15} aria-hidden="true" /><span dir="ltr">DICOM</span></li>
+                        {[
+                            [FileText, 'إدارة الفحوصات والتقارير', 'Exams & reports'],
+                            [CalendarDays, 'جدولة المواعيد', 'Scheduling'],
+                            [Users, 'إدارة المرضى', 'Patient management'],
+                            [ShieldCheck, 'إدارة الصلاحيات', 'Access management'],
+                            [Database, 'ربط الأجهزة الطبية', 'Modality integration'],
+                            [BarChart3, 'تقارير وإحصائيات', 'Reports & analytics'],
+                        ].map(([Icon, ar, en]) => <li key={en}><span className="vlp__capability-icon"><Icon size={28} strokeWidth={1.8} aria-hidden="true" /></span><span>{t(ar, en)}</span></li>)}
                     </motion.ul>
+                    <div className="vlp__hero-summary" aria-label={t('منظومة مترابطة', 'Connected platform')}>
+                        {[
+                            [Building2, 'RIS + PACS', 'في منصة واحدة', 'One platform'],
+                            [Users, 'رحلة متكاملة', 'للمريض وفريقك', 'Patient & team workflow'],
+                            [ShieldCheck, 'RBAC', 'صلاحيات حسب الدور', 'Role-based access'],
+                            [ScanLine, 'DICOM', 'تكامل الأجهزة', 'Modality integration'],
+                        ].map(([Icon, value, ar, en]) => <div key={en}><Icon size={31} strokeWidth={1.7} aria-hidden="true" /><span><strong>{value === 'رحلة متكاملة' ? t(value, 'Connected care') : value}</strong><small>{t(ar, en)}</small></span></div>)}
+                    </div>
                 </div>
 
                 <ScanStage isRtl={isRtl} t={t} reduce={reduce} />
             </section>
+            </div>
 
-            <ModalityMarquee t={t} />
-            <MetricsSection t={t} isRtl={isRtl} />
+            <SupportedModalities t={t} />
+            <PlatformCapabilities t={t} isRtl={isRtl} />
             <FeaturesSection t={t} />
             <FlowSection t={t} reduce={reduce} />
             <FaqSection t={t} isRtl={isRtl} />
@@ -1024,16 +978,35 @@ export default function Landing() {
 
             {/* ── Footer ── */}
             <footer className="vlp__footer" id="vlp-platform">
-                <span className="vlp__footer-copy">
-                    {t(
-                        `© ${new Date().getFullYear()} VIARA. جميع الحقوق محفوظة.`,
-                        `© ${new Date().getFullYear()} VIARA. All rights reserved.`,
-                    )}
-                </span>
-                <div className="vlp__footer-links">
-                    <a href="/login">{t('الدعم الفني', 'Technical Support')}</a>
-                    <span aria-hidden="true">|</span>
-                    <a href="/login">{t('اتصل بنا', 'Contact Us')}</a>
+                <div className="vlp__footer-main">
+                    <div className="vlp__footer-brand">
+                        <Link to="/" className="vlp__footer-logo" aria-label={brandName}>
+                            {!brandFailed && <img src={VIARA_BRAND.iconUrl || VIARA_BRAND.logoUrl || '/logo.png'} alt="" width="34" height="34" onError={() => setBrandFailed(true)} />}
+                            <strong dir="ltr">{brandName}</strong>
+                        </Link>
+                        <p>{t('رؤية أوضح. إدارة أكثر سلاسة لمراكز الأشعة.', 'Clearer vision. Smoother radiology management.')}</p>
+                    </div>
+                    <div className="vlp__footer-column">
+                        <h3>{t('اكتشف المنصة', 'Explore VIARA')}</h3>
+                        <a href="#vlp-features" onClick={goTo('vlp-features')}>{t('المميزات', 'Features')}</a>
+                        <a href="#vlp-workflow" onClick={goTo('vlp-workflow')}>{t('مسار العمل', 'Workflow')}</a>
+                        <a href="#vlp-faq" onClick={goTo('vlp-faq')}>{t('الأسئلة الشائعة', 'FAQ')}</a>
+                    </div>
+                    <div className="vlp__footer-column">
+                        <h3>{t('بوابات المركز', 'Center portals')}</h3>
+                        <Link to="/portal">{t('بوابة النتائج', 'Results Portal')}</Link>
+                        <Link to="/doctor-portal">{t('بوابة الأطباء', 'Doctor Portal')}</Link>
+                        <Link to="/login">{t('الدخول إلى النظام', 'Open the System')}</Link>
+                    </div>
+                </div>
+                <div className="vlp__footer-bottom">
+                    <span className="vlp__footer-copy">
+                        {t(
+                            `© ${new Date().getFullYear()} VIARA. جميع الحقوق محفوظة.`,
+                            `© ${new Date().getFullYear()} VIARA. All rights reserved.`,
+                        )}
+                    </span>
+                    <button type="button" className="vlp__footer-service" onClick={() => setServiceModalOpen(true)}><Activity size={16} aria-hidden="true" />{t('حالة الخدمات', 'Service health')}</button>
                 </div>
             </footer>
 

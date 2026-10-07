@@ -138,7 +138,8 @@
     "appointmentTable": "المواعيد",
     "selectAppointment": "تحديد الموعد",
     "viewCase": "فتح الحالة",
-    "cancelAppt": "إلغاء الموعد"
+    "cancelAppt": "إلغاء الموعد",
+    "copyMrn": "نسخ الرقم الطبي"
   },
   "availability": {
     "title": "التوفر",
@@ -163,6 +164,9 @@
     "activeRequests": "{{count}} طلبات نشطة",
     "selectPatient": "اختر مريضًا",
     "searchPatientPlaceholder": "ابحث عن مريض بالرقم الطبي أو الاسم...",
+    "searchPatient": "ابحث عن المريض بالاسم أو الرقم الطبي...",
+    "clearPatient": "مسح المريض المحدد",
+    "noPatientResults": "لم يتم العثور على مرضى",
     "noPatientsFound": "لم يتم العثور على مرضى مطابقين",
     "unnamedPatient": "مريض بدون اسم",
     "preferredDate": "التاريخ المفضل",

@@ -50,6 +50,14 @@ const FONT_SCALE_OPTIONS = [
     { id: 'xlarge', labelKey: 'topbar.fontScaleXlarge', defaultLabel: 'Extra Large', size: '17px', percent: '130%', symbol: 'A++' },
 ];
 
+const BORDER_RADIUS_OPTIONS = [
+    { id: 'sharp', labelKey: 'topbar.radiusSharp', defaultLabel: 'Sharp', labelAr: 'حاد', value: '0px' },
+    { id: 'small', labelKey: 'topbar.radiusSmall', defaultLabel: 'Subtle', labelAr: 'خفيف', value: '4px' },
+    { id: 'medium', labelKey: 'topbar.radiusMedium', defaultLabel: 'Default', labelAr: 'افتراضي', value: '10px' },
+    { id: 'large', labelKey: 'topbar.radiusLarge', defaultLabel: 'Smooth', labelAr: 'ناعم', value: '16px' },
+    { id: 'full', labelKey: 'topbar.radiusFull', defaultLabel: 'Pill', labelAr: 'كبسولة', value: '9999px' },
+];
+
 const playQuickChime = (requestedVolume = 0.5) => {
     try {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -116,6 +124,7 @@ const QuickPreferencesMenu = ({
     const activeColor = preferences?.primaryColor || 'emerald';
     const activeDensity = preferences?.density || 'comfortable';
     const activeFontScale = preferences?.fontScale || 'normal';
+    const activeBorderRadius = preferences?.borderRadius || 'medium';
     const isHighContrast = Boolean(preferences?.highContrast);
     const isReducedMotion = preferences?.motion === 'reduced';
     const isCompactSidebar = Boolean(preferences?.compactSidebar);
@@ -241,6 +250,35 @@ const QuickPreferencesMenu = ({
                                 onClick={() => onUpdatePreference({ density: item.id })}
                             >
                                 {t(item.labelKey, { defaultValue: item.defaultLabel })}
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
+                {/* Border Radius */}
+                <section>
+                    <p className="vx-prefs-label">
+                        {t('topbar.borderRadius', { defaultValue: isRtl ? 'استدارة الحدود' : 'Border Radius' })}
+                        <span>{BORDER_RADIUS_OPTIONS.find((r) => r.id === activeBorderRadius)?.[isRtl ? 'labelAr' : 'defaultLabel'] || activeBorderRadius}</span>
+                    </p>
+                    <div className="vx-seg" role="group" aria-label={t('topbar.borderRadius', { defaultValue: 'Border Radius' })}>
+                        {BORDER_RADIUS_OPTIONS.map((item) => (
+                            <button
+                                key={item.id}
+                                type="button"
+                                aria-selected={activeBorderRadius === item.id}
+                                aria-pressed={activeBorderRadius === item.id}
+                                onClick={() => onUpdatePreference({ borderRadius: item.id })}
+                                title={isRtl ? item.labelAr : item.defaultLabel}
+                            >
+                                <span className="vx-seg-inline !gap-1">
+                                    <span
+                                        className="inline-block h-2.5 w-2.5 border border-current"
+                                        style={{ borderRadius: item.value }}
+                                        aria-hidden="true"
+                                    />
+                                    {isRtl ? item.labelAr : item.defaultLabel}
+                                </span>
                             </button>
                         ))}
                     </div>
