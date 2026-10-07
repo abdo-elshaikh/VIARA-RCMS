@@ -989,7 +989,8 @@ export const ClinicalImportDialog = ({
                                             value={previewSearch}
                                             onChange={e => setPreviewSearch(e.target.value)}
                                             placeholder={isArabic ? 'بحث في المعاينة...' : 'Search preview...'}
-                                            className="w-full rounded-lg border border-slate-200 bg-white py-1 ps-7 pe-2 text-xs text-slate-800 placeholder-slate-400 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                                            aria-label={isArabic ? 'بحث في المعاينة' : 'Search preview'}
+                                            className="w-full rounded-lg border border-slate-200 bg-white py-1 ps-7 pe-2 text-xs text-slate-800 placeholder-slate-400 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
                                         />
                                     </div>
                                 </div>

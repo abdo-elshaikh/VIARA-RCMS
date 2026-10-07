@@ -766,7 +766,8 @@ export default function UserActivityTracking() {
                                 value={filters.q}
                                 onChange={(e) => updateFilter('q', e.target.value)}
                                 placeholder={isAr ? 'ابحث بالعملية أو اسم الموظف' : 'Search by action or staff member'}
-                                className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 ps-9 pe-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
+                                aria-label={isAr ? 'ابحث بالعملية أو اسم الموظف' : 'Search by action or staff member'}
+                                className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 ps-9 pe-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
                             />
                         </div>
                     </div>
@@ -779,7 +780,8 @@ export default function UserActivityTracking() {
                         <select
                             value={filters.operationType}
                             onChange={(e) => updateFilter('operationType', e.target.value)}
-                            className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
+                            aria-label={t('operationType')}
+                            className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
                         >
                             <option value="">{t('allOperations')}</option>
                             <option value="create">{t('createXX')}</option>
@@ -797,7 +799,8 @@ export default function UserActivityTracking() {
                         <select
                             value={filters.targetType}
                             onChange={(e) => updateFilter('targetType', e.target.value)}
-                            className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
+                            aria-label={t('targetResource')}
+                            className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
                         >
                             {RESOURCE_TABLES.map(res => (
                                 <option key={res.id} value={res.id}>
@@ -811,12 +814,13 @@ export default function UserActivityTracking() {
                     <div>
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
                             {t('startDate')}
-                        </span>
                         <input
                             type="date"
                             value={filters.startDate}
                             onChange={(e) => updateFilter('startDate', e.target.value)}
-                            className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
+                            aria-label={t('startDate')}
+                            className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
+                        />  className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
                         />
                     </div>
 
@@ -829,7 +833,8 @@ export default function UserActivityTracking() {
                             type="date"
                             value={filters.endDate}
                             onChange={(e) => updateFilter('endDate', e.target.value)}
-                            className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
+                            aria-label={t('endDate')}
+                            className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-800 dark:bg-slate-950/50 dark:text-white"
                         />
                     </div>
                 </div>

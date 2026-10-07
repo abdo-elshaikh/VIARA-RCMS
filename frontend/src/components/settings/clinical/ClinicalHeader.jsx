@@ -26,7 +26,7 @@ const HeaderButton = ({ children, onClick, primary = false, className = '' }) =>
   <button
     type="button"
     onClick={onClick}
-    className={`inline-flex min-h-9 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold transition-all focus:outline-none ${
+    className={`inline-flex min-h-9 items-center justify-center gap-2 rounded-xl px-4 text-xs font-bold transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 ${
       primary
         ? 'bg-teal-600 text-white shadow-sm hover:bg-teal-500 active:scale-[0.98]'
         : 'border border-slate-200/80 bg-white/90 text-slate-700 shadow-2xs hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800'

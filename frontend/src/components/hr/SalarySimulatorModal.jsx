@@ -206,6 +206,7 @@ export const SalarySimulatorModal = ({
                         <select
                             value={selectedUserId}
                             onChange={(e) => setSelectedUserId(e.target.value)}
+                            aria-label={isArabic ? 'اختر موظفاً للمحاكاة' : 'Choose Staff Member'}
                             className="rounded-xl border border-teal-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500 dark:border-teal-800 dark:bg-slate-900 dark:text-slate-200"
                         >
                             <option value="">{isArabic ? '-- اختر موظفاً للمحاكاة --' : '-- Choose Staff Member --'}</option>
@@ -241,7 +242,7 @@ export const SalarySimulatorModal = ({
                                 <select
                                     value={salaryType}
                                     onChange={(e) => setSalaryType(e.target.value)}
-                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-bold text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                 >
                                     {['Monthly', 'Hourly', 'Daily', 'PerShift', 'PerCase', 'ShiftAndCase', 'Percentage'].map((type) => (
                                         <option key={type} value={type}>{t(`salaryTypes.${type}`)}</option>
@@ -257,7 +258,7 @@ export const SalarySimulatorModal = ({
                                         min="0"
                                         value={baseSalary}
                                         onChange={(e) => setBaseSalary(Number(e.target.value))}
-                                        className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                        className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                     />
                                 </label>
                             ) : salaryType === 'Hourly' ? (
@@ -268,7 +269,7 @@ export const SalarySimulatorModal = ({
                                         min="0"
                                         value={hourlyRate}
                                         onChange={(e) => setHourlyRate(Number(e.target.value))}
-                                        className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                        className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                     />
                                 </label>
                             ) : salaryType === 'Daily' ? (
@@ -309,7 +310,7 @@ export const SalarySimulatorModal = ({
                                     max="31"
                                     value={standardDays}
                                     onChange={(e) => setStandardDays(Number(e.target.value))}
-                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </label>
                             <label className="block">
@@ -320,7 +321,7 @@ export const SalarySimulatorModal = ({
                                     max="24"
                                     value={standardHoursPerDay}
                                     onChange={(e) => setStandardHoursPerDay(Number(e.target.value))}
-                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </label>
                         </div>
@@ -348,7 +349,7 @@ export const SalarySimulatorModal = ({
                                         max="31"
                                         value={daysWorked}
                                         onChange={(e) => setDaysWorked(Number(e.target.value))}
-                                        className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                        className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                     />
                                 </label>
                             ) : salaryType === 'Hourly' ? (
@@ -359,7 +360,7 @@ export const SalarySimulatorModal = ({
                                         min="0"
                                         value={hoursWorked}
                                         onChange={(e) => setHoursWorked(Number(e.target.value))}
-                                        className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                        className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                     />
                                 </label>
                             ) : (
@@ -392,7 +393,7 @@ export const SalarySimulatorModal = ({
                                     min="0"
                                     value={overtimeHours}
                                     onChange={(e) => setOvertimeHours(Number(e.target.value))}
-                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </label>
                         </div>
@@ -405,7 +406,7 @@ export const SalarySimulatorModal = ({
                                     min="0"
                                     value={lateMinutes}
                                     onChange={(e) => setLateMinutes(Number(e.target.value))}
-                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </label>
                             <label className="block">
@@ -416,7 +417,7 @@ export const SalarySimulatorModal = ({
                                     max="31"
                                     value={unexcusedAbsenceDays}
                                     onChange={(e) => setUnexcusedAbsenceDays(Number(e.target.value))}
-                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
+                                    className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </label>
                         </div>
@@ -443,7 +444,7 @@ export const SalarySimulatorModal = ({
                                 min="0"
                                 value={customAllowances}
                                 onChange={(e) => setCustomAllowances(Number(e.target.value))}
-                                className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-emerald-700 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-emerald-400"
+                                className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-emerald-700 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-emerald-400"
                             />
                         </label>
 
@@ -454,7 +455,7 @@ export const SalarySimulatorModal = ({
                                 min="0"
                                 value={loanDeduction}
                                 onChange={(e) => setLoanDeduction(Number(e.target.value))}
-                                className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-amber-700 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-amber-400"
+                                className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-amber-700 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-amber-400"
                             />
                         </label>
 
@@ -465,7 +466,7 @@ export const SalarySimulatorModal = ({
                                 min="0"
                                 value={disciplinaryPenalty}
                                 onChange={(e) => setDisciplinaryPenalty(Number(e.target.value))}
-                                className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-rose-700 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-rose-400"
+                                className="w-full rounded-xl border border-slate-200 bg-white p-2 text-xs font-mono font-bold text-rose-700 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-950 dark:text-rose-400"
                             />
                         </label>
                     </div>

@@ -994,7 +994,8 @@ const ReceptionSupervisorManager = () => {
                                                 value={modalEmployeeSearch}
                                                 onChange={(e) => setModalEmployeeSearch(e.target.value)}
                                                 placeholder={say('بحث باسم الموظف أو الدور...', 'Search employee or role...')}
-                                                className="w-full rounded-xl border border-slate-300 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-800 focus:border-teal-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white rtl:pl-3 rtl:pr-8"
+                                                aria-label={say('بحث باسم الموظف أو الدور', 'Search by employee name or role')}
+                                                className="w-full rounded-xl border border-slate-300 bg-white py-1.5 pl-8 pr-3 text-xs text-slate-800 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700 dark:bg-slate-800 dark:text-white rtl:pl-3 rtl:pr-8"
                                             />
                                         </div>
                                         <div className="flex items-center gap-1.5">

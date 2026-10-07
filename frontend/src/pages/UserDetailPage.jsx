@@ -871,7 +871,7 @@ export default function UserDetailPage() {
                                     <button
                                         type="button"
                                         onClick={() => setIsActive(!isActive)}
-                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 ${
                                             isActive ? 'bg-teal-600' : 'bg-slate-300 dark:bg-slate-700'
                                         }`}
                                     >
@@ -891,7 +891,8 @@ export default function UserDetailPage() {
                                         value={newPassword}
                                         onChange={(e) => setNewPassword(e.target.value)}
                                         placeholder={t('users.newPasswordPlaceholder', { defaultValue: 'أدخل كلمة مرور جديدة (6 أحرف على الأقل)...' })}
-                                        className="w-full max-w-md rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                                        aria-label={t('users.newPasswordPlaceholder', { defaultValue: 'أدخل كلمة مرور جديدة (6 أحرف على الأقل)...' })}
+                                        className="w-full max-w-md rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
                                     />
                                 </div>
                             </div>
@@ -915,7 +916,8 @@ export default function UserDetailPage() {
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     placeholder={t('users.searchLogs', { defaultValue: 'البحث في سجل الحركات بالنشاط، الجدول، أو عنوان IP...' })}
-                                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 ps-9 pe-4 py-2 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-white"
+                                    aria-label={t('users.searchLogs', { defaultValue: 'البحث في سجل الحركات بالنشاط، الجدول، أو عنوان IP...' })}
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 ps-9 pe-4 py-2 text-xs font-semibold text-slate-900 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-2 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
                                 />
                             </div>
                         </div>

@@ -2,6 +2,8 @@
     reverse_proxy /api/* viara-backend:3000
     reverse_proxy /health/* viara-backend:3000
     reverse_proxy /metrics viara-backend:3000
+    # ملاحظة: مسارات PACS/DICOM المباشرة محمية بـ subdomain منفصل (pacs.{$DOMAIN})
+    # يتطلب الاتصال عبر شبكة WireGuard VPN — راجع block أدناه
     reverse_proxy /* viara-frontend:80
 
     # Security headers
@@ -15,6 +17,30 @@
     # Logging
     log {
         output file /data/logs/access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+    }
+}
+
+# PACS/DICOM Access — VPN Only
+# هذا الـ subdomain مخصص لأخصائيي الأشعة ومقيّد بشبكة WireGuard VPN فقط
+pacs.{$DOMAIN} {
+    @vpn_only {
+        remote_ip {$VPN_SUBNET:-10.8.0.0/24}
+    }
+    @not_vpn {
+        not remote_ip {$VPN_SUBNET:-10.8.0.0/24}
+    }
+    handle @not_vpn {
+        respond "Access restricted to VPN users only" 403
+    }
+    handle @vpn_only {
+        reverse_proxy viara-pacs:8042
+    }
+
+    log {
+        output file /data/logs/pacs-access.log {
             roll_size 100mb
             roll_keep 5
         }

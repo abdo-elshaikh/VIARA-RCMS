@@ -609,7 +609,7 @@ const Equipment = () => {
                                     aria-label={t('searchAcrossRoomsModalitiesAndProcedures')}
                                     onChange={(e) => setMatrixSearch(e.target.value)}
                                     placeholder={t('searchAcrossRoomsModalitiesAndProcedures')}
-                                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 ps-9 pe-3 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 ps-9 pe-3 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </div>
 
@@ -943,7 +943,7 @@ const Equipment = () => {
                                     aria-label={t('searchProcedureByNameCodeAnatomy')}
                                     onChange={(e) => setProcedureSearch(e.target.value)}
                                     placeholder={t('searchProcedureByNameCodeAnatomy')}
-                                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 ps-9 pe-3 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+                                    className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 ps-9 pe-3 text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
                                 />
                             </div>
 

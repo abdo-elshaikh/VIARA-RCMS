@@ -1813,7 +1813,8 @@ const Worklist = () => {
                             value={search}
                             onChange={handleSearch}
                             placeholder={t('filters.search', { defaultValue: 'Search patient name, MRN, exam modality, accession #...' })}
-                            className="w-full rounded-xl border border-slate-200/90 bg-slate-50/70 py-2 ps-10 pe-10 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-none dark:border-slate-700/80 dark:bg-slate-950/40 dark:text-white dark:focus:bg-slate-900"
+                            aria-label={t('filters.search', { defaultValue: 'Search patient name, MRN, exam modality, accession #...' })}
+                            className="w-full rounded-xl border border-slate-200/90 bg-slate-50/70 py-2 ps-10 pe-10 text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:border-slate-700/80 dark:bg-slate-950/40 dark:text-white dark:focus:bg-slate-900"
                         />
                         {search && (
                             <button

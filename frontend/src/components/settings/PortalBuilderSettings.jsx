@@ -1119,7 +1119,7 @@ export default function PortalBuilderSettings() {
                 <div className="max-w-md rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900 overflow-hidden shadow-sm">
                   {page.seo.ogImageUrl && (
                     <div className="h-32 w-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                      <img src={page.seo.ogImageUrl} alt="Social" className="h-full w-full object-cover" />
+                      <img src={page.seo.ogImageUrl} alt={page.seo.title?.[langKey] ? `${page.seo.title[langKey]} — social preview image` : 'Social preview image'} className="h-full w-full object-cover" />
                     </div>
                   )}
                   <div className="p-3 space-y-1">

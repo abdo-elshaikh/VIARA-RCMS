@@ -1602,7 +1602,7 @@ export default function CommunicationCenter() {
                                 value={inChatSearch}
                                 onChange={(e) => setInChatSearch(e.target.value)}
                                 placeholder={t('chat.searchInChat', { defaultValue: 'Search messages in this thread...' })}
-                                className="flex-1 bg-transparent text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-200"
+                                className="flex-1 bg-transparent text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1 dark:text-slate-200"
                                 autoFocus
                             />
                             {inChatSearch && (
@@ -2194,7 +2194,8 @@ export default function CommunicationCenter() {
                                                 placeholder={t('chat.channelIdentifierPlaceholder', { defaultValue: 'e.g. mri-coordination' })}
                                                 value={newChannelName}
                                                 onChange={(e) => setNewChannelName(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
-                                                className="h-10 w-full rounded-2xl border border-slate-200 ps-8 pe-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none"
+                                                aria-label={t('chat.channelIdentifier', { defaultValue: 'Channel Slug / Identifier' })}
+                                                className="h-10 w-full rounded-2xl border border-slate-200 ps-8 pe-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
                                             />
                                         </div>
                                     </div>
@@ -2208,7 +2209,8 @@ export default function CommunicationCenter() {
                                             placeholder={t('chat.channelDisplayNamePlaceholder', { defaultValue: 'e.g. MRI Coordination' })}
                                             value={newChannelDisplayName}
                                             onChange={(e) => setNewChannelDisplayName(e.target.value)}
-                                            className="h-10 w-full rounded-2xl border border-slate-200 px-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none"
+                                            aria-label={t('chat.channelDisplayName', { defaultValue: 'Display Title' })}
+                                            className="h-10 w-full rounded-2xl border border-slate-200 px-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
                                         />
                                     </div>
                                 </div>
@@ -2222,7 +2224,8 @@ export default function CommunicationCenter() {
                                         placeholder={t('chat.channelDescriptionPlaceholder', { defaultValue: 'e.g. Daily case coordination and MRI referrals' })}
                                         value={newChannelDesc}
                                         onChange={(e) => setNewChannelDesc(e.target.value)}
-                                        className="w-full resize-none rounded-2xl border border-slate-200 p-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none"
+                                        aria-label={t('chat.channelDescription', { defaultValue: 'Description / Purpose' })}
+                                        className="w-full resize-none rounded-2xl border border-slate-200 p-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
                                     />
                                 </div>
 
@@ -2242,7 +2245,7 @@ export default function CommunicationCenter() {
                                         <button
                                             type="button"
                                             onClick={() => setNewChannelIsPrivate(!newChannelIsPrivate)}
-                                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${newChannelIsPrivate ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'
+                                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${newChannelIsPrivate ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'
                                                 }`}
                                         >
                                             <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${newChannelIsPrivate ? 'translate-x-5 rtl:-translate-x-5' : 'translate-x-0'
@@ -2381,7 +2384,8 @@ export default function CommunicationCenter() {
                                         type="text"
                                         value={editDisplayName}
                                         onChange={(e) => setEditDisplayName(e.target.value)}
-                                        className="h-10 w-full rounded-2xl border border-slate-200 px-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none"
+                                        aria-label={t('chat.channelDisplayName', { defaultValue: 'Display Title' })}
+                                        className="h-10 w-full rounded-2xl border border-slate-200 px-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
                                     />
                                 </div>
 
@@ -2393,7 +2397,8 @@ export default function CommunicationCenter() {
                                         rows={2}
                                         value={editDesc}
                                         onChange={(e) => setEditDesc(e.target.value)}
-                                        className="w-full resize-none rounded-2xl border border-slate-200 p-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none"
+                                        aria-label={t('chat.channelDescription', { defaultValue: 'Description / Purpose' })}
+                                        className="w-full resize-none rounded-2xl border border-slate-200 p-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
                                     />
                                 </div>
 
@@ -2413,7 +2418,7 @@ export default function CommunicationCenter() {
                                         <button
                                             type="button"
                                             onClick={() => setEditIsPrivate(!editIsPrivate)}
-                                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${editIsPrivate ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'
+                                            className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${editIsPrivate ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'
                                                 }`}
                                         >
                                             <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${editIsPrivate ? 'translate-x-5 rtl:-translate-x-5' : 'translate-x-0'
@@ -2552,7 +2557,8 @@ export default function CommunicationCenter() {
                                     <select
                                         value={selectedUserToAdd}
                                         onChange={(e) => setSelectedUserToAdd(e.target.value)}
-                                        className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none"
+                                        aria-label={t('chat.selectStaffMember', { defaultValue: 'Select a staff member...' })}
+                                        className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
                                     >
                                         <option value="">{t('chat.selectStaffMember', { defaultValue: 'Select a staff member...' })}</option>
                                         {staffUsers
@@ -2567,7 +2573,8 @@ export default function CommunicationCenter() {
                                     <select
                                         value={selectedRoleToAdd}
                                         onChange={(e) => setSelectedRoleToAdd(e.target.value)}
-                                        className="h-9 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none"
+                                        aria-label={t('chat.memberRole', { defaultValue: 'Member role' })}
+                                        className="h-9 rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-800 dark:border-slate-800 dark:bg-[#070e1a] dark:text-slate-200 focus:border-teal-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 focus-visible:ring-offset-1"
                                     >
                                         <option value="member">{t('chat.roleMember', { defaultValue: 'Member' })}</option>
                                         <option value="admin">{t('chat.roleAdmin', { defaultValue: 'Admin' })}</option>
