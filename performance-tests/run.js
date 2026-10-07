@@ -24,6 +24,8 @@ const SCENARIOS = {
     '09': { name: '09_concurrency_collision', label: 'Concurrency Collision & Race Conditions (PF-13)', fn: require('./scenarios/09_concurrency_collision') },
     '10': { name: '10_spike_surge', label: 'Spike & Surge Load Testing (PF-05)', fn: require('./scenarios/10_spike_surge') },
     '11': { name: '11_soak_memory', label: 'Endurance, Soak & Token Storms (PF-06 & PF-12)', fn: require('./scenarios/11_soak_memory') },
+    '12': { name: '12_peak_load', label: 'Peak Load — Realistic Clinical Workflow (H-04)', fn: require('./scenarios/12_peak_load') },
+    '13': { name: '13_soak_test', label: 'Soak Test — Long-Running Stability & Memory Leak Detection (H-04)', fn: require('./scenarios/13_soak_test') },
 };
 
 function parseArgs() {
@@ -64,7 +66,7 @@ VIARA Performance & Load Testing Harness
 Usage: node performance-tests/run.js [options]
 
 Options:
-  --scenario=<01..08|all>   Scenario to run (default: all)
+  --scenario=<01..13|all>   Scenario to run (default: all)
                             01: Auth & Sessions
                             02: Reception & Booking
                             03: Clinical & Reporting
@@ -73,6 +75,11 @@ Options:
                             06: Admin & Analytics
                             07: PACS & Imaging
                             08: Blended Concurrency Stress
+                            09: Concurrency Collision & Race Conditions
+                            10: Spike & Surge Load
+                            11: Endurance, Soak & Token Storms
+                            12: Peak Load — Realistic Clinical Workflow (H-04)
+                            13: Soak Test — Long-Running Stability (H-04)
   --users=<N>               Number of concurrent virtual users (default: 1)
   --duration=<N>            Test duration in seconds (default: 15)
   --target=<url>            Target API server (default: ${config.baseUrl})
