@@ -311,6 +311,41 @@ services:
       retries: 3
       start_period: 10s
 
+  # ── WireGuard VPN (PACS Radiologist Remote Access) ────────────────────────
+  wireguard:
+    image: ${WIREGUARD_IMAGE:-linuxserver/wireguard:latest}
+    container_name: viara-vpn
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=${TZ:-Asia/Riyadh}
+      - SERVERURL=${VPN_SERVER_URL:-vpn.yourdomain.com}
+      - SERVERPORT=${VPN_PORT:-51820}
+      - PEERS=${VPN_PEERS:-5}
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=${VPN_SUBNET:-10.8.0.0}
+      - ALLOWEDIPS=10.8.0.0/24,${VPN_ALLOWED_IPS:-}
+    volumes:
+      - wireguard_config:/config
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - "${VPN_PORT:-51820}:51820/udp"
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped
+    networks: [app]
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "wg", "show"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
 volumes:
   redis_data:
   postgres_data:
@@ -322,6 +357,7 @@ volumes:
   clamav_signatures:
   caddy_data:
   caddy_logs:
+  wireguard_config:
 
 networks:
   app:
