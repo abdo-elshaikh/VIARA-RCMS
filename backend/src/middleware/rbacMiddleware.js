@@ -1,14 +1,37 @@
+const { createClient } = require('redis');
 const { AppError } = require('./errorHandler');
 const { logSecurityEvent } = require('../services/securityEventService');
 const { triggerEventForRole } = require('../services/notificationJobService');
 const { getGrantedEmergencyPermissions } = require('../services/emergencyAccessService');
 
-// Simple in-memory cache for role permissions to avoid DB hits on every request
-// In a distributed setup, this would be Redis.
+// In-memory fallback cache — still exported for backward compatibility and
+// used when Redis is unavailable (dev environments, unit tests, etc.).
 const permissionCache = new Map();
 let cacheLastUpdated = 0;
-const CACHE_TTL = 60 * 1000; // 1 minute
+const CACHE_TTL = 60; // seconds (also used as Redis TTL)
 let isRefreshing = false;
+
+// Shared Redis RBAC cache — permissions are consistent across all replicas (TTL: 60 s). Falls back to in-process Map when Redis is unavailable.
+let rbacRedisClient;
+const getRbacRedisClient = () => {
+    if (!rbacRedisClient) {
+        rbacRedisClient = createClient({
+            url: process.env.REDIS_URL,
+            socket: { connectTimeout: 2000, reconnectStrategy: false }
+        });
+        rbacRedisClient.on('error', () => {});
+    }
+    return rbacRedisClient;
+};
+
+const connectRbacRedis = async () => {
+    const client = getRbacRedisClient();
+    if (client.isReady) return client;
+    if (!client.isOpen) {
+        await client.connect().catch(() => {});
+    }
+    return client;
+};
 
 const attachGrantedPermissions = (req, permissions = []) => {
     const granted = permissions.filter(Boolean);
@@ -35,6 +58,8 @@ const markEmergencyAccessUsed = async (db, req, permissions) => {
 
 /**
  * Initializes or refreshes the permission cache from the database.
+ * Writes to Redis (keyed by role) when available; always mirrors into the
+ * in-process Map so unit tests and Redis-free dev environments keep working.
  */
 const refreshPermissionCache = async (db) => {
     if (isRefreshing) {
@@ -48,19 +73,45 @@ const refreshPermissionCache = async (db) => {
             JOIN permissions p ON rp.permission_id = p.permission_id
         `;
         const result = await db.query(query);
-        
-        permissionCache.clear();
-        
+
+        // Build a plain Map of role -> Set<permission> from the query results.
+        const roleMap = new Map();
         result.rows.forEach(row => {
             const role = row.role_name;
             const perm = row.permission_name;
-            if (!permissionCache.has(role)) {
-                permissionCache.set(role, new Set());
+            if (!roleMap.has(role)) {
+                roleMap.set(role, new Set());
             }
-            permissionCache.get(role).add(perm);
+            roleMap.get(role).add(perm);
         });
-        
+
+        // Always update the in-process Map (backward-compat + Redis fallback).
+        permissionCache.clear();
+        roleMap.forEach((perms, role) => {
+            permissionCache.set(role, perms);
+        });
+
         cacheLastUpdated = Date.now();
+
+        // Attempt to write to Redis. If the client is not ready, skip silently.
+        try {
+            const client = await connectRbacRedis();
+            if (client.isReady) {
+                const pipeline = client.multi();
+                roleMap.forEach((perms, role) => {
+                    pipeline.set(
+                        `viara:rbac:role:${role}`,
+                        JSON.stringify(Array.from(perms)),
+                        { EX: CACHE_TTL }
+                    );
+                });
+                pipeline.set('viara:rbac:last_updated', String(cacheLastUpdated));
+                await pipeline.exec();
+            }
+        } catch (_redisErr) {
+            // Redis unavailable — in-process Map is the active cache.
+        }
+
         console.log('RBAC Permission cache refreshed.');
     } catch (error) {
         console.error('Failed to refresh RBAC permission cache:', error);
