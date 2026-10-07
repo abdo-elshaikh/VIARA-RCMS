@@ -210,7 +210,7 @@ async function seedBranchesAndSettings() {
 
 async function seedUsers() {
     console.log('\n👥 Seeding Users Across All 12 Roles...');
-    const password = await bcrypt.hash(seedPassword, 10);
+    const password = await bcrypt.hash(seedPassword, 12);
 
     const users = [
         { name: 'Dr. Administrator (Medical Director)', email: 'admin@VIARA.com', role: 'Admin' },

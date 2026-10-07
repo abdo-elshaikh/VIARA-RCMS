@@ -22,7 +22,7 @@ const run = async () => {
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
-        const passwordHash = await bcrypt.hash(password, 10);
+        const passwordHash = await bcrypt.hash(password, 12);
         for (const [fullName, email, role] of demoAccounts) {
             const existing = await pool.query(
                 'SELECT user_id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',

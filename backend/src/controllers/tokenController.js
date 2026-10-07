@@ -4,7 +4,7 @@ const { AppError } = require('../middleware/errorHandler');
 const { logSecurityEvent } = require('../services/securityEventService');
 const { triggerEventForRole } = require('../services/notificationJobService');
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 const WRITE_TOKEN_PERMISSION = 'MANAGE_DATABASE_CONFIG';
 
 // Generate a random token

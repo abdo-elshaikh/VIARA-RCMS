@@ -11,7 +11,7 @@ const pool = new Pool({
 async function createAdmin() {
     try {
         const password = process.env.ADMIN_PASSWORD || crypto.randomBytes(12).toString('base64url');
-        const salt = await bcrypt.genSalt(10);
+        const salt = await bcrypt.genSalt(12);
         const hash = await bcrypt.hash(password, salt);
 
         const email = process.env.ADMIN_EMAIL || 'superadmin@VIARA.com';

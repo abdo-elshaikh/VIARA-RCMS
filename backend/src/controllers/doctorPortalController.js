@@ -10,7 +10,7 @@ const {
     getPortalNotificationPage
 } = require('../utils/portalNotificationInbox');
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 const INVALID_LOGIN_ERROR = 'Invalid credentials';
 const UNKNOWN_ACCOUNT_HASH = '$2b$10$j58V.FjnUf.jiJK9F4/LEe0HeU5NIOS0/mQVANGNvtCJBVor2cUV6';
 

@@ -36,7 +36,7 @@ const createStaff = (db) => async (req, res, next) => {
         assertCanAssignRole(req.user, role);
 
         // Hash Password
-        const salt = await bcrypt.genSalt(10);
+        const salt = await bcrypt.genSalt(12);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         client = await db.connect();
@@ -117,7 +117,7 @@ const updateStaff = (db) => async (req, res, next) => {
         if (isActive !== undefined) { fields.push(`is_active = $${idx++}`); values.push(isActive); }
 
         if (password && password.length >= 6) {
-            const salt = await bcrypt.genSalt(10);
+            const salt = await bcrypt.genSalt(12);
             const hashedPassword = await bcrypt.hash(password, salt);
             fields.push(`password_hash = $${idx++}`);
             values.push(hashedPassword);

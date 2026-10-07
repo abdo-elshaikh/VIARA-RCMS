@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 
 const mapProfile = (row) => ({
     id: row.user_id,

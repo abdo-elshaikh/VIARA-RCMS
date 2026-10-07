@@ -307,7 +307,7 @@ async function clearDatabase() {
 
 async function seedUsers() {
     console.log('\n👥 Seeding Users and Security Accounts...');
-    const passwordHash = await bcrypt.hash(seedPassword, 10);
+    const passwordHash = await bcrypt.hash(seedPassword, 12);
 
     const users = [
         { name: 'Dr. Administrator', email: 'admin@VIARA.com', role: 'Admin' },
@@ -594,7 +594,7 @@ async function seedExaminationTypes(modalityIds) {
 async function seedReferringDoctors(userIds) {
     console.log('\n🩺 Seeding Referring Physicians Network...');
     const admin = userIds.find(u => u.role === 'Admin');
-    const doctorPasswordHash = await bcrypt.hash('Doctor@123', 10);
+    const doctorPasswordHash = await bcrypt.hash('Doctor@123', 12);
     const doctors = [
         { name: 'Dr. Tarek Mostafa', specialty: 'Cardiology & Angiology', hospital: 'National Heart Institute' },
         { name: 'Dr. Nadia Khalil', specialty: 'Orthopedic Surgery & Sports Medicine', hospital: 'Heliopolis Orthopedic Clinic' },
@@ -632,7 +632,7 @@ async function seedReferringDoctors(userIds) {
 async function seedPatients(count = 150) {
     console.log(`\n🧑‍⚕️ Seeding ${count} Realistic Egyptian Patient Records (AES-GCM Encrypted)...`);
     const patientIds = [];
-    const patientPasswordHash = await bcrypt.hash('Patient@123', 10);
+    const patientPasswordHash = await bcrypt.hash('Patient@123', 12);
 
     for (let i = 0; i < count; i++) {
         const gender = i % 2 === 0 ? 'Male' : 'Female';

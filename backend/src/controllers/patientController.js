@@ -207,7 +207,7 @@ const createPatient = (db) => async (req, res, next) => {
 
         // Generate portal password
         const generatedPassword = generateSecurePassword();
-        const passwordHash = await bcrypt.hash(generatedPassword, 10);
+        const passwordHash = await bcrypt.hash(generatedPassword, 12);
         const consentMarketing = validatedData.consentMarketing !== undefined
             ? Boolean(validatedData.consentMarketing)
             : (validatedData.optInMarketing !== undefined ? Boolean(validatedData.optInMarketing) : false);
@@ -966,7 +966,7 @@ const generatePortalPassword = (db) => async (req, res, next) => {
     try {
         const patientId = req.params.id;
         const generatedPassword = generateSecurePassword();
-        const passwordHash = await bcrypt.hash(generatedPassword, 10);
+        const passwordHash = await bcrypt.hash(generatedPassword, 12);
 
         const result = await db.query(
             "UPDATE patients SET password_hash = $1, current_session_id = NULL WHERE patient_id = $2 RETURNING mrn",
