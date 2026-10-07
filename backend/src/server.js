@@ -521,7 +521,8 @@ app.use(compression({
     }
 }));
 
-app.use(express.json({ limit: '10mb' }));
+// Global JSON limit: 1mb. DICOM/file upload routes define their own higher limits.
+app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 app.use(cookieParser());
