@@ -68,23 +68,67 @@
 
 ---
 
-## المرحلة 2 — ما قبل النشر: TLS والوكيل العكسي
+## المرحلة 2 — ما قبل النشر: TLS والوكيل العكسي (Caddy المُدمَج)
 
-> الخادم يعمل بـ HTTP داخل الشبكة الداخلية لـ Docker. **يجب** وجود وكيل عكسي (Nginx أو Traefik أو Caddy) على المضيف يُنهي TLS قبل إيصال الطلبات للحاوية.  
-> راجع `docs/REVERSE_PROXY_TLS.md` للتعليمات التفصيلية.
+> بدءاً من هذا الإصدار، يُضمَّن Caddy مباشرةً داخل `docker-compose.yml` كخدمة `caddy`. يتولى Caddy إنهاء TLS تلقائياً عبر Let's Encrypt دون الحاجة لإعداد شهادات يدوياً. الشرط الوحيد: أن يكون `DOMAIN` مضبوطاً بشكل صحيح وأن يُشير DNS للخادم.
 
-- [ ] **شهادة TLS:** تحقق من صلاحية الشهادة وأنها لم تنتهِ.  
-  للفحص: `openssl x509 -enddate -noout -in /path/to/cert.pem`  
-  أو عبر المتصفح: تأكد من عدم ظهور تحذير "شهادة غير موثوقة" أو "منتهية الصلاحية".
+### 2.1 ضبط DOMAIN في .env
 
-- [ ] **ضبط HTTPS في الوكيل العكسي:** تحقق من أن Nginx/Traefik/Caddy مُضبوط للاستماع على المنفذ 443 بـ HTTPS وتمرير الطلبات داخلياً للحاوية.
+- [ ] **`DOMAIN`** — أضف متغير `DOMAIN` إلى ملف `.env` وضبطه على النطاق الحقيقي للمنصة.  
+  مثال: `DOMAIN=viara.yourhospital.com`  
+  > ⚠️ إذا لم يُضبط هذا المتغير، سيفشل Caddy عند الإقلاع برسالة خطأ صريحة (المتغير محدد بـ `:?` في Compose).
 
-- [ ] **إعادة توجيه HTTP → HTTPS:** تحقق من أن الوكيل يُعيد توجيه جميع طلبات HTTP (المنفذ 80) تلقائياً إلى HTTPS (المنفذ 443).  
-  للاختبار: `curl -I http://<domain>` يجب أن يُعيد `301 Moved Permanently` مع `Location: https://...`
+- [ ] تحقق من أن سجل DNS للنطاق يُشير إلى عنوان IP الخادم:
+  ```bash
+  nslookup viara.yourhospital.com
+  # يجب أن يُعيد عنوان IP الخادم الإنتاجي
+  ```
 
-- [ ] **ترويسة HSTS:** تحقق من إضافة ترويسة `Strict-Transport-Security` في إعداد الوكيل.  
-  مثال لـ Nginx: `add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;`  
-  للتحقق: `curl -I https://<domain>` ثم ابحث عن `strict-transport-security` في الرد.
+- [ ] تحقق من أن المنافذ 80 و443 مفتوحة في جدار الحماية وغير مُشغولة بخدمة أخرى:
+  ```bash
+  # تحقق من عدم وجود خدمة تستمع على 80 أو 443 على المضيف
+  ss -tlnp | grep -E ':80|:443'
+  ```
+
+### 2.2 التحقق من إصدار شهادة TLS
+
+- [ ] بعد تشغيل `docker compose up -d --wait`، تحقق من سجلات Caddy للتأكد من نجاح إصدار الشهادة:
+  ```bash
+  docker compose logs caddy | grep -i "certificate\|tls\|acme\|issued\|obtained"
+  ```
+  ابحث عن رسالة مشابهة لـ `certificate obtained successfully` أو `serving certificate`. أي خطأ متعلق بـ ACME يعني فشل التحقق من النطاق (راجع DNS والمنافذ).
+
+- [ ] تحقق من صلاحية الشهادة الصادرة:
+  ```bash
+  curl -vI https://<domain> 2>&1 | grep -i "expire\|subject\|issuer"
+  ```
+
+### 2.3 التحقق من عمل HTTPS
+
+- [ ] تحقق من أن HTTPS يعمل على المنفذ 443:
+  ```bash
+  curl -f https://<domain>/api/health/live
+  ```
+  المتوقع: `200 OK`.
+
+- [ ] تحقق من أن طلبات HTTP (المنفذ 80) تُحوَّل تلقائياً لـ HTTPS بواسطة Caddy:
+  ```bash
+  curl -I http://<domain>
+  ```
+  المتوقع: رد `301 Moved Permanently` مع `Location: https://<domain>/`.
+  > ملاحظة: هذا التحويل يحدث تلقائياً من Caddy دون أي إعداد إضافي.
+
+### 2.4 التحقق من ترويسات الأمان
+
+- [ ] تحقق من وجود ترويسات الأمان المُضبوطة في Caddyfile:
+  ```bash
+  curl -sI https://<domain> | grep -i -E "strict-transport|x-frame|x-content|referrer"
+  ```
+  المتوقع: وجود الترويسات:
+  - `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`
+  - `X-Frame-Options: DENY`
+  - `X-Content-Type-Options: nosniff`
+  - `Referrer-Policy: strict-origin-when-cross-origin`
 
 ---
 

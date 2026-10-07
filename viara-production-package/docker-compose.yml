@@ -72,6 +72,38 @@ services:
       retries: 10
       start_period: 180s
 
+  # ── Caddy Reverse Proxy & TLS Termination ────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-viara}-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      app:
+        ipv4_address: 172.28.0.5
+    mem_limit: 256m
+    cpus: 0.5
+    stop_grace_period: 15s
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN to your production hostname in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_logs:/data/logs
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   # ── Backend Application Server ────────────────────────────────────────────
   redis:
     image: ${REDIS_IMAGE:?Set REDIS_IMAGE to an approved pinned image reference}
@@ -93,8 +125,7 @@ services:
     image: ${VIARA_BACKEND_IMAGE:?Set VIARA_BACKEND_IMAGE to an approved immutable image reference}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-backend
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
+    # No direct port exposure — all external traffic flows through Caddy (172.28.0.5)
     networks: [app, data]
     mem_limit: 2g
     cpus: 2.0
@@ -115,7 +146,7 @@ services:
       LICENSE_STORAGE_FILE: /app/license/.viara-license
       LICENSE_ACTIVATION_FILE: /app/license/.viara-activation
       CLIENT_URL: ${CLIENT_URL:?Set CLIENT_URL to the approved HTTPS staff origin}
-      TRUST_PROXY: ${TRUST_PROXY:-loopback,172.28.0.10,172.28.0.11}
+      TRUST_PROXY: ${TRUST_PROXY:-loopback,172.28.0.5}
       DB_POOL_MAX: ${DB_POOL_MAX:-20}
       PORTAL_CLIENT_URL: ${PORTAL_CLIENT_URL:?Set PORTAL_CLIENT_URL to the approved HTTPS portal origin}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set ALLOWED_ORIGINS to the approved browser origins}
@@ -177,8 +208,7 @@ services:
     image: ${VIARA_FRONTEND_IMAGE:?Set VIARA_FRONTEND_IMAGE to an approved immutable image reference}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-frontend
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
+    # No direct port exposure — all external traffic flows through Caddy
     networks:
       app:
         ipv4_address: 172.28.0.10
@@ -200,8 +230,7 @@ services:
     image: ${VIARA_PORTAL_IMAGE:?Set VIARA_PORTAL_IMAGE to an approved immutable image reference}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-portal
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:${PORTAL_PORT:-5174}:80"
+    # No direct port exposure — all external traffic flows through Caddy
     networks:
       app:
         ipv4_address: 172.28.0.11
@@ -282,72 +311,6 @@ services:
       retries: 3
       start_period: 10s
 
-  # ── Prometheus Metrics Collector ─────────────────────────────────────────
-  prometheus:
-    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v2.53.0}
-    container_name: ${COMPOSE_PROJECT_NAME:-viara}-prometheus
-    restart: unless-stopped
-    # Write $METRICS_TOKEN to a file so prometheus.yml can reference it via
-    # authorization.credentials_file without embedding the secret in the config.
-    entrypoint: >
-      sh -c "
-        mkdir -p /run/secrets &&
-        printf '%s' \"$$METRICS_TOKEN\" > /run/secrets/metrics_token &&
-        chmod 600 /run/secrets/metrics_token &&
-        exec /bin/prometheus
-          --config.file=/etc/prometheus/prometheus.yml
-          --storage.tsdb.path=/prometheus
-          --storage.tsdb.retention.time=30d
-          --web.enable-lifecycle
-      "
-    networks: [monitoring, app]
-    mem_limit: 512m
-    cpus: 0.5
-    environment:
-      METRICS_TOKEN: ${METRICS_TOKEN:?Set METRICS_TOKEN in .env}
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:9090/-/ready"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-
-  # ── Grafana Dashboard ─────────────────────────────────────────────────────
-  grafana:
-    image: ${GRAFANA_IMAGE:-grafana/grafana:11.1.0}
-    container_name: ${COMPOSE_PROJECT_NAME:-viara}-grafana
-    restart: unless-stopped
-    networks: [monitoring]
-    mem_limit: 512m
-    cpus: 0.5
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
-      GF_SECURITY_SECRET_KEY: ${GF_SECURITY_SECRET_KEY:?Set GF_SECURITY_SECRET_KEY in .env}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3010}
-      GF_ANALYTICS_REPORTING_ENABLED: "false"
-      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
-    ports:
-      - "127.0.0.1:${GRAFANA_PORT:-3010}:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    depends_on:
-      - prometheus
-    healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --spider http://127.0.0.1:3000/api/health || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-
 volumes:
   redis_data:
   postgres_data:
@@ -357,8 +320,8 @@ volumes:
   pacs_cold_archive:
   orthanc_storage:
   clamav_signatures:
-  prometheus_data:
-  grafana_data:
+  caddy_data:
+  caddy_logs:
 
 networks:
   app:
@@ -368,5 +331,3 @@ networks:
   data:
     internal: true
   scanner-egress:
-  monitoring:
-    internal: true

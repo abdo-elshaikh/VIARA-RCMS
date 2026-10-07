@@ -1,0 +1,22 @@
+{$DOMAIN} {
+    reverse_proxy /api/* viara-backend:3000
+    reverse_proxy /health/* viara-backend:3000
+    reverse_proxy /metrics viara-backend:3000
+    reverse_proxy /* viara-frontend:80
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Frame-Options DENY
+        X-Content-Type-Options nosniff
+        Referrer-Policy strict-origin-when-cross-origin
+    }
+
+    # Logging
+    log {
+        output file /data/logs/access.log {
+            roll_size 100mb
+            roll_keep 5
+        }
+    }
+}
