@@ -390,6 +390,7 @@
     "roleOwner": "Owner",
     "roleAdmin": "Admin",
     "roleMember": "Member",
+    "memberRole": "Member role",
     "roleUpdated": "Member role updated to {{role}}",
     "updateRoleFailed": "Failed to update member role",
     "demoteToMember": "Demote to Member",

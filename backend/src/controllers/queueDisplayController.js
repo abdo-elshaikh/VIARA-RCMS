@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const { decryptPatientName } = require('./displayBoardController');
 
@@ -22,7 +23,7 @@ const toIso = (value) => {
  */
 const getQueueDisplay = (db) => async (req, res, next) => {
     try {
-        const date = req.query.date || new Date().toISOString().slice(0, 10);
+        const date = getRequestQuery(req).date || new Date().toISOString().slice(0, 10);
 
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
             return next(new AppError('Invalid queue display date', 400));

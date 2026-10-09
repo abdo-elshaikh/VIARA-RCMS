@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const realtimeService = require('../services/realtimeService');
 const logger = require('../config/logger');
 const { AppError } = require('../middleware/errorHandler');
@@ -159,9 +160,9 @@ const getChatUsers = (db) => async (req, res, next) => {
 const getChatMessages = (db) => async (req, res, next) => {
     try {
         const currentUserId = req.user.user_id || req.user.userId;
-        const recipientId = req.query.recipientId || req.query.recipient_id;
-        const channelName = req.query.channelName || req.query.channel_name;
-        const before = req.query.before || null;
+        const recipientId = getRequestQuery(req).recipientId || getRequestQuery(req).recipient_id;
+        const channelName = getRequestQuery(req).channelName || getRequestQuery(req).channel_name;
+        const before = getRequestQuery(req).before || null;
 
         if (before && !MESSAGE_ID_PATTERN.test(String(before))) {
             return next(new AppError('before must be a message UUID', 400));
@@ -394,7 +395,7 @@ const getPatientConversations = (db) => async (req, res, next) => {
 const getPatientMessageHistory = (db) => async (req, res, next) => {
     try {
         const { patientId } = req.params;
-        const before = req.query.before || null;
+        const before = getRequestQuery(req).before || null;
         if (before && !MESSAGE_ID_PATTERN.test(String(before))) {
             return next(new AppError('before must be a message UUID', 400));
         }
@@ -513,7 +514,7 @@ const getDoctorConversations = (db) => async (req, res, next) => {
 const getDoctorMessageHistory = (db) => async (req, res, next) => {
     try {
         const { doctorId } = req.params;
-        const before = req.query.before || null;
+        const before = getRequestQuery(req).before || null;
         if (before && !MESSAGE_ID_PATTERN.test(String(before))) {
             return next(new AppError('before must be a message UUID', 400));
         }

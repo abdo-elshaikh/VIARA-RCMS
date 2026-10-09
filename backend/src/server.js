@@ -160,7 +160,7 @@ const { startBackupScheduler, stopBackupScheduler } = require('./services/backup
 const { createServerLifecycle } = require('./services/serverLifecycle');
 
 const { getDashboardStats } = require('./controllers/dashboardController');
-const { getPublicLandingOverview, lookupPublicCaseStatus, authorizePublicFinalReport, verifyReportAuthenticity } = require('./controllers/publicLandingController');
+const publicLandingRoutes = require('./routes/publicLandingRoutes');
 const {
     getProfile, updateProfile, changePassword,
     getPreferences: getProfilePreferences,
@@ -634,6 +634,7 @@ app.get('/metrics', async (req, res) => {
 app.post('/api/auth/login',
     authLimiter,
     validateRequest(loginSchema),
+    authAccountLimiter,
     login(pool)
 );
 app.post('/api/auth/passkeys/authenticate/options', authLimiter, validateRequest(passkeyAuthenticationOptionsSchema), passkeyController.authenticationOptions(pool));
@@ -665,19 +666,8 @@ app.post('/api/doctor-portal/login',
     doctorLogin(pool)
 );
 
-// Public landing summary (aggregate operational data only; never patient data)
-app.get('/api/public/landing-overview', getPublicLandingOverview(pool));
-app.post('/api/public/case-status', publicCaseStatusLimiter, lookupPublicCaseStatus(pool));
-app.post('/api/public/final-report', publicCaseStatusLimiter, authorizePublicFinalReport, getReportPdf(pool));
-app.get('/api/public/final-report/:accessToken', publicCaseStatusLimiter, authorizePublicFinalReport, (req, _res, next) => {
-    req.publicReportFormat = 'pdf';
-    req.publicReportDisposition = 'inline';
-    next();
-}, getReportPdf(pool));
-
-// Public report authenticity verification (QR scan). No login: matches only a
-// finalized, locked report's digital-signature hash and returns masked identity.
-app.get('/api/public/reports/verify/:hash', publicCaseStatusLimiter, verifyReportAuthenticity(pool));
+// Public landing & patient portal verification routes
+app.use('/api/public', publicLandingRoutes(pool));
 
 // Auth Routes (Protected - Admin Only)
 app.post('/api/auth/register',

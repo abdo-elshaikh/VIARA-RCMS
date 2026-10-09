@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const crypto = require('crypto');
 const { assertQuota } = require('../services/quotaService');
@@ -99,10 +100,10 @@ const getWorklist = (db) => async (req, res, next) => {
     try {
         const userId = req.user.user_id;
         const { role } = req.user;
-        const { status, modalityType, priority, date, scope = 'all' } = req.query;
+        const { status, modalityType, priority, date, scope = 'all' } = getRequestQuery(req);
         // Clamp pagination so a hostile/buggy client cannot pull the entire table.
-        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 500);
-        const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
+        const limit = Math.min(Math.max(Number.parseInt(getRequestQuery(req).limit, 10) || 100, 1), 500);
+        const offset = Math.max(Number.parseInt(getRequestQuery(req).offset, 10) || 0, 0);
 
         const assignmentColumn = role === 'Technician'
             ? 'a.technician_id'
@@ -253,22 +254,23 @@ const getWorklist = (db) => async (req, res, next) => {
     }
 };
 
-const buildCaseReportFilters = (req) => {
+const buildCaseReportFilters = (req, explicitQuery) => {
+    const query = explicitQuery || getRequestQuery(req);
     const filters = {
-        search: String(req.query.search || '').trim(),
-        reportStatus: String(req.query.reportStatus || '').trim(),
-        status: String(req.query.status || '').trim(),
-        priority: String(req.query.priority || '').trim(),
-        modality: String(req.query.modality || '').trim(),
-        radiologistId: String(req.query.radiologistId || '').trim(),
-        dateFrom: String(req.query.dateFrom || '').trim(),
-        dateTo: String(req.query.dateTo || '').trim(),
-        delivered: String(req.query.delivered || '').trim(),
-        hasReport: String(req.query.hasReport || '').trim(),
-        receipt: String(req.query.receipt || '').trim(),
-        queue: String(req.query.queue || '').trim(),
-        limit: Math.min(Math.max(Number(req.query.limit || 100), 1), 500),
-        offset: Math.max(Number(req.query.offset || 0), 0)
+        search: String(query.search || '').trim(),
+        reportStatus: String(query.reportStatus || '').trim(),
+        status: String(query.status || '').trim(),
+        priority: String(query.priority || '').trim(),
+        modality: String(query.modality || '').trim(),
+        radiologistId: String(query.radiologistId || '').trim(),
+        dateFrom: String(query.dateFrom || '').trim(),
+        dateTo: String(query.dateTo || '').trim(),
+        delivered: String(query.delivered || '').trim(),
+        hasReport: String(query.hasReport || '').trim(),
+        receipt: String(query.receipt || '').trim(),
+        queue: String(query.queue || '').trim(),
+        limit: Math.min(Math.max(Number(query.limit || 100), 1), 500),
+        offset: Math.max(Number(query.offset || 0), 0)
     };
     return filters;
 };
@@ -304,9 +306,9 @@ const appendCaseReportAccessPredicate = (role, userId, values, where) => {
     }
 };
 
-const getCaseReports = (db) => async (req, res, next) => {
+const getCaseReports = (db, explicitQuery) => async (req, res, next) => {
     try {
-        const filters = buildCaseReportFilters(req);
+        const filters = buildCaseReportFilters(req, explicitQuery);
         const values = [];
         const where = ['1 = 1'];
         appendCaseReportAccessPredicate(req.user.role, req.user.user_id, values, where);
@@ -465,14 +467,14 @@ const getCaseReports = (db) => async (req, res, next) => {
 
 const lookupCaseReport = (db) => async (req, res, next) => {
     try {
-        const code = String(req.query.code || '').trim();
+        const query = getRequestQuery(req);
+        const code = String(query.code || '').trim();
         if (!code) return next(new AppError('Receipt, invoice, order number, or exam ID is required', 400));
         const receiptCode = extractReceiptLookupCode(code);
         if (!receiptCode) {
             return next(new AppError('This QR code does not contain a report reference. Use a current receipt QR or enter the order number.', 400));
         }
-        req.query = { ...req.query, search: '', receipt: receiptCode, limit: 1, offset: 0 };
-        return getCaseReports(db)(req, res, next);
+        return getCaseReports(db, { receipt: receiptCode, limit: 1, offset: 0 })(req, res, next);
     } catch (error) {
         next(error);
     }
@@ -562,6 +564,18 @@ const getExamById = (db) => async (req, res, next) => {
         delete exam.date_of_birth_enc;
         delete exam.allergies_enc;
         delete exam.chronic_diseases_enc;
+
+        if (req.canReadReports !== true) {
+            for (const field of Object.keys(exam)) {
+                if (/^(report_|prior_report_|digital_signature|critical_)/.test(field)
+                    || ['findings', 'impression'].includes(field)) delete exam[field];
+            }
+        }
+        if (['Receptionist', 'Accountant'].includes(req.user.role)) {
+            // Operational access does not require clinical history or diagnosis.
+            for (const field of ['date_of_birth', 'allergies', 'chronic_diseases',
+                'clinical_indication', 'provisional_diagnosis', 'icd_code', 'appointment_notes']) delete exam[field];
+        }
 
         res.json(exam);
     } catch (error) {
@@ -1145,7 +1159,7 @@ const getReportPdf = (db) => async (req, res, next) => {
         delete report.last_name_enc;
         delete report.date_of_birth_enc;
 
-        const { templateId } = req.query;
+        const { templateId } = getRequestQuery(req);
         if (templateId) {
             const templateResult = await db.query(`
                 SELECT clinical_history, technique, findings, impression, recommendations
@@ -1235,17 +1249,17 @@ const getReportPdf = (db) => async (req, res, next) => {
             return normalized.toLowerCase() !== 'false';
         };
         const canCustomizeDocument = !['Patient', 'Doctor', 'Referring Doctor', 'Referring_Doctor', 'PublicReport'].includes(userRole);
-        const reportHeader = canCustomizeDocument ? queryText(req.query.reportHeader) : undefined;
-        const reportFooter = canCustomizeDocument ? queryText(req.query.reportFooter) : undefined;
-        const templateStyle = queryText(req.query.templateStyle || req.query.template || req.query.style);
-        const enabledFieldsRaw = queryText(req.query.fields);
+        const reportHeader = canCustomizeDocument ? queryText(getRequestQuery(req).reportHeader) : undefined;
+        const reportFooter = canCustomizeDocument ? queryText(getRequestQuery(req).reportFooter) : undefined;
+        const templateStyle = queryText(getRequestQuery(req).templateStyle || getRequestQuery(req).template || getRequestQuery(req).style);
+        const enabledFieldsRaw = queryText(getRequestQuery(req).fields);
         const enabledFields = enabledFieldsRaw ? enabledFieldsRaw.split(',').map(s => s.trim()).filter(Boolean) : undefined;
-        const customFields = parseJSONSafe(queryText(req.query.customFields || req.query.extraFields));
-        const customLabels = parseJSONSafe(queryText(req.query.customLabels || req.query.labels));
-        const customizeParam = queryText(req.query.customize);
-        const downloadParam = queryText(req.query.download || req.query.mode);
+        const customFields = parseJSONSafe(queryText(getRequestQuery(req).customFields || getRequestQuery(req).extraFields));
+        const customLabels = parseJSONSafe(queryText(getRequestQuery(req).customLabels || getRequestQuery(req).labels));
+        const customizeParam = queryText(getRequestQuery(req).customize);
+        const downloadParam = queryText(getRequestQuery(req).download || getRequestQuery(req).mode);
         const hideCustomizePanel = customizeParam === 'false' || downloadParam === 'true' || downloadParam === 'download' || ['Patient', 'Doctor', 'Referring Doctor', 'Referring_Doctor', 'PublicReport'].includes(userRole);
-        const requestedLanguage = queryText(req.query.lang || req.query.language)
+        const requestedLanguage = queryText(getRequestQuery(req).lang || getRequestQuery(req).language)
             || ((typeof req.get === 'function' ? req.get('accept-language') : req.headers?.['accept-language'])?.startsWith('ar') ? 'ar' : undefined);
 
         const documentSettings = {
@@ -1258,15 +1272,15 @@ const getReportPdf = (db) => async (req, res, next) => {
             ...(customLabels ? { customLabels } : {}),
             ...(reportHeader !== undefined ? { 'center.report_header': reportHeader, report_header: reportHeader } : {}),
             ...(reportFooter !== undefined ? { 'center.report_footer': reportFooter, report_footer: reportFooter } : {}),
-            includeHeader: canCustomizeDocument ? queryFlag(req.query.includeHeader) : true,
-            includeFooter: canCustomizeDocument ? queryFlag(req.query.includeFooter) : true,
-            includeSignature: canCustomizeDocument ? queryFlag(req.query.includeSignature) : true
+            includeHeader: canCustomizeDocument ? queryFlag(getRequestQuery(req).includeHeader) : true,
+            includeFooter: canCustomizeDocument ? queryFlag(getRequestQuery(req).includeFooter) : true,
+            includeSignature: canCustomizeDocument ? queryFlag(getRequestQuery(req).includeSignature) : true
         };
 
-        const requestedFormat = String(req.publicReportFormat || req.body?.format || req.query?.format || '').toLowerCase();
+        const requestedFormat = String(req.publicReportFormat || req.body?.format || getRequestQuery(req)?.format || '').toLowerCase();
         if (requestedFormat === 'pdf') {
             const pdf = await buildReportPdf(report, documentSettings);
-            const requestedDisposition = String(req.publicReportDisposition || req.body?.disposition || req.query?.disposition || '').toLowerCase();
+            const requestedDisposition = String(req.publicReportDisposition || req.body?.disposition || getRequestQuery(req)?.disposition || '').toLowerCase();
             const disposition = requestedDisposition === 'attachment' ? 'attachment' : 'inline';
             const reportId = cleanFilenamePart(report.order_number || report.accession_number || report.mrn || report.exam_id) || 'report';
             const filename = `Diagnostic-Report-${reportId}.pdf`;

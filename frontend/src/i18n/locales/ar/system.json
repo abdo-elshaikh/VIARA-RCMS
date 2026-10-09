@@ -390,6 +390,7 @@
     "roleOwner": "المالك",
     "roleAdmin": "مشرف",
     "roleMember": "عضو",
+    "memberRole": "دور العضو",
     "roleUpdated": "تم تحديث دور العضو إلى {{role}}",
     "updateRoleFailed": "تعذر تحديث دور العضو",
     "demoteToMember": "تغيير الدور إلى عضو",

@@ -44,7 +44,20 @@ const validateQuery = (schema) => {
     return (req, res, next) => {
         try {
             const validated = schema.parse(req.query);
-            req.query = validated;
+            // Express 5 exposes query as a getter. Keep parsed/coerced values
+            // on req.validatedQuery and shadow req.query on this request instance
+            // so consumers reading either property get the coerced defaults.
+            req.validatedQuery = validated;
+            try {
+                Object.defineProperty(req, 'query', {
+                    value: validated,
+                    writable: true,
+                    configurable: true,
+                    enumerable: true
+                });
+            } catch {
+                req.query = validated;
+            }
             next();
         } catch (error) {
             if (error instanceof z.ZodError) {

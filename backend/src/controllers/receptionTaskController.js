@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const {
     claimReceptionTask,
     releaseReceptionTask,
@@ -144,7 +145,7 @@ const transferTask = (db) => async (req, res, next) => {
 const getActiveTasks = (db) => async (req, res, next) => {
     try {
         await cleanupExpiredReceptionTasks(db);
-        const { date, modalityId } = req.query;
+        const { date, modalityId } = getRequestQuery(req);
         let query = `
             SELECT rwi.work_item_id, rwi.appointment_id, rwi.exam_id, rwi.task_type,
                    rwi.modality_id, rwi.room_number, rwi.claimed_by, rwi.desk_identifier,

@@ -100,15 +100,7 @@ const login = (db) => async (req, res, next) => {
 
         // 1. Check Lockout & Password Validation
         const isLocked = Boolean(user.locked_until && new Date() < new Date(user.locked_until));
-        const match = await bcrypt.compare(password, user.password_hash);
-
         if (isLocked) {
-            if (match) {
-                // Correct password supplied: auto-unlock account and reset counters
-                await db.query(`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = $1`, [user.user_id]);
-                user.locked_until = null;
-                user.failed_login_attempts = 0;
-            } else {
                 await logSecurityEvent(db, {
                     eventType: 'ACCOUNT_LOCKED_ACCESS',
                     severity: 'critical',
@@ -119,21 +111,23 @@ const login = (db) => async (req, res, next) => {
                 triggerEventForRole(db, 'ACCOUNT_LOCKED_ACCESS', 'Admin', { priority: 'Critical' }).catch(() => { });
                 triggerEventForRole(db, 'ACCOUNT_LOCKED_ACCESS', 'HR', { priority: 'Critical' }).catch(() => { });
                 logger.warn('ACCOUNT_LOCKED_ACCESS_ATTEMPT', { userId: user.user_id, ip: req.ip });
-                return next(new AppError('Account is locked due to too many failed attempts. Try again in 15 minutes.', 403));
-            }
+                return next(new AppError('Invalid Credentials', 401));
         }
+        const match = await bcrypt.compare(password, user.password_hash);
 
         // 2. Handle Failed Login
         if (!match) {
-            const attempts = (user.failed_login_attempts || 0) + 1;
-            let lockedUntil = null;
-            if (attempts >= 5) {
-                const lockTime = new Date();
-                lockTime.setMinutes(lockTime.getMinutes() + 15);
-                lockedUntil = lockTime.toISOString();
-            }
-
-            await db.query(`UPDATE users SET failed_login_attempts = $1, locked_until = $2 WHERE user_id = $3`, [attempts, lockedUntil, user.user_id]);
+            const failed = await db.query(`UPDATE users
+                SET failed_login_attempts = CASE WHEN locked_until IS NOT NULL AND locked_until <= NOW()
+                    THEN 1 ELSE COALESCE(failed_login_attempts, 0) + 1 END,
+                    locked_until = CASE
+                        WHEN locked_until > NOW() THEN locked_until
+                        WHEN locked_until IS NOT NULL AND locked_until <= NOW() THEN NULL
+                        WHEN COALESCE(failed_login_attempts, 0) + 1 >= 5 THEN NOW() + interval '15 minutes'
+                        ELSE NULL END
+                WHERE user_id = $1 RETURNING failed_login_attempts, locked_until`, [user.user_id]);
+            const attempts = failed.rows[0]?.failed_login_attempts || 1;
+            const lockedUntil = failed.rows[0]?.locked_until || null;
 
             await logAction(db, {
                 userId: user.user_id,
@@ -164,31 +158,13 @@ const login = (db) => async (req, res, next) => {
 
             logger.warn('LOGIN_FAILED', { reason: 'invalid_password', userId: user.user_id, attempts, lockedOut: !!lockedUntil, ip: req.ip });
 
-            const remainingAttempts = Math.max(0, 5 - attempts);
-            const isAr = req.get('accept-language')?.includes('ar') || req.body?.language === 'ar';
-
-            let errorMessage;
-            if (lockedUntil) {
-                errorMessage = isAr
-                    ? 'تم إغلاق الحساب بسبب محاولات دخول فاشلة متكررة. يرجى المحاولة بعد 15 دقيقة.'
-                    : 'Account is locked due to too many failed attempts. Try again in 15 minutes.';
-            } else if (remainingAttempts <= 1) {
-                errorMessage = isAr
-                    ? 'بيانات الاعتماد غير صحيحة. تحذير: محاولة واحدة متبقية قبل إغلاق الحساب مؤقتًا.'
-                    : 'Invalid credentials. Warning: 1 attempt remaining before account is temporarily locked.';
-            } else {
-                errorMessage = isAr
-                    ? 'بيانات الاعتماد غير صحيحة. يرجى التحقق من البريد الإلكتروني وكلمة المرور.'
-                    : 'Invalid credentials. Please check your email and password.';
-            }
-
-            return next(new AppError(errorMessage, 401));
+            return next(new AppError('Invalid Credentials', 401));
         }
 
         // 3. Reset failed attempts on success
-        if (user.failed_login_attempts > 0 || user.locked_until) {
-            await db.query(`UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE user_id = $1`, [user.user_id]);
-        }
+        const unlocked = await db.query(`UPDATE users SET failed_login_attempts = 0, locked_until = NULL
+            WHERE user_id = $1 AND (locked_until IS NULL OR locked_until <= NOW()) RETURNING user_id`, [user.user_id]);
+        if (!unlocked.rows.length) return next(new AppError('Invalid Credentials', 401));
 
         // 3.5 Check Shift-Based Login Restriction (if enabled in system_settings)
         try {

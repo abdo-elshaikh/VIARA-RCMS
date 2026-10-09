@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const crypto = require('node:crypto');
 const { AppError } = require('../middleware/errorHandler');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
@@ -365,7 +366,7 @@ const getInvoices = (db) => async (req, res, next) => {
             status, patientId, q, startDate, endDate, appointmentDate, date,
             openOnly = false, includeMeta = false, sortBy = 'date', sortDirection = 'desc',
             limit = 100, offset = 0
-        } = req.query;
+        } = getRequestQuery(req);
         const pageLimit = Math.min(500, Math.max(1, Number.parseInt(limit, 10) || 100));
         const pageOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
 
@@ -604,7 +605,7 @@ const findInvoiceForUpdate = async (client, id) => {
 
 const getInvoiceSummary = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, date } = req.query;
+        const { startDate, endDate, date } = getRequestQuery(req);
         const cacheKey = `${startDate || ''}:${endDate || ''}:${date || ''}`;
         if (process.env.NODE_ENV !== 'test') {
             const cached = invoiceSummaryCache.get(cacheKey);
@@ -726,8 +727,8 @@ const getInvoiceSummary = (db) => async (req, res, next) => {
 
 const getVisitsStatement = (db) => async (req, res, next) => {
     try {
-        const patientId = req.query.patientId || req.params.patientId || req.params.id;
-        const { appointmentIds } = req.query;
+        const patientId = getRequestQuery(req).patientId || req.params.patientId || req.params.id;
+        const { appointmentIds } = getRequestQuery(req);
 
         if (!patientId) {
             return res.status(400).json({ error: 'patientId is required' });
@@ -1861,7 +1862,7 @@ const refundInvoice = (db) => async (req, res, next) => {
 
 const getRefunds = (db) => async (req, res, next) => {
     try {
-        const { status, startDate, endDate, limit = 100, offset = 0 } = req.query;
+        const { status, startDate, endDate, limit = 100, offset = 0 } = getRequestQuery(req);
         const pageLimit = Math.min(250, Math.max(1, Number.parseInt(limit, 10) || 100));
         const pageOffset = Math.max(0, Number.parseInt(offset, 10) || 0);
         const canReviewRefunds = await roleHasAnyPermission(db, req.user.role, ['APPROVE_REFUNDS', 'PROCESS_REFUNDS', 'ISSUE_REFUNDS']);
@@ -2122,7 +2123,7 @@ const getInvoicePdf = (db) => async (req, res, next) => {
                     ? 'Arial, "Noto Sans Arabic", sans-serif'
                     : 'Inter, Arial, "Noto Sans Arabic", sans-serif';
         const centerLines = invoiceCenterLines(center);
-        const lang = req.query.lang || 'both';
+        const lang = getRequestQuery(req).lang || 'both';
         const t = {
             title: lang === 'ar' ? 'فاتورة' : (lang === 'en' ? 'Invoice' : 'Invoice / فاتورة'),
             invoice: lang === 'ar' ? 'رقم الفاتورة' : (lang === 'en' ? 'Invoice' : 'Invoice / رقم الفاتورة'),

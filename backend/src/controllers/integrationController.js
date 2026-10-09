@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const { z } = require('zod');
 const { decrypt, encrypt } = require('../utils/crypto');
@@ -185,7 +186,7 @@ const updateIntegration = (db) => async (req, res, next) => {
 
 const getLogs = (db) => async (req, res, next) => {
     try {
-        const { status, provider, event_type, limit = 100, offset = 0, page } = req.query;
+        const { status, provider, event_type, limit = 100, offset = 0, page } = getRequestQuery(req);
         const parsedLimit = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 500);
         const parsedOffset = page ? (Math.max(parseInt(page, 10) || 1, 1) - 1) * parsedLimit : Math.max(parseInt(offset, 10) || 0, 0);
 
@@ -403,7 +404,7 @@ const triggerTestSms = (db) => async (req, res, next) => {
 const exportAccounting = (db) => async (req, res, next) => {
     try {
         const { Parser } = require('json2csv');
-        const queryParams = exportAccountingQuerySchema.parse(req.query);
+        const queryParams = exportAccountingQuerySchema.parse(getRequestQuery(req));
         const { startDate, endDate } = queryParams;
 
         let query = `

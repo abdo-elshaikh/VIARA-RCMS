@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 const { assertInvoiceFullyPaid, assertInvoiceTransactionAllowed } = require('../services/partialPaymentExceptionService');
@@ -232,8 +233,8 @@ const getQueue = (db) => async (req, res, next) => {
             date,
             includeDelivered = 'false',
             scope = 'all'
-        } = req.query;
-        const { limit, offset } = getPagination(req.query, { defaultLimit: 200, maxLimit: 500 });
+        } = getRequestQuery(req);
+        const { limit, offset } = getPagination(getRequestQuery(req), { defaultLimit: 200, maxLimit: 500 });
 
         let canViewFinancialData = req.user?.role === 'Developer'
             || (Array.isArray(req.user?.elevatedPermissions)

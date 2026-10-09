@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -123,7 +124,7 @@ const applyUpdate = (pool) => async (req, res, next) => {
 
 const getHistory = (pool) => async (req, res, next) => {
     try {
-        const limit = Number(req.query.limit) || 20;
+        const limit = Number(getRequestQuery(req).limit) || 20;
         const history = await getSystemUpdateHistory(pool, limit);
         res.json(history);
     } catch (error) {

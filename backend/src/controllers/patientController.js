@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { encrypt, decrypt, hash } = require('../utils/crypto');
 const { AppError } = require('../middleware/errorHandler');
 const crypto = require('crypto');
@@ -343,10 +344,10 @@ const createPatient = (db) => async (req, res, next) => {
 
 const getPatients = (db) => async (req, res, next) => {
     try {
-        const { status, gender, sortBy = 'createdAt', sortDirection = 'desc' } = req.query;
-        const search = req.query.search || req.query.q;
+        const { status, gender, sortBy = 'createdAt', sortDirection = 'desc' } = getRequestQuery(req);
+        const search = getRequestQuery(req).search || getRequestQuery(req).q;
         const { getPagination } = require('../utils/pagination');
-        const { limit, offset: resolvedOffset, page } = getPagination(req.query);
+        const { limit, offset: resolvedOffset, page } = getPagination(getRequestQuery(req));
 
         let query = `
             SELECT p.*, manager.full_name as assigned_manager_name
@@ -786,7 +787,7 @@ const getDuplicatePatients = (db) => async (req, res, next) => {
             firstName,
             lastName,
             dateOfBirth
-        } = req.query;
+        } = getRequestQuery(req);
 
         const conditions = [];
         const values = [];

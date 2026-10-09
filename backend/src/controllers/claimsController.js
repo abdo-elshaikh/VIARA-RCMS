@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const { decrypt } = require('../utils/crypto');
 
@@ -41,7 +42,7 @@ const boundedInteger = (value, fallback, max) => {
 
 const getClaims = (db) => async (req, res, next) => {
     try {
-        const { status, providerId, patientId, rejectedOnly, branchId, limit = 100, offset = 0 } = req.query;
+        const { status, providerId, patientId, rejectedOnly, branchId, limit = 100, offset = 0 } = getRequestQuery(req);
         const pageLimit = Math.max(1, boundedInteger(limit, 100, 500));
         const pageOffset = boundedInteger(offset, 0, Number.MAX_SAFE_INTEGER);
         const values = [];
@@ -499,7 +500,7 @@ const updateClaimStatus = (db) => async (req, res, next) => {
 
 const exportClaims = (db) => async (req, res, next) => {
     try {
-        const { status, providerId, patientId, startDate, endDate, format = 'json', branchId } = req.query;
+        const { status, providerId, patientId, startDate, endDate, format = 'json', branchId } = getRequestQuery(req);
         const values = [];
         let param = 1;
         let query = `

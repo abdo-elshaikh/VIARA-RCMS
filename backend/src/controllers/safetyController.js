@@ -1,8 +1,9 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 
 const getSafetyTemplates = (db) => async (req, res, next) => {
     try {
-        const modalityId = req.params.modalityId || req.query.modalityId;
+        const modalityId = req.params.modalityId || getRequestQuery(req).modalityId;
         let query = 'SELECT * FROM safety_templates WHERE is_active = TRUE';
         const values = [];
         if (modalityId) {

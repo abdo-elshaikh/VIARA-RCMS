@@ -282,7 +282,7 @@ function parseDateInput(value) {
 
 // ── Signing ─────────────────────────────────────────────────────────────────
 
-const keyPath = path.resolve(__dirname, '../keys/privateKey.pem');
+const keyPath = path.resolve(process.env.VIARA_LICENSE_PRIVATE_KEY_PATH || path.join(__dirname, '../keys/privateKey.pem'));
 
 function loadPrivateKey() {
     if (!fs.existsSync(keyPath)) {

@@ -108,6 +108,17 @@ const recordHttpMetrics = ({ method, route, status, durationSeconds }) => {
     httpRequestDuration.observe(labels, durationSeconds);
 };
 
+const offsiteReplicationCompleted = new client.Gauge({
+    name: 'VIARA_backup_offsite_completed',
+    help: 'Unix timestamp (seconds) of the last successful offsite backup replication',
+    registers: [register],
+});
+const offsiteReplicationFailuresTotal = new client.Counter({
+    name: 'VIARA_backup_offsite_failures_total',
+    help: 'Total failed offsite backup replications',
+    registers: [register],
+});
+
 const recordBackupSuccess = ({ sizeBytes }) => {
     dbBackupCompleted.set(Date.now() / 1000);
     if (Number.isFinite(sizeBytes)) dbBackupSizeBytes.set(sizeBytes);
@@ -115,6 +126,14 @@ const recordBackupSuccess = ({ sizeBytes }) => {
 
 const recordBackupFailure = () => {
     dbBackupFailuresTotal.inc();
+};
+
+const recordOffsiteReplicationSuccess = () => {
+    offsiteReplicationCompleted.set(Date.now() / 1000);
+};
+
+const recordOffsiteReplicationFailure = () => {
+    offsiteReplicationFailuresTotal.inc();
 };
 
 const metricsMiddleware = (req, res, next) => {
@@ -144,5 +163,7 @@ module.exports = {
     setDbPool,
     recordBackupSuccess,
     recordBackupFailure,
+    recordOffsiteReplicationSuccess,
+    recordOffsiteReplicationFailure,
     normalizeRoute,
 };

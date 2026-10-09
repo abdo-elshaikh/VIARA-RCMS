@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const {
     triggerEvent,
@@ -1518,9 +1519,9 @@ const getOrderTimeline = (db) => async (req, res, next) => {
 const getAvailability = (db) => async (req, res, next) => {
     try {
         await ensureCatalogArchiveSchema(db);
-        const date = req.query.date || new Date().toISOString().slice(0, 10);
-        const startDate = req.query.startDate || date;
-        const endDate = req.query.endDate || date;
+        const date = getRequestQuery(req).date || new Date().toISOString().slice(0, 10);
+        const startDate = getRequestQuery(req).startDate || date;
+        const endDate = getRequestQuery(req).endDate || date;
 
         // Single SQL query with JSON aggregation replaces the O(n*m) in-memory filtering.
         const [machineAvailability, staffAvailability] = await Promise.all([
@@ -1744,9 +1745,9 @@ const getAppointments = (db) => async (req, res, next) => {
             roomId,
             roomNumber,
             receptionistId
-        } = req.query;
+        } = getRequestQuery(req);
         const { getPagination } = require('../utils/pagination');
-        const { limit: safeLimit, offset } = getPagination(req.query, { defaultLimit: 200, maxLimit: 500 });
+        const { limit: safeLimit, offset } = getPagination(getRequestQuery(req), { defaultLimit: 200, maxLimit: 500 });
         let query = `
             SELECT a.*, p.mrn, p.first_name_enc, p.last_name_enc, m.name as machine_name, m.type as modality_type,
                    COALESCE(r.name, 'جناح فحص ' || m.room_number) as room_name,

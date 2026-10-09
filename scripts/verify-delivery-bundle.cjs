@@ -46,6 +46,9 @@ async function main() {
     const template=texts.get('.env.example').toString();
     for(const key of ['LICENSE_KEY','POSTGRES_PASSWORD','JWT_SECRET','ENCRYPTION_KEY','BACKUP_ENCRYPTION_KEY','BLIND_INDEX_KEY','METRICS_TOKEN','REDIS_PASSWORD','ORTHANC_PASSWORD','PACS_WEBHOOK_SECRET']) assert(new RegExp(`^${key}=\\r?$`,'m').test(template),'Embedded credential: '+key);
     assert.equal(texts.get('setup.sh').toString(),fs.readFileSync(path.join(__dirname,'../viara-production-package/setup.sh'),'utf8').replace(/\r\n/g,'\n'),'Setup differs from final source');
+    const startPage='00_ابدأ_من_هنا_START_HERE.html';
+    assert(texts.has(startPage),'Missing START HERE page');
+    assert.equal(texts.get(startPage).toString(),fs.readFileSync(path.join(__dirname,'../viara-production-package',startPage),'utf8'),'START HERE differs from final source');
     const result={passed:true,files,imageArchives:archives.size,sha256:manifest.sha256,archive:zipPath};
     fs.writeFileSync(zipPath+'.verification.json',JSON.stringify(result,null,2));
     console.log(JSON.stringify(result,null,2));

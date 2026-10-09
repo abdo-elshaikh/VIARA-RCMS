@@ -50,6 +50,24 @@ function runCli(args, { ledgerPath } = {}) {
 describe('demo-provision CLI', () => {
     let tmpDir;
     let ledgerPath;
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'viara-demo-fixture-'));
+    const envPath = path.join(fixtureDir, 'base.env');
+    const originalBaseEnv = process.env.VIARA_DEMO_BASE_ENV;
+    const originalKeyPath = process.env.VIARA_LICENSE_PRIVATE_KEY_PATH;
+    beforeAll(() => {
+        fs.writeFileSync(envPath, cli.SECRET_KEYS.map(key => key + '=' + '1'.repeat(64)).join('\n') + '\nPOSTGRES_USER=postgres\nPOSTGRES_DB=viara\n');
+        process.env.VIARA_DEMO_BASE_ENV = envPath;
+        const { privateKey } = require('node:crypto').generateKeyPairSync('ec', {namedCurve:'prime256v1'});
+        process.env.VIARA_LICENSE_PRIVATE_KEY_PATH = path.join(fixtureDir, 'test-signing.pem');
+        fs.writeFileSync(process.env.VIARA_LICENSE_PRIVATE_KEY_PATH, privateKey.export({type:'pkcs8',format:'pem'}));
+    });
+    afterAll(() => {
+        if(originalBaseEnv === undefined) delete process.env.VIARA_DEMO_BASE_ENV;
+        else process.env.VIARA_DEMO_BASE_ENV = originalBaseEnv;
+        if(originalKeyPath === undefined) delete process.env.VIARA_LICENSE_PRIVATE_KEY_PATH;
+        else process.env.VIARA_LICENSE_PRIVATE_KEY_PATH = originalKeyPath;
+        fs.rmSync(fixtureDir, {recursive:true,force:true});
+    });
 
     beforeEach(() => {
         tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'VIARA-demo-cli-'));
@@ -173,7 +191,7 @@ describe('demo-provision CLI', () => {
         test('a demo env never reuses the main stack secrets', () => {
             // The single most important property here: a shared JWT_SECRET would
             // let anyone who reaches the demo forge production sessions.
-            const mainEnv = fs.readFileSync(path.join(REPO_ROOT, '.env'), 'utf8');
+            const mainEnv = fs.readFileSync(envPath, 'utf8');
             const mainSecrets = {};
             for (const line of mainEnv.split(/\r?\n/)) {
                 const m = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
@@ -247,7 +265,7 @@ describe('demo-provision CLI', () => {
         test('does not inherit the main stack secrets', () => {
             const env = cli.readEnvFile(envFile);
             const mainEnv = {};
-            for (const line of fs.readFileSync(path.join(REPO_ROOT, '.env'), 'utf8').split(/\r?\n/)) {
+            for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
                 const m = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line);
                 if (m) mainEnv[m[1]] = m[2];
             }

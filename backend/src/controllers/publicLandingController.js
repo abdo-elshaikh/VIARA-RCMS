@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const logger = require('../config/logger');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
@@ -839,7 +840,7 @@ const getPublicLandingOverview = (db) => async (req, res, next) => {
  */
 const verifyReportAuthenticity = (db) => async (req, res, next) => {
     try {
-        const rawCode = String(req.params.hash || req.query.code || req.query.hash || '').trim();
+        const rawCode = String(req.params.hash || getRequestQuery(req).code || getRequestQuery(req).hash || '').trim();
         // Digital signature verification requires a cryptographically secure hash (min 16 chars).
         // Guessable sequential order numbers or predictable IDs are prohibited to protect PHI against IDOR scraping.
         if (!rawCode || rawCode.length < 16) {

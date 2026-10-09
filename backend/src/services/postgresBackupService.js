@@ -22,7 +22,7 @@ const getBackupMode = () => (
 ).toLowerCase();
 
 const isValidBackupFilename = (filename) => (
-    typeof filename === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]*\.(json|dump|dump\.enc|pacs\.zip|pacs\.zip\.enc)$/.test(filename)
+    typeof filename === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9_-]*\.(json|dump|dump\.enc|pacs\.zip|pacs\.zip\.enc|uploads\.zip\.enc)$/.test(filename)
 );
 
 const MAGIC = Buffer.from('VIARABKP2');
@@ -192,7 +192,7 @@ const cleanupBackups = async () => {
 
     for (let index = 0; index < backups.length; index += 1) {
         const backup = backups[index];
-        const key = backup.filename.replace(/\.(?:dump(?:\.enc)?|json|pacs\.zip(?:\.enc)?)$/, '');
+        const key = backup.filename.replace(/\.(?:dump(?:\.enc)?|json|pacs\.zip(?:\.enc)?|uploads\.zip\.enc)$/, '');
         if (!groups.has(key)) groups.set(key, groups.size);
         if (groups.get(key) >= maxBackups || backup.created_at.getTime() < cutoff) {
             const filepath = resolveBackupPath(backup.filename);
@@ -218,7 +218,9 @@ const createPostgresBackup = async () => {
     const pgRestore = process.env.PG_RESTORE_PATH || 'pg_restore';
 
     let pacs;
+    let uploads;
     try {
+        uploads = await createUploadsCompanion({ filename, filepath });
         pacs = await createPacsCompanion({ filename, filepath });
         await runProcess(pgDump, [
             '--format=custom',
@@ -228,6 +230,7 @@ const createPostgresBackup = async () => {
         ], environment);
         await runProcess(pgRestore, ['--list', temporaryPath], environment);
         await pacs?.verifyUnchanged?.();
+        await uploads?.verifyUnchanged?.();
         await encryptBackup(temporaryPath, encryptedTemporaryPath);
         await fsp.unlink(temporaryPath);
         await fsp.rename(encryptedTemporaryPath, filepath);
@@ -241,6 +244,17 @@ const createPostgresBackup = async () => {
         const stat = await fsp.stat(filepath);
         const dicomStorage = await getDicomStorageStatus();
         const checksum = await computeFileChecksum(filepath);
+        const companions = [
+            ...(uploads ? [uploads.backup] : []),
+            ...(pacs ? [pacs.backup] : [])
+        ];
+        const scope = (uploads && pacs)
+            ? 'database-pacs-and-uploads'
+            : uploads
+                ? 'database-and-uploads'
+                : pacs
+                    ? 'database-and-pacs'
+                    : 'database-only';
         return {
             filename,
             filepath,
@@ -249,15 +263,36 @@ const createPostgresBackup = async () => {
             created_at: stat.mtime,
             type: 'PostgreSQL',
             verified: true,
-            scope: pacs ? 'database-and-pacs' : 'database-only',
-            companions: pacs ? [pacs.backup] : [],
+            scope,
+            companions,
             dicom_storage: dicomStorage
         };
     } catch (error) {
         if (fs.existsSync(temporaryPath)) await fsp.unlink(temporaryPath);
         if (fs.existsSync(encryptedTemporaryPath)) await fsp.unlink(encryptedTemporaryPath);
         if (pacs?.backup?.filepath) await fsp.unlink(pacs.backup.filepath).catch(() => {});
+        if (uploads?.backup?.filepath) await fsp.unlink(uploads.backup.filepath).catch(() => {});
         throw error;
+    }
+};
+
+const createUploadsCompanion = async (backup) => {
+    const enabled = process.env.UPLOADS_BACKUP_ENABLED ?? (process.env.NODE_ENV === 'test' ? 'false' : 'true');
+    if (enabled !== 'true') return null;
+    const filename = backup.filename.replace(/\.dump(?:\.enc)?$/, '.uploads.zip.enc');
+    const filepath = path.join(path.dirname(backup.filepath), filename);
+    const temporary = filepath + '.partial.zip';
+    const encrypted = filepath + '.partial';
+    try {
+        const snapshot = await require('./uploadsBackupService').snapshotUploads(temporary);
+        await encryptBackup(temporary, encrypted);
+        await fsp.rename(encrypted, filepath);
+        return { verifyUnchanged: snapshot.verifyUnchanged, backup: { filename, filepath,
+            checksum: await computeFileChecksum(filepath), file_count: snapshot.manifest.files.length,
+            size_bytes: (await fsp.stat(filepath)).size, type: 'Uploads (encrypted)', verified: true } };
+    } finally {
+        await fsp.unlink(temporary).catch(() => {});
+        await fsp.unlink(encrypted).catch(() => {});
     }
 };
 
@@ -346,6 +381,7 @@ const restorePostgresBackup = async (filename, options = {}) => {
     const tempDecryptedPath = path.join(backupDir, `${filename}.${crypto.randomUUID()}.restore.tmp`);
     let pathToRestore = filepath;
     let companionDecrypted = null;
+    let uploadsDecrypted = null;
 
     try {
         if (isEncrypted) {
@@ -379,6 +415,17 @@ const restorePostgresBackup = async (filename, options = {}) => {
             manifest = await pacsBackupService.verifyPacsZip(pacsZipToVerify);
         }
 
+        const uploadsPath = filepath.replace(/\.dump(?:\.enc)?$/, '.uploads.zip.enc');
+        const uploadsService = require('./uploadsBackupService');
+        let uploadsManifest = null;
+        const uploadsRoot = options.uploadsRoot || uploadsService.getUploadsRoot();
+        if (fs.existsSync(uploadsPath)) {
+            uploadsDecrypted = path.join(backupDir, `uploads.${crypto.randomUUID()}.zip`);
+            await decryptBackup(uploadsPath, uploadsDecrypted);
+            uploadsManifest = await uploadsService.verifyUploadsZip(uploadsDecrypted);
+            if (!options.verifyOnly) await uploadsService.assertRestoreTarget(uploadsRoot);
+        } else if (options.requireUploads === true) throw new Error('Required uploads companion is missing');
+
         // 3. If not verifyOnly, execute pg_restore against target database FIRST
         if (!options.verifyOnly) {
             const cleanArgs = options.clean !== false ? ['--clean', '--if-exists'] : [];
@@ -391,6 +438,7 @@ const restorePostgresBackup = async (filename, options = {}) => {
                 pathToRestore
             ];
             await runner(pgRestore, restoreArgs, environment);
+            if (uploadsDecrypted) await uploadsService.restoreUploads(uploadsDecrypted, uploadsRoot);
 
             // 4. On successful database restore, proceed to restore PACS DICOM instances
             if ((hasCompanionEnc || hasCompanionRaw) && options.restorePacs !== false) {
@@ -423,7 +471,8 @@ const restorePostgresBackup = async (filename, options = {}) => {
             verified: true,
             dry_run: Boolean(options.verifyOnly),
             restored_at: new Date().toISOString(),
-            pacs: pacsResult
+            pacs: pacsResult,
+            uploads: uploadsManifest ? { verified: true, restored: !options.verifyOnly, file_count: uploadsManifest.files.length } : { verified: false, reason: 'legacy-backup-without-uploads' }
         };
     } finally {
         if (fs.existsSync(tempDecryptedPath)) {
@@ -432,6 +481,7 @@ const restorePostgresBackup = async (filename, options = {}) => {
         if (companionDecrypted && fs.existsSync(companionDecrypted)) {
             await fsp.unlink(companionDecrypted).catch(() => {});
         }
+        if (uploadsDecrypted) await fsp.unlink(uploadsDecrypted).catch(() => {});
     }
 };
 
@@ -441,6 +491,7 @@ module.exports = {
     computeFileChecksum,
     createPostgresBackup,
     createPacsCompanion,
+    createUploadsCompanion,
     decryptBackup,
     encryptBackup,
     ensureBackupDir,

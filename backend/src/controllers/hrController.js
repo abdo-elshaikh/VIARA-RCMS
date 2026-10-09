@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { z } = require('zod');
 const { isGlobalReviewer, assertStaffSupervision } = require('../services/staffSupervisorService');
 const { AppError } = require('../middleware/errorHandler');
@@ -37,8 +38,8 @@ const toNullable = (value) => value === undefined ? null : value;
 const getLeaveBalances = (db) => async (req, res, next) => {
     try {
         const canViewAll = ['Developer', 'Admin', 'HR'].includes(req.user.role);
-        const requestedUserId = canViewAll ? (req.query.userId || null) : null;
-        const year = Math.min(2100, Math.max(2000, Number.parseInt(req.query.year, 10) || new Date().getFullYear()));
+        const requestedUserId = canViewAll ? (getRequestQuery(req).userId || null) : null;
+        const year = Math.min(2100, Math.max(2000, Number.parseInt(getRequestQuery(req).year, 10) || new Date().getFullYear()));
 
         if (requestedUserId) {
             if (!z.string().uuid().safeParse(requestedUserId).success) throw new AppError('Invalid employee id', 400);
@@ -71,7 +72,7 @@ const ensureDateRange = (startDate, endDate) => {
 
 const getEmployeeProfiles = (db) => async (req, res, next) => {
     try {
-        const { department, employmentStatus, isActive, limit } = req.query;
+        const { department, employmentStatus, isActive, limit } = getRequestQuery(req);
         const pageLimit = Math.min(1000, Math.max(1, Number.parseInt(limit, 10) || 500));
         const params = [EMPLOYEE_ROLES];
         let query = `
@@ -217,7 +218,7 @@ const updateEmployeeProfile = (db) => async (req, res, next) => {
 
 const getShifts = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, userId, limit = 500 } = req.query;
+        const { startDate, endDate, userId, limit = 500 } = getRequestQuery(req);
         if (startDate && Number.isNaN(new Date(startDate).getTime())) throw new AppError('Invalid shift start date', 400);
         if (endDate && Number.isNaN(new Date(endDate).getTime())) throw new AppError('Invalid shift end date', 400);
         if (startDate && endDate && new Date(startDate) > new Date(endDate)) throw new AppError('Shift query end date must be on or after start date', 400);
@@ -235,7 +236,7 @@ const getShifts = (db) => async (req, res, next) => {
             if (supervised.rows.length) {
                 effectiveUserId = userId;
             }
-        } else if (req.query.team === 'true') {
+        } else if (getRequestQuery(req).team === 'true') {
             const supervised = await db.query(`
                 SELECT employee_id FROM staff_supervisor_assignments
                 WHERE supervisor_id = $1 AND revoked_at IS NULL
@@ -272,10 +273,10 @@ const getShifts = (db) => async (req, res, next) => {
             query += ` AND s.user_id = ANY($${paramCount++}::uuid[])`;
             params.push(teamUserIds);
         }
-        if (req.query.roomId) {
-            if (!z.string().uuid().safeParse(req.query.roomId).success) throw new AppError('Invalid room id', 400);
+        if (getRequestQuery(req).roomId) {
+            if (!z.string().uuid().safeParse(getRequestQuery(req).roomId).success) throw new AppError('Invalid room id', 400);
             query += ` AND s.room_id = $${paramCount++}`;
-            params.push(req.query.roomId);
+            params.push(getRequestQuery(req).roomId);
         }
 
         query += ` ORDER BY s.start_time ASC LIMIT $${paramCount}::int`;
@@ -596,21 +597,21 @@ const recordAttendanceAudit = async (clientOrDb, {
 
 const getAttendance = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, startDateTime, endDateTime, activeOnly, status } = req.query;
+        const { startDate, endDate, startDateTime, endDateTime, activeOnly, status } = getRequestQuery(req);
         const canReviewAll = ['Developer', 'Admin', 'HR', 'Receptionist', 'Radiologist'].includes(req.user.role);
-        let userId = canReviewAll ? req.query.userId : getAuthenticatedUserId(req);
+        let userId = canReviewAll ? getRequestQuery(req).userId : getAuthenticatedUserId(req);
         let teamUserIds = null;
-        if (!canReviewAll && req.query.userId && req.query.userId !== getAuthenticatedUserId(req)) {
+        if (!canReviewAll && getRequestQuery(req).userId && getRequestQuery(req).userId !== getAuthenticatedUserId(req)) {
             const supervised = await db.query(`
                 SELECT employee_id FROM staff_supervisor_assignments
                 WHERE supervisor_id = $1 AND employee_id = $2 AND revoked_at IS NULL
                   AND starts_at <= CURRENT_TIMESTAMP
                   AND (ends_at IS NULL OR ends_at > CURRENT_TIMESTAMP)
-            `, [getAuthenticatedUserId(req), req.query.userId]);
+            `, [getAuthenticatedUserId(req), getRequestQuery(req).userId]);
             if (supervised.rows.length) {
-                userId = req.query.userId;
+                userId = getRequestQuery(req).userId;
             }
-        } else if (req.query.team === 'true') {
+        } else if (getRequestQuery(req).team === 'true') {
             const supervised = await db.query(`
                 SELECT employee_id FROM staff_supervisor_assignments
                 WHERE supervisor_id = $1 AND revoked_at IS NULL
@@ -620,7 +621,7 @@ const getAttendance = (db) => async (req, res, next) => {
             teamUserIds = [getAuthenticatedUserId(req), ...supervised.rows.map((r) => r.employee_id)];
             userId = null;
         }
-        const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
+        const limit = Math.min(1000, Math.max(1, Number.parseInt(getRequestQuery(req).limit, 10) || 100));
         const hasExactDateRange = Boolean(startDateTime || endDateTime);
         if (hasExactDateRange) {
             const isoTimestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
@@ -1686,8 +1687,8 @@ const updateAttendanceSettings = (db) => async (req, res, next) => {
 const getAttendancePermissions = (db) => async (req, res, next) => {
     try {
         const canReviewAll = ['Developer', 'Admin', 'HR'].includes(req.user.role);
-        const userId = canReviewAll ? req.query.userId : getAuthenticatedUserId(req);
-        const { startDate, endDate, status, permissionType } = req.query;
+        const userId = canReviewAll ? getRequestQuery(req).userId : getAuthenticatedUserId(req);
+        const { startDate, endDate, status, permissionType } = getRequestQuery(req);
 
         let query = `
             SELECT p.*,
@@ -1888,9 +1889,9 @@ const updateAttendancePermissionStatus = (db) => async (req, res, next) => {
 
 const getAttendanceAuditLedger = (db) => async (req, res, next) => {
     try {
-        const { userId, startDate, endDate, actionType, isViolation } = req.query;
-        const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
-        const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+        const { userId, startDate, endDate, actionType, isViolation } = getRequestQuery(req);
+        const limit = Math.min(1000, Math.max(1, Number.parseInt(getRequestQuery(req).limit, 10) || 100));
+        const offset = Math.max(0, Number.parseInt(getRequestQuery(req).offset, 10) || 0);
 
         let query = `
             SELECT l.*,
@@ -1941,9 +1942,9 @@ const getAttendanceAuditLedger = (db) => async (req, res, next) => {
 const getLeaveRequests = (db) => async (req, res, next) => {
     try {
         const canReviewAll = ['Developer', 'Admin', 'HR'].includes(req.user.role);
-        const userId = canReviewAll ? req.query.userId : req.user.user_id;
+        const userId = canReviewAll ? getRequestQuery(req).userId : req.user.user_id;
         if (userId && !z.string().uuid().safeParse(userId).success) throw new AppError('Invalid employee id', 400);
-        const pageLimit = Math.min(500, Math.max(1, Number.parseInt(req.query.limit, 10) || 100));
+        const pageLimit = Math.min(500, Math.max(1, Number.parseInt(getRequestQuery(req).limit, 10) || 100));
         let query = `
             SELECT l.*, u.full_name as employee_name, a.full_name as approved_by_name
             FROM leave_requests l
@@ -2262,7 +2263,7 @@ const upsertLeaveBalance = (db) => async (req, res, next) => {
 const getStaffCredentials = (db) => async (req, res, next) => {
     try {
         const canManage = ['Developer', 'Admin', 'HR'].includes(req.user.role);
-        const { userId, expiringWithinDays, limit } = req.query;
+        const { userId, expiringWithinDays, limit } = getRequestQuery(req);
         const targetUserId = canManage ? (req.params.staffId || userId) : getAuthenticatedUserId(req);
         const pageLimit = Math.min(500, Math.max(1, Number.parseInt(limit, 10) || 200));
         const params = [];
@@ -2404,8 +2405,8 @@ const getProductivityReport = (db) => async (req, res, next) => {
         // Bounded default window: an open-ended sweep from 1970 scans whole
         // tables for no analytical value.
         const { start, end } = ensureDateRange(
-            req.query.startDate || monthAgo,
-            req.query.endDate || today
+            getRequestQuery(req).startDate || monthAgo,
+            getRequestQuery(req).endDate || today
         );
 
         // Aggregated productivity snapshot based on completed, attributable
@@ -2574,7 +2575,7 @@ const getProductivityReport = (db) => async (req, res, next) => {
 const getShiftRequests = (db) => async (req, res, next) => {
     try {
         const canReviewAll = ['Developer', 'Admin', 'HR'].includes(req.user.role);
-        const { userId, status, requestType } = req.query;
+        const { userId, status, requestType } = getRequestQuery(req);
         const effectiveUserId = canReviewAll ? userId : getAuthenticatedUserId(req);
 
         let query = `
@@ -2802,7 +2803,7 @@ const updateShiftRequestStatus = (db) => async (req, res, next) => {
 const getStaffEvaluations = (db) => async (req, res, next) => {
     try {
         const canReviewAll = ['Developer', 'Admin', 'HR'].includes(req.user.role);
-        const { userId } = req.query;
+        const { userId } = getRequestQuery(req);
         const effectiveUserId = canReviewAll ? (req.params.staffId || userId) : getAuthenticatedUserId(req);
 
         let query = `
@@ -2867,7 +2868,7 @@ const createStaffEvaluation = (db) => async (req, res, next) => {
 
 const getLiveAttendanceSummary = (db) => async (req, res, next) => {
     try {
-        const { department, branchId, date: targetDate } = req.query;
+        const { department, branchId, date: targetDate } = getRequestQuery(req);
         const date = targetDate || new Date().toISOString().slice(0, 10);
 
         let deptFilter = '';
@@ -2970,7 +2971,7 @@ const getLiveAttendanceSummary = (db) => async (req, res, next) => {
 
 const getAttendancePayrollExport = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, department, userId, format = 'json' } = req.query;
+        const { startDate, endDate, department, userId, format = 'json' } = getRequestQuery(req);
 
         if (!startDate || !endDate) {
             throw new AppError('startDate and endDate are required', 400);
@@ -3083,7 +3084,7 @@ const updateShiftTemplateSchema = shiftTemplateBaseSchema.partial().refine(
 
 const getShiftTemplates = (db) => async (req, res, next) => {
     try {
-        const { role, isActive } = req.query;
+        const { role, isActive } = getRequestQuery(req);
         let query = `
             SELECT st.*, u.full_name as created_by_name
             FROM shift_templates st

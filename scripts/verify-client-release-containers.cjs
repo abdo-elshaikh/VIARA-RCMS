@@ -5,9 +5,12 @@ const crypto = require('node:crypto');
 const net = require('node:net');
 const { execFileSync, spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const stage = path.join(root, 'dist/client-release/staging-20261009');
+const sourceStage = path.join(root, 'dist/client-release/staging-20261009');
 const testDir = fs.mkdtempSync(path.join(root, 'scratch/client-container-test-'));
-const envFile = path.join(testDir, '.env');
+const testStartHere = process.env.VIARA_TEST_START_HERE === '1';
+const stage = testStartHere ? path.join(testDir, 'package') : sourceStage;
+if (testStartHere) fs.cpSync(sourceStage,stage,{recursive:true});
+const envFile = path.join(testStartHere ? stage : testDir, '.env');
 const project = 'viara-release-test-' + crypto.randomBytes(4).toString('hex');
 const keys = ['POSTGRES_PASSWORD','JWT_SECRET','ENCRYPTION_KEY','BACKUP_ENCRYPTION_KEY','BLIND_INDEX_KEY','METRICS_TOKEN','REDIS_PASSWORD','ORTHANC_PASSWORD','PACS_WEBHOOK_SECRET'];
 const reservePort = () => new Promise(resolve => { const server = net.createServer(); server.listen(0,'127.0.0.1',()=>{ const port=server.address().port; server.close(()=>resolve(port)); }); });
@@ -38,13 +41,38 @@ async function main() {
         }, networks:{app:{ipam:{config:[{subnet:'172.31.247.0/24'}]}}}
     },null,2));
     launched=true;
-    compose(['up','-d','--pull','never','--wait','--wait-timeout','420']);
+    const commandResults = [];
+    if (testStartHere) {
+        const images=path.join(stage,'images'); fs.mkdirSync(images);
+        const cache=path.join(root,'scratch/offline-images-20261009');
+        for(const name of fs.readdirSync(cache)) if(/\.tar(?:\.sha256)?$/.test(name)) fs.linkSync(path.join(cache,name),path.join(images,name));
+        const bin=path.join(testDir,'bin'); fs.mkdirSync(bin);
+        fs.writeFileSync(path.join(bin,'python3'),'#!/bin/bash\nexec /c/Python313/python.exe "$@"\n');
+        const shellEnv={...process.env,PATH:bin+path.delimiter+process.env.PATH,PYTHONUTF8:'1',MSYS_NO_PATHCONV:'1',COMPOSE_PROJECT_NAME:project,COMPOSE_FILE:[path.join(stage,'docker-compose.yml'),override].join(';'),COMPOSE_ENV_FILES:envFile};
+        const bash=command=>execFileSync('C:/Program Files/Git/bin/bash.exe',['-c',command],{cwd:stage,env:shellEnv,encoding:'utf8',timeout:900000,stdio:['pipe','pipe','pipe']});
+        const html=fs.readFileSync(path.join(root,'viara-production-package/00_ابدأ_من_هنا_START_HERE.html'),'utf8');
+        const commands=[...html.matchAll(/<code id="(cmd-[^"]+)">([^<]+)<\/code>/g)].map(m=>({id:m[1],command:m[2].replaceAll('&amp;','&')}));
+        const settings=path.join(testDir,'settings.json');
+        fs.writeFileSync(settings,JSON.stringify({clinical_origin:values.CLIENT_URL,portal_origin:values.PORTAL_CLIENT_URL,license_key:license,dicom_bind:'127.0.0.1',admin_email:'admin@synthetic.example.test',admin_name:'Synthetic Admin',admin_password:'Synthetic-first-admin-password-123'}));
+        for(const item of commands) {
+            const command=item.id==='cmd-setup' ? item.command+' --settings-file '+JSON.stringify(settings.replaceAll('\\','/')) : item.command;
+            const output=bash(command);
+            if(item.id==='cmd-tools'&&!output.trim().endsWith('linux')) throw Error('Linux prerequisite command failed');
+            if(item.id==='cmd-status'&&!output.includes('healthy')) throw Error('Status command did not report healthy services');
+            commandResults.push({...item,passed:true,settingsFileFixture:item.id==='cmd-setup'});
+        }
+        if(!fs.existsSync(path.join(stage,'.setup-complete'))) throw Error('Setup completion marker missing');
+        const before=fs.readFileSync(envFile,'utf8');bash('bash setup.sh');
+        if(fs.readFileSync(envFile,'utf8')!==before) throw Error('Repeated setup changed keys');
+        commandResults.push({command:'bash setup.sh',passed:true,repeatExistingSite:true});
+        fs.writeFileSync(path.join(testDir,'command-results.json'),JSON.stringify({passed:true,project,commandResults,host:'Windows Git Bash with real Linux Docker Engine; Python3 adapter',syntheticSettings:true},null,2));
+    } else compose(['up','-d','--pull','never','--wait','--wait-timeout','420']);
     const response=await fetch(`http://127.0.0.1:${ports.BACKEND_PORT}/health/ready`);
     if(!response.ok) throw Error('Backend readiness failed');
     const adminScripts = JSON.parse(execFileSync('python', ['-c', "import importlib.util,json; s=importlib.util.spec_from_file_location('admin','viara-production-package/scripts/initialize-admin.py'); m=importlib.util.module_from_spec(s); s.loader.exec_module(m); print(json.dumps({'create':m.CREATE,'query':m.QUERY}))"], {cwd:root,encoding:'utf8'}));
     const adminArgs=['exec','-T','backend','node','-e',adminScripts.create];
     const admin={email:'admin@synthetic.example.test',name:'Synthetic Admin',password:'Synthetic-first-admin-password-123'};
-    if(!JSON.parse(compose(adminArgs,JSON.stringify(admin))).created) throw Error('Initial Admin was not created');
+    if(JSON.parse(compose(adminArgs,JSON.stringify(admin))).created === testStartHere) throw Error('Unexpected initial Admin state');
     if(JSON.parse(compose(adminArgs,JSON.stringify({...admin,password:'A-different-password-123456'}))).created) throw Error('Existing Admin was altered');
     const login=await fetch(`http://127.0.0.1:${ports.BACKEND_PORT}/api/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:admin.email,password:admin.password})});
     if(!login.ok) throw Error('Initial administrator login failed');

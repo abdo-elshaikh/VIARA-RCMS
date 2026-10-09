@@ -276,10 +276,10 @@ describe('notification job service hardening', () => {
 
     test('handles overnight quiet hours with an exclusive end boundary', () => {
         const prefs = { quiet_hours_enabled: true, quiet_hours_start: 22, quiet_hours_end: 7 };
-        expect(isQuietHours(prefs, new Date(2026, 0, 1, 23, 0))).toBe(true);
-        expect(isQuietHours(prefs, new Date(2026, 0, 2, 6, 59))).toBe(true);
-        expect(isQuietHours(prefs, new Date(2026, 0, 2, 7, 0))).toBe(false);
-        expect(isQuietHours(prefs, new Date(2026, 0, 2, 12, 0))).toBe(false);
+        expect(isQuietHours(prefs, new Date('2026-01-01T23:00:00+02:00'))).toBe(true);
+        expect(isQuietHours(prefs, new Date('2026-01-02T06:59:00+02:00'))).toBe(true);
+        expect(isQuietHours(prefs, new Date('2026-01-02T07:00:00+02:00'))).toBe(false);
+        expect(isQuietHours(prefs, new Date('2026-01-02T12:00:00+02:00'))).toBe(false);
     });
 
     test('resolves contact and template independently for each fallback channel', async () => {

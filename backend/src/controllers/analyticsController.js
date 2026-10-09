@@ -1,10 +1,11 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const AnalyticsService = require('../services/analyticsService');
 const { Parser } = require('json2csv');
 
 const getVolume = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, groupBy } = req.query;
+        const { startDate, endDate, groupBy } = getRequestQuery(req);
         const service = new AnalyticsService(db);
         const data = await service.getStudyVolume(startDate, endDate, groupBy);
         res.json(data);
@@ -15,7 +16,7 @@ const getVolume = (db) => async (req, res, next) => {
 
 const getRevenue = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, groupBy } = req.query;
+        const { startDate, endDate, groupBy } = getRequestQuery(req);
         const service = new AnalyticsService(db);
         const data = await service.getRevenueMetrics(startDate, endDate, groupBy);
         res.json(data);
@@ -26,7 +27,7 @@ const getRevenue = (db) => async (req, res, next) => {
 
 const getPerformance = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, modalityId } = req.query;
+        const { startDate, endDate, modalityId } = getRequestQuery(req);
         const service = new AnalyticsService(db);
         const data = await service.getPerformanceMetrics(startDate, endDate, modalityId);
         res.json(data);
@@ -37,7 +38,7 @@ const getPerformance = (db) => async (req, res, next) => {
 
 const getPeakHours = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, modalityId } = req.query;
+        const { startDate, endDate, modalityId } = getRequestQuery(req);
         const service = new AnalyticsService(db);
         const data = await service.getPeakHoursMetrics(startDate, endDate, modalityId);
         res.json(data);
@@ -48,7 +49,7 @@ const getPeakHours = (db) => async (req, res, next) => {
 
 const getEquipmentUtilization = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate } = getRequestQuery(req);
         const service = new AnalyticsService(db);
         const data = await service.getEquipmentUtilization(startDate, endDate);
         res.json(data);
@@ -59,7 +60,7 @@ const getEquipmentUtilization = (db) => async (req, res, next) => {
 
 const getTopProcedures = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, limit } = req.query;
+        const { startDate, endDate, limit } = getRequestQuery(req);
         const service = new AnalyticsService(db);
         const data = await service.getTopProcedures(startDate, endDate, limit ? parseInt(limit, 10) : 10);
         res.json(data);
@@ -70,7 +71,7 @@ const getTopProcedures = (db) => async (req, res, next) => {
 
 const getReferrals = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate } = getRequestQuery(req);
         const service = new AnalyticsService(db);
         const data = await service.getReferralMetrics(startDate, endDate);
         res.json(data);
@@ -154,7 +155,7 @@ const formatExportRows = (type, data) => {
 
 const exportAnalytics = (db) => async (req, res, next) => {
     try {
-        const { type, startDate, endDate, groupBy, modalityId, limit } = req.query;
+        const { type, startDate, endDate, groupBy, modalityId, limit } = getRequestQuery(req);
         const service = new AnalyticsService(db);
         let rawData = [];
 

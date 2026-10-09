@@ -135,7 +135,7 @@ function writeEnvFile(project, lease, licenseKey) {
     // A demo must never inherit the main stack's secrets. JWT_SECRET in
     // particular: sharing it would let anyone who reaches the demo forge a
     // production session token. Generate fresh values instead of copying.
-    const baseEnv = path.join(ROOT, '.env');
+    const baseEnv = process.env.VIARA_DEMO_BASE_ENV || path.join(ROOT, '.env');
     if (!fs.existsSync(baseEnv)) {
         throw new Error('.env not found; a demo env cannot be generated.');
     }

@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 const { triggerEventForRole } = require('../services/notificationJobService');
@@ -354,8 +355,8 @@ const reviewCashierClosure = (db) => async (req, res, next) => {
 
 const getReconciliation = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate } = req.query;
-        const branchId = req.query.branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
+        const { startDate, endDate } = getRequestQuery(req);
+        const branchId = getRequestQuery(req).branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
 
         const supervisorPermissions = await db.query(`
             SELECT 1
@@ -367,7 +368,7 @@ const getReconciliation = (db) => async (req, res, next) => {
         `, [req.user.role]);
         const canReviewAllShifts = supervisorPermissions.rows.length > 0
             || req.user.role === 'Developer';
-        const cashierId = canReviewAllShifts ? (req.query.cashierId || null) : (req.user.user_id || null);
+        const cashierId = canReviewAllShifts ? (getRequestQuery(req).cashierId || null) : (req.user.user_id || null);
         const values = [];
         let param = 1;
 
@@ -471,7 +472,7 @@ const currentCashierShiftCache = new Map();
 
 const getCurrentCashierShift = (db) => async (req, res, next) => {
     try {
-        const branchId = req.query?.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID;
+        const branchId = getRequestQuery(req)?.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID;
         const userId = req.user?.user_id || req.user?.userId || req.user?.id;
         const cacheKey = `${userId}:${branchId}`;
         const now = Date.now();

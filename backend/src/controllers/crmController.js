@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { z } = require('zod');
 const { AppError } = require('../middleware/errorHandler');
 const { scheduleJob, triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
@@ -98,7 +99,7 @@ const getMarketingAudience = async (db, campaign) => {
 
 const getCrmActivities = (db) => async (req, res, next) => {
     try {
-        const { patientId, assignedTo, status } = req.query;
+        const { patientId, assignedTo, status } = getRequestQuery(req);
         let query = `
             SELECT a.*,
                    p.first_name_enc AS patient_first_name_enc,
@@ -622,7 +623,7 @@ const getLoyaltyHistory = (db) => async (req, res, next) => {
 
 const getDueRecalls = (db) => async (req, res, next) => {
     try {
-        const { modality, limit = 50 } = req.query;
+        const { modality, limit = 50 } = getRequestQuery(req);
         let query = `
             WITH latest_exams AS (
                 SELECT DISTINCT ON (e.patient_id)

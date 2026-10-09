@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { refreshPermissionCache } = require('../middleware/rbacMiddleware');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -914,8 +915,8 @@ const cloneRolePermissions = (db) => async (req, res, next) => {
 
 const getRbacAuditLogs = (db) => async (req, res, next) => {
     try {
-        const { role, action, actor, before } = req.query || {};
-        const limit = Math.min(100, Math.max(1, parseInt(req.query?.limit, 10) || 30));
+        const { role, action, actor, before } = getRequestQuery(req) || {};
+        const limit = Math.min(100, Math.max(1, parseInt(getRequestQuery(req)?.limit, 10) || 30));
 
         const conditions = [
             `sl.action IN (

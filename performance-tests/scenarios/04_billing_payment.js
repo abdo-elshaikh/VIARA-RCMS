@@ -61,9 +61,9 @@ async function runBillingPaymentScenario({ vuId, userPool, metricsCollector }) {
             endpoint: '/api/invoices/:id/payment',
             duration: res.duration,
             status: res.status,
-            // 200, 201, 400 (validation), or 409 (already paid or balance exceeded) are valid business outcomes
-            ok: res.ok || res.status === 400 || res.status === 409,
-            error: (res.ok || res.status === 400 || res.status === 409) ? null : res.error
+            // 200/201 (success) or 409 (already paid/conflict under concurrent race condition) are valid outcomes; 400 is a client/validation defect
+            ok: res.ok || res.status === 409,
+            error: (res.ok || res.status === 409) ? null : (res.error || `HTTP ${res.status}`)
         });
 
         // 4. Duplicate Attempt with SAME Idempotency Key (Must prevent double-charge)
@@ -78,8 +78,8 @@ async function runBillingPaymentScenario({ vuId, userPool, metricsCollector }) {
             endpoint: '/api/invoices/:id/payment (replay)',
             duration: dupRes.duration,
             status: dupRes.status,
-            ok: dupRes.ok || dupRes.status === 409 || dupRes.status === 400,
-            error: dupRes.error
+            ok: dupRes.ok || dupRes.status === 409,
+            error: (dupRes.ok || dupRes.status === 409) ? null : (dupRes.error || `HTTP ${dupRes.status}`)
         });
     }
 

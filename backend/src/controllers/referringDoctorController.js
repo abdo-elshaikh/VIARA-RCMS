@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 
@@ -10,8 +11,8 @@ const sanitizeReferringDoctor = (doc) => {
 
 const getReferringDoctors = (db) => async (req, res, next) => {
     try {
-        const { active, limit = 200, offset = 0 } = req.query;
-        const search = req.query.search || req.query.q;
+        const { active, limit = 200, offset = 0 } = getRequestQuery(req);
+        const search = getRequestQuery(req).search || getRequestQuery(req).q;
         const values = [];
         let param = 1;
 

@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { z } = require('zod');
 const { AppError } = require('../middleware/errorHandler');
 const { scheduleJob, triggerEvent } = require('../services/notificationJobService');
@@ -382,9 +383,9 @@ const adjustStock = (db) => async (req, res, next) => {
 
 const getStockMovements = (db) => async (req, res, next) => {
     try {
-        const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit, 10) || 200));
-        const referenceType = req.query.referenceType;
-        const referenceIds = String(req.query.referenceIds || '')
+        const limit = Math.min(1000, Math.max(1, Number.parseInt(getRequestQuery(req).limit, 10) || 200));
+        const referenceType = getRequestQuery(req).referenceType;
+        const referenceIds = String(getRequestQuery(req).referenceIds || '')
             .split(',')
             .map((value) => value.trim())
             .filter(Boolean);

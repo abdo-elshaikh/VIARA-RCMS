@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const twilio = require('twilio');
 const { dispatch, notifyClients, computeActionUrl } = require('../services/notificationService');
 const {
@@ -74,7 +75,7 @@ const addStaffVisibilityFilter = (filters, values, param, req) => {
 };
 
 const buildStaffNotificationFilters = (req) => {
-    const { channel, status, eventType, category, priority, patientId, startDate, endDate } = req.query;
+    const { channel, status, eventType, category, priority, patientId, startDate, endDate } = getRequestQuery(req);
     const values = [];
     let param = 1;
     let filters = '';
@@ -94,13 +95,13 @@ const buildStaffNotificationFilters = (req) => {
 
 const getNotifications = (db) => async (req, res, next) => {
     try {
-        const { limit = 50, offset = 0, q } = req.query;
+        const { limit = 50, offset = 0, q } = getRequestQuery(req);
         const userId = getUserId(req);
         let { filters, values, param } = buildStaffNotificationFilters(req);
-        const viewCondition = req.query.view === 'unread' || req.query.readState === 'unread'
+        const viewCondition = getRequestQuery(req).view === 'unread' || getRequestQuery(req).readState === 'unread'
             ? 'nr.read_at IS NULL'
-            : req.query.readState === 'read' ? 'nr.read_at IS NOT NULL'
-            : req.query.view === 'failed' ? "n.status = 'Failed'" : 'TRUE';
+            : getRequestQuery(req).readState === 'read' ? 'nr.read_at IS NOT NULL'
+            : getRequestQuery(req).view === 'failed' ? "n.status = 'Failed'" : 'TRUE';
         const viewFilter = ` AND ${viewCondition}`;
         const readParam = param;
 
@@ -131,8 +132,8 @@ const getNotifications = (db) => async (req, res, next) => {
             const visibleRows = result.rows.slice(0, SEARCH_SCAN_LIMIT).map(mapNotificationRow);
             const matchingRows = visibleRows.filter(row => matchesNotificationSearch(row, q));
             const selectedRows = matchingRows.filter(row => (
-                req.query.view === 'unread' ? !row.is_read
-                    : req.query.view === 'failed' ? row.status === 'Failed' : true
+                getRequestQuery(req).view === 'unread' ? !row.is_read
+                    : getRequestQuery(req).view === 'failed' ? row.status === 'Failed' : true
             ));
             const pageRows = selectedRows.slice(offset, offset + limit);
             const counts = matchingRows.reduce((acc, row) => {
@@ -252,7 +253,7 @@ const getMyNotifications = (db) => async (req, res, next) => {
     try {
         const userId = getUserId(req);
         const role = req.user?.role || '';
-        const { limit = 50, offset = 0, q, channel, status, eventType, category, priority, readState } = req.query;
+        const { limit = 50, offset = 0, q, channel, status, eventType, category, priority, readState } = getRequestQuery(req);
         const values = [userId, role];
         let param = 3;
         let filters = ` AND n.channel = 'InApp' AND (
@@ -484,7 +485,7 @@ const markNotificationRead = (db) => async (req, res, next) => {
 
 const getTemplates = (db) => async (req, res, next) => {
     try {
-        const { eventType, channel } = req.query;
+        const { eventType, channel } = getRequestQuery(req);
         const values = [];
         let param = 1;
         let filters = '';
@@ -576,7 +577,7 @@ const deleteTemplate = (db) => async (req, res, next) => {
 
 const getJobs = (db) => async (req, res, next) => {
     try {
-        const { status, eventType, limit = 50, offset = 0 } = req.query;
+        const { status, eventType, limit = 50, offset = 0 } = getRequestQuery(req);
         const values = [];
         let param = 1;
         let filters = '';
@@ -643,8 +644,8 @@ const triggerProcessJobs = (db) => async (req, res, next) => {
 
 const getRepairableJobs = (db) => async (req, res, next) => {
     try {
-        const limit = Math.min(Math.max(Number(req.query?.limit || 50), 1), 200);
-        const dryRun = req.query?.dryRun !== 'false';
+        const limit = Math.min(Math.max(Number(getRequestQuery(req)?.limit || 50), 1), 200);
+        const dryRun = getRequestQuery(req)?.dryRun !== 'false';
         const result = await getRepairableNotificationJobs(db, { dryRun, limit });
         res.json(result);
     } catch (error) {
@@ -655,8 +656,8 @@ const getRepairableJobs = (db) => async (req, res, next) => {
 const retryRepairableJobs = (db) => async (req, res, next) => {
     try {
         const payload = req.body || {};
-        const dryRun = payload.dryRun !== false && req.query?.dryRun !== 'false';
-        const limit = Math.min(Math.max(Number(payload.limit || req.query?.limit || 50), 1), 200);
+        const dryRun = payload.dryRun !== false && getRequestQuery(req)?.dryRun !== 'false';
+        const limit = Math.min(Math.max(Number(payload.limit || getRequestQuery(req)?.limit || 50), 1), 200);
         const jobIds = payload.jobIds || null;
         if (!dryRun && (!Array.isArray(jobIds) || jobIds.length < 1 || jobIds.length > 20)) {
             return next(new AppError('Select 1 to 20 jobIds before requeueing notifications', 400));
@@ -760,7 +761,7 @@ const sendManual = (db) => async (req, res, next) => {
 
 const getPreferences = (db) => async (req, res, next) => {
     try {
-        const { patientId, doctorId } = req.query;
+        const { patientId, doctorId } = getRequestQuery(req);
         if (!patientId && !doctorId) return next(new AppError('Provide patientId or doctorId', 400));
 
         const result = patientId
@@ -853,7 +854,7 @@ const updateStaffPreferences = (db) => async (req, res, next) => {
 
 const updatePreferences = (db) => async (req, res, next) => {
     try {
-        const { patientId, doctorId } = req.query;
+        const { patientId, doctorId } = getRequestQuery(req);
         if (!patientId && !doctorId) return next(new AppError('Provide patientId or doctorId', 400));
 
         const data = req.body;
@@ -1045,7 +1046,7 @@ const unsubscribe = (db) => async (req, res, next) => {
 
 const getNotificationAnalytics = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, eventType, channel, status } = req.query;
+        const { startDate, endDate, eventType, channel, status } = getRequestQuery(req);
         let values = [];
         let param = 1;
         let filters = '';

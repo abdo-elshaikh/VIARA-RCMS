@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, spectacled-foundation, 'release/**']
   pull_request:
-    branches: [main]
+    branches: [main, spectacled-foundation, 'release/**']
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -79,6 +79,11 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
+      - name: Prepare test environment and vendor keys
+        working-directory: .
+        run: |
+          cp .env.example .env
+          node scripts/generate-keypair.js
       - name: Dependency audit (fail on high/critical)
         run: npm audit --omit=dev --audit-level=high
       - name: Tests

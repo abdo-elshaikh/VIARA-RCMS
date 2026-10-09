@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const { decrypt, hash } = require('../utils/crypto');
 const { validateEnum, validateUUID, VALID_WAITING_LIST_STATUSES } = require('../utils/queryValidator');
@@ -13,7 +14,7 @@ const safeHash = (val) => {
 
 const getWaitingList = (db) => async (req, res, next) => {
     try {
-        const { status, active, modalityId, date, q, limit = 100, offset = 0 } = req.query;
+        const { status, active, modalityId, date, q, limit = 100, offset = 0 } = getRequestQuery(req);
 
         if (status) validateEnum(status, VALID_WAITING_LIST_STATUSES, 'status');
         if (modalityId) validateUUID(modalityId, 'modalityId');
@@ -318,7 +319,7 @@ const updateWaitingListEntry = (db) => async (req, res, next) => {
 
 const getWaitlistMatches = (db) => async (req, res, next) => {
     try {
-        const { modalityId, examTypeId, date } = req.query;
+        const { modalityId, examTypeId, date } = getRequestQuery(req);
 
         if (modalityId) validateUUID(modalityId, 'modalityId');
         if (examTypeId) validateUUID(examTypeId, 'examTypeId');

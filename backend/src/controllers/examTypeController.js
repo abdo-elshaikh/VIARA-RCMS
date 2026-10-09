@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 
@@ -42,7 +43,7 @@ const examTypesCache = new Map();
 
 const getExamTypes = db => async (req, res, next) => {
     try {
-        const { modalityId, roomId, includeInactive = false } = req.query;
+        const { modalityId, roomId, includeInactive = false } = getRequestQuery(req);
         const cacheKey = `${modalityId || ''}:${roomId || ''}:${includeInactive}`;
         const now = Date.now();
         const cached = examTypesCache.get(cacheKey);

@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { z } = require('zod');
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
@@ -271,7 +272,7 @@ const updateMachine = (db) => async (req, res, next) => {
 
 const getServiceContracts = (db) => async (req, res, next) => {
     try {
-        const { modalityId } = req.query;
+        const { modalityId } = getRequestQuery(req);
         let query = `
             SELECT sc.*, m.name as modality_name 
             FROM service_contracts sc
@@ -630,7 +631,7 @@ const updateDowntime = (db) => async (req, res, next) => {
 
 const getUtilizationReport = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate } = getRequestQuery(req);
         const parseDate = (value, label) => {
             const parsed = new Date(`${value}T00:00:00.000Z`);
             if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '') || Number.isNaN(parsed.getTime())

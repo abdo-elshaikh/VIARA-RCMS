@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const Decimal = require('decimal.js');
 const { logAction } = require('../services/auditService');
@@ -12,7 +13,7 @@ const {
 
 const getUserId = (req) => req.user?.user_id || req.user?.userId || req.user?.id || null;
 const getBranchId = (req, source = {}) => (
-    source.branchId || req.query?.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID
+    source.branchId || getRequestQuery(req)?.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID
 );
 
 const assertBranchAccess = (req, branchId) => {
@@ -91,7 +92,7 @@ const getPayrollEmployees = (db) => async (req, res, next) => {
 
 const getPayrollOverview = (db) => async (req, res, next) => {
     try {
-        const { currencyCode, periodId } = req.query;
+        const { currencyCode, periodId } = getRequestQuery(req);
         const branchId = getBranchId(req);
         assertBranchAccess(req, branchId);
         const params = [branchId];
@@ -142,7 +143,7 @@ const getPayrollOverview = (db) => async (req, res, next) => {
 
 const getPayrollPeriods = (db) => async (req, res, next) => {
     try {
-        const { status, startDate, endDate, limit = 100 } = req.query;
+        const { status, startDate, endDate, limit = 100 } = getRequestQuery(req);
         const branchId = getBranchId(req);
         assertBranchAccess(req, branchId);
         const pageLimit = boundedInteger(limit);
@@ -290,7 +291,7 @@ const cancelPayrollPeriod = (db) => async (req, res, next) => {
 
 const getCompensationProfiles = (db) => async (req, res, next) => {
     try {
-        const { userId, currencyCode, limit = 100 } = req.query;
+        const { userId, currencyCode, limit = 100 } = getRequestQuery(req);
         const branchId = getBranchId(req);
         assertBranchAccess(req, branchId);
         const pageLimit = boundedInteger(limit);
@@ -453,7 +454,7 @@ const updateCompensationProfile = (db) => async (req, res, next) => {
 
 const getPayrollRules = (db) => async (req, res, next) => {
     try {
-        const { status, currencyCode } = req.query;
+        const { status, currencyCode } = getRequestQuery(req);
         const branchId = getBranchId(req);
         assertBranchAccess(req, branchId);
         const params = [branchId];
@@ -633,7 +634,7 @@ const updatePayrollRuleStatus = (db) => async (req, res, next) => {
 
 const getDeductions = (db) => async (req, res, next) => {
     try {
-        const { userId, status, currencyCode, limit = 100 } = req.query;
+        const { userId, status, currencyCode, limit = 100 } = getRequestQuery(req);
         const branchId = getBranchId(req);
         assertBranchAccess(req, branchId);
         const pageLimit = boundedInteger(limit);
@@ -806,7 +807,7 @@ const updateDeductionStatus = (db) => async (req, res, next) => {
 
 const getPenalties = (db) => async (req, res, next) => {
     try {
-        const { userId, status, currencyCode, limit = 100 } = req.query;
+        const { userId, status, currencyCode, limit = 100 } = getRequestQuery(req);
         const branchId = getBranchId(req);
         assertBranchAccess(req, branchId);
         const pageLimit = boundedInteger(limit);

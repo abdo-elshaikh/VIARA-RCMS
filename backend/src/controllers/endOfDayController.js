@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 /**
  * endOfDayController.js
  *
@@ -30,10 +31,10 @@ const getBusinessDate = () => new Intl.DateTimeFormat('en-CA', {
 
 const getPending = (db) => async (req, res, next) => {
     try {
-        const date      = req.query.date   || getBusinessDate();
-        const sessionId = req.query.sessionId || null;
-        const limit     = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
-        const offset    = Math.max(Number(req.query.offset) || 0, 0);
+        const date      = getRequestQuery(req).date   || getBusinessDate();
+        const sessionId = getRequestQuery(req).sessionId || null;
+        const limit     = Math.min(Math.max(Number(getRequestQuery(req).limit) || 100, 1), 500);
+        const offset    = Math.max(Number(getRequestQuery(req).offset) || 0, 0);
         const actorUserId = req.user.user_id || req.user.id;
         const isReceptionist = req.user.role === 'Receptionist';
 
@@ -69,10 +70,10 @@ const getPending = (db) => async (req, res, next) => {
 
 const getSummary = (db) => async (req, res, next) => {
     try {
-        const date = req.query.date || getBusinessDate();
+        const date = getRequestQuery(req).date || getBusinessDate();
         const actorUserId = req.user.user_id || req.user.id;
         const summary = await getDaySummary(db, date, {
-            sessionId: req.query.sessionId || null,
+            sessionId: getRequestQuery(req).sessionId || null,
             receptionistId: req.user.role === 'Receptionist' ? actorUserId : null,
             actorRole: req.user.role,
         });
@@ -143,11 +144,11 @@ const bulkResolve = (db) => async (req, res, next) => {
 
 const getReviewLog = (db) => async (req, res, next) => {
     try {
-        const date = req.query.date || getBusinessDate();
-        const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-        const offset = Math.max(Number(req.query.offset) || 0, 0);
-        const sessionId = req.query.sessionId || null;
-        const receptionistId = req.query.receptionistId || null;
+        const date = getRequestQuery(req).date || getBusinessDate();
+        const limit = Math.min(Math.max(Number(getRequestQuery(req).limit) || 50, 1), 200);
+        const offset = Math.max(Number(getRequestQuery(req).offset) || 0, 0);
+        const sessionId = getRequestQuery(req).sessionId || null;
+        const receptionistId = getRequestQuery(req).receptionistId || null;
 
         // Admin sees all, Receptionist sees only their own actions
         const isPrivileged = ['Admin', 'Developer'].includes(req.user.role);

@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const { decrypt } = require('../utils/crypto');
 const { getInvoicePaymentPosition } = require('../services/partialPaymentExceptionService');
@@ -32,21 +33,21 @@ const getPartialPaymentExceptions = (db) => async (req, res, next) => {
         const params = [];
         let param = 1;
 
-        if (req.query.status) {
+        if (getRequestQuery(req).status) {
             clauses.push(`ppe.status = $${param++}`);
-            params.push(req.query.status);
+            params.push(getRequestQuery(req).status);
         }
-        if (req.query.transactionType) {
+        if (getRequestQuery(req).transactionType) {
             clauses.push(`ppe.transaction_type = $${param++}`);
-            params.push(req.query.transactionType);
+            params.push(getRequestQuery(req).transactionType);
         }
-        if (req.query.invoiceId) {
+        if (getRequestQuery(req).invoiceId) {
             clauses.push(`ppe.invoice_id = $${param++}`);
-            params.push(req.query.invoiceId);
+            params.push(getRequestQuery(req).invoiceId);
         }
 
-        const limit = Number(req.query.limit || 100);
-        const offset = Number(req.query.offset || 0);
+        const limit = Number(getRequestQuery(req).limit || 100);
+        const offset = Number(getRequestQuery(req).offset || 0);
         params.push(limit, offset);
 
         const result = await db.query(`

@@ -75,6 +75,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         authenticateToken,
         auditRead(auditService, { resourceTable: 'examinations' }),
         authorizeRole(['Admin', 'Radiologist', 'Technician', 'Nurse']),
+        hasPermission(pool, 'VIEW_EXAMS'),
         validateQuery(getWorklistQuerySchema),
         getWorklist(pool)
     );
@@ -83,6 +84,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         authenticateToken,
         auditRead(auditService, { resourceTable: 'examinations' }),
         authorizeRole(['Admin', 'Radiologist', 'Technician', 'Nurse', 'Receptionist', 'Accountant']),
+        hasPermission(pool, 'VIEW_REPORTS'),
         getCaseReports(pool)
     );
 
@@ -90,6 +92,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         authenticateToken,
         auditRead(auditService, { resourceTable: 'examinations' }),
         authorizeRole(['Admin', 'Radiologist', 'Technician', 'Nurse', 'Receptionist', 'Accountant']),
+        hasPermission(pool, 'VIEW_REPORTS'),
         lookupCaseReport(pool)
     );
 
@@ -106,6 +109,16 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         authenticateToken,
         auditRead(auditService, { resourceTable: 'examinations' }),
         authorizeRole(['Radiologist', 'Technician', 'Nurse', 'Admin', 'Receptionist', 'Accountant']),
+        hasPermission(pool, 'VIEW_EXAMS'),
+        async (req, _res, next) => {
+            try {
+                const allowed = await pool.query(`SELECT 1 FROM role_permissions rp
+                    JOIN permissions p ON p.permission_id = rp.permission_id
+                    WHERE rp.role_name = $1 AND p.name = 'VIEW_REPORTS' LIMIT 1`, [req.user.role]);
+                req.canReadReports = req.user.role === 'Developer' || allowed.rows.length > 0;
+                next();
+            } catch (error) { next(error); }
+        },
         getExamById(pool)
     );
 

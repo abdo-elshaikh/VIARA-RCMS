@@ -232,7 +232,7 @@ async function main(options = {}) {
         }
 
         // 2. Scan and collect files only after release inputs have passed validation.
-        console.log(`[INFO] Scanning ${PACKAGE_DIR} for distributable assets...`);
+        console.log(`[INFO] Scanning ${packageDir} for distributable assets...`);
         const files = (await collectFiles(packageDir)).filter(file => !file.relativePath.startsWith('images/'));
         if (mode === 'Offline') {
             const names = images.flatMap(image => {

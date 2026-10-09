@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { calculateCoverage } = require('../services/coverageService');
 const { logAction } = require('../services/auditService');
 const { AppError } = require('../middleware/errorHandler');
@@ -112,7 +113,7 @@ const createContract = (db) => async (req, res, next) => {
 
 const getPolicies = (db) => async (req, res, next) => {
     try {
-        const { patientId } = req.query;
+        const { patientId } = getRequestQuery(req);
         const values = [];
         let query = `
             SELECT pip.*, ip.name as provider_name,
@@ -279,7 +280,7 @@ const getCoverageRules = (db) => async (req, res, next) => {
 
 const previewCoverage = (db) => async (req, res, next) => {
     try {
-        const result = await calculateCoverage(db, req.query);
+        const result = await calculateCoverage(db, getRequestQuery(req));
         res.json(result);
     } catch (error) {
         next(error);

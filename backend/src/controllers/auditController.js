@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const crypto = require('node:crypto');
 const { logAction } = require('../services/auditService');
 const {
@@ -188,9 +189,9 @@ const getAuditSummary = async (db, where, params) => {
 
 const getAuditLogs = (db) => async (req, res, next) => {
     try {
-        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 500);
-        const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
-        const { where, params, nextIndex } = buildAuditFilters(req.query);
+        const limit = Math.min(Math.max(Number.parseInt(getRequestQuery(req).limit, 10) || 100, 1), 500);
+        const offset = Math.max(Number.parseInt(getRequestQuery(req).offset, 10) || 0, 0);
+        const { where, params, nextIndex } = buildAuditFilters(getRequestQuery(req));
 
         const listQuery = `
             SELECT ${AUDIT_SELECT}
@@ -248,9 +249,9 @@ const buildStaffActivityWhere = (query) => {
 
 const getStaffActivityLogs = (db) => async (req, res, next) => {
     try {
-        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 500);
-        const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
-        const { where: requestedWhere, params, nextIndex } = buildStaffActivityWhere(req.query);
+        const limit = Math.min(Math.max(Number.parseInt(getRequestQuery(req).limit, 10) || 100, 1), 500);
+        const offset = Math.max(Number.parseInt(getRequestQuery(req).offset, 10) || 0, 0);
+        const { where: requestedWhere, params, nextIndex } = buildStaffActivityWhere(getRequestQuery(req));
         const scopeParam = nextIndex;
         const where = `(${requestedWhere}) AND s.category = ANY($${scopeParam}::text[])`;
         const scopedParams = [...params, STAFF_ACTIVITY_CATEGORIES];
@@ -301,10 +302,10 @@ const getStaffActivityLogs = (db) => async (req, res, next) => {
 
 const exportStaffActivityLogs = (db) => async (req, res, next) => {
     try {
-        const { where: requestedWhere, params, nextIndex } = buildStaffActivityWhere(req.query);
+        const { where: requestedWhere, params, nextIndex } = buildStaffActivityWhere(getRequestQuery(req));
         const where = `(${requestedWhere}) AND s.category = ANY($${nextIndex}::text[])`;
         const categories = [...params, STAFF_ACTIVITY_CATEGORIES];
-        const cap = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 10000, 1), 50000);
+        const cap = Math.min(Math.max(Number.parseInt(getRequestQuery(req).limit, 10) || 10000, 1), 50000);
         const result = await db.query(`
             SELECT ${STAFF_ACTIVITY_SELECT}
             FROM system_logs s
@@ -337,13 +338,13 @@ const exportStaffActivityLogs = (db) => async (req, res, next) => {
                 exportedRows: result.rows.length,
                 cap,
                 filters: {
-                    userId: req.query.userId || null,
-                    category: req.query.category || null,
-                    outcome: req.query.outcome || null,
-                    targetType: req.query.targetType || null,
-                    operationType: req.query.operationType || null,
-                    startDate: req.query.startDate || null,
-                    endDate: req.query.endDate || null,
+                    userId: getRequestQuery(req).userId || null,
+                    category: getRequestQuery(req).category || null,
+                    outcome: getRequestQuery(req).outcome || null,
+                    targetType: getRequestQuery(req).targetType || null,
+                    operationType: getRequestQuery(req).operationType || null,
+                    startDate: getRequestQuery(req).startDate || null,
+                    endDate: getRequestQuery(req).endDate || null,
                 },
             },
             riskScore: 30,
@@ -371,8 +372,8 @@ const csvCell = (value) => {
 
 const exportAuditLogs = (db) => async (req, res, next) => {
     try {
-        const { where, params, nextIndex } = buildAuditFilters(req.query);
-        const cap = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 10000, 1), 50000);
+        const { where, params, nextIndex } = buildAuditFilters(getRequestQuery(req));
+        const cap = Math.min(Math.max(Number.parseInt(getRequestQuery(req).limit, 10) || 10000, 1), 50000);
 
         const result = await db.query(`
             SELECT ${AUDIT_SELECT}
@@ -405,7 +406,7 @@ const exportAuditLogs = (db) => async (req, res, next) => {
             details: {
                 exportedRows: result.rows.length,
                 cap,
-                filters: req.query,
+                filters: getRequestQuery(req),
             },
             riskScore: 60,
             riskReason: 'Audit log export can expose sensitive operational history.',
@@ -431,8 +432,8 @@ const verifyAuditChain = (db) => async (req, res, next) => {
 
         // Verify the full chain by default. An explicit limit creates a clearly
         // identified partial verification window instead of claiming full integrity.
-        const maxRows = req.query.limit || null;
-        const startLogId = req.query.startLogId || 0;
+        const maxRows = getRequestQuery(req).limit || null;
+        const startLogId = getRequestQuery(req).startLogId || 0;
 
         const totalResult = await db.query('SELECT COUNT(*)::int AS total, MIN(log_id) AS min_id, MAX(log_id) AS max_id FROM system_logs');
         const totalLogs = totalResult.rows[0]?.total || 0;
@@ -573,8 +574,8 @@ const verifyAuditChain = (db) => async (req, res, next) => {
 const getMyAuditLogs = (db) => async (req, res, next) => {
     try {
         const userId = req.user.user_id;
-        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 50, 1), 200);
-        const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
+        const limit = Math.min(Math.max(Number.parseInt(getRequestQuery(req).limit, 10) || 50, 1), 200);
+        const offset = Math.max(Number.parseInt(getRequestQuery(req).offset, 10) || 0, 0);
 
         const query = `
             SELECT log_id as id, action as event, category, outcome, severity,
@@ -629,9 +630,9 @@ const buildAlertFilters = (query) => {
 
 const getAuditAlerts = (db) => async (req, res, next) => {
     try {
-        const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 100, 1), 500);
-        const offset = Math.max(Number.parseInt(req.query.offset, 10) || 0, 0);
-        const { where, params, nextIndex } = buildAlertFilters(req.query);
+        const limit = Math.min(Math.max(Number.parseInt(getRequestQuery(req).limit, 10) || 100, 1), 500);
+        const offset = Math.max(Number.parseInt(getRequestQuery(req).offset, 10) || 0, 0);
+        const { where, params, nextIndex } = buildAlertFilters(getRequestQuery(req));
 
         const result = await db.query(`
             SELECT a.*, u.full_name AS actor_name, r.full_name AS reviewed_by_name,

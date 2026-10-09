@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 'use strict';
 
 const insuranceReportService = require('../services/insuranceReportService');
@@ -22,9 +23,9 @@ const sendCsvResponse = (res, filename, headers, rows) => {
 // 1. Claims Summary Report Controller
 const getClaimsSummary = (db) => async (req, res, next) => {
     try {
-        const report = await insuranceReportService.getClaimsSummaryReport(db, req.query);
+        const report = await insuranceReportService.getClaimsSummaryReport(db, getRequestQuery(req));
 
-        if (req.query.format === 'csv') {
+        if (getRequestQuery(req).format === 'csv') {
             const dateStr = new Date().toISOString().slice(0, 10);
             const headers = [
                 'Provider Name', 'Payer Code', 'Total Claims', 'Expected Amount (EGP)',
@@ -56,9 +57,9 @@ const getClaimsSummary = (db) => async (req, res, next) => {
 // 2. Payer Statement of Account & Remittance Controller
 const getPayerStatement = (db) => async (req, res, next) => {
     try {
-        const statement = await insuranceReportService.getPayerStatementOfAccount(db, req.query);
+        const statement = await insuranceReportService.getPayerStatementOfAccount(db, getRequestQuery(req));
 
-        if (req.query.format === 'csv') {
+        if (getRequestQuery(req).format === 'csv') {
             const dateStr = new Date().toISOString().slice(0, 10);
             const safeName = (statement.provider.name || 'payer').replace(/[^a-zA-Z0-9_\u0600-\u06FF]/g, '_');
             const headers = [
@@ -95,9 +96,9 @@ const getPayerStatement = (db) => async (req, res, next) => {
 // 3. Insurance Aging Report Controller
 const getInsuranceAging = (db) => async (req, res, next) => {
     try {
-        const report = await insuranceReportService.getInsuranceAgingReport(db, req.query);
+        const report = await insuranceReportService.getInsuranceAgingReport(db, getRequestQuery(req));
 
-        if (req.query.format === 'csv') {
+        if (getRequestQuery(req).format === 'csv') {
             const dateStr = new Date().toISOString().slice(0, 10);
             const headers = [
                 'Insurance Provider', 'Payer Code', 'Active Claims',
@@ -126,9 +127,9 @@ const getInsuranceAging = (db) => async (req, res, next) => {
 // 4. Contracts Performance Report Controller
 const getContractsPerformance = (db) => async (req, res, next) => {
     try {
-        const report = await insuranceReportService.getContractsPerformanceReport(db, req.query);
+        const report = await insuranceReportService.getContractsPerformanceReport(db, getRequestQuery(req));
 
-        if (req.query.format === 'csv') {
+        if (getRequestQuery(req).format === 'csv') {
             const dateStr = new Date().toISOString().slice(0, 10);
             const headers = [
                 'Contract Number', 'Entity Name', 'Entity Type', 'Provider / Payer',

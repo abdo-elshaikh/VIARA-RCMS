@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { z } = require('zod');
 const crypto = require('node:crypto');
 const { AppError } = require('../middleware/errorHandler');
@@ -133,8 +134,8 @@ const updateExpenseCategory = (db) => async (req, res, next) => {
 
 const getExpenses = (db) => async (req, res, next) => {
     try {
-        const { startDate, endDate, categoryId } = req.query;
-        const branchId = req.query.branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
+        const { startDate, endDate, categoryId } = getRequestQuery(req);
+        const branchId = getRequestQuery(req).branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
         
         validateUUID(categoryId, 'categoryId');
         
@@ -330,7 +331,7 @@ const deleteExpense = (db) => async (req, res, next) => {
 
 const getCommissionPayables = (db) => async (req, res, next) => {
     try {
-        const branchId = req.query.branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
+        const branchId = getRequestQuery(req).branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
         const result = await db.query(`
             SELECT cp.*, 
                    COALESCE(rd.full_name, u.full_name) as doctor_name
@@ -446,7 +447,7 @@ const payCommission = (db) => async (req, res, next) => {
 
 const getFinancialClosures = (db) => async (req, res, next) => {
     try {
-        const { status, startDate, endDate, branchId = DEFAULT_BRANCH_ID } = req.query;
+        const { status, startDate, endDate, branchId = DEFAULT_BRANCH_ID } = getRequestQuery(req);
         
         validateEnum(status, VALID_FINANCE_STATUSES, 'status');
         const datePattern = /^\d{4}-\d{2}-\d{2}$/;

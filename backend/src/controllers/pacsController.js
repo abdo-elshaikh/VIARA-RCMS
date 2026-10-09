@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');
@@ -796,8 +797,8 @@ const updatePacsConfig = (db) => async (req, res, next) => {
 
 const getPacsAudit = (db) => async (req, res, next) => {
     try {
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
-        const eventType = String(req.query.eventType || '').trim();
+        const limit = Math.min(Math.max(parseInt(getRequestQuery(req).limit, 10) || 50, 1), 200);
+        const eventType = String(getRequestQuery(req).eventType || '').trim();
         const values = [];
         const where = [];
 
@@ -828,9 +829,9 @@ const pacsWorklistPreviewCache = new Map();
 
 const getPacsWorklistPreview = (db) => async (req, res, next) => {
     try {
-        const date = String(req.query.date || '').trim() || null;
-        const modalityId = String(req.query.modalityId || '').trim() || null;
-        const includeInvalid = String(req.query.includeInvalid || 'true').toLowerCase() !== 'false';
+        const date = String(getRequestQuery(req).date || '').trim() || null;
+        const modalityId = String(getRequestQuery(req).modalityId || '').trim() || null;
+        const includeInvalid = String(getRequestQuery(req).includeInvalid || 'true').toLowerCase() !== 'false';
         const cacheKey = `${date || ''}:${modalityId || ''}:${includeInvalid}`;
         const cached = pacsWorklistPreviewCache.get(cacheKey);
         if (cached && (Date.now() - cached.timestamp < PACS_WORKLIST_PREVIEW_CACHE_TTL_MS)) {
@@ -1047,7 +1048,7 @@ const runPacsAiAnalysisQueue = (db) => async (req, res, next) => {
 
 const getPacsRequests = (db) => async (req, res, next) => {
     try {
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+        const limit = Math.min(Math.max(parseInt(getRequestQuery(req).limit, 10) || 50, 1), 200);
         const { rows } = await db.query(
             `WITH recent_audit AS (
                 SELECT 'audit'::text AS source, audit_id::text AS id, event_type AS type,
@@ -1165,8 +1166,8 @@ const getExamAiAnalysisJobs = (db) => async (req, res, next) => {
 const getPacsAiAnalysisQueue = (db) => async (req, res, next) => {
     try {
         res.set('Cache-Control', 'no-store');
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 80, 1), 200);
-        const status = String(req.query.status || '').trim();
+        const limit = Math.min(Math.max(parseInt(getRequestQuery(req).limit, 10) || 80, 1), 200);
+        const status = String(getRequestQuery(req).status || '').trim();
         const values = [];
         const where = [];
 
@@ -1378,7 +1379,7 @@ const requestExamAiAnalysis = (db) => async (req, res, next) => {
  */
 const getQuarantine = (db) => async (req, res, next) => {
     try {
-        const status = req.query.status || 'Pending';
+        const status = getRequestQuery(req).status || 'Pending';
         const { rows } = await db.query(
             `SELECT quarantine_id, study_instance_uid, orthanc_study_id,
                     raw_patient_id, raw_patient_name, raw_accession_number,
@@ -1423,13 +1424,13 @@ const dicomWebProxy = (db) => async (req, res, next) => {
         }
 
         await assertDicomWebStudyScope(db, req, subPath);
-        await require('../services/pacsColdStorageService').ensureArchivedStudiesAvailable(db, getRequestedStudyUids(subPath, req.query || {}));
+        await require('../services/pacsColdStorageService').ensureArchivedStudiesAvailable(db, getRequestedStudyUids(subPath, getRequestQuery(req) || {}));
 
         // Audit study-level access (WADO/QIDO on a specific study) without
         // spamming on every per-frame request.
         const pathStudy = subPath.match(/^\/(?:dicom-web|wado)\/studies\/([0-9.]+)(?=\/|$)/);
         const queriedStudies = /^\/dicom-web\/studies\/?$/.test(subPath)
-            ? getRequestedStudyUids(subPath, req.query || {})
+            ? getRequestedStudyUids(subPath, getRequestQuery(req) || {})
             : [];
         const studyUidsToAudit = pathStudy && !/\/frames(?:\/|$)/.test(subPath)
             ? [pathStudy[1]]
@@ -1524,7 +1525,7 @@ const discardQuarantineStudy = (db) => async (req, res, next) => {
  */
 const searchScheduledExams = (db) => async (req, res, next) => {
     try {
-        const q = String(req.query.q || '').trim();
+        const q = String(getRequestQuery(req).q || '').trim();
         if (q.length < 2) return res.json([]);
         const searchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
 
@@ -1775,7 +1776,7 @@ const exportPacsStudy = (db) => async (req, res, next) => {
     const cancel = () => { if (!res.writableFinished) controller.abort(); };
     res.on('close', cancel);
     let studyInstanceUid;
-    const format = String(req.query?.format || 'dicom').toLowerCase();
+    const format = String(getRequestQuery(req)?.format || 'dicom').toLowerCase();
     try {
         studyInstanceUid = decodeDicomUid(req.params.studyInstanceUid || '');
         if (!isValidStudyUid(studyInstanceUid)) {

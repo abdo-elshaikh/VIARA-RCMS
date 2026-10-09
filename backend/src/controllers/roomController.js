@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { z } = require('zod');
 const { AppError } = require('../utils/errors');
 const { logAction } = require('../services/auditService');
@@ -20,7 +21,7 @@ let matrixCacheTime = 0;
 
 const getRooms = (db) => async (req, res, next) => {
     try {
-        const { status, type } = req.query;
+        const { status, type } = getRequestQuery(req);
         const filters = [];
         const params = [];
 

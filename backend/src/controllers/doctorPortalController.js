@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const bcrypt = require('bcrypt');
 const { AppError } = require('../middleware/errorHandler');
 const { generateTokens } = require('./authController');
@@ -175,8 +176,8 @@ const doctorLogin = (db) => async (req, res, next) => {
 const getDoctorCases = (db) => async (req, res, next) => {
     try {
         const doctorId = req.user.doctorId;
-        const { status, limit = 50, offset = 0 } = req.query;
-        const search = req.query.search || req.query.q;
+        const { status, limit = 50, offset = 0 } = getRequestQuery(req);
+        const search = getRequestQuery(req).search || getRequestQuery(req).q;
 
         const values = [doctorId];
         let param = 2;
@@ -532,7 +533,7 @@ const decryptStored = (value) => {
 const getMyNotifications = (db) => async (req, res, next) => {
     try {
         const doctorId = req.user.doctorId;
-        const page = getPortalNotificationPage(req.query);
+        const page = getPortalNotificationPage(getRequestQuery(req));
         const [itemsResult, countsResult] = await Promise.all([
             db.query(`
                 SELECT n.notification_id, n.channel, n.event_type, n.entity_id,

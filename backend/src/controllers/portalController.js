@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const jwt = require('jsonwebtoken');
 const { decrypt } = require('../utils/crypto');
 const bcrypt = require('bcrypt');
@@ -650,7 +651,7 @@ const decryptStored = (value) => {
 const getMyNotifications = (db) => async (req, res, next) => {
     try {
         const patientId = req.user.userId;
-        const page = getPortalNotificationPage(req.query);
+        const page = getPortalNotificationPage(getRequestQuery(req));
         const [itemsResult, countsResult] = await Promise.all([
             db.query(`
                 SELECT n.notification_id, n.channel, n.event_type, n.entity_id,

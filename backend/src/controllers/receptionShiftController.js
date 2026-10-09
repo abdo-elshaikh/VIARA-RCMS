@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../utils/errors');
 const { logAction } = require('../services/auditService');
 const { ensureActiveAttendanceClockIn } = require('./hrController');
@@ -350,16 +351,16 @@ const closeReceptionShift = (db) => async (req, res, next) => {
 
 const getReceptionShiftHistory = (db) => async (req, res, next) => {
     try {
-        const requestedUserId = req.query.userId;
+        const requestedUserId = getRequestQuery(req).userId;
         const isSupervisor = ['Admin', 'Developer', 'HR'].includes(req.user.role);
         const userId = requestedUserId || req.user.user_id;
         if (String(userId) !== String(req.user.user_id) && !isSupervisor) {
             await assertReceptionSupervision(db, req.user, userId, 'view_shifts');
         }
-        const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 200);
-        const offset = Math.max(Number(req.query.offset) || 0, 0);
-        const fromDate = req.query.fromDate || null;
-        const toDate = req.query.toDate || null;
+        const limit = Math.min(Math.max(Number(getRequestQuery(req).limit) || 30, 1), 200);
+        const offset = Math.max(Number(getRequestQuery(req).offset) || 0, 0);
+        const fromDate = getRequestQuery(req).fromDate || null;
+        const toDate = getRequestQuery(req).toDate || null;
         const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(String(value))
             && !Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime())
             && new Date(`${value}T00:00:00.000Z`).toISOString().slice(0, 10) === value;

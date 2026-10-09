@@ -69,6 +69,7 @@ import Modal from '../components/ui/Modal';
 import Pagination from '../components/ui/Pagination';
 import { getPaginationState } from '../utils/pagination';
 import { printWhenReady } from '../utils/printDocument';
+import { findExactReportMatch } from '../utils/reportLookup';
 import useDebounce from '../hooks/useDebounce';
 import usePageTitle from '../hooks/usePageTitle';
 
@@ -612,7 +613,7 @@ const CaseReports = () => {
         if (!code) return;
         try {
             const result = await lookupReport(code).unwrap();
-            const match = result?.items?.[0];
+            const match = findExactReportMatch(result?.items, code);
             if (!match) {
                 toast.error(t('caseReports.toasts.qrNotFound'));
                 return;

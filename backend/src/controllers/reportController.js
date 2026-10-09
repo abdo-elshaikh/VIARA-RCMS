@@ -1,10 +1,11 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { decrypt } = require('../utils/crypto');
 const financialReportService = require('../services/financialReportService');
 const { DEFAULT_COMMISSION_PERCENTAGE } = require('../services/financialPostingService');
 
 const getRevenueReport = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getRevenue(db, req.query));
+        res.json(await financialReportService.getRevenue(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -12,7 +13,7 @@ const getRevenueReport = (db) => async (req, res, next) => {
 
 const getOutstandingClaims = (db) => async (req, res, next) => {
     try {
-        const range = financialReportService.normalizeRange(req.query);
+        const range = financialReportService.normalizeRange(getRequestQuery(req));
         const query = `
             SELECT i.invoice_id, p.mrn, p.first_name_enc, p.last_name_enc,
                    i.branch_id,
@@ -68,7 +69,7 @@ const getOutstandingClaims = (db) => async (req, res, next) => {
 // Phase 15: Receivables Aging Report
 const getReceivablesAging = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getReceivablesAging(db, req.query));
+        res.json(await financialReportService.getReceivablesAging(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -77,7 +78,7 @@ const getReceivablesAging = (db) => async (req, res, next) => {
 // Phase 15: Doctor Commissions with Payables Integration
 const getDoctorCommissions = (db) => async (req, res, next) => {
     try {
-        const range = financialReportService.normalizeRange(req.query);
+        const range = financialReportService.normalizeRange(getRequestQuery(req));
 
         const query = `
             WITH period_activity AS (
@@ -168,7 +169,7 @@ const getDoctorCommissions = (db) => async (req, res, next) => {
 // Phase 15: Tax Summary
 const getTaxSummary = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getTaxSummary(db, req.query));
+        res.json(await financialReportService.getTaxSummary(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -177,7 +178,7 @@ const getTaxSummary = (db) => async (req, res, next) => {
 // Phase 15: Profit & Loss
 const getProfitAndLoss = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getProfitAndLoss(db, req.query));
+        res.json(await financialReportService.getProfitAndLoss(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -186,7 +187,7 @@ const getProfitAndLoss = (db) => async (req, res, next) => {
 // Advanced: Profit & Loss as a day/month/year time series
 const getProfitAndLossSeries = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getProfitAndLossSeries(db, req.query));
+        res.json(await financialReportService.getProfitAndLossSeries(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -195,7 +196,7 @@ const getProfitAndLossSeries = (db) => async (req, res, next) => {
 // Advanced: cash flow as a day/month/year time series
 const getCashFlowSeries = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getCashFlowSeries(db, req.query));
+        res.json(await financialReportService.getCashFlowSeries(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -204,7 +205,7 @@ const getCashFlowSeries = (db) => async (req, res, next) => {
 // Advanced: discount detection report with governance anomaly flags
 const getDiscountReport = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getDiscountReport(db, req.query));
+        res.json(await financialReportService.getDiscountReport(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -212,7 +213,7 @@ const getDiscountReport = (db) => async (req, res, next) => {
 
 const getTrialBalance = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getTrialBalance(db, req.query));
+        res.json(await financialReportService.getTrialBalance(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -220,7 +221,7 @@ const getTrialBalance = (db) => async (req, res, next) => {
 
 const getJournalLedger = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getJournalLedger(db, req.query));
+        res.json(await financialReportService.getJournalLedger(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
