@@ -1,48 +1,11 @@
+# Public HTTPS serves the patient/referring-physician portal only.
+# The portal nginx enforces the API allowlist before the backend.
+# Clinical access uses the separate VPN/mTLS gateway.
 {$DOMAIN} {
-    reverse_proxy /api/* viara-backend:3000
-    reverse_proxy /health/* viara-backend:3000
-    reverse_proxy /metrics viara-backend:3000
-    # ملاحظة: مسارات PACS/DICOM المباشرة محمية بـ subdomain منفصل (pacs.{$DOMAIN})
-    # يتطلب الاتصال عبر شبكة WireGuard VPN — راجع block أدناه
-    reverse_proxy /* viara-frontend:80
-
-    # Security headers
+    reverse_proxy portal:80
     header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-        X-Frame-Options DENY
+        Strict-Transport-Security "max-age=31536000"
         X-Content-Type-Options nosniff
-        Referrer-Policy strict-origin-when-cross-origin
-    }
-
-    # Logging
-    log {
-        output file /data/logs/access.log {
-            roll_size 100mb
-            roll_keep 5
-        }
-    }
-}
-
-# PACS/DICOM Access — VPN Only
-# هذا الـ subdomain مخصص لأخصائيي الأشعة ومقيّد بشبكة WireGuard VPN فقط
-pacs.{$DOMAIN} {
-    @vpn_only {
-        remote_ip {$VPN_SUBNET:-10.8.0.0/24}
-    }
-    @not_vpn {
-        not remote_ip {$VPN_SUBNET:-10.8.0.0/24}
-    }
-    handle @not_vpn {
-        respond "Access restricted to VPN users only" 403
-    }
-    handle @vpn_only {
-        reverse_proxy viara-pacs:8042
-    }
-
-    log {
-        output file /data/logs/pacs-access.log {
-            roll_size 100mb
-            roll_keep 5
-        }
+        Referrer-Policy no-referrer
     }
 }

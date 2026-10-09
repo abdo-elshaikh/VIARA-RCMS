@@ -3,8 +3,8 @@
 # Purpose
 # -------
 # Lets a second, third, ... VIARA stack run on a host that already runs the main
-# stack. The blocker is that `docker-compose.yml` pins `container_name` on all
-# seven services. A fixed container name defeats Compose project namespacing:
+# stack. The blocker is that `docker-compose.yml` pins `container_name` on its
+# services. A fixed container name defeats Compose project namespacing:
 # `docker compose -p viara-demo-acme up` still asks Docker for a container
 # literally named `VIARA_db`, which collides with the running main stack.
 #
@@ -28,14 +28,23 @@ services:
   postgres:
     container_name: !reset null
 
+  redis:
+    container_name: !reset null
+
   clamav:
     container_name: !reset null
 
   backend:
     container_name: !reset null
+    volumes:
+      - demo_pacs_worklists:/app/pacs-worklists
+
+  orthanc:
+    container_name: !reset null
     environment:
-      NODE_ENV: production
-      LICENSE_KEY: ${LICENSE_KEY:?A signed trial license is required for demo deployments}
+      ORTHANC__POSTGRESQL__USERNAME: ${POSTGRES_USER:-postgres}
+    volumes:
+      - demo_pacs_worklists:/var/lib/orthanc/worklists
 
   frontend:
     container_name: !reset null
@@ -43,11 +52,11 @@ services:
   portal:
     container_name: !reset null
 
-  orthanc:
-    container_name: !reset null
-
   ohif:
     container_name: !reset null
+
+volumes:
+  demo_pacs_worklists:
 
 # `pacs_ai_worker` is deliberately NOT listed here. It is gated behind
 # `profiles: ["ai"]` in the base file, and naming a profile-gated service in an

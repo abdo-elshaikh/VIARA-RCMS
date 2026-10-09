@@ -94,9 +94,12 @@ describe('PACS reliability', () => {
                 return new Response('[]'); // empty archive initially
             }
             if (String(url).endsWith('/instances') && opts?.method === 'POST') {
-                postedInstances.push(opts.body);
+                const chunks = [];
+                for await (const chunk of opts.body) chunks.push(chunk);
+                postedInstances.push(Buffer.concat(chunks));
                 return new Response('{"Status":"Success","ID":"orthanc-id-1"}');
             }
+            if (String(url).endsWith('/instances/orthanc-id-1/file')) return new Response(dicomContent);
             return new Response('{}');
         });
 
@@ -158,8 +161,10 @@ describe('PACS reliability', () => {
                 return new Response('["existing-instance-123"]');
             }
             if (String(url).endsWith('/instances') && opts?.method === 'POST') {
+                for await (const _chunk of opts.body) { /* consume upload stream */ }
                 return new Response('{"Status":"AlreadyStored","ID":"orthanc-id-1"}');
             }
+            if (String(url).endsWith('/instances/orthanc-id-1/file')) return new Response(dicomContent);
             return new Response('{}');
         });
 

@@ -6,7 +6,8 @@ const getCurrentOrigin = () => {
 };
 
 export const getPortalPublicOrigin = () => trimTrailingSlash(
-    import.meta.env.VITE_PORTAL_PUBLIC_URL
+    (typeof window !== 'undefined' && window.__VIARA_CONFIG__?.portalPublicUrl)
+    || import.meta.env.VITE_PORTAL_PUBLIC_URL
     || import.meta.env.VITE_PORTAL_URL
     || getCurrentOrigin()
 );

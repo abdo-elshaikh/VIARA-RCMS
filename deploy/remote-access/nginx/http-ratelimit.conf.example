@@ -1,0 +1,21 @@
+# VIARA edge rate-limit zones — include from the main nginx.conf http{} block.
+#
+# These zones are referenced by clinical-edge.conf and portal-edge.conf. Because
+# `limit_req_zone` is only valid at http{} scope, include this file there:
+#
+#   http {
+#       include /etc/nginx/conf.d/http-ratelimit.conf;
+#       ...
+#   }
+#
+# After installing, uncomment the matching `limit_req` lines in the edge configs.
+
+# Clinical API: 30 requests/second per client IP, with headroom for a viewer tab
+# that fans out many QIDO/WADO requests.
+limit_req_zone $binary_remote_addr zone=viara_api:10m rate=30r/s;
+
+# Public portal: deliberately tighter (10 r/s) to blunt enumeration and abuse.
+limit_req_zone $binary_remote_addr zone=viara_portal:10m rate=10r/s;
+
+# Optional: cap concurrent connections per IP at the server level.
+limit_conn_zone $binary_remote_addr zone=viara_conn:10m;

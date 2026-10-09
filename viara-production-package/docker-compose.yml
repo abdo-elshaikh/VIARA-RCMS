@@ -14,12 +14,12 @@
 services:
   # ── PostgreSQL Database ───────────────────────────────────────────────────
   postgres:
-    image: ${POSTGRES_IMAGE:?Set POSTGRES_IMAGE to an approved pinned image reference}
+    image: ${POSTGRES_IMAGE:?Set vendor-approved image@sha256 digest}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-viara}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a unique POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-viara}
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
@@ -32,19 +32,19 @@ services:
       - ./database/00_create_orthanc_db.sql:/docker-entrypoint-initdb.d/00_create_orthanc_db.sql:ro
       - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   # ── Incremental Schema Migration Runner ───────────────────────────────────
   migrate:
-    image: ${VIARA_BACKEND_IMAGE:?Set VIARA_BACKEND_IMAGE to an approved immutable image reference}
+    image: ${VIARA_BACKEND_IMAGE:?Set vendor-approved image@sha256 digest}
     restart: "no"
     command: ["npm", "run", "migrate"]
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://${POSTGRES_USER:-viara}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-viara}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-viara}:${POSTGRES_PASSWORD:?Set a unique POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-viara}
     volumes:
       - ./database:/database:ro
     networks: [data]
@@ -56,7 +56,7 @@ services:
 
   # ── ClamAV Antivirus Daemon ───────────────────────────────────────────────
   clamav:
-    image: ${CLAMAV_IMAGE:?Set CLAMAV_IMAGE to an approved pinned image reference}
+    image: ${CLAMAV_IMAGE:?Set vendor-approved image@sha256 digest}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-clamav
     restart: unless-stopped
     networks: [data, scanner-egress]
@@ -72,9 +72,10 @@ services:
       retries: 10
       start_period: 180s
 
-  # ── Caddy Reverse Proxy & TLS Termination ────────────────────────────────
+  # ── Caddy Reverse Proxy & TLS Termination (Optional Domain Profile) ──────
   caddy:
-    image: caddy:2-alpine
+    profiles: ["caddy-ssl"]
+    image: ${CADDY_IMAGE:?Set vendor-approved image@sha256 digest}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-caddy
     restart: unless-stopped
     ports:
@@ -87,18 +88,18 @@ services:
     cpus: 0.5
     stop_grace_period: 15s
     environment:
-      DOMAIN: ${DOMAIN:?Set DOMAIN to your production hostname in .env}
+      DOMAIN: ${DOMAIN:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_logs:/data/logs
     depends_on:
-      frontend:
+      portal:
         condition: service_healthy
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:80"]
+      test: ["CMD", "wget", "--quiet", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -106,11 +107,11 @@ services:
 
   # ── Backend Application Server ────────────────────────────────────────────
   redis:
-    image: ${REDIS_IMAGE:?Set REDIS_IMAGE to an approved pinned image reference}
+    image: ${REDIS_IMAGE:?Set vendor-approved image@sha256 digest}
     restart: unless-stopped
     command: ["sh", "-c", 'exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"']
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set a unique REDIS_PASSWORD in .env}
     networks: [data]
     volumes: [redis_data:/data]
     mem_limit: 512m
@@ -122,37 +123,38 @@ services:
       retries: 5
 
   backend:
-    image: ${VIARA_BACKEND_IMAGE:?Set VIARA_BACKEND_IMAGE to an approved immutable image reference}
+    image: ${VIARA_BACKEND_IMAGE:?Set vendor-approved image@sha256 digest}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-backend
     restart: unless-stopped
-    # No direct port exposure — all external traffic flows through Caddy (172.28.0.5)
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-3000}:3000"
     networks: [app, data]
     mem_limit: 2g
     cpus: 2.0
     stop_grace_period: 45s
     environment:
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:?Set a unique REDIS_PASSWORD in .env}@redis:6379
       RATE_LIMIT_STORE: redis
       PACS_AI_ENABLED: ${PACS_AI_ENABLED:-false}
       PACS_AI_RELEASE_APPROVED: ${PACS_AI_RELEASE_APPROVED:-false}
       PORT: 3000
       NODE_ENV: production
-      LICENSE_KEY: ${LICENSE_KEY:?A signed license key is required}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-viara}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-viara}
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env}
-      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:?Set BACKUP_ENCRYPTION_KEY in .env}
-      BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:?Set BLIND_INDEX_KEY in .env}
+      LICENSE_KEY: ${LICENSE_KEY:?Set the vendor-issued LICENSE_KEY in the protected .env file}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-viara}:${POSTGRES_PASSWORD:?Set a unique POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-viara}
+      JWT_SECRET: ${JWT_SECRET:?Set a unique JWT_SECRET in .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set a unique ENCRYPTION_KEY in .env}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:?Set a unique BACKUP_ENCRYPTION_KEY in .env}
+      BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:?Set a unique BLIND_INDEX_KEY in .env}
       LICENSE_STORAGE_FILE: /app/license/.viara-license
       LICENSE_ACTIVATION_FILE: /app/license/.viara-activation
-      CLIENT_URL: ${CLIENT_URL:?Set CLIENT_URL to the approved HTTPS staff origin}
-      TRUST_PROXY: ${TRUST_PROXY:-loopback,172.28.0.5}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      TRUST_PROXY: ${TRUST_PROXY:-loopback,172.28.0.5,172.28.0.10,172.28.0.11}
       DB_POOL_MAX: ${DB_POOL_MAX:-20}
-      PORTAL_CLIENT_URL: ${PORTAL_CLIENT_URL:?Set PORTAL_CLIENT_URL to the approved HTTPS portal origin}
-      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?Set ALLOWED_ORIGINS to the approved browser origins}
-      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:?Set WEBAUTHN_ORIGIN to the approved HTTPS staff origin}
-      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:?Set WEBAUTHN_RP_ID to the staff origin hostname}
-      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:?Set WEBAUTHN_RP_NAME to the customer-facing application name}
+      PORTAL_CLIENT_URL: ${PORTAL_CLIENT_URL:-http://localhost:5174}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174}
+      WEBAUTHN_ORIGIN: ${WEBAUTHN_ORIGIN:-http://localhost:5173}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-localhost}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-VIARA Radiology Center}
       PACS_OIDC_ISSUER: ${PACS_OIDC_ISSUER:-}
       PACS_OIDC_AUDIENCE: ${PACS_OIDC_AUDIENCE:-}
       PACS_OIDC_JWKS_URL: ${PACS_OIDC_JWKS_URL:-}
@@ -171,14 +173,14 @@ services:
       BACKUP_OFFSITE_PREFIX: ${BACKUP_OFFSITE_PREFIX:-}
       BACKUP_OFFSITE_ACCESS_KEY: ${BACKUP_OFFSITE_ACCESS_KEY:-}
       BACKUP_OFFSITE_SECRET_KEY: ${BACKUP_OFFSITE_SECRET_KEY:-}
-      METRICS_TOKEN: ${METRICS_TOKEN:?Set METRICS_TOKEN in .env}
+      METRICS_TOKEN: ${METRICS_TOKEN:?Set a unique METRICS_TOKEN in .env}
       PACS_COLD_STORAGE_DIR: /app/pacs-cold
       PACS_BACKUP_ENABLED: "true"
       ORTHANC_URL: http://orthanc:8042
       ORTHANC_USERNAME: ${ORTHANC_USERNAME:-VIARA}
-      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in .env}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set a unique ORTHANC_PASSWORD in .env}
       ORTHANC_AET: ${ORTHANC_AET:-MiPACS2}
-      PACS_WEBHOOK_SECRET: ${PACS_WEBHOOK_SECRET:?Set PACS_WEBHOOK_SECRET in .env}
+      PACS_WEBHOOK_SECRET: ${PACS_WEBHOOK_SECRET:?Set a unique PACS_WEBHOOK_SECRET in .env}
       PACS_WORKLIST_DIR: /app/pacs-worklists
       PACS_MWL_ENABLED: "true"
     volumes:
@@ -205,10 +207,13 @@ services:
 
   # ── Frontend Web Console (Nginx) ──────────────────────────────────────────
   frontend:
-    image: ${VIARA_FRONTEND_IMAGE:?Set VIARA_FRONTEND_IMAGE to an approved immutable image reference}
+    image: ${VIARA_FRONTEND_IMAGE:?Set vendor-approved image@sha256 digest}
+    environment:
+      PORTAL_PUBLIC_URL: ${PORTAL_CLIENT_URL:?Set the customer patient portal HTTPS origin}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-frontend
     restart: unless-stopped
-    # No direct port exposure — all external traffic flows through Caddy
+    ports:
+      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-5173}:80"
     networks:
       app:
         ipv4_address: 172.28.0.10
@@ -227,10 +232,11 @@ services:
 
   # ── Public Patient & Doctor Portal ────────────────────────────────────────
   portal:
-    image: ${VIARA_PORTAL_IMAGE:?Set VIARA_PORTAL_IMAGE to an approved immutable image reference}
+    image: ${VIARA_PORTAL_IMAGE:?Set vendor-approved image@sha256 digest}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-portal
     restart: unless-stopped
-    # No direct port exposure — all external traffic flows through Caddy
+    ports:
+      - "${PORTAL_BIND:-127.0.0.1}:${PORTAL_PORT:-5174}:80"
     networks:
       app:
         ipv4_address: 172.28.0.11
@@ -249,7 +255,7 @@ services:
 
   # ── PACS DICOM Core (Orthanc) ─────────────────────────────────────────────
   orthanc:
-    image: ${ORTHANC_IMAGE:?Set ORTHANC_IMAGE to an approved pinned image reference}
+    image: ${ORTHANC_IMAGE:?Set vendor-approved image@sha256 digest}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-orthanc
     restart: unless-stopped
     ports:
@@ -260,14 +266,14 @@ services:
     cpus: 2.0
     stop_grace_period: 60s
     environment:
-      ORTHANC__POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD}
+      ORTHANC__POSTGRESQL__PASSWORD: ${POSTGRES_PASSWORD:?Set a unique POSTGRES_PASSWORD in .env}
       ORTHANC__POSTGRESQL__USERNAME: ${POSTGRES_USER:-viara}
       ORTHANC__DICOM_AET: ${ORTHANC_AET:-MiPACS2}
-      ORTHANC__REGISTERED_USERS: '{"${ORTHANC_USERNAME:-VIARA}":"${ORTHANC_PASSWORD}"}'
+      ORTHANC__REGISTERED_USERS: '{"${ORTHANC_USERNAME:-VIARA}":"${ORTHANC_PASSWORD:?Set a unique ORTHANC_PASSWORD in .env}"}'
       VIARA_ORTHANC_USERNAME: ${ORTHANC_USERNAME:-VIARA}
-      VIARA_ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD in .env}
+      VIARA_ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set a unique ORTHANC_PASSWORD in .env}
       VIARA_WEBHOOK_URL: http://backend:3000/api/pacs/webhook
-      PACS_WEBHOOK_SECRET: ${PACS_WEBHOOK_SECRET:?Set PACS_WEBHOOK_SECRET in .env}
+      PACS_WEBHOOK_SECRET: ${PACS_WEBHOOK_SECRET:?Set a unique PACS_WEBHOOK_SECRET in .env}
       GDCM_PLUGIN_ENABLED: "true"
       ORTHANC__GDCM__ENABLE: "true"
     volumes:
@@ -287,12 +293,12 @@ services:
 
   # ── OHIF Diagnostic Viewer ────────────────────────────────────────────────
   ohif:
-    image: ${VIARA_OHIF_IMAGE:?Set VIARA_OHIF_IMAGE to an approved immutable image reference}
+    image: ${VIARA_OHIF_IMAGE:?Set vendor-approved image@sha256 digest}
     container_name: ${COMPOSE_PROJECT_NAME:-viara}-ohif
     restart: unless-stopped
     environment:
       VIARA_API_UPSTREAM: backend:3000
-      VIARA_APP_ORIGIN: ${CLIENT_URL:?Set CLIENT_URL to the approved HTTPS staff origin}
+      VIARA_APP_ORIGIN: ${CLIENT_URL:?Set customer-approved clinical origin}
     ports:
       - "127.0.0.1:${OHIF_PORT:-3005}:80"
     networks: [app]
@@ -311,9 +317,10 @@ services:
       retries: 3
       start_period: 10s
 
-  # ── WireGuard VPN (PACS Radiologist Remote Access) ────────────────────────
+  # ── WireGuard VPN (Optional PACS Radiologist Remote Access Profile) ───────
   wireguard:
-    image: ${WIREGUARD_IMAGE:-linuxserver/wireguard:latest}
+    profiles: ["vpn"]
+    image: ${WIREGUARD_IMAGE:?Set vendor-approved image@sha256 digest}
     container_name: viara-vpn
     cap_add:
       - NET_ADMIN

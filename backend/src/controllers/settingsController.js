@@ -112,6 +112,16 @@ const parseDatabaseUrl = (databaseUrl) => {
     }
 };
 
+const getActiveDatabasePassword = () => {
+    if (!process.env.DATABASE_URL) return '';
+    try {
+        const parsed = new URL(process.env.DATABASE_URL);
+        return decodeURIComponent(parsed.password || '');
+    } catch {
+        return '';
+    }
+};
+
 const maskDatabaseConfig = (config = {}) => ({
     host: config.host || '',
     port: Number(config.port || 5432),
@@ -848,8 +858,10 @@ const updateDatabaseSettings = () => async (req, res, next) => {
     try {
         const data = databaseConfigSchema.parse(req.body || {});
         const previous = await getSavedDatabaseConfig({ includePassword: true });
-        const password = data.keepExistingPassword && previous?.password !== undefined
-            ? previous.password
+        const activePassword = getActiveDatabasePassword();
+        const fallbackPassword = previous?.password || activePassword || '';
+        const password = data.keepExistingPassword && fallbackPassword
+            ? fallbackPassword
             : data.password || '';
 
         await settingsService.updateAll({
@@ -907,13 +919,16 @@ const testDatabaseSettings = (db) => async (req, res, next) => {
             });
         }
 
-        const savedConfig = data.target === 'saved' || data.config?.keepExistingPassword
+        const activePassword = getActiveDatabasePassword();
+        const savedConfig = data.target === 'saved' || data.config?.keepExistingPassword || !data.config?.password
             ? await getSavedDatabaseConfig({ includePassword: true })
             : null;
+        const fallbackPassword = savedConfig?.password || activePassword || '';
+
         const candidate = data.target === 'saved'
             ? savedConfig
-            : data.config?.keepExistingPassword
-                ? { ...data.config, password: savedConfig?.password || '' }
+            : (data.config?.keepExistingPassword || (!data.config?.password && fallbackPassword))
+                ? { ...data.config, password: data.config?.password || fallbackPassword }
                 : data.config;
 
         if (!candidate) {

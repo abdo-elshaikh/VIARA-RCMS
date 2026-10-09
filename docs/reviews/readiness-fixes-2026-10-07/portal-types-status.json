@@ -1,7 +1,0 @@
-{
-  "name": "portal-types",
-  "command": "npm.cmd run typecheck",
-  "exitCode": 0,
-  "signal": null,
-  "durationSeconds": 19.815
-}

@@ -563,7 +563,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
         ? `VIARA-VERIFIED-${String(report.exam_id || report.order_number || '').slice(0, 10).toUpperCase()}`
         : 'Pending Signature');
     const verifyPayload = buildVerificationPayload(report, verificationHash);
-    const portalBaseUrl = (process.env.PORTAL_URL || process.env.VITE_PORTAL_URL || center.website || 'http://localhost:5174').replace(/\/+$/, '');
+    const portalBaseUrl = (process.env.PORTAL_CLIENT_URL || process.env.PORTAL_PUBLIC_URL || center.website || 'http://localhost:5174').replace(/\/+$/, '');
     const qrVerificationUrl = `${portalBaseUrl}/verify?code=${encodeURIComponent(verificationHash)}`;
     const qrPayload = finalized ? qrVerificationUrl : verifyPayload;
     const statusLabel = report.report_status || report.status || (finalized ? 'Finalized' : 'Draft');

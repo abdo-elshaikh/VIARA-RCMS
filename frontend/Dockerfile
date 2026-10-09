@@ -22,6 +22,8 @@ FROM nginx:1.30.5-alpine
 
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
+COPY docker-runtime-config.sh /docker-entrypoint.d/15-viara-runtime-config.sh
+RUN sed -i 's/\r$//' /docker-entrypoint.d/15-viara-runtime-config.sh && chmod +x /docker-entrypoint.d/15-viara-runtime-config.sh
 
 ENV NGINX_ENVSUBST_OUTPUT_DIR=/etc/nginx/conf.d
 

@@ -11,6 +11,8 @@ describe('Customer release package integrity', () => {
     const reverseProxyGuide = fs.readFileSync(path.resolve(__dirname, '../../docs/REVERSE_PROXY_TLS.md'), 'utf8');
     const linuxLauncher = fs.readFileSync(path.join(packageDir, 'scripts/start.sh'), 'utf8');
     const windowsLauncher = fs.readFileSync(path.join(packageDir, 'scripts/start.bat'), 'utf8');
+    const environmentTemplate = fs.readFileSync(path.join(packageDir, '.env.example'), 'utf8');
+    const windowsHostLauncher = fs.readFileSync(path.join(packageDir, 'START_VIARA.bat'), 'utf8');
 
     it('uses prebuilt images pinned to required immutable references', () => {
         const imageLines = compose.match(/^\s+image:\s+.+$/gm) || [];
@@ -27,16 +29,20 @@ describe('Customer release package integrity', () => {
         const portMappings = [...compose.matchAll(/^\s+- "([^"]+:[^"]+:[^"]+)"\s*$/gm)]
             .map(([, mapping]) => mapping);
         expect(portMappings.length).toBeGreaterThan(0);
+        expect(portMappings.filter(mapping => mapping.startsWith('${VPN_PORT:-'))).toEqual(['${VPN_PORT:-51820}:51820/udp']);
         expect(portMappings.filter(mapping => mapping.startsWith('${PACS_DICOM_BIND:-')).length).toBe(1);
         expect(portMappings
-            .filter(mapping => !mapping.startsWith('${PACS_DICOM_BIND:-'))
-            .every(mapping => mapping.startsWith('127.0.0.1:'))).toBe(true);
+            .filter(mapping => !mapping.startsWith('${PACS_DICOM_BIND:-') && !mapping.startsWith('${VPN_PORT:-'))
+            .every(mapping => mapping.startsWith('127.0.0.1:') || /^\$\{(?:FRONTEND|PORTAL)_BIND:-127\.0\.0\.1\}:/.test(mapping))).toBe(true);
     });
 
     it('persists license activation files in the dedicated volume', () => {
         expect(compose).toContain('license_data:/app/license');
         expect(compose).toContain('LICENSE_STORAGE_FILE: /app/license/.viara-license');
         expect(compose).toContain('LICENSE_ACTIVATION_FILE: /app/license/.viara-activation');
+        expect(environmentTemplate).toMatch(/^LICENSE_KEY=$/m);
+        expect(compose).toMatch(/LICENSE_KEY:\s+\$\{LICENSE_KEY:\?/);
+        expect(environmentTemplate).not.toContain('TRIAL-CLIENT');
     });
 
     it('ships scheduled backups, a durable cold archive, and dependency readiness', () => {
@@ -65,6 +71,19 @@ describe('Customer release package integrity', () => {
         expect(linuxLauncher).toContain('Orthanc API health is checked');
         expect(compose).toContain('urllib.request.urlopen(request, timeout=5)');
         expect(windowsLauncher).toContain('wait-healthy.ps1');
+    });
+
+    it('verifies offline image archives before loading them', () => {
+        expect(linuxLauncher).toContain('sha256sum "$archive"');
+        expect(linuxLauncher).toContain('docker load --input "$archive"');
+        expect(linuxLauncher).toContain('Offline image checksum verification failed');
+    });
+
+    it('does not claim or attempt a Windows-native production deployment', () => {
+        expect(windowsHostLauncher).toContain('supported only as a host for the supported Linux VM');
+        expect(windowsHostLauncher).toContain('./scripts/start.sh');
+        expect(windowsHostLauncher).not.toContain('docker compose up');
+        expect(windowsHostLauncher).not.toContain('Docker Desktop');
     });
 
     it('does not present loopback addresses as customer-facing URLs', () => {

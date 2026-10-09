@@ -29,7 +29,8 @@ if /i not "%DOCKER_OS%"=="linux" (
 if not exist ".env" (
     if exist ".env.example" (
         echo [INFO] Copying .env.example to .env...
-        copy .env.example .env
+        powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0initialize-env.ps1" -TemplatePath ".env.example" -OutputPath ".env"
+        if errorlevel 1 exit /b 1
     ) else (
         echo [ERROR] .env file is missing.
         pause

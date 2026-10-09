@@ -55,6 +55,16 @@ const hasClinicalPacsAccess = (user) => (
     hasGlobalPacsAccess(user) || hasEmergencyClinicalPacsAccess(user)
 );
 
+const RADIOLOGIST_SHARED_WORKLIST_ACCESS = `(
+    e.performing_radiologist_id = $3::uuid
+    OR (
+        e.performing_radiologist_id IS NULL
+        AND e.current_station = 'Radiologist'
+        AND e.queue_stage = 'Reporting'
+        AND e.status IN ('Completed', 'Reporting')
+    )
+)`;
+
 const isValidStudyUid = (uid) => /^[0-9][0-9.]{2,127}$/.test(uid) && !uid.includes('..') && !uid.endsWith('.');
 
 const decodeDicomUid = (value) => {
@@ -173,12 +183,7 @@ const assertStudyAccess = async (db, user, studyUids) => {
          WHERE e.study_instance_uid = ANY($1::text[])
            AND (
                  $4::boolean
-                 OR ($2::text = 'Radiologist' AND (
-                     e.performing_radiologist_id = $3::uuid
-                     OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
-                     OR e.status IN ('Reporting', 'Finalized')
-                     OR e.queue_stage IN ('Ready for Exam', 'Images Ready')
-                 ))
+                 OR ($2::text = 'Radiologist' AND ${RADIOLOGIST_SHARED_WORKLIST_ACCESS})
                  OR ($2::text = 'Technician' AND (
                      a.technician_id = $3::uuid
                      OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
@@ -219,9 +224,12 @@ const assertExamViewerAccess = async (db, user, { examId = null, accessionNumber
                  $5::boolean
                  OR ($1::text = 'Radiologist' AND (
                      e.performing_radiologist_id = $2::uuid
-                     OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
-                     OR e.status IN ('Reporting', 'Finalized')
-                     OR e.queue_stage IN ('Ready for Exam', 'Images Ready')
+                     OR (
+                         e.performing_radiologist_id IS NULL
+                         AND e.current_station = 'Radiologist'
+                         AND e.queue_stage = 'Reporting'
+                         AND e.status IN ('Completed', 'Reporting')
+                     )
                  ))
                  OR ($1::text = 'Technician' AND (
                      a.technician_id = $2::uuid
@@ -262,12 +270,7 @@ const assertExamImagingAccess = async (db, user, examId) => {
          WHERE e.exam_id = $1
            AND (
                  $4::boolean
-                 OR ($2::text = 'Radiologist' AND (
-                     e.performing_radiologist_id = $3::uuid
-                     OR (e.current_station = 'Radiologist' AND e.performing_radiologist_id IS NULL)
-                     OR e.status IN ('Reporting', 'Finalized')
-                     OR e.queue_stage IN ('Ready for Exam', 'Images Ready')
-                 ))
+                 OR ($2::text = 'Radiologist' AND ${RADIOLOGIST_SHARED_WORKLIST_ACCESS})
                  OR ($2::text = 'Technician' AND (
                      a.technician_id = $3::uuid
                      OR (e.current_station = 'Modality' AND a.technician_id IS NULL)
@@ -347,20 +350,26 @@ const assertPacsAiJobAccess = async (db, user, jobId) => {
 const auditPacsAccessDenied = async (db, req, error, detail = {}) => {
     const statusCode = Number(error?.statusCode || error?.status || 0);
     if (![401, 403].includes(statusCode)) return;
+    const requestPath = String(req.originalUrl || req.url || req.path || '').split('?')[0]
+        .replace(/\/studies\/[0-9.]+(?=\/|$)/g, '/studies/:studyUid') || null;
+    const { requested_study_uids: requestedStudyUids, ...safeDetail } = detail;
     await writeAudit(db, {
         eventType: 'PACS_ACCESS_DENIED',
         actorUserId: req.user?.user_id || null,
         actorRole: req.user?.role || null,
         remoteIp: getRemoteIp(req),
         detail: {
-            path: req.originalUrl || req.url || req.path || null,
+            path: requestPath,
             method: req.method || null,
             auth_type: req.authType || null,
             reason: error.message,
-            ...detail
+            ...safeDetail,
+            ...(Array.isArray(requestedStudyUids)
+                ? { requested_study_count: requestedStudyUids.length }
+                : {})
         },
         httpMethod: req.method || null,
-        requestPath: req.originalUrl || req.url || req.path || null,
+        requestPath,
         statusCode
     });
 };

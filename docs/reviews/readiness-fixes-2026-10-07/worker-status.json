@@ -1,7 +1,0 @@
-{
-  "name": "worker",
-  "command": "python -m pytest -q tests -p no:cacheprovider",
-  "exitCode": 0,
-  "signal": null,
-  "durationSeconds": 11.245
-}

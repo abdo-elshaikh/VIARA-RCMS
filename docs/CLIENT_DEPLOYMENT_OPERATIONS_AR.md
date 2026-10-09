@@ -290,6 +290,18 @@ Kubernetes يتطلب manifests/Helm وStorageClass وSecrets وIngress وسيا
 
 راجع [مرجع TLS وReverse Proxy](REVERSE_PROXY_TLS.md) وكيّف الإعداد مع مسارات الحزمة وإصداراتها. عند وجود نطاقين مختلفين (staff/portal)، أدرج origin كل منهما بدقة في إعدادات CORS/WebAuthn وفق التصميم المعتمد.
 
+### 6.4 الوصول عن بُعد (Remote Access)
+
+للفصل الصارم بين البوابة العامة والوصول السريري، استخدم حزمة النشر الجاهزة في [`deploy/remote-access/`](../deploy/remote-access/README.md). تنفّذ ثلاث طبقات ثقة:
+
+| الطبقة | الجمهور | آلية الوصول | الملف |
+|---|---|---|---|
+| عامة | المرضى/الأطباء المحوّلون | Cloudflare WAF/Tunnel (بلا منفذ داخل) | `deploy/remote-access/nginx/portal-edge.conf` |
+| سريرية | أخصائيو الأشعة (قائمة العمل + OHIF) | WireGuard + mTLS إلزامي | `deploy/remote-access/nginx/clinical-edge.conf` |
+| محلية | أجهزة التصوير وقاعدة البيانات وOrthanc | LAN/VLAN فقط | `docker-compose.yml` + ACL |
+
+**قواعد غير قابلة للتفاوض:** لا يُنشر OHIF على الإنترنت إطلاقًا؛ يبقى على نفس أصل تطبيق الموظفين تحت `/pacs-viewer/`؛ البوابة العامة تُرجع 404 لمسارات العارض والإدارة؛ ومنفذ DICOM 4242 مربوط بواجهة الأجهزة فقط. للتحقق: `deploy/remote-access/scripts/verify-remote-access.sh`.
+
 ## 7. الحماية التشغيلية والخصوصية
 
 1. **تقليل التعرض:** جدار ناري افتراضي الرفض؛ HTTPS فقط للمستخدمين؛ DICOM محصور بمصادر الأجهزة؛ لا PostgreSQL أو Orthanc REST على الإنترنت.

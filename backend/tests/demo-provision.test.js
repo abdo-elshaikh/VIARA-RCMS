@@ -159,6 +159,14 @@ describe('demo-provision CLI', () => {
                 expect(cli.PORT_KEYS[key]).not.toBe(baseDefault);
             }
         });
+
+        test('demo overlay isolates fixed-name Redis and the PACS worklist volume', () => {
+            const overlay = fs.readFileSync(path.join(REPO_ROOT, 'docker-compose.demo.yml'), 'utf8');
+            expect(overlay).toMatch(/redis:\s*\r?\n\s+container_name:\s*!reset null/);
+            expect(overlay).toContain('demo_pacs_worklists:/app/pacs-worklists');
+            expect(overlay).toContain('demo_pacs_worklists:/var/lib/orthanc/worklists');
+            expect(overlay).toContain('ORTHANC__POSTGRESQL__USERNAME: ${POSTGRES_USER:-postgres}');
+        });
     });
 
     describe('secret isolation', () => {
@@ -205,7 +213,10 @@ describe('demo-provision CLI', () => {
 
         beforeAll(() => {
             const lease = store.createLease({
-                customerId: 'envfile-test', days: 5, ledgerPath: path.join(tmpDir, 'l.json'),
+                customerId: 'envfile-test',
+                displayName: 'طيبة للاشعة',
+                days: 5,
+                ledgerPath: path.join(tmpDir, 'l.json'),
             });
             envFile = cli.writeEnvFile(lease.project, lease, 'TEST-LICENSE-KEY');
         });
@@ -247,6 +258,24 @@ describe('demo-provision CLI', () => {
 
         test('carries the issued licence rather than a placeholder', () => {
             expect(cli.readEnvFile(envFile).LICENSE_KEY).toBe('TEST-LICENSE-KEY');
+        });
+
+        test('preserves the Arabic customer display name separately from the licence ID', () => {
+            expect(cli.readEnvFile(envFile).VIARA_DEMO_CUSTOMER).toBe('envfile-test');
+            expect(cli.readEnvFile(envFile).VIARA_DEMO_CUSTOMER_NAME).toBe('طيبة للاشعة');
+        });
+
+        test('points browser security origins at the isolated demo ports', () => {
+            const env = cli.readEnvFile(envFile);
+            const frontend = cli.demoUrl('FRONTEND_PORT', 'http');
+            const portal = cli.demoUrl('PORTAL_PORT', 'http');
+            expect(env.CLIENT_URL).toBe(frontend);
+            expect(env.PORTAL_CLIENT_URL).toBe(portal);
+            expect(env.ALLOWED_ORIGINS).toBe(`${frontend},${portal}`);
+            expect(env.WEBAUTHN_ORIGIN).toBe(frontend);
+            expect(env.WEBAUTHN_RP_ID).toBe('localhost');
+            expect(env.VITE_OHIF_URL).toBe(cli.demoUrl('OHIF_PORT', 'http'));
+            expect(env.PORTAL_PUBLIC_URL).toBe(portal);
         });
     });
 

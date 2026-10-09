@@ -82,9 +82,17 @@ const resolveExportStudyContext = async (db, req, studyInstanceUid) => {
     return rows[0] || { study_instance_uid: studyInstanceUid };
 };
 
-const auditPacsStudyExport = async (db, req, study, format, detail = {}) => {
+const auditPacsStudyExport = async (db, req, study, format, detail = {}, {
+    required = false,
+    notify = true
+} = {}) => {
+    const requestPath = String(req.originalUrl || req.url || req.path || '').split('?')[0]
+        .replace(/\/studies\/[0-9.]+(?=\/|$)/g, '/studies/:studyUid') || null;
+    const eventType = detail.phase === 'started'
+        ? 'PACS_EXPORT_STARTED'
+        : detail.phase === 'failed' ? 'PACS_EXPORT_FAILED' : 'STUDY_EXPORTED';
     await writeAudit(db, {
-        eventType: 'STUDY_EXPORTED',
+        eventType,
         actorUserId: req.user?.user_id || null,
         actorRole: req.user?.role || null,
         studyInstanceUid: study.study_instance_uid,
@@ -97,9 +105,12 @@ const auditPacsStudyExport = async (db, req, study, format, detail = {}) => {
             ...detail
         },
         httpMethod: req.method || null,
-        requestPath: req.originalUrl || req.url || req.path || null,
-        statusCode: 200
+        requestPath,
+        statusCode: detail.statusCode || (detail.phase === 'failed' ? 500 : 200),
+        required
     });
+
+    if (!notify) return;
 
     triggerEventForRole(db, 'STUDY_EXPORTED', 'Radiologist', {
         priority: 'Warning',

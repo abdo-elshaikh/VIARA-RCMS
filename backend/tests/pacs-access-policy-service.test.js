@@ -7,7 +7,8 @@ const {
     hasEmergencyClinicalPacsAccess,
     isValidStudyUid,
     decodeDicomUid,
-    shouldReturnEmptyScopedStudyBrowse
+    shouldReturnEmptyScopedStudyBrowse,
+    assertStudyAccess
 } = require('../src/services/pacsAccessPolicyService');
 const {
     safeFileStem,
@@ -66,6 +67,23 @@ describe('pacsAccessPolicyService', () => {
     });
 
     describe('permissions and access helpers', () => {
+        test('shares only active, unassigned radiologist reporting work and keeps explicit assignments scoped', async () => {
+            const db = { query: jest.fn(async () => ({ rows: [{ study_instance_uid: '1.2.3' }] })) };
+            await assertStudyAccess(db, {
+                role: 'Radiologist',
+                user_id: '00000000-0000-4000-8000-000000000001'
+            }, ['1.2.3']);
+
+            const [query] = db.query.mock.calls[0];
+            expect(query).toContain('e.performing_radiologist_id = $3::uuid');
+            expect(query).toContain('e.performing_radiologist_id IS NULL');
+            expect(query).toContain("e.current_station = 'Radiologist'");
+            expect(query).toContain("e.queue_stage = 'Reporting'");
+            expect(query).toContain("e.status IN ('Completed', 'Reporting')");
+            expect(query).not.toContain('Images Ready');
+            expect(query).not.toContain('Finalized');
+        });
+
         test('hasEffectivePermission handles Developer, standard permissions, and active break-glass', () => {
             expect(hasEffectivePermission({ role: 'Developer' }, 'ANY_PERM')).toBe(true);
             expect(hasEffectivePermission({ permissions: ['MANAGE_PACS'] }, 'MANAGE_PACS')).toBe(true);

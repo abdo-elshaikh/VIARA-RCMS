@@ -160,7 +160,7 @@ const { startBackupScheduler, stopBackupScheduler } = require('./services/backup
 const { createServerLifecycle } = require('./services/serverLifecycle');
 
 const { getDashboardStats } = require('./controllers/dashboardController');
-const { getPublicLandingOverview, lookupPublicCaseStatus, authorizePublicFinalReport } = require('./controllers/publicLandingController');
+const { getPublicLandingOverview, lookupPublicCaseStatus, authorizePublicFinalReport, verifyReportAuthenticity } = require('./controllers/publicLandingController');
 const {
     getProfile, updateProfile, changePassword,
     getPreferences: getProfilePreferences,
@@ -674,6 +674,10 @@ app.get('/api/public/final-report/:accessToken', publicCaseStatusLimiter, author
     req.publicReportDisposition = 'inline';
     next();
 }, getReportPdf(pool));
+
+// Public report authenticity verification (QR scan). No login: matches only a
+// finalized, locked report's digital-signature hash and returns masked identity.
+app.get('/api/public/reports/verify/:hash', publicCaseStatusLimiter, verifyReportAuthenticity(pool));
 
 // Auth Routes (Protected - Admin Only)
 app.post('/api/auth/register',

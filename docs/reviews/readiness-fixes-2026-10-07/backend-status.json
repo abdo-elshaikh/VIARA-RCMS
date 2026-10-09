@@ -1,7 +1,0 @@
-{
-  "name": "backend",
-  "command": "npm.cmd run test:ci -- --json --outputFile=D:\\VIARA\\docs\\reviews\\readiness-fixes-2026-10-07\\backend-results.json",
-  "exitCode": 0,
-  "signal": null,
-  "durationSeconds": 46.605
-}

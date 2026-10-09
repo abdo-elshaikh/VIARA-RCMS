@@ -35,7 +35,6 @@ import {
   useGetMyPortalProfileQuery,
   useGetMyPortalNotificationUnreadCountQuery,
   useGetCenterSettingsQuery,
-  useLazyDownloadPortalDocumentQuery,
 } from "../store/api";
 import { logOut, selectCurrentUser } from "../store/authSlice";
 import { getErrorMessage } from "../utils/getErrorMessage";
@@ -45,7 +44,7 @@ import { formatLocalizedDate } from "../utils/localizedDate";
 import { todayLocalISO, isPastDate } from "../utils/date";
 import { openPrintableReport } from "../utils/printableReport";
 import { isFinalizedRecord } from "../utils/recordStatus";
-import { fetchWithAuthRetry } from "../lib/api";
+import { fetchWithAuthRetry, downloadPatientDocument, downloadInvoicePdf } from "../lib/api";
 import { PortalIdentityProvider, resolvePortalIdentity } from "../lib/portal-identity";
 
 import Panel from "../components/ui/Panel";
@@ -138,7 +137,6 @@ const PatientPortal = () => {
   });
   const { data: profileData, isLoading: isLoadingProfile } = useGetMyPortalProfileQuery(undefined);
   const { data: rawCenterSettings } = useGetCenterSettingsQuery(undefined);
-  const [downloadDocument] = useLazyDownloadPortalDocumentQuery();
   const [createAppointmentRequest, { isLoading: isRequestingAppointment }] =
     useCreatePortalAppointmentRequestMutation();
   const [createProfileUpdateRequest, { isLoading: isRequestingProfileUpdate }] =
@@ -528,19 +526,32 @@ const PatientPortal = () => {
 
   const handleDownloadDocument = async (document: any) => {
     const documentId = String(document.document_id || document.id || "");
-    if (!documentId && !document.file_url) return;
+    if (!documentId) return;
     try {
-      if (document.file_url) {
-        window.open(document.file_url, "_blank", "noopener,noreferrer");
-        return;
-      }
-      const result = await downloadDocument(documentId).unwrap();
-      const url =
-        typeof result === "string"
-          ? result
-          : result?.file_url || result?.url || result?.download_url;
-      if (!url) throw new Error(t("patient.documentError", "Unable to open document"));
-      window.open(url, "_blank", "noopener,noreferrer");
+      const blob = await downloadPatientDocument(documentId);
+      if (!blob) throw new Error(t("patient.documentError", "Unable to open document"));
+      saveDownloadedBlob(blob, `document-${documentId}${blob.type.includes("pdf") ? ".pdf" : ""}`);
+    } catch (error) {
+      toast.error(getErrorMessage(error, t("patient.documentError", "Unable to open document")));
+    }
+  };
+
+  const saveDownloadedBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = window.document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    window.document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  };
+
+  const handleDownloadInvoice = async (invoiceId: string) => {
+    try {
+      const blob = await downloadInvoicePdf(invoiceId);
+      if (!blob) throw new Error(t("patient.documentError", "Unable to open document"));
+      saveDownloadedBlob(blob, `invoice-${invoiceId}.pdf`);
     } catch (error) {
       toast.error(getErrorMessage(error, t("patient.documentError", "Unable to open document")));
     }
@@ -881,7 +892,9 @@ const PatientPortal = () => {
                             />
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            {formatDate(invoice.issue_date || invoice.created_at)}
+                            {formatDate(
+                              invoice.issue_date || invoice.generated_at || invoice.created_at,
+                            )}
                             {invoice.due_date
                               ? ` · ${t("patient.billing.due", "Due")} ${formatDate(invoice.due_date)}`
                               : ""}
@@ -897,6 +910,17 @@ const PatientPortal = () => {
                             value={`${formatMoney(balance)} ${currency}`}
                             strong={balance > 0}
                           />
+                          <button
+                            type="button"
+                            className={`${secondaryActionClass} col-span-2 flex items-center justify-center gap-2`}
+                            onClick={() =>
+                              handleDownloadInvoice(String(invoice.invoice_id || invoice.id))
+                            }
+                            disabled={!invoice.invoice_id && !invoice.id}
+                          >
+                            <Download size={16} aria-hidden="true" />
+                            {t("patient.billing.downloadInvoice", "Download invoice PDF")}
+                          </button>
                         </div>
                       </article>
                     );

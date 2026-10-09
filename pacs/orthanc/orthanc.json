@@ -15,7 +15,7 @@
   "LimitFindResults": 100,
   "LimitFindInstances": 1000,
   "UnknownSopClassAccepted": true,
-  "//storage": "Index lives in PostgreSQL; pixel data on the mounted volume.",
+  "//storage": "Orthanc index lives in its dedicated PostgreSQL database; pixel data stays on the mounted volume.",
   "StorageDirectory": "/var/lib/orthanc/db",
   "IndexDirectory": "/var/lib/orthanc/db",
   "//auth": "HTTP REST is reached only from inside the compose network via the VIARA proxy. Basic-auth is still required; RegisteredUsers is supplied through ORTHANC__REGISTERED_USERS__* env.",
@@ -27,7 +27,7 @@
     "/usr/local/share/orthanc/plugins"
   ],
   "PostgreSQL": {
-    "EnableIndex": false,
+    "EnableIndex": true,
     "EnableStorage": false,
     "Host": "postgres",
     "Port": 5432,

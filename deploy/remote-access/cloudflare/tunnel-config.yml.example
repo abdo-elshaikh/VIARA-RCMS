@@ -1,0 +1,46 @@
+# VIARA Public Portal Tunnel (Tier A) — Cloudflare Tunnel (no inbound port).
+#
+# Install as /etc/cloudflared/config.yml on the host running the connector.
+# This exposes ONLY the portal hostname. It must not expose the clinical host,
+# OHIF, the API directly, Orthanc, or metrics.
+#
+# 1. Authenticate and create the tunnel:
+#      cloudflared tunnel login
+#      cloudflared tunnel create viara-portal
+# 2. Point DNS at the tunnel:
+#      cloudflared tunnel route dns viara-portal portal.example.org
+# 3. Install the service:
+#      sudo cloudflared service install
+#      sudo systemctl enable --now cloudflared
+#
+# The origin (nginx portal-edge.conf) listens on 127.0.0.1:4433 only, so even a
+# misdirected request cannot reach the clinical tier.
+
+tunnel: viara-portal
+credentials-file: /etc/cloudflared/<TUNNEL_UUID>.json
+
+# Keep the connector's own logging free of PII: access logs are intentionally
+# disabled on the origin, and query strings must not be retained for long.
+loglevel: info
+metrics: 127.0.0.1:49312
+
+ingress:
+  # Portal only.
+  - hostname: portal.example.org
+    service: https://127.0.0.1:4433
+    originRequest:
+      # The origin presents its own certificate; pin or trust the internal CA.
+      originServerName: portal.example.org
+      noTLSVerify: false
+      # Do not forward the client's real IP in a header the origin blindly trusts.
+      httpHostHeader: portal.example.org
+      connectTimeout: 30s
+      # Long-lived SSE for portal realtime.
+      disableChunkedEncoding: false
+
+  # Everything else is denied by default.
+  - service: http_status:404
+
+# Optional: route through Cloudflare Access for zero-trust on the portal too.
+# warp-routing:
+#   enabled: false

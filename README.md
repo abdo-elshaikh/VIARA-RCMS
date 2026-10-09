@@ -63,6 +63,10 @@
 
 لخطوات تجهيز الخادم وتفعيل الترخيص والتشغيل على Linux أو عبر Linux VM على Windows Server، وتأمين الشبكة والنسخ الاحتياطي وتحديث الإصدارات، راجع [دليل إعداد وتشغيل VIARA للعميل](docs/CLIENT_DEPLOYMENT_OPERATIONS_AR.md). هذا الدليل موجّه لبيئات العملاء؛ أما هذا المستودع وملفات التطوير فلا تُعد وحدها حزمة إنتاج معتمدة.
 
+## 🧪 تجربة تقييمية معزولة
+
+لإنشاء تجربة قصيرة المدة ببيانات اصطناعية، استخدم أداة العروض المعزولة لكل عميل؛ لا تستخدم حزمة الإنتاج لهذا الغرض. تتطلب الأداة إعداد مفاتيح إصدار الترخيص وملف `.env` تطويريّاً على المضيف، وتبدأ خدمات Docker فعلية. راجع [دليل التجربة التقييمية](docs/TRIAL_EVALUATION_AR.md) قبل الإنشاء. لا تستخدم بيانات مرضى حقيقية أو تكشف منافذ التجربة للإنترنت.
+
 ---
 
 ## 🌟 Executive Overview
@@ -1002,5 +1006,4 @@ Prospective clients and radiology centers evaluating VIARA prior to commercial c
   <sub>Copyright © 2026 VIARA Healthcare Systems. All Global Rights Reserved.</sub><br>
   <sub>VIARA™ and the VIARA logo are registered trademarks. Unauthorized use is prohibited.</sub>
 </div>
-
 

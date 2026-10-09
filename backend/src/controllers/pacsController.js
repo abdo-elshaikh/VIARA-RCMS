@@ -1400,7 +1400,7 @@ const getQuarantine = (db) => async (req, res, next) => {
  * This URL is the stable "swap-later" contract the browser viewer (OHIF) talks
  * to; Orthanc is never exposed to the browser. The JWT + VIEW_PACS_IMAGES guard
  * runs in the route chain before this handler. We record a lightweight view
- * audit for WADO study fetches (best-effort, never blocks the stream).
+ * audit for study-level reads before proxying PHI.
  */
 const dicomWebProxy = (db) => async (req, res, next) => {
     try {
@@ -1427,17 +1427,28 @@ const dicomWebProxy = (db) => async (req, res, next) => {
 
         // Audit study-level access (WADO/QIDO on a specific study) without
         // spamming on every per-frame request.
-        const studyMatch = subPath.match(/\/studies\/([0-9.]+)(?:$|\/(?:metadata|series)?$)/);
-        if (req.method === 'GET' && studyMatch) {
-            const remoteIp = req.headers['x-forwarded-for'] || req.ip || null;
-            await writeAudit(db, {
-                eventType: 'IMAGE_VIEW',
-                actorUserId: req.user?.user_id || null,
-                studyInstanceUid: studyMatch[1],
-                remoteIp,
-                detail: { path: subPath }
-            });
-
+        const pathStudy = subPath.match(/^\/(?:dicom-web|wado)\/studies\/([0-9.]+)(?=\/|$)/);
+        const queriedStudies = /^\/dicom-web\/studies\/?$/.test(subPath)
+            ? getRequestedStudyUids(subPath, req.query || {})
+            : [];
+        const studyUidsToAudit = pathStudy && !/\/frames(?:\/|$)/.test(subPath)
+            ? [pathStudy[1]]
+            : queriedStudies;
+        if (req.method === 'GET' && studyUidsToAudit.length) {
+            const remoteIp = req.headers?.['x-forwarded-for'] || req.ip || null;
+            for (const studyInstanceUid of studyUidsToAudit) {
+                await writeAudit(db, {
+                    eventType: 'IMAGE_VIEW',
+                    actorUserId: req.user?.user_id || null,
+                    actorRole: req.user?.role || null,
+                    studyInstanceUid,
+                    remoteIp,
+                    detail: { path: '/api/pacs/dicom-web/studies/:studyUid' },
+                    httpMethod: req.method,
+                    requestPath: '/api/pacs/dicom-web/studies/:studyUid',
+                    required: true
+                });
+            }
             triggerEventForRole(db, 'IMAGE_VIEW', 'Radiologist', {
                 priority: 'Normal',
                 variables: {
@@ -1445,6 +1456,17 @@ const dicomWebProxy = (db) => async (req, res, next) => {
                     viewed_by: req.user?.full_name || req.user?.email || 'Unknown'
                 }
             }).catch(() => { });
+        } else if (req.method === 'GET' && /^\/dicom-web\/studies\/?$/.test(subPath)) {
+            await writeAudit(db, {
+                eventType: 'PACS_STUDY_SEARCH',
+                actorUserId: req.user?.user_id || null,
+                actorRole: req.user?.role || null,
+                remoteIp: req.headers?.['x-forwarded-for'] || req.ip || null,
+                detail: { path: '/api/pacs/dicom-web/studies' },
+                httpMethod: req.method,
+                requestPath: '/api/pacs/dicom-web/studies',
+                required: true
+            });
         }
 
         await proxyToOrthanc(req, res, subPath);
@@ -1767,6 +1789,8 @@ const exportPacsStudy = (db) => async (req, res, next) => {
         res.setTimeout(30 * 60 * 1000);
 
         const study = await resolveExportStudyContext(db, req, studyInstanceUid);
+        const auditStudy = { ...study, study_instance_uid: studyInstanceUid };
+        await auditPacsStudyExport(db, req, auditStudy, format, { phase: 'started' }, { required: true, notify: false });
         const orthancUrl = await getOrthancUrl();
         const auth = await getOrthancAuthHeader();
         const orthancStudyId = study.orthanc_study_id || await lookupOrthancStudyId(orthancUrl, auth, studyInstanceUid);
@@ -1781,7 +1805,7 @@ const exportPacsStudy = (db) => async (req, res, next) => {
                 filename: `${baseName}-images.zip`,
                 res, signal: controller.signal
             });
-            await auditPacsStudyExport(db, req, { ...study, orthanc_study_id: orthancStudyId }, format, result);
+            await auditPacsStudyExport(db, req, { ...study, study_instance_uid: studyInstanceUid, orthanc_study_id: orthancStudyId }, format, { ...result, phase: 'completed' });
             return;
         }
 
@@ -1793,8 +1817,22 @@ const exportPacsStudy = (db) => async (req, res, next) => {
             filename: `${baseName}-${format === 'cd' ? 'cd-media' : 'dicom'}.zip`,
             res, signal: controller.signal
         });
-        await auditPacsStudyExport(db, req, { ...study, orthanc_study_id: orthancStudyId }, format);
+        await auditPacsStudyExport(db, req, { ...study, study_instance_uid: studyInstanceUid, orthanc_study_id: orthancStudyId }, format, { phase: 'completed' });
     } catch (error) {
+        if (studyInstanceUid && !res.headersSent) {
+            try {
+                await auditPacsStudyExport(db, req, { study_instance_uid: studyInstanceUid }, format, {
+                    phase: 'failed',
+                    error_code: error.code || 'EXPORT_FAILED',
+                    statusCode: error.statusCode || 500
+                }, { required: true, notify: false });
+            } catch (auditError) {
+                logger.error('PACS export failure audit could not be persisted', {
+                    error: auditError.message,
+                    code: auditError.code
+                });
+            }
+        }
         await auditPacsAccessDenied(db, req, error, {
             requested_study_uids: [studyInstanceUid],
             action: 'export_study',

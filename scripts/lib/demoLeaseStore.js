@@ -116,6 +116,7 @@ const resolvePath = (ledgerPath) => {
  *
  * @param {object} input
  * @param {string} input.customerId
+ * @param {string} [input.displayName]
  * @param {string} [input.contactEmail]
  * @param {number} [input.days]        Validity window in days.
  * @param {string} [input.notes]
@@ -123,7 +124,9 @@ const resolvePath = (ledgerPath) => {
  * @param {string} [ledgerPath]
  * @returns {object} The stored lease.
  */
-const createLease = ({ customerId, contactEmail = '', days = 14, notes = '', now = new Date(), ledgerPath } = {}) => {
+const createLease = ({
+    customerId, displayName = '', contactEmail = '', days = 14, notes = '', now = new Date(), ledgerPath,
+} = {}) => {
     if (!customerId || !String(customerId).trim()) {
         throw new Error('customerId is required');
     }
@@ -148,6 +151,7 @@ const createLease = ({ customerId, contactEmail = '', days = 14, notes = '', now
     const createdAt = new Date(now);
     const lease = {
         customerId: String(customerId).trim(),
+        displayName: String(displayName || '').trim(),
         contactEmail: String(contactEmail || '').trim(),
         project,
         createdAt: createdAt.toISOString(),
@@ -171,7 +175,8 @@ const activeLeases = ({ ledgerPath } = {}) =>
 /** Look up a single lease by customer reference. */
 const getLease = (customerId, { ledgerPath } = {}) => {
     const project = projectNameFor(customerId);
-    return listLeases({ ledgerPath }).find(lease => lease.project === project) || null;
+    const matching = listLeases({ ledgerPath }).filter(lease => lease.project === project);
+    return matching[matching.length - 1] || null;
 };
 
 /** Whole days left before expiry; negative once overdue. */
@@ -204,7 +209,8 @@ const markReclaimed = (customerId, { now = new Date(), ledgerPath } = {}) => {
     const file = resolvePath(ledgerPath);
     const ledger = readLedger(file);
     const project = projectNameFor(customerId);
-    const lease = ledger.leases.find(entry => entry.project === project);
+    const matching = ledger.leases.filter(entry => entry.project === project);
+    const lease = matching[matching.length - 1];
     if (!lease) throw new Error(`no demo lease for "${customerId}"`);
 
     lease.status = STATUS.RECLAIMED;

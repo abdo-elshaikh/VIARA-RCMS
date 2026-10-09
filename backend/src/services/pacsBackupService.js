@@ -1,6 +1,6 @@
 const fs = require('fs');
 const crypto = require('crypto');
-const { Readable, Transform } = require('stream');
+const { Readable, Transform, Writable } = require('stream');
 const { pipeline } = require('stream/promises');
 const yazl = require('yazl');
 const yauzl = require('yauzl');
@@ -98,19 +98,51 @@ const restorePacs = async (zipPath, { connection, allowNonEmpty = false } = {}) 
     if (!allowNonEmpty && initialInstances.length !== 0) {
         throw new Error('Recovery target must be a reachable, empty Orthanc archive');
     }
+    const manifestEntries = new Map(manifest.instances.map(instance => [instance.file, instance]));
     let restored = 0;
     await visitZip(zipPath, async (entry, stream) => {
         if (entry.fileName === 'manifest.json' || !/^[a-f0-9-]+\.dcm$/.test(entry.fileName)) return;
-        const chunks = [];
-        for await (const chunk of stream) chunks.push(chunk);
+        const expected = manifestEntries.get(entry.fileName);
+        if (!expected) throw new Error(`PACS backup manifest is missing ${entry.fileName}`);
+        const hash = crypto.createHash('sha256');
+        const meter = new Transform({
+            transform(chunk, encoding, callback) {
+                hash.update(chunk);
+                callback(null, chunk);
+            }
+        });
+        const uploadBody = stream.pipe(meter);
         const response = await fetch(url.replace(/\/$/, '') + '/instances', {
             method: 'POST',
             headers: { ...headers, 'Content-Type': 'application/dicom' },
-            body: Buffer.concat(chunks),
+            body: uploadBody,
+            duplex: 'half',
             signal: AbortSignal.timeout(120000)
         });
+        if (hash.digest('hex') !== expected.sha256) throw new Error(`PACS restore checksum mismatch for ${entry.fileName}`);
         if (!response.ok) throw new Error(`PACS restore failed (${response.status}) for ${entry.fileName}`);
-        await response.json();
+        const result = await response.json();
+        if (!['Success', 'AlreadyStored'].includes(result.Status) || !result.ID) {
+            throw new Error(`Orthanc did not confirm restoring ${entry.fileName}`);
+        }
+
+        const restoredResponse = await fetch(`${url.replace(/\/$/, '')}/instances/${encodeURIComponent(result.ID)}/file`, {
+            headers,
+            signal: AbortSignal.timeout(120000)
+        });
+        if (!restoredResponse.ok || !restoredResponse.body) throw new Error(`Could not verify restored instance ${entry.fileName}`);
+        const restoredHash = crypto.createHash('sha256');
+        await pipeline(
+            Readable.fromWeb(restoredResponse.body),
+            new Transform({
+                transform(chunk, encoding, callback) {
+                    restoredHash.update(chunk);
+                    callback(null, chunk);
+                }
+            }),
+            new Writable({ write(chunk, encoding, callback) { callback(); } })
+        );
+        if (restoredHash.digest('hex') !== expected.sha256) throw new Error(`Restored DICOM checksum mismatch for ${entry.fileName}`);
         restored += 1;
     });
     return { restored, instance_count: manifest.instances.length, verified: true };

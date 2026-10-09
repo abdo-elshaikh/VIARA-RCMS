@@ -141,9 +141,8 @@ const mirrorStructuredAudit = async (db, {
 };
 
 /**
- * Write an ATNA-style audit row. Best-effort: audit failures must never abort a
- * reconcile transaction, so callers pass the transaction client but we swallow
- * errors here and log them.
+ * Write an ATNA-style audit row. Writes are best-effort unless a PHI response
+ * depends on the audit record; those callers pass required: true and fail closed.
  */
 const writeAudit = async (client, {
     eventType,
@@ -155,7 +154,8 @@ const writeAudit = async (client, {
     detail = {},
     httpMethod = null,
     requestPath = null,
-    statusCode = null
+    statusCode = null,
+    required = false
 }) => {
     try {
         await client.query(
@@ -165,6 +165,12 @@ const writeAudit = async (client, {
         );
     } catch (error) {
         logger.error('pacs_audit insert failed', { eventType, error: error.message });
+        if (required) {
+            const auditError = new Error('Required PACS audit entry could not be persisted');
+            auditError.code = 'PACS_AUDIT_REQUIRED_FAILED';
+            auditError.statusCode = 503;
+            throw auditError;
+        }
     }
     await mirrorStructuredAudit(client, {
         eventType,

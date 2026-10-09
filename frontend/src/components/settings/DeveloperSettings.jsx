@@ -122,7 +122,9 @@ const DeveloperSettings = ({ embedded = false }) => {
         setDbForm(current => ({
             ...current,
             [field]: value,
-            ...(field === 'password' ? { keepExistingPassword: false } : {})
+            ...(field === 'password'
+                ? { keepExistingPassword: value ? false : Boolean(savedDb?.passwordConfigured || activeDb?.passwordConfigured) }
+                : {})
         }));
     };
 
@@ -384,9 +386,9 @@ const DatabaseConfigPanel = ({
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                    <TextField label={copy('host')} value={dbForm.host} onChange={value => onFieldChange('host', value)} placeholder="localhost" required />
+                    <TextField label={copy('host')} value={dbForm.host} onChange={value => onFieldChange('host', value)} placeholder="localhost" required autoComplete="off" />
                     <TextField label={copy('port')} value={dbForm.port} onChange={value => onFieldChange('port', value)} type="number" min="1" max="65535" required />
-                    <TextField label={copy('username')} value={dbForm.username} onChange={value => onFieldChange('username', value)} placeholder="VIARA" required />
+                    <TextField label={copy('username')} value={dbForm.username} onChange={value => onFieldChange('username', value)} placeholder="VIARA" required autoComplete="off" />
                     <div>
                         <label className={`block text-xs font-semibold uppercase tracking-wide ${mutedText}`}>{copy('password')}</label>
                         <div className="mt-2 flex rounded-[var(--VIARA-radius-control)] border border-[var(--VIARA-line)] bg-[var(--VIARA-field)]">
@@ -395,13 +397,14 @@ const DatabaseConfigPanel = ({
                                 onChange={event => onFieldChange('password', event.target.value)}
                                 type={showPassword ? 'text' : 'password'}
                                 placeholder={dbForm.keepExistingPassword ? copy('keepExistingPassword') : copy('passwordPlaceholder')}
+                                autoComplete="new-password"
                                 className="min-w-0 flex-1 rounded-[var(--VIARA-radius-control)] bg-transparent px-[var(--VIARA-density-control-x)] py-[var(--VIARA-density-control-y)] text-sm text-[var(--VIARA-ink)] outline-none placeholder:text-[var(--VIARA-muted)]"
                             />
                             <button type="button" onClick={onTogglePassword} className="px-3 text-[var(--VIARA-muted)] hover:text-[var(--VIARA-accent-text)]" aria-label={showPassword ? copy('hidePassword') : copy('showPassword')}>
                                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                             </button>
                         </div>
-                        {savedDb?.passwordConfigured && (
+                        {(savedDb?.passwordConfigured || activeDb?.passwordConfigured) && (
                             <label className={`mt-2 flex items-center gap-2 text-xs ${mutedText}`}>
                                 <input
                                     type="checkbox"

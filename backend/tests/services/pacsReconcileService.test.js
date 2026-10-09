@@ -1,4 +1,4 @@
-const { reconcileInstance } = require('../../src/services/pacsReconcileService');
+const { reconcileInstance, writeAudit } = require('../../src/services/pacsReconcileService');
 
 // Silence the service logger during tests.
 jest.mock('../../src/config/logger', () => ({
@@ -63,6 +63,21 @@ describe('pacsReconcileService.reconcileInstance', () => {
         expect(sqls).toContain('INSERT INTO system_logs');
         expect(sqls).toContain('COMMIT');
         expect(sqls).not.toContain('ROLLBACK');
+    });
+
+    describe('pacsReconcileService.writeAudit', () => {
+        it('rejects required audit writes when the canonical audit row cannot be persisted', async () => {
+            const client = { query: jest.fn().mockRejectedValue(new Error('database unavailable')) };
+
+            await expect(writeAudit(client, {
+                eventType: 'IMAGE_VIEW',
+                studyInstanceUid: '1.2.3',
+                required: true
+            })).rejects.toMatchObject({
+                code: 'PACS_AUDIT_REQUIRED_FAILED',
+                statusCode: 503
+            });
+        });
     });
 
     it('quarantines a study when the accession matches no examination', async () => {

@@ -1,7 +1,0 @@
-{
-  "name": "locales",
-  "command": "C:\\Program Files\\nodejs\\node.exe scripts/check-locales.mjs",
-  "exitCode": 0,
-  "signal": null,
-  "durationSeconds": 0.64
-}

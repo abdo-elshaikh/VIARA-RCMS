@@ -1,7 +1,0 @@
-{
-  "name": "frontend-prod-audit",
-  "command": "npm.cmd audit --omit=dev --json",
-  "exitCode": 0,
-  "signal": null,
-  "durationSeconds": 5.377
-}

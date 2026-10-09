@@ -162,6 +162,104 @@ VIARA.example.com {
 
 The OHIF proxy path must remain on the **same HTTPS origin** as the staff application. Do not assign it a separate hostname: the viewer authorization is scoped to the browser origin. `CLIENT_URL` must be the exact staff origin (scheme and host, with no path), and the release OHIF image must be built with the VIARA OHIF Dockerfile, runtime entrypoint, app config, and Nginx template. The OHIF readiness check proxies `/health/ready` to the backend.
 
+## Dual-Domain Zero-Trust Architecture (Recommended for Remote Access)
+
+To strictly enforce the 3-tier security separation (Level A: Public Portal, Level B: Remote Clinical, Level C: On-Premises Core LAN), configure two separate server blocks:
+
+### 1. Level A: Public Portal (`portal.ris.example.org`)
+Exposed to public internet via Cloudflare Tunnel / WAF with TLS 1.3 only, serving only the Patient/Referring Physician portal and read/write request APIs, with absolute blocking of any diagnostic viewer paths:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name portal.ris.example.org;
+
+    ssl_protocols TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Content-Security-Policy "default-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none';" always;
+
+    # Public Portal SPA
+    location / {
+        proxy_pass http://127.0.0.1:5174;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+    }
+
+    # Whitelisted Public / Patient APIs only
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        limit_except GET POST { deny all; }   # Portal is read/request-only
+    }
+
+    # Strict Denial: Diagnostic Viewer is NEVER exposed on the public domain
+    location /pacs-viewer/ {
+        return 404;
+    }
+}
+```
+
+### 2. Level B: Remote Clinical (`ris.ris.example.org`)
+Accessible only via WireGuard VPN or Cloudflare Zero-Trust Network Access (ZTNA) with mandatory mTLS device certificate verification:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name ris.ris.example.org;
+
+    # Enforce mTLS: reject devices without organization CA certificate
+    ssl_client_certificate /etc/nginx/clinical-ca.crt;
+    ssl_verify_client on;
+    ssl_verify_depth 2;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Extract device identity for audit logging
+    add_header X-Device-Id $ssl_client_serial always;
+
+    # Staff SPA
+    location / {
+        proxy_pass http://127.0.0.1:5173;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # Core RIS API
+    location /api/ {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Device-Serial $ssl_client_serial;
+        proxy_read_timeout 10m;
+    }
+
+    # OHIF Diagnostic Viewer on the SAME HTTPS ORIGIN
+    location /pacs-viewer/ {
+        proxy_pass http://127.0.0.1:3005/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_buffering off;                 # Direct WADO-RS streaming
+        proxy_read_timeout 300s;
+        add_header Content-Security-Policy "frame-ancestors 'self'" always;
+        add_header X-Frame-Options "" always;
+    }
+}
+```
+
 ## Cloudflare Tunnel
 
 For zero-trust or edge deployments, configure a Cloudflare Tunnel:
@@ -171,9 +269,9 @@ For zero-trust or edge deployments, configure a Cloudflare Tunnel:
 tunnel: VIARA-tunnel
 credentials-file: /etc/cloudflared/credentials.yml
 ingress:
-  - hostname: api.VIARA.example.com
-    service: http://127.0.0.1:3000
-  - hostname: VIARA.example.com
+  - hostname: portal.ris.example.org
+    service: http://127.0.0.1:5174
+  - hostname: ris.ris.example.org
     service: http://127.0.0.1:5173
   - service: http_status:404
 ```
@@ -215,3 +313,19 @@ After deployment, verify TLS settings using SSL Labs:
 curl -I https://VIARA.example.com/
 # Expected: HTTP/2 200, Strict-Transport-Security header present
 ```
+
+## Remote Access: three-tier deployment kit
+
+For splitting public portal access from clinical (viewer + worklist) access,
+use the production-ready kit in [`deploy/remote-access/`](../deploy/remote-access/README.md):
+
+| Tier | Audience | Artifact |
+| :--- | :--- | :--- |
+| Public | Patients / referring physicians (WAF + Tunnel) | `deploy/remote-access/nginx/portal-edge.conf` |
+| Clinical | Radiologists: Worklist + OHIF behind WireGuard + mTLS | `deploy/remote-access/nginx/clinical-edge.conf` |
+| On-prem | Modalities, DB, Orthanc, AI | existing `docker-compose.yml` + network ACLs |
+
+Hard rules: OHIF is never public; it stays on the staff origin under
+`/pacs-viewer/`; the portal edge returns 404 for viewer/admin paths; DICOM 4242
+binds to the modality interface only. Verify with
+`deploy/remote-access/scripts/verify-remote-access.sh`.

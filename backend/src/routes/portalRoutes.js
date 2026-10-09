@@ -20,6 +20,7 @@ const {
 const {
     getMyRecords,
     getMyInvoices,
+    getMyInvoicePdf,
     getMyDocuments,
     downloadMyDocument,
     getMyAppointmentRequests,
@@ -95,6 +96,12 @@ module.exports = function portalRoutes(pool, auditService) {
         authenticateToken,
         authorizeRole(['Patient']),
         getMyInvoices(pool)
+    );
+
+    router.get('/portal/invoices/:invoiceId/pdf',
+        authenticateToken,
+        authorizeRole(['Patient']),
+        getMyInvoicePdf(pool)
     );
 
     router.get('/portal/documents',

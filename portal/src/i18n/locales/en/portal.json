@@ -1,46 +1,136 @@
 {
   "doctor": {
-    "product": "Referring Doctor Portal",
-    "brand": "Doctor Portal",
-    "roleFallback": "Doctor",
+    "brand": "Physician portal",
+    "product": "VIARA Radiology",
+    "roleFallback": "Referring physician",
     "heroTitle": "Clinical referral workspace",
     "heroDescription": "Track referred cases, open finalized reports, submit new orders, and coordinate securely with the radiology center.",
     "today": "Today",
     "todayCases": "scheduled or active cases",
+    "caseDetail": "Case details",
+    "contrast": "Contrast",
+    "notRequired": "Not required",
+    "orderChecklistTitle": "Order checklist",
+    "orderChecklistMrn": "Confirm the patient MRN is already registered at the center.",
+    "orderChecklistClinical": "Include clinical indication, symptoms, and urgency.",
+    "orderChecklistScheduling": "Preferred date and time window help reception schedule faster.",
+    "summary": "Clinical summary",
+    "metrics": {
+      "referrals": "Total referrals",
+      "reports": "Finalized reports",
+      "pending": "Pending cases",
+      "messages": "Unread messages",
+      "referralsHint": "All referred cases",
+      "reportsHint": "Final reports available",
+      "pendingHint": "Awaiting completion",
+      "messagesHint": "Unread conversations"
+    },
     "tabs": {
-      "reports": "Reports",
-      "cases": "Cases",
-      "reports_tab": "Finalized Reports",
-      "messages": "Messages",
-      "order": "New Order"
+      "cases": "My cases",
+      "reports": "Finalized reports",
+      "order": "New order",
+      "messages": "Messages"
     },
     "cases": {
-      "search": "Search MRN or patient name...",
-      "allStatuses": "All Statuses",
+      "search": "Search by patient, MRN, or order...",
+      "allStatuses": "All statuses",
+      "emptyTitle": "No matching cases",
+      "emptyDescription": "New referrals and status changes will appear here.",
       "loading": "Loading cases...",
-      "emptyTitle": "No active cases",
-      "emptyDescription": "No cases match your filters.",
-      "patient": "Patient"
+      "patient": "Patient",
+      "mrn": "MRN",
+      "order": "Order #{{number}}",
+      "viewReport": "View report",
+      "clinical": "Clinical indication",
+      "resultCount": "{{count}} cases",
+      "clearSearch": "Clear search",
+      "clearFilters": "Clear filters"
     },
     "report": {
+      "titleFallback": "Radiology report",
+      "loading": "Loading report...",
+      "error": "The report could not be loaded. It may not be finalized yet.",
+      "download": "Download PDF",
+      "downloaded": "Report downloaded",
+      "downloadError": "The report PDF could not be downloaded",
+      "patientMrn": "Patient MRN",
       "modality": "Modality",
       "radiologist": "Radiologist",
       "finalized": "Finalized",
-      "clinical": "Clinical Indication",
-      "report": "Report Details"
+      "clinical": "Clinical indication",
+      "report": "Report"
+    },
+    "reports": {
+      "eyebrow": "Diagnostic archive",
+      "description": "Review and download consultant-finalized reports for your referred patients."
     },
     "order": {
-      "title": "New Order",
+      "eyebrow": "New referral",
+      "title": "Request a new examination",
+      "description": "Submit a referral order for your patient.",
+      "patientMrn": "Patient MRN",
+      "mrnPlaceholder": "e.g. PAT-00123",
+      "mrnHint": "Enter the medical record number registered at the center.",
+      "modality": "Modality",
+      "selectModality": "Select a modality...",
+      "date": "Preferred date",
+      "time": "Preferred time",
+      "contactPhone": "Contact phone",
+      "contactPhonePlaceholder": "Optional phone for scheduling",
+      "anyTime": "Any time",
+      "morning": "Morning (8am–12pm)",
+      "afternoon": "Afternoon (12pm–4pm)",
+      "evening": "Evening (4pm–7pm)",
+      "notes": "Clinical notes or indication",
+      "notesPlaceholder": "Describe the indication, symptoms, or relevant history...",
+      "clear": "Clear",
+      "submit": "Submit order request",
+      "submitting": "Submitting...",
       "mrnRequired": "Patient MRN is required",
-      "detailsRequired": "Exam modality or clinical notes required",
-      "success": "Order submitted successfully",
-      "error": "Failed to submit order"
+      "detailsRequired": "Enter a modality or clinical notes",
+      "success": "Examination order request submitted",
+      "error": "The order could not be submitted"
     },
     "messages": {
-      "success": "Message sent",
-      "error": "Failed to send message",
-      "subject": "Subject",
-      "body": "Message"
+      "secureThread": "Secure center thread",
+      "description": "Coordinate securely with reception and the radiology team about referred cases.",
+      "newReply": "New message reply from staff.",
+      "thread": "Message thread",
+      "loading": "Loading messages...",
+      "emptyTitle": "No messages yet",
+      "emptyDescription": "Use the form to send a message to center staff.",
+      "emptyFiltered": "No messages match the current search or sender filter.",
+      "search": "Search messages...",
+      "clearSearch": "Clear message search",
+      "you": "You",
+      "centerTeam": "Center team",
+      "filters": {
+        "all": "All",
+        "Staff": "Center",
+        "Doctor": "You"
+      },
+      "quickSubjects": {
+        "caseFollowUp": "Case follow-up",
+        "reportQuestion": "Report question",
+        "urgentScheduling": "Urgent scheduling"
+      },
+      "compose": "Send a message",
+      "subject": "Subject (optional)",
+      "subjectPlaceholder": "e.g. Follow-up on patient PAT-001",
+      "body": "Message",
+      "bodyPlaceholder": "Write your message to the radiology team...",
+      "linkedCase": "Linked to selected case.",
+      "send": "Send message",
+      "sending": "Sending...",
+      "success": "Message sent to center staff",
+      "error": "The message could not be sent",
+      "noteLabel": "Note:",
+      "note": "Messages are received by the center's administrative team. Expected response time is one to two business days."
+    },
+    "notifications": {
+      "eyebrow": "Clinical updates",
+      "description": "Track case status changes, report completion, and center updates.",
+      "newUpdate": "New portal update."
     }
   },
   "common": {
@@ -317,7 +407,8 @@
       "loading": "Loading invoices",
       "invoice": "Invoice",
       "due": "Due",
-      "balance": "Balance"
+      "balance": "Balance",
+      "downloadInvoice": "Download invoice"
     },
     "newValuePlaceholder": "New {{field}}...",
     "metrics": {
@@ -428,140 +519,6 @@
     "notifications": {
       "eyebrow": "Updates",
       "description": "Stay informed about appointments, reports, documents, and messages."
-    }
-  },
-  "doctor": {
-    "brand": "Physician portal",
-    "product": "VIARA Radiology",
-    "roleFallback": "Referring physician",
-    "heroTitle": "Clinical referral workspace",
-    "heroDescription": "Track referred cases, open finalized reports, submit new orders, and coordinate securely with the radiology center.",
-    "today": "Today",
-    "todayCases": "scheduled or active cases",
-    "caseDetail": "Case details",
-    "contrast": "Contrast",
-    "notRequired": "Not required",
-    "orderChecklistTitle": "Order checklist",
-    "orderChecklistMrn": "Confirm the patient MRN is already registered at the center.",
-    "orderChecklistClinical": "Include clinical indication, symptoms, and urgency.",
-    "orderChecklistScheduling": "Preferred date and time window help reception schedule faster.",
-    "summary": "Clinical summary",
-    "metrics": {
-      "referrals": "Total referrals",
-      "reports": "Finalized reports",
-      "pending": "Pending cases",
-      "messages": "Unread messages",
-      "referralsHint": "All referred cases",
-      "reportsHint": "Final reports available",
-      "pendingHint": "Awaiting completion",
-      "messagesHint": "Unread conversations"
-    },
-    "tabs": {
-      "cases": "My cases",
-      "reports": "Finalized reports",
-      "order": "New order",
-      "messages": "Messages"
-    },
-    "cases": {
-      "search": "Search by patient, MRN, or order...",
-      "allStatuses": "All statuses",
-      "emptyTitle": "No matching cases",
-      "emptyDescription": "New referrals and status changes will appear here.",
-      "loading": "Loading cases...",
-      "patient": "Patient",
-      "mrn": "MRN",
-      "order": "Order #{{number}}",
-      "viewReport": "View report",
-      "clinical": "Clinical indication",
-      "resultCount": "{{count}} cases",
-      "clearSearch": "Clear search",
-      "clearFilters": "Clear filters"
-    },
-    "report": {
-      "titleFallback": "Radiology report",
-      "loading": "Loading report...",
-      "error": "The report could not be loaded. It may not be finalized yet.",
-      "download": "Download PDF",
-      "downloaded": "Report downloaded",
-      "downloadError": "The report PDF could not be downloaded",
-      "patientMrn": "Patient MRN",
-      "modality": "Modality",
-      "radiologist": "Radiologist",
-      "finalized": "Finalized",
-      "clinical": "Clinical indication",
-      "report": "Report"
-    },
-    "reports": {
-      "eyebrow": "Diagnostic archive",
-      "description": "Review and download consultant-finalized reports for your referred patients."
-    },
-    "order": {
-      "eyebrow": "New referral",
-      "title": "Request a new examination",
-      "description": "Submit a referral order for your patient.",
-      "patientMrn": "Patient MRN",
-      "mrnPlaceholder": "e.g. PAT-00123",
-      "mrnHint": "Enter the medical record number registered at the center.",
-      "modality": "Modality",
-      "selectModality": "Select a modality...",
-      "date": "Preferred date",
-      "time": "Preferred time",
-      "contactPhone": "Contact phone",
-      "contactPhonePlaceholder": "Optional phone for scheduling",
-      "anyTime": "Any time",
-      "morning": "Morning (8am–12pm)",
-      "afternoon": "Afternoon (12pm–4pm)",
-      "evening": "Evening (4pm–7pm)",
-      "notes": "Clinical notes or indication",
-      "notesPlaceholder": "Describe the indication, symptoms, or relevant history...",
-      "clear": "Clear",
-      "submit": "Submit order request",
-      "submitting": "Submitting...",
-      "mrnRequired": "Patient MRN is required",
-      "detailsRequired": "Enter a modality or clinical notes",
-      "success": "Examination order request submitted",
-      "error": "The order could not be submitted"
-    },
-    "messages": {
-      "secureThread": "Secure center thread",
-      "description": "Coordinate securely with reception and the radiology team about referred cases.",
-      "newReply": "New message reply from staff.",
-      "thread": "Message thread",
-      "loading": "Loading messages...",
-      "emptyTitle": "No messages yet",
-      "emptyDescription": "Use the form to send a message to center staff.",
-      "emptyFiltered": "No messages match the current search or sender filter.",
-      "search": "Search messages...",
-      "clearSearch": "Clear message search",
-      "you": "You",
-      "centerTeam": "Center team",
-      "filters": {
-        "all": "All",
-        "Staff": "Center",
-        "Doctor": "You"
-      },
-      "quickSubjects": {
-        "caseFollowUp": "Case follow-up",
-        "reportQuestion": "Report question",
-        "urgentScheduling": "Urgent scheduling"
-      },
-      "compose": "Send a message",
-      "subject": "Subject (optional)",
-      "subjectPlaceholder": "e.g. Follow-up on patient PAT-001",
-      "body": "Message",
-      "bodyPlaceholder": "Write your message to the radiology team...",
-      "linkedCase": "Linked to selected case.",
-      "send": "Send message",
-      "sending": "Sending...",
-      "success": "Message sent to center staff",
-      "error": "The message could not be sent",
-      "noteLabel": "Note:",
-      "note": "Messages are received by the center's administrative team. Expected response time is one to two business days."
-    },
-    "notifications": {
-      "eyebrow": "Clinical updates",
-      "description": "Track case status changes, report completion, and center updates.",
-      "newUpdate": "New portal update."
     }
   }
 }

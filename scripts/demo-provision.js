@@ -63,7 +63,15 @@ const SECRET_KEYS = [
 
 // Required by docker-compose (`:?`) and baked into the frontend image at build
 // time, so they must be re-pointed at the demo's own ports.
-const REQUIRED_URL_KEYS = ['VITE_OHIF_URL', 'PORTAL_PUBLIC_URL'];
+const REQUIRED_URL_KEYS = [
+    'CLIENT_URL',
+    'PORTAL_CLIENT_URL',
+    'ALLOWED_ORIGINS',
+    'WEBAUTHN_ORIGIN',
+    'WEBAUTHN_RP_ID',
+    'VITE_OHIF_URL',
+    'PORTAL_PUBLIC_URL',
+];
 
 const generateSecrets = () => Object.fromEntries(
     SECRET_KEYS.map((k) => [k, crypto.randomBytes(32).toString('hex')])
@@ -160,9 +168,16 @@ function writeEnvFile(project, lease, licenseKey) {
     // These two are required by docker-compose (`:?`) and are baked into the
     // frontend at build time, so they must point at the demo's own ports rather
     // than the main stack's.
+    const frontendUrl = demoUrl('FRONTEND_PORT', 'http');
+    const portalUrl = demoUrl('PORTAL_PORT', 'http');
     const urlLines = [
+        `CLIENT_URL=${frontendUrl}`,
+        `PORTAL_CLIENT_URL=${portalUrl}`,
+        `ALLOWED_ORIGINS=${frontendUrl},${portalUrl}`,
+        `WEBAUTHN_ORIGIN=${frontendUrl}`,
+        'WEBAUTHN_RP_ID=localhost',
         `VITE_OHIF_URL=${demoUrl('OHIF_PORT', 'http')}`,
-        `PORTAL_PUBLIC_URL=${demoUrl('PORTAL_PORT', 'http')}`,
+        `PORTAL_PUBLIC_URL=${portalUrl}`,
     ];
 
     // Host-side URL, used by the seed and by any operator tooling. The compose
@@ -176,6 +191,7 @@ function writeEnvFile(project, lease, licenseKey) {
     const demoLines = [
         `VIARA_DEMO_PROJECT=${project}`,
         `VIARA_DEMO_CUSTOMER=${lease.customerId}`,
+        `VIARA_DEMO_CUSTOMER_NAME=${lease.displayName}`,
         `DATABASE_URL=${databaseUrl}`,
         `LICENSE_KEY=${licenseKey}`,
     ];
@@ -264,16 +280,21 @@ function cmdProvision(opts) {
     if (!customer || customer === true) {
         throw new Error('--customer <name> is required');
     }
+    if (opts['display-name'] === true) {
+        throw new Error('--display-name requires a value');
+    }
 
     const days = Number(opts.days || 14);
     const maxUsers = Number(opts['max-users'] || opts.maxUsers || 3);
     const lease = store.createLease({
         customerId: customer,
+        displayName: opts['display-name'],
         contactEmail: opts.email === true ? undefined : opts.email,
         days,
     });
 
-    process.stdout.write(`Provisioned lease ${lease.project} (${days} days, expires ${lease.expiresAt.slice(0, 10)})\n`);
+    const label = lease.displayName ? ` for ${lease.displayName}` : '';
+    process.stdout.write(`Provisioned lease ${lease.project}${label} (${days} days, expires ${lease.expiresAt.slice(0, 10)})\n`);
 
     // Start the stack. On failure the lease stays in `reclaim_requested` so the
     // reaper tears the partial stack down rather than leaking it.
@@ -285,14 +306,21 @@ function cmdProvision(opts) {
 
         const envFile = writeEnvFile(lease.project, lease, licenseKey);
         process.stdout.write('Starting stack...\n');
-        compose(lease.project, ['up', '-d'], { envFile });
+
+        // Bring up the database and cache first and wait for health before
+        // running the one-shot migration container. Some Docker engines report
+        // a dependency as started before Postgres is accepting connections.
+        compose(lease.project, ['up', '-d', '--wait', 'postgres', 'redis'], { envFile });
+        process.stdout.write('Applying database migrations...\n');
+        compose(lease.project, ['up', 'migrate'], { envFile });
+        compose(lease.project, ['up', '-d', 'backend', 'frontend', 'portal', 'orthanc', 'ohif'], { envFile });
 
         // The compose `migrate` service has applied every migration by the time
         // `up -d` returns, so the database is ready to receive demo data.
         process.stdout.write('Loading demo dataset...\n');
         runSeed(envFile);
 
-        process.stdout.write(`\nReady: ${lease.project}\nEnv file: ${envFile}\n`);
+        process.stdout.write(`\nReady: ${lease.project}${label}\nEnv file: ${envFile}\n`);
         process.stdout.write('Portal accounts: admin@VIARA.com and 15 more, all using the demo password.\n');
     } catch (err) {
         store.markReclaimRequested(customer);
@@ -309,12 +337,13 @@ function cmdList() {
     }
     const now = new Date();
     const rows = leases.map((l) => [
+        l.displayName || l.customerId,
         l.customerId,
         l.project,
         l.status,
         String(store.daysRemaining(l, now)),
     ]);
-    const head = ['CUSTOMER', 'PROJECT', 'STATUS', 'DAYS LEFT'];
+    const head = ['CUSTOMER', 'CUSTOMER ID', 'PROJECT', 'STATUS', 'DAYS LEFT'];
     const width = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i].length)));
     const line = (cells) => cells.map((c, i) => c.padEnd(width[i])).join('  ');
     process.stdout.write(`${line(head)}\n${line(width.map((w) => '-'.repeat(w)))}\n`);
@@ -355,6 +384,8 @@ function cmdReclaim(opts, { assumeYes }) {
     // Both the project flag and the ownership guard are required. Volumes are
     // removed so a reclaimed demo does not leave patient data on disk.
     composeQuiet(lease.project, ['down', '--volumes', '--remove-orphans']);
+    const envFile = path.join(ROOT, 'scratch', 'demos', `${lease.project}.env`);
+    fs.rmSync(envFile, { force: true });
 
     store.markReclaimed(customer);
     auditLog('RECLAIM', { project: lease.project, customer: lease.customerId, at: isoNow() });

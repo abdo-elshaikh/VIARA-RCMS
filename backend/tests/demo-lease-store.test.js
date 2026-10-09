@@ -94,6 +94,7 @@ describe('demoLeaseStore', () => {
         test('records the customer, project, and expiry window', () => {
             const lease = store.createLease({
                 customerId: 'Acme',
+                displayName: 'Acme Radiology',
                 contactEmail: 'sales@acme.test',
                 days: 14,
                 ledgerPath,
@@ -105,6 +106,7 @@ describe('demoLeaseStore', () => {
             expect(lease.createdAt).toBe(NOW.toISOString());
             expect(new Date(lease.expiresAt).getTime()).toBe(NOW.getTime() + 14 * store.ISO_DAY_MS);
             expect(lease.contactEmail).toBe('sales@acme.test');
+            expect(lease.displayName).toBe('Acme Radiology');
         });
 
         test('refuses a second active demo for the same customer', () => {
@@ -114,11 +116,21 @@ describe('demoLeaseStore', () => {
         });
 
         test('allows re-provisioning after a previous demo was reclaimed', () => {
-            store.createLease({ customerId: 'Acme', ledgerPath, now: NOW });
+            const first = store.createLease({ customerId: 'Acme', ledgerPath, now: NOW });
             store.markReclaimed('Acme', { ledgerPath, now: NOW });
 
             const second = store.createLease({ customerId: 'Acme', ledgerPath, now: NOW });
             expect(second.status).toBe(store.STATUS.ACTIVE);
+            expect(store.getLease('Acme', { ledgerPath })).toEqual(second);
+            expect(store.assertOwnedProject(first.project, { ledgerPath })).toBe(first.project);
+
+            store.markReclaimRequested('Acme', { ledgerPath });
+            store.markReclaimed('Acme', { ledgerPath, now: NOW });
+            const leases = store.listLeases({ ledgerPath });
+            expect(leases.map(lease => lease.status)).toEqual([
+                store.STATUS.RECLAIMED,
+                store.STATUS.RECLAIMED,
+            ]);
         });
 
         test('requires a customer reference and a positive window', () => {

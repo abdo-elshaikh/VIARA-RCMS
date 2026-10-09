@@ -1,7 +1,0 @@
-{
-  "name": "frontend-lint",
-  "command": "npm.cmd run lint",
-  "exitCode": 0,
-  "signal": null,
-  "durationSeconds": 24.679
-}

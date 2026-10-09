@@ -95,6 +95,65 @@ describe('PACS controller authorization', () => {
         );
     });
 
+    it('fails closed before proxying a study when required view audit persistence fails', async () => {
+        writeAudit.mockRejectedValueOnce(Object.assign(new Error('audit unavailable'), { statusCode: 503 }));
+        const db = { query: jest.fn(async () => ({ rows: [] })) };
+        const req = {
+            method: 'GET',
+            params: { 0: 'dicom-web', 1: '/studies/1.2.30/metadata' },
+            query: {},
+            originalUrl: '/api/pacs/dicom-web/studies/1.2.30/metadata?patient=private',
+            authType: 'pacs_viewer_cookie',
+            user: { role: 'Radiologist', user_id: 'user-1', study_instance_uids: ['1.2.30'] },
+            headers: {},
+            setTimeout: jest.fn()
+        };
+        const next = jest.fn();
+
+        await dicomWebProxy(db)(req, makeRes(), next);
+
+        expect(writeAudit).toHaveBeenCalledWith(db, expect.objectContaining({
+            eventType: 'IMAGE_VIEW',
+            studyInstanceUid: '1.2.30',
+            required: true,
+            requestPath: '/api/pacs/dicom-web/studies/:studyUid'
+        }));
+        expect(proxyToOrthanc).not.toHaveBeenCalled();
+        expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 503 });
+    });
+
+    it('audits broad study searches before forwarding their query to Orthanc', async () => {
+        const db = { query: jest.fn(async () => ({ rows: [] })) };
+        const req = {
+            method: 'GET',
+            params: { 0: 'dicom-web', 1: '/studies' },
+            query: { PatientID: 'private-patient-id' },
+            originalUrl: '/api/pacs/dicom-web/studies?PatientID=private-patient-id',
+            authType: 'jwt',
+            user: {
+                role: 'Admin',
+                user_id: 'admin-1',
+                emergencyAccessId: 'break-glass-1',
+                elevatedPermissions: ['VIEW_PACS_IMAGES'],
+                breakGlassExpiry: Date.now() + 60000
+            },
+            headers: {},
+            setTimeout: jest.fn()
+        };
+        const next = jest.fn();
+
+        await dicomWebProxy(db)(req, makeRes(), next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(writeAudit).toHaveBeenCalledWith(db, expect.objectContaining({
+            eventType: 'PACS_STUDY_SEARCH',
+            required: true,
+            requestPath: '/api/pacs/dicom-web/studies',
+            detail: { path: '/api/pacs/dicom-web/studies' }
+        }));
+        expect(proxyToOrthanc).toHaveBeenCalledWith(req, expect.any(Object), '/dicom-web/studies');
+    });
+
     it('returns an empty safe study list for scoped viewer patient-level browse requests', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {

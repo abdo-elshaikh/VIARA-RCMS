@@ -122,6 +122,9 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: portal/package-lock.json
+      - name: Verify public portal API policy
+        working-directory: .
+        run: node scripts/generate-portal-api-policy.cjs --check
       - run: npm ci
       - name: Typecheck
         run: npm run typecheck

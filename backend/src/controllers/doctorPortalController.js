@@ -103,7 +103,8 @@ const doctorLogin = (db) => async (req, res, next) => {
     try {
         const { email, password } = req.body;
 
-        if (!email || !password) {
+        if (typeof email !== 'string' || !email.trim() || email.length > 254
+            || typeof password !== 'string' || !password || Buffer.byteLength(password, 'utf8') > 72) {
             return next(new AppError('Email and password are required', 400));
         }
 
@@ -118,6 +119,7 @@ const doctorLogin = (db) => async (req, res, next) => {
             && new Date(doctor.portal_locked_until) > new Date();
         const canAuthenticate = doctor
             && doctor.portal_password_hash
+            && doctor.is_active === true
             && doctor.portal_is_active
             && !isLocked;
 
@@ -141,7 +143,7 @@ const doctorLogin = (db) => async (req, res, next) => {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
-            path: '/api/auth',
+            path: '/api/portal',
             maxAge: 7 * 24 * 60 * 60 * 1000
         });
 

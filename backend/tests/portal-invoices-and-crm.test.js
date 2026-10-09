@@ -1,7 +1,7 @@
 const { getMyInvoices } = require('../src/controllers/portalController');
 
 describe('Patient Portal Invoices & CRM Verification', () => {
-    test('getMyInvoices queries invoices by patient_id, appointment patient, or exam patient', async () => {
+    test('getMyInvoices requires invoice ownership and consistent linked patients', async () => {
         const mockRows = [
             {
                 invoice_id: 'inv-001',
@@ -34,10 +34,12 @@ describe('Patient Portal Invoices & CRM Verification', () => {
         const sql = mockDb.query.mock.calls[0][0];
         const params = mockDb.query.mock.calls[0][1];
 
-        // Verifies the query joins appointments & examinations and searches across patient IDs
+        // Conflicting linked patient identities must never broaden invoice ownership.
         expect(sql).toContain('LEFT JOIN appointments a');
         expect(sql).toContain('LEFT JOIN examinations e');
-        expect(sql).toContain('(i.patient_id = $1::uuid OR a.patient_id = $1::uuid OR e.patient_id = $1::uuid)');
+        expect(sql).toContain('i.patient_id = $1::uuid');
+        expect(sql).toContain('(a.patient_id IS NULL OR a.patient_id = $1::uuid)');
+        expect(sql).toContain('(e.patient_id IS NULL OR e.patient_id = $1::uuid)');
         expect(sql).toContain("i.invoice_status != 'Voided'");
         expect(params).toEqual([req.user.userId]);
 

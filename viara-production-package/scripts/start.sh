@@ -2,7 +2,7 @@
 # =============================================================================
 # VIARA RCMS — Pinned-image launcher for a supported Linux host
 # =============================================================================
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_DIR="$(dirname "$SCRIPT_DIR")"
@@ -34,7 +34,7 @@ fi
 if [ ! -f ".env" ]; then
     if [ -f ".env.example" ]; then
         echo "⚠️  .env file not found. Generating from .env.example..."
-        cp .env.example .env
+        bash "$SCRIPT_DIR/initialize-env.sh" .env.example .env
     else
         echo "❌ Error: .env file missing."
         exit 1
@@ -50,13 +50,47 @@ if ! docker compose config --quiet; then
     exit 1
 fi
 
-if docker compose config --images | grep -qvE '@sha256:[[:xdigit:]]{64}$'; then
+release_images=$(docker compose config --images)
+image_pattern='@sha256:[[:xdigit:]]{64}$'
+if [ -d images ]; then image_pattern='(^sha256:|@sha256:)[[:xdigit:]]{64}$'; fi
+if [ -z "$release_images" ] || printf '%s\n' "$release_images" | grep -qvE "$image_pattern"; then
     echo "❌ Error: Every service image must use its vendor-approved sha256 digest."
     exit 1
 fi
 
+if [ -d "images" ]; then
+    shopt -s nullglob
+    image_archives=(images/*.tar)
+    if [ "${#image_archives[@]}" -eq 0 ]; then
+        echo "❌ Error: images/ exists but contains no offline image archives."
+        exit 1
+    fi
+    for archive in "${image_archives[@]}"; do
+        checksum_file="${archive}.sha256"
+        if [ ! -f "$checksum_file" ]; then
+            echo "❌ Error: Offline image checksum is missing: $checksum_file"
+            exit 1
+        fi
+        expected_checksum="$(awk '{print $1}' "$checksum_file")"
+        actual_checksum="$(sha256sum "$archive" | awk '{print $1}')"
+        if [ -z "$expected_checksum" ] || [ "$expected_checksum" != "$actual_checksum" ]; then
+            echo "❌ Error: Offline image checksum verification failed: $archive"
+            exit 1
+        fi
+        echo "📦 Loading verified offline image archive: $(basename "$archive")"
+        docker load --input "$archive"
+    done
+fi
+
 echo "📦 Starting VIARA services..."
-docker compose up -d
+mkdir -p pacs-worklists
+docker compose run --rm --no-deps --user 0 --entrypoint sh backend -c 'chown 1000:1000 /app/pacs-worklists && chmod 750 /app/pacs-worklists'
+if [ -d images ]; then
+    while IFS= read -r image; do docker image inspect "$image" >/dev/null; done <<< "$release_images"
+    docker compose up -d --pull never
+else
+    docker compose up -d
+fi
 
 echo ""
 echo "⏳ Waiting for services to initialize and become healthy..."

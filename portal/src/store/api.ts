@@ -175,7 +175,7 @@ export const api = createApi({
   ],
   endpoints: (builder) => ({
     logout: builder.mutation<any, undefined>({
-      query: () => ({ url: "/auth/logout", method: "POST" }),
+      query: () => ({ url: "/portal/auth/logout", method: "POST" }),
     }),
 
     changePassword: builder.mutation<any, { currentPassword: string; newPassword: string }>({
@@ -211,7 +211,10 @@ export const api = createApi({
       providesTags: ["PortalDocuments"],
     }),
     downloadPortalDocument: builder.query<any, string>({
-      query: (documentId) => `/portal/documents/${documentId}/download`,
+      query: (documentId) => ({
+        url: `/portal/documents/${encodeURIComponent(documentId)}/download`,
+        responseHandler: (response: Response) => response.blob(),
+      }),
     }),
     getMyAppointmentRequests: builder.query<any, void>({
       query: () => "/portal/appointment-requests",

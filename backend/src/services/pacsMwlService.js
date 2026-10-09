@@ -93,8 +93,7 @@ const fetchScheduledWorklist = async (pool, options = {}) => {
 
     // Auto-create missing examination rows for scheduled appointments (only when generating/syncing)
     if (autoProvision) {
-        try {
-            await pool.query(`
+        await pool.query(`
                 INSERT INTO examinations (
                     appointment_id, patient_id, modality_id, exam_type_id,
                     status, queue_stage, order_number, priority, clinical_indication
@@ -111,9 +110,6 @@ const fetchScheduledWorklist = async (pool, options = {}) => {
                       SELECT 1 FROM examinations e WHERE e.appointment_id = a.appointment_id
                   )
             `);
-        } catch (err) {
-            logger.warn('MWL: Auto-provisioning examinations for appointments failed silently', { error: err.message });
-        }
     }
 
     const values = [];
@@ -240,29 +236,36 @@ const buildWorklistBuffer = (row, serverAet) => {
  * replace the Orthanc worklist plugin without changing this producer.
  */
 const regenerateWorklists = async (pool) => {
-    fs.mkdirSync(WORKLIST_DIR, { recursive: true });
-
     const serverAet = await settingsService.get('pacs_server_aet', process.env.ORTHANC_AET || 'MiPACS2');
     const rows = await fetchScheduledWorklist(pool, { autoProvision: true });
-    const expected = new Set();
-    let written = 0;
+    const entries = rows.map((row) => {
+        const orderNumber = String(row.order_number || '').trim();
+        if (!orderNumber) throw new Error('MWL row is missing its accession/order number');
+        const validation = validateWorklistRow(row);
+        if (!validation.valid) {
+            throw new Error(`MWL row is invalid: ${validation.warnings.join('; ')}`);
+        }
+        const fileName = `${orderNumber.replace(/[^A-Za-z0-9_-]/g, '_')}.wl`;
+        return { fileName, buffer: buildWorklistBuffer(row, serverAet), orderNumber };
+    });
+    const expected = new Set(entries.map(({ fileName }) => fileName));
+    if (expected.size !== entries.length) throw new Error('MWL rows contain duplicate accession numbers');
 
-    for (const row of rows) {
-        // Accession numbers are filesystem-safe (alphanumeric order numbers), but sanitize defensively.
-        const fileName = `${String(row.order_number).replace(/[^A-Za-z0-9_-]/g, '_')}.wl`;
-        expected.add(fileName);
+    fs.mkdirSync(WORKLIST_DIR, { recursive: true });
+    for (const { fileName, buffer, orderNumber } of entries) {
+        const target = path.join(WORKLIST_DIR, fileName);
+        const temporary = target + '.' + require('crypto').randomUUID() + '.tmp';
         try {
-            const buffer = buildWorklistBuffer(row, serverAet);
-            const target = path.join(WORKLIST_DIR, fileName);
-            const temporary = target + '.' + require('crypto').randomUUID() + '.tmp';
-            try { fs.writeFileSync(temporary, buffer, { flag: 'wx', mode: 0o600 }); fs.renameSync(temporary, target); }
-            finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
-            written += 1;
-        } catch (err) {
-            logger.error('Failed to write worklist entry', {
-                order_number: row.order_number,
-                error: err.message
+            fs.writeFileSync(temporary, buffer, { flag: 'wx', mode: 0o600 });
+            fs.renameSync(temporary, target);
+        } catch (error) {
+            logger.error('Failed to write worklist entry; stale entries were retained', {
+                order_number: orderNumber,
+                error: error.message
             });
+            throw error;
+        } finally {
+            if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
         }
     }
 
@@ -275,8 +278,8 @@ const regenerateWorklists = async (pool) => {
         }
     }
 
-    logger.info(`MWL regenerated: ${written} scheduled, ${pruned} pruned`, { dir: WORKLIST_DIR });
-    return { written, pruned };
+    logger.info(`MWL regenerated: ${entries.length} scheduled, ${pruned} pruned`, { dir: WORKLIST_DIR });
+    return { written: entries.length, pruned };
 };
 
 let mwlRegenTimeout = null;

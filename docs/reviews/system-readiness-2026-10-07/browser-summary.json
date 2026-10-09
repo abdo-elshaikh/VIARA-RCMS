@@ -1,9 +1,0 @@
-{
-  "cases": 60,
-  "layoutFailures": [],
-  "runtimeErrors": [],
-  "accessibilityRules": [
-    "color-contrast"
-  ],
-  "offlineNotice": true
-}

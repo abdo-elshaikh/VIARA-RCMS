@@ -5,8 +5,7 @@
 
 import type { PortalNotificationEnvelope, PortalNotificationPageParams } from "../store/api";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "/api";
 
 export class ApiError extends Error {
   status: number;
@@ -226,10 +225,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 async function downloadBlob(endpoint: string): Promise<Blob> {
-  const token = getAuthToken();
-  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const res = await fetchWithAuthRetry(endpoint);
   if (!res.ok) throw new ApiError(`Download failed (${res.status})`, res.status);
   return res.blob();
 }
@@ -355,7 +351,9 @@ export async function sendPatientChatMessage(body: string, appointmentId?: strin
 
 export async function downloadReportPdf(examId: string): Promise<Blob | null> {
   try {
-    return await downloadBlob(`/exams/${encodeURIComponent(examId)}/report/pdf?customize=false`);
+    return await downloadBlob(
+      `/exams/${encodeURIComponent(examId)}/report/pdf?format=pdf&customize=false`,
+    );
   } catch {
     return null;
   }
@@ -363,7 +361,7 @@ export async function downloadReportPdf(examId: string): Promise<Blob | null> {
 
 export async function downloadInvoicePdf(invoiceId: string): Promise<Blob | null> {
   try {
-    return await downloadBlob(`/invoices/${encodeURIComponent(invoiceId)}/pdf`);
+    return await downloadBlob(`/portal/invoices/${encodeURIComponent(invoiceId)}/pdf`);
   } catch {
     return null;
   }
@@ -371,10 +369,8 @@ export async function downloadInvoicePdf(invoiceId: string): Promise<Blob | null
 
 export async function downloadPatientDocument(documentId: string): Promise<Blob | null> {
   try {
-    const token = getAuthToken();
-    const res = await fetch(
-      `${API_BASE_URL}/portal/documents/${encodeURIComponent(documentId)}/download`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    const res = await fetchWithAuthRetry(
+      `/portal/documents/${encodeURIComponent(documentId)}/download`,
     );
     if (!res.ok) throw new ApiError(`Download failed (${res.status})`, res.status);
 
@@ -383,10 +379,12 @@ export async function downloadPatientDocument(documentId: string): Promise<Blob 
 
     const metadata = (await res.json()) as { file_url?: string };
     if (!metadata.file_url) return null;
-    const backendOrigin = API_BASE_URL.replace(/\/api\/?$/, "");
+    const backendOrigin = new URL(API_BASE_URL, window.location.origin).origin;
     const fileUrl = new URL(metadata.file_url, `${backendOrigin}/`).toString();
+    // A document URL must never send the portal bearer token to another origin.
+    if (new URL(fileUrl).origin !== backendOrigin) return null;
     const fileRes = await fetch(fileUrl, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
     });
     if (!fileRes.ok) throw new ApiError(`Download failed (${fileRes.status})`, fileRes.status);
     return await fileRes.blob();
@@ -448,7 +446,9 @@ export async function sendDoctorMessageApi(
 
 export async function downloadDoctorReportPdf(examId: string): Promise<Blob | null> {
   try {
-    return await downloadBlob(`/doctor-portal/reports/${encodeURIComponent(examId)}/pdf`);
+    return await downloadBlob(
+      `/doctor-portal/reports/${encodeURIComponent(examId)}/pdf?format=pdf`,
+    );
   } catch {
     return null;
   }

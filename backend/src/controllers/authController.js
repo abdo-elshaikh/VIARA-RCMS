@@ -14,6 +14,7 @@ const { attachActiveEmergencyClaims } = require('../services/emergencyAccessServ
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 const { assertQuota, withQuotaTransaction } = require('../services/quotaService');
 const { getStaffOrigin } = require('../config/publicOrigin');
+const { revokeRefreshSession } = require('../services/sessionRevocationService');
 
 // 12 rounds per current OWASP guidance for medical systems; existing hashes
 // embed their own cost factor so verification of old hashes is unaffected.
@@ -365,6 +366,11 @@ const refresh = (db) => async (req, res, next) => {
 
         const tokenData = result.rows[0];
 
+        // Check the authentication realm before any stale-session/reuse mutation.
+        if (Boolean(tokenData.user_id) === isPortalClient) {
+            return next(new AppError('Refresh token does not belong to this authentication endpoint', 403));
+        }
+
         const genericOwnerId = tokenData.user_id || tokenData.patient_id || tokenData.doctor_id;
 
         // A refresh token is valid only for the exact login session that issued
@@ -517,7 +523,7 @@ const refresh = (db) => async (req, res, next) => {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: isPortalClient ? 'strict' : (process.env.NODE_ENV === 'production' ? 'strict' : 'lax'),
-            path: '/api/auth',
+            path: isPortalClient ? '/api/portal' : '/api/auth',
             maxAge: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
         };
 
@@ -572,7 +578,7 @@ const logout = (db) => async (req, res, next) => {
         if (match) {
             const rawToken = match[1];
             const refreshHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-            await db.query(`UPDATE refresh_tokens SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'logout' WHERE token_hash = $1`, [refreshHash]);
+            await revokeRefreshSession(db, refreshHash, isPortalClient);
         }
         // Immediate access-token invalidation (SEC-007): clearing the owner's
         // current_session_id makes the per-request single-session check in
@@ -588,16 +594,16 @@ const logout = (db) => async (req, res, next) => {
                 // resolution (its module-level constant is a snapshot of the
                 // same env variable). Best-effort — failures are ignored.
                 const user = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
-                if (user?.session_id) {
+                if (user?.session_id && isPortalClient === ['Patient', 'Doctor'].includes(user.role)) {
                     if (user.user_id) {
                         await db.query(
                             'UPDATE users SET current_session_id = NULL WHERE user_id = $1 AND current_session_id = $2',
                             [user.user_id, user.session_id]
                         );
-                    } else if (user.patientId || user.patient_id) {
+                    } else if (user.patientId || user.patient_id || (user.role === 'Patient' && user.userId)) {
                         await db.query(
                             'UPDATE patients SET current_session_id = NULL WHERE patient_id = $1 AND current_session_id = $2',
-                            [user.patientId || user.patient_id, user.session_id]
+                            [user.patientId || user.patient_id || user.userId, user.session_id]
                         );
                     } else if (user.doctorId || user.doctor_id) {
                         await db.query(
@@ -612,14 +618,14 @@ const logout = (db) => async (req, res, next) => {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: isPortalClient ? 'strict' : (process.env.NODE_ENV === 'production' ? 'strict' : 'lax'),
-            path: '/api/auth'
+            path: isPortalClient ? '/api/portal' : '/api/auth'
         });
         if (isPortalClient) {
             res.clearCookie('portalRefreshToken', {
                 httpOnly: true,
                 secure: process.env.NODE_ENV === 'production',
                 sameSite: 'strict',
-                path: '/api/portal'
+                path: '/api/auth'
             });
         }
         res.clearCookie('pacs_viewer_token', { path: '/api/pacs', httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' });

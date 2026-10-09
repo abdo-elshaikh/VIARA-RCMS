@@ -4,6 +4,10 @@ server {
 
     root /usr/share/nginx/html;
     index index.html;
+    location = /runtime-config.js {
+        expires -1;
+        try_files $uri =404;
+    }
 
     gzip on;
     gzip_vary on;
