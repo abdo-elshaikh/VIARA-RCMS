@@ -3,7 +3,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {pathToFileURL}=require('node:url');
 const {chromium}=require('../scratch/start-here-tools/node_modules/playwright-core');
 const {default:AxeBuilder}=require('../scratch/start-here-tools/node_modules/@axe-core/playwright');
-const root=path.resolve(__dirname,'..'),output=path.join(root,'docs/reviews/start-here-2026-10-09');
+const root=path.resolve(__dirname,'..'),output=process.env.VIARA_START_HERE_REVIEW_DIR
+ ? path.resolve(process.env.VIARA_START_HERE_REVIEW_DIR)
+ : path.join(root,'docs/reviews/start-here-2026-10-09');
 const html=path.join(root,'viara-production-package/00_ابدأ_من_هنا_START_HERE.html');
 async function main(){
  fs.mkdirSync(output,{recursive:true});

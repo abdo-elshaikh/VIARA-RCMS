@@ -87,6 +87,15 @@ async function main() {
     const auth=await fetch(`http://127.0.0.1:${ports.PORTAL_PORT}/api/portal/profile`);
     if(auth.status!==401) throw Error('Portal did not enforce authentication');
     const auditChecks = [];
+    const csrfResponse = await fetch(`http://127.0.0.1:${ports.BACKEND_PORT}/api/csrf-token`);
+    const csrfCookie = csrfResponse.headers.getSetCookie().find(value=>value.startsWith('csrf_token='))?.split(';')[0];
+    if(!csrfResponse.ok || !csrfCookie) throw Error('CSRF bootstrap failed');
+    const csrfToken = csrfCookie.slice('csrf_token='.length);
+    const rejectedMutation = await fetch(`http://127.0.0.1:${ports.BACKEND_PORT}/api/public/case-status/verify`,{
+        method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(5000)
+    });
+    if(rejectedMutation.status!==403) throw Error('Public mutation did not enforce CSRF');
+    auditChecks.push({route:'public mutation without CSRF',status:403,passed:true});
     for (const [route, expected] of [
         ['/api/public/case-status/verify',400],
         ['/api/public/case-status/status',400],
@@ -94,7 +103,7 @@ async function main() {
         ['/api/public/final-report',401]
     ]) {
         const result = await fetch(`http://127.0.0.1:${ports.BACKEND_PORT}${route}`, {
-            method:'POST',headers:{'Content-Type':'application/json'},body:'{}',
+            method:'POST',headers:{'Content-Type':'application/json','Cookie':csrfCookie,'x-csrf-token':csrfToken},body:'{}',
             signal:AbortSignal.timeout(5000)
         });
         if(result.status!==expected) throw Error(`Public audit contract ${route}: ${result.status}, expected ${expected}`);
@@ -103,8 +112,16 @@ async function main() {
     const invalidToken = await fetch(`http://127.0.0.1:${ports.BACKEND_PORT}/api/public/final-report/invalid-synthetic-token`,{signal:AbortSignal.timeout(5000)});
     if(invalidToken.status!==401) throw Error('Invalid final report token was not denied promptly');
     auditChecks.push({route:'/api/public/final-report/:accessToken',status:invalidToken.status,passed:true});
+    let backupRoundtrip = null;
+    if(process.env.VIARA_TEST_BACKUP_ROUNDTRIP==='1') {
+        const code = fs.readFileSync(path.join(root,'scripts/fixtures/audit-backup-roundtrip.cjs'),'utf8');
+        const output = compose(['exec','-T','-e','VIARA_AUDIT_SYNTHETIC=1','backend','node','-e',code]);
+        const marker = output.split('\n').find(line=>line.startsWith('AUDIT_BACKUP_RESULT='));
+        if(!marker) throw Error('Backup roundtrip result missing');
+        backupRoundtrip = JSON.parse(marker.slice('AUDIT_BACKUP_RESULT='.length));
+    }
     const statuses=compose(['ps','--format','json']);
-    fs.writeFileSync(path.join(testDir,'result.json'),JSON.stringify({passed:true,project,checks:['fresh schema and migrations','container readiness','first administrator creation and login','existing accounts preserved','runtime portal origin','portal staff denial','portal authentication'],auditChecks,testLicensePublicKeyOverride:true,statuses:statuses.trim().split('\n').map(line=>{const s=JSON.parse(line);return {service:s.Service,state:s.State,health:s.Health};})},null,2));
+    fs.writeFileSync(path.join(testDir,'result.json'),JSON.stringify({passed:true,project,checks:['fresh schema and migrations','container readiness','first administrator creation and login','existing accounts preserved','runtime portal origin','portal staff denial','portal authentication'],auditChecks,backupRoundtrip,testLicensePublicKeyOverride:true,statuses:statuses.trim().split('\n').map(line=>{const s=JSON.parse(line);return {service:s.Service,state:s.State,health:s.Health};})},null,2));
     console.log(`PASS: release container checks; isolated synthetic license and database. Results: ${testDir}`);
 }
 main().catch(error=>{ console.error(error.message); if(launched){const logs=spawnSync('docker',[...args,'logs','--no-color','--tail','60'],{encoding:'utf8'});fs.writeFileSync(path.join(testDir,'failure.log'),(logs.stdout||'')+(logs.stderr||''));}process.exitCode=1; }).finally(()=>{
