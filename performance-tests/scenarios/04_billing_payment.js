@@ -4,6 +4,7 @@
  */
 
 const crypto = require('crypto');
+const { paymentIntegrity } = require('../lib/paymentIntegrity');
 
 async function runBillingPaymentScenario({ vuId, userPool, metricsCollector }) {
     const scenario = '04_billing_payment';
@@ -24,12 +25,18 @@ async function runBillingPaymentScenario({ vuId, userPool, metricsCollector }) {
 
     const rawInvoices = Array.isArray(res.data) ? res.data : (res.data?.data || []);
     const payableInvoices = rawInvoices.filter(i => !i.contrast_required && i.invoice_status !== 'Voided' && i.invoice_status !== 'Paid');
-    const invoices = payableInvoices.length ? payableInvoices : rawInvoices;
+    const invoices = payableInvoices;
     const invoice = invoices[vuId % (invoices.length || 1)];
+
+    if (!invoice?.invoice_id) {
+        metricsCollector.record({scenario,action:'Payable invoice fixture required',method:'POST',endpoint:'/api/invoices/:id/payment',duration:0,status:0,ok:false,error:'No payable synthetic invoice; payment journey was not executed'});
+        return;
+    }
 
     if (invoice && invoice.invoice_id) {
         // 2. Lookup Invoice Details
         res = await client.get(`/api/invoices/${invoice.invoice_id}`);
+        const before = res.data;
         metricsCollector.record({
             scenario,
             action: 'Lookup Invoice Details',
@@ -61,10 +68,11 @@ async function runBillingPaymentScenario({ vuId, userPool, metricsCollector }) {
             endpoint: '/api/invoices/:id/payment',
             duration: res.duration,
             status: res.status,
-            // 200/201 (success) or 409 (already paid/conflict under concurrent race condition) are valid outcomes; 400 is a client/validation defect
-            ok: res.ok || res.status === 409,
-            error: (res.ok || res.status === 409) ? null : (res.error || `HTTP ${res.status}`)
+            ok: res.ok,
+            error: res.ok ? null : (res.error || 'Payment business operation failed')
         });
+        if (!res.ok) return;
+        const firstPayment = res.data;
 
         // 4. Duplicate Attempt with SAME Idempotency Key (Must prevent double-charge)
         const dupRes = await client.post(`/api/invoices/${invoice.invoice_id}/payment`, paymentPayload, {
@@ -78,9 +86,12 @@ async function runBillingPaymentScenario({ vuId, userPool, metricsCollector }) {
             endpoint: '/api/invoices/:id/payment (replay)',
             duration: dupRes.duration,
             status: dupRes.status,
-            ok: dupRes.ok || dupRes.status === 409,
-            error: (dupRes.ok || dupRes.status === 409) ? null : (dupRes.error || `HTTP ${dupRes.status}`)
+            ok: dupRes.ok && firstPayment?.payment?.payment_id === dupRes.data?.payment?.payment_id,
+            error: dupRes.ok ? null : (dupRes.error || 'Idempotent replay failed')
         });
+        const after = await client.get(`/api/invoices/${invoice.invoice_id}`);
+        const integrity = after.ok && paymentIntegrity({first:firstPayment,replay:dupRes.data,before,after:after.data,amount:paymentPayload.amount});
+        metricsCollector.record({scenario,action:'Payment record and paid balance after replay',method:'GET',endpoint:'/api/invoices/:id (integrity)',duration:after.duration,status:after.status,ok:integrity,error:integrity?null:'Replay must preserve one payment record and one increase in paid balance'});
     }
 
     // 5. Query Invoices Summary Aggregation

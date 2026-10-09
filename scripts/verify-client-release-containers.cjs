@@ -5,7 +5,9 @@ const crypto = require('node:crypto');
 const net = require('node:net');
 const { execFileSync, spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const sourceStage = path.join(root, 'dist/client-release/staging-20261009');
+const sourceStage = process.env.VIARA_RELEASE_TEST_PACKAGE_DIR
+    ? path.resolve(process.env.VIARA_RELEASE_TEST_PACKAGE_DIR)
+    : path.join(root, 'dist/client-release/staging-20261009');
 const testDir = fs.mkdtempSync(path.join(root, 'scratch/client-container-test-'));
 const testStartHere = process.env.VIARA_TEST_START_HERE === '1';
 const stage = testStartHere ? path.join(testDir, 'package') : sourceStage;
@@ -44,7 +46,9 @@ async function main() {
     const commandResults = [];
     if (testStartHere) {
         const images=path.join(stage,'images'); fs.mkdirSync(images);
-        const cache=path.join(root,'scratch/offline-images-20261009');
+        const cache=process.env.VIARA_RELEASE_IMAGE_CACHE_DIR
+            ? path.resolve(process.env.VIARA_RELEASE_IMAGE_CACHE_DIR)
+            : path.join(root,'scratch/offline-images-20261009');
         for(const name of fs.readdirSync(cache)) if(/\.tar(?:\.sha256)?$/.test(name)) fs.linkSync(path.join(cache,name),path.join(images,name));
         const bin=path.join(testDir,'bin'); fs.mkdirSync(bin);
         fs.writeFileSync(path.join(bin,'python3'),'#!/bin/bash\nexec /c/Python313/python.exe "$@"\n');
@@ -82,8 +86,25 @@ async function main() {
     if(denied.status!==404) throw Error('Portal staff isolation failed');
     const auth=await fetch(`http://127.0.0.1:${ports.PORTAL_PORT}/api/portal/profile`);
     if(auth.status!==401) throw Error('Portal did not enforce authentication');
+    const auditChecks = [];
+    for (const [route, expected] of [
+        ['/api/public/case-status/verify',400],
+        ['/api/public/case-status/status',400],
+        ['/api/public/appointment-requests',400],
+        ['/api/public/final-report',401]
+    ]) {
+        const result = await fetch(`http://127.0.0.1:${ports.BACKEND_PORT}${route}`, {
+            method:'POST',headers:{'Content-Type':'application/json'},body:'{}',
+            signal:AbortSignal.timeout(5000)
+        });
+        if(result.status!==expected) throw Error(`Public audit contract ${route}: ${result.status}, expected ${expected}`);
+        auditChecks.push({route,status:result.status,passed:true});
+    }
+    const invalidToken = await fetch(`http://127.0.0.1:${ports.BACKEND_PORT}/api/public/final-report/invalid-synthetic-token`,{signal:AbortSignal.timeout(5000)});
+    if(invalidToken.status!==401) throw Error('Invalid final report token was not denied promptly');
+    auditChecks.push({route:'/api/public/final-report/:accessToken',status:invalidToken.status,passed:true});
     const statuses=compose(['ps','--format','json']);
-    fs.writeFileSync(path.join(testDir,'result.json'),JSON.stringify({passed:true,project,checks:['fresh schema and migrations','container readiness','first administrator creation and login','existing accounts preserved','runtime portal origin','portal staff denial','portal authentication'],testLicensePublicKeyOverride:true,statuses:statuses.trim().split('\n').map(line=>{const s=JSON.parse(line);return {service:s.Service,state:s.State,health:s.Health};})},null,2));
+    fs.writeFileSync(path.join(testDir,'result.json'),JSON.stringify({passed:true,project,checks:['fresh schema and migrations','container readiness','first administrator creation and login','existing accounts preserved','runtime portal origin','portal staff denial','portal authentication'],auditChecks,testLicensePublicKeyOverride:true,statuses:statuses.trim().split('\n').map(line=>{const s=JSON.parse(line);return {service:s.Service,state:s.State,health:s.Health};})},null,2));
     console.log(`PASS: release container checks; isolated synthetic license and database. Results: ${testDir}`);
 }
 main().catch(error=>{ console.error(error.message); if(launched){const logs=spawnSync('docker',[...args,'logs','--no-color','--tail','60'],{encoding:'utf8'});fs.writeFileSync(path.join(testDir,'failure.log'),(logs.stdout||'')+(logs.stderr||''));}process.exitCode=1; }).finally(()=>{

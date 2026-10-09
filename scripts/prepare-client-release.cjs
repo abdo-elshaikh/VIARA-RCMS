@@ -16,11 +16,14 @@ const refs = {
     WIREGUARD_IMAGE: 'lscr.io/linuxserver/wireguard:latest'
 };
 async function main() {
-    const stage = path.join(root, 'dist/client-release/staging-20261009');
+    const stage = process.env.VIARA_RELEASE_PACKAGE_DIR
+        ? path.resolve(process.env.VIARA_RELEASE_PACKAGE_DIR)
+        : path.join(root, 'dist/client-release/staging-20261009');
     await fs.mkdir(path.dirname(stage), { recursive: true });
     // Refuse to mutate an existing staged release.
     const images = {};
-    for (const [key, ref] of Object.entries(refs)) {
+    for (const [key, defaultRef] of Object.entries(refs)) {
+        const ref = process.env[key] || defaultRef;
         const [image] = JSON.parse(execFileSync('docker', ['image', 'inspect', ref], { encoding: 'utf8' }));
         if (image.Os !== 'linux' || image.Architecture !== 'amd64' || !/^sha256:[a-f0-9]{64}$/.test(image.Id)) throw Error(`Unsupported image: ${ref}`);
         images[key] = { source: ref, id: image.Id, platform: 'linux/amd64' };
@@ -42,7 +45,7 @@ async function main() {
     template = template.replace(/^([A-Z0-9_]*IMAGE)=.*$/gm, (_, key) => `${key}=${images[key].id}`);
     await fs.writeFile(path.join(stage, '.env.example'), template);
     await fs.copyFile(path.join(stage, 'CLIENT_INSTALLATION_AR.md'), path.join(stage, 'README.md'));
-    await fs.writeFile(path.join(stage, 'release-info.json'), JSON.stringify({ version: '1.0.0', releaseDate: '2026-10-09', mode: 'Offline', platform: 'linux/amd64', images, customerLicenseIncluded: false, customerSecretsIncluded: false, clinicalAcceptanceRequired: true }, null, 2));
+    await fs.writeFile(path.join(stage, 'release-info.json'), JSON.stringify({ version: '1.0.0', releaseDate: process.env.VIARA_RELEASE_DATE || '2026-10-09', sourceCommit: process.env.VIARA_RELEASE_SOURCE_COMMIT || null, releaseApproval: 'pending-audit-remediation', mode: 'Offline', platform: 'linux/amd64', images, customerLicenseIncluded: false, customerSecretsIncluded: false, clinicalAcceptanceRequired: true }, null, 2));
     console.log(`Staging ready: ${stage}`);
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; });

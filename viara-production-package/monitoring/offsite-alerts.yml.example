@@ -1,0 +1,22 @@
+# Load this group only for sites requiring offsite backups.
+# Scrape the authenticated backend /metrics endpoint; configure Alertmanager
+# delivery and test an unavailable offsite destination before acceptance.
+groups:
+  - name: VIARA.offsite-backup
+    rules:
+      - alert: VIARA_OffsiteReplicationFailed
+        expr: increase(VIARA_backup_offsite_failures_total[30m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "VIARA offsite backup replication failed"
+          description: "Local backup success does not confirm an offsite copy. Check the replication destination and retry."
+      - alert: VIARA_OffsiteBackupOverdue
+        expr: time() - VIARA_backup_offsite_completed > 86400
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "VIARA offsite backup overdue"
+          description: "No successful offsite replication recorded in 24 hours, including when no first success has been recorded."
