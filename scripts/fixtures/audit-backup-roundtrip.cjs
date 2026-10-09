@@ -3,14 +3,31 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
+const {execFileSync} = require('node:child_process');
 const {Client} = require('/app/node_modules/pg');
 (async()=>{
     assert.equal(process.env.VIARA_AUDIT_SYNTHETIC,'1');
     const db = new Client({connectionString:process.env.DATABASE_URL});
     await db.connect();
     try {
+        for(const tool of ['pg_dump','pg_restore','psql']) assert.match(execFileSync(tool,['--version'],{encoding:'utf8'}),/ 15\./);
+        const serverVersion=Number((await db.query('SHOW server_version_num')).rows[0].server_version_num);
+        assert.ok(serverVersion>=150000 && serverVersion<160000);
         const users=await db.query('SELECT email FROM users');
         assert.deepEqual(users.rows.map(row=>row.email),['admin@synthetic.example.test']);
+        const signIn=password=>fetch('http://127.0.0.1:3000/api/auth/login',{
+            method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({email:users.rows[0].email,password}),signal:AbortSignal.timeout(15000)
+        });
+        const guesses=await Promise.all(Array.from({length:5},()=>signIn('Synthetic-wrong-password-123')));
+        for(const guess of guesses) assert.equal(guess.status,401);
+        const locked=await db.query('SELECT failed_login_attempts,locked_until FROM users WHERE email=$1',[users.rows[0].email]);
+        assert.equal(locked.rows[0].failed_login_attempts,5);
+        assert.ok(new Date(locked.rows[0].locked_until).getTime()>Date.now());
+        assert.equal((await signIn('Synthetic-first-admin-password-123')).status,401);
+        assert.equal((await db.query('SELECT failed_login_attempts FROM users WHERE email=$1',[users.rows[0].email])).rows[0].failed_login_attempts,5);
+        // Reset only this explicitly verified synthetic account before snapshot.
+        await db.query('UPDATE users SET failed_login_attempts=0,locked_until=NULL WHERE email=$1',[users.rows[0].email]);
         const source=process.env.ORTHANC_URL;
         const headers={Authorization:'Basic '+Buffer.from(`${process.env.ORTHANC_USERNAME}:${process.env.ORTHANC_PASSWORD}`).toString('base64')};
         const request=async(url,options={})=>{
@@ -56,6 +73,6 @@ const {Client} = require('/app/node_modules/pg');
         await restoredDb.connect();
         try { assert.equal((await restoredDb.query('SELECT value FROM public.audit_restore_probe')).rows[0].value,'synthetic-roundtrip'); }
         finally { await restoredDb.end(); }
-        console.log('AUDIT_BACKUP_RESULT='+JSON.stringify({passed:true,scope:backup.scope,databaseMarker:true,uploads:2,dicomInstances:1,sha256Verified:true,separateDatabase:true,separateHost:false,emptyPacsTarget:true}));
+        console.log('AUDIT_BACKUP_RESULT='+JSON.stringify({passed:true,postgresToolsMajor:15,postgresServerMajor:15,concurrentFailedLogins:5,lockedCorrectPasswordDenied:true,scope:backup.scope,databaseMarker:true,uploads:2,dicomInstances:1,sha256Verified:true,separateDatabase:true,separateHost:false,emptyPacsTarget:true}));
     } finally { await db.end(); }
 })().catch(error=>{console.error(error.message);process.exitCode=1;});

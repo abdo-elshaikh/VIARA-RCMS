@@ -5,6 +5,8 @@ const rootEnvPath = path.resolve(__dirname, '../../.env');
 const backendEnvPath = path.resolve(__dirname, '../.env');
 
 const savedNodeEnv = process.env.NODE_ENV;
+const savedRateLimitStore = process.env.RATE_LIMIT_STORE;
+const savedClamscanPath = process.env.CLAMSCAN_PATH;
 
 // Load root .env first for workspace defaults, then override with backend-specific .env
 if (fs.existsSync(rootEnvPath)) {
@@ -15,6 +17,10 @@ if (fs.existsSync(backendEnvPath)) {
 }
 if (savedNodeEnv) {
     process.env.NODE_ENV = savedNodeEnv;
+}
+if (savedNodeEnv === 'test') {
+    process.env.RATE_LIMIT_STORE = savedRateLimitStore || 'memory';
+    process.env.CLAMSCAN_PATH = savedClamscanPath || '';
 }
 
 if (!process.env.DATABASE_URL && process.env.POSTGRES_PASSWORD) {

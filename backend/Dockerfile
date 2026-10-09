@@ -1,10 +1,20 @@
+ARG POSTGRES_TOOLS_IMAGE=postgres:15-alpine
+FROM ${POSTGRES_TOOLS_IMAGE} AS postgres-tools
+
 FROM node:22.23.3-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache clamav-clamdscan postgresql-client \
+# Use the same PostgreSQL major as the deployed server. Alpine's generic
+# postgresql-client follows its newest major and can produce incompatible dumps.
+RUN apk add --no-cache clamav-clamdscan libpq libedit \
     && mkdir -p /app/backups /app/uploads \
     && chown -R node:node /app
+
+COPY --from=postgres-tools /usr/local/bin/pg_dump /usr/local/bin/pg_restore /usr/local/bin/psql /usr/local/bin/
+RUN pg_dump --version | grep -Eq ' 15\.' \
+    && pg_restore --version | grep -Eq ' 15\.' \
+    && psql --version | grep -Eq ' 15\.'
 
 COPY --chown=node:node package*.json ./
 

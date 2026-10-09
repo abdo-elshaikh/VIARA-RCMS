@@ -77,6 +77,14 @@ if [ -d "images" ]; then
             echo "❌ Error: Offline image checksum verification failed: $archive"
             exit 1
         fi
+        archive_name="$(basename "$archive")"
+        # Repeated setup still verifies the archive, but avoids re-importing
+        # gigabytes when its exact immutable image is already installed.
+        if [[ "$archive_name" =~ ^sha256_([[:xdigit:]]{64})\.tar$ ]] \
+            && docker image inspect "sha256:${BASH_REMATCH[1]}" >/dev/null 2>&1; then
+            echo "Verified offline image already installed: $archive_name"
+            continue
+        fi
         echo "📦 Loading verified offline image archive: $(basename "$archive")"
         docker load --input "$archive"
     done
