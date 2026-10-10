@@ -14,7 +14,10 @@ if (!fs.existsSync(seedFile)) {
     process.exit(1);
 }
 
-process.env.TEST_USER_PASSWORD = process.env.TEST_USER_PASSWORD || 'Password123!';
+if (!process.env.TEST_USER_PASSWORD) {
+    console.error('❌ TEST_USER_PASSWORD is required. Refusing to seed with a default password.');
+    process.exit(1);
+}
 console.log('🌱 Launching VIARA Database Seeding...');
 
 const result = spawnSync('node', [seedFile], {

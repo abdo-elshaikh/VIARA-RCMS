@@ -20,7 +20,7 @@ const catalogEvents = [
     'CASHIER_VARIANCE_REQUIRES_REVIEW', 'LEAVE_REQUEST_SUBMITTED', 'LEAVE_REQUEST_DECIDED',
     'SHIFT_REQUEST_SUBMITTED', 'SHIFT_REQUEST_DECIDED',
     'PayrollRunStatusChanged', 'PenaltyImposed', 'PenaltyDisputed', 'PenaltyDisputeResolved', 'PenaltyCancelled',
-    'PayrollEmployeesSkipped', 'CredentialExpiring'
+    'PayrollEmployeesSkipped', 'CredentialExpiring', 'CriticalResultFollowUpRequired'
 ];
 
 const activeTemplates = {
@@ -45,6 +45,7 @@ const activeTemplates = {
     CONSENT_REVOKED: ['InApp'],
     CriticalResultFinalized: ['InApp', 'Email', 'SMS', 'WhatsApp'],
     CriticalResultEscalated: ['InApp', 'Email', 'SMS'],
+    CriticalResultFollowUpRequired: ['InApp'],
     DATA_EXPORT_REQUESTED: ['InApp', 'Email'],
     DocumentDownloaded: ['InApp'],
     EquipmentDowntimeCreated: ['InApp', 'Email', 'SMS'],
@@ -121,6 +122,7 @@ const requiredRolePolicies = [
     ['PaymentReceived', 'Cashier'], ['PaymentReceived', 'Accountant'], ['PaymentReceived', 'Admin'],
     ['CriticalResultFinalized', 'Radiologist'], ['CriticalResultFinalized', 'Admin'],
     ['CriticalResultFinalized', 'Nurse'],
+    ['CriticalResultFollowUpRequired', 'Admin'],
     ['CriticalResultEscalated', 'Doctor'], ['CriticalResultEscalated', 'Nurse'],
     ['INTEGRATION_FAILED', 'Admin'], ['INTEGRATION_FAILED', 'Developer'],
     ['ClaimSubmitted', 'Accountant'], ['ClaimSubmitted', 'Admin'],

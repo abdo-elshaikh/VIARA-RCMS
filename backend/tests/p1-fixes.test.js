@@ -23,9 +23,12 @@ describe('Phase 2 (P1 & P2) Defect Remediation Suite', () => {
             const nurseId = '00000000-0000-4000-8000-000000000403';
 
             const queries = [];
-            const db = {
+            const client = {
                 query: jest.fn(async (sql, params) => {
                     queries.push({ sql: String(sql), params });
+                    if (String(sql).includes('INSERT INTO system_logs')) {
+                        return { rows: [{ log_id: 'safety-audit-log' }] };
+                    }
                     if (String(sql).includes('SELECT e.status')) {
                         return { rows: [{ status: 'Checked-in' }] };
                     }
@@ -39,8 +42,10 @@ describe('Phase 2 (P1 & P2) Defect Remediation Suite', () => {
                         return { rows: [{ exam_id: examId, is_on_hold: true }] };
                     }
                     return { rows: [] };
-                })
+                }),
+                release: jest.fn()
             };
+            const db = { connect: jest.fn().mockResolvedValue(client), query: jest.fn().mockResolvedValue({ rows: [] }) };
 
             const req = {
                 params: { examId },
@@ -73,17 +78,22 @@ describe('Phase 2 (P1 & P2) Defect Remediation Suite', () => {
             const nurseId = '00000000-0000-4000-8000-000000000403';
 
             const queries = [];
-            const db = {
+            const client = {
                 query: jest.fn(async (sql, params) => {
                     queries.push({ sql: String(sql), params });
+                    if (String(sql).includes('INSERT INTO system_logs')) {
+                        return { rows: [{ log_id: 'safety-audit-log' }] };
+                    }
                     if (String(sql).includes('SELECT e.status')) return { rows: [{ status: 'Checked-in' }] };
                     if (String(sql).includes('FROM safety_templates')) return { rows: [{ '?column?': 1 }] };
                     if (String(sql).includes('INSERT INTO exam_safety_responses')) {
                         return { rows: [{ response_id: 2, exam_id: examId, template_id: templateId }] };
                     }
                     return { rows: [] };
-                })
+                }),
+                release: jest.fn()
             };
+            const db = { connect: jest.fn().mockResolvedValue(client), query: jest.fn().mockResolvedValue({ rows: [] }) };
 
             const req = {
                 params: { examId },
@@ -169,7 +179,7 @@ describe('Phase 2 (P1 & P2) Defect Remediation Suite', () => {
     });
 
     describe('BUG-07: Supervisor Report Amendment Authorization', () => {
-        test('allows a supervisor (Admin/Developer) to amend a report authored by another doctor', async () => {
+        test('blocks a supervisor (Admin/Developer) from amending clinical report content', async () => {
             const examId = '00000000-0000-4000-8000-000000000701';
             const authorDoctorId = '00000000-0000-4000-8000-000000000702';
             const supervisorId = '00000000-0000-4000-8000-000000000703';
@@ -214,12 +224,13 @@ describe('Phase 2 (P1 & P2) Defect Remediation Suite', () => {
 
             await amendReport(db)(req, res, next);
 
-            expect(next).not.toHaveBeenCalled();
-            expect(client.query).toHaveBeenCalledWith('COMMIT');
-            expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-                exam_id: examId,
-                report_status: 'Amended'
+            expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+            expect(next).toHaveBeenCalledWith(expect.objectContaining({
+                statusCode: 403,
+                message: 'Only an authorized radiologist may amend clinical report content'
             }));
+            expect(client.query).not.toHaveBeenCalledWith(expect.stringContaining('UPDATE examinations'));
+            expect(res.json).not.toHaveBeenCalled();
         });
 
         test('blocks a non-author radiologist without supervisor permission with 403', async () => {

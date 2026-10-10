@@ -207,6 +207,18 @@ export const clinicalApi = api.injectEndpoints({
             }),
             invalidatesTags: ['Notifications'],
         }),
+        getCriticalResultFollowups: builder.query({
+            query: () => '/critical-result-followups',
+            providesTags: ['CriticalResultFollowups'],
+        }),
+        completeCriticalResultFollowup: builder.mutation({
+            query: ({ taskId, ...body }) => ({
+                url: `/critical-result-followups/${taskId}/complete`,
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['CriticalResultFollowups', 'Notifications'],
+        }),
         getSafetyTemplates: builder.query({
             query: (modalityId) => `/clinical/templates/${modalityId}`,
             providesTags: ['ClinicalSafety'],

@@ -339,6 +339,10 @@ CREATE TABLE report_versions (
     amendment_reason TEXT,
     created_by UUID REFERENCES users(user_id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    signature_hash VARCHAR(128),
+    signatory_name VARCHAR(255),
+    signatory_role VARCHAR(100),
+    signed_at TIMESTAMP WITH TIME ZONE,
     UNIQUE (exam_id, version_number)
 );
 
@@ -1242,4 +1246,3 @@ CREATE INDEX idx_password_reset_tokens_user ON password_reset_tokens(user_id);
 
 -- 17. Reporting & Performance Indices
 CREATE INDEX idx_invoices_generated_at ON invoices(generated_at);
-

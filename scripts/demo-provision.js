@@ -148,7 +148,7 @@ function writeEnvFile(project, lease, licenseKey) {
     // run the seed against the main stack's database.
     const overridden = new Set([
         ...Object.keys(PORT_KEYS), ...SECRET_KEYS, ...REQUIRED_URL_KEYS,
-        'LICENSE_KEY', 'DATABASE_URL',
+        'LICENSE_KEY', 'DATABASE_URL', 'VITE_DEMO_PASSWORD',
     ]);
 
     const kept = inherited.filter((line) => {
@@ -162,15 +162,11 @@ function writeEnvFile(project, lease, licenseKey) {
     };
 
     const secrets = generateSecrets();
-    const demoPassword =
-        inheritedValue('VITE_DEMO_PASSWORD') ||
-        inheritedValue('TEST_USER_PASSWORD') ||
-        process.env.TEST_USER_PASSWORD ||
-        process.env.VITE_DEMO_PASSWORD ||
-        'ViaraAdmin@2026';
-    secrets.TEST_USER_PASSWORD = demoPassword;
     const portLines = Object.entries(PORT_KEYS).map(([k, v]) => `${k}=${v}`);
-    const secretLines = Object.entries(secrets).map(([k, v]) => `${k}=${v}`);
+    const secretLines = [
+        ...Object.entries(secrets).map(([k, v]) => `${k}=${v}`),
+        `VITE_DEMO_PASSWORD=${secrets.TEST_USER_PASSWORD}`,
+    ];
 
     // These two are required by docker-compose (`:?`) and are baked into the
     // frontend at build time, so they must point at the demo's own ports rather

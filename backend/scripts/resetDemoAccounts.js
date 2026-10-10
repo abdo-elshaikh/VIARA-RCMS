@@ -8,7 +8,7 @@ if (!process.env.DATABASE_URL && process.env.POSTGRES_PASSWORD) {
     process.env.DATABASE_URL = `postgresql://${encodeURIComponent(process.env.POSTGRES_USER || 'VIARA')}:${encodeURIComponent(process.env.POSTGRES_PASSWORD)}@127.0.0.1:${process.env.POSTGRES_PORT || '5432'}/${encodeURIComponent(process.env.POSTGRES_DB || 'VIARA')}`;
 }
 
-const password = process.env.TEST_USER_PASSWORD || 'Password123!';
+const password = process.env.TEST_USER_PASSWORD;
 const demoAccounts = [
     ['Dr. Alice Smith', 'alice@viara.com', 'Radiologist'],
     ['Lead Technician', 'tech@viara.com', 'Technician'],
@@ -19,6 +19,7 @@ const demoAccounts = [
 ];
 
 const run = async () => {
+    if (!password) throw new Error('TEST_USER_PASSWORD is required to reset demo account passwords');
     if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required');
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
@@ -39,7 +40,7 @@ const run = async () => {
                         is_active = TRUE,
                         failed_login_attempts = 0,
                         locked_until = NULL,
-                        must_change_password = FALSE,
+                        must_change_password = TRUE,
                         updated_at = CURRENT_TIMESTAMP
                     WHERE user_id = $5
                 `, [fullName, email, passwordHash, role, existing.rows[0].user_id]);
@@ -49,7 +50,7 @@ const run = async () => {
                         full_name, email, password_hash, role, is_active,
                         failed_login_attempts, locked_until, must_change_password
                     )
-                    VALUES ($1, $2, $3, $4, TRUE, 0, NULL, FALSE)
+                    VALUES ($1, $2, $3, $4, TRUE, 0, NULL, TRUE)
                 `, [fullName, email, passwordHash, role]);
             }
         }

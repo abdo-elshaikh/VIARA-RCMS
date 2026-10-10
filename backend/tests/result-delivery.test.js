@@ -2,7 +2,7 @@ const { deliverResultSchema } = require('../src/schemas/resultDeliverySchema');
 const { deliverResult } = require('../src/controllers/resultDeliveryController');
 
 jest.mock('../src/services/notificationJobService', () => ({
-    triggerEvent: jest.fn().mockResolvedValue({})
+    triggerEvent: jest.fn().mockResolvedValue({ scheduled: 1 })
 }));
 
 jest.mock('../src/services/loyaltyRewardService', () => ({
@@ -38,7 +38,8 @@ const makeClient = ({ failOn, exam: examOverride } = {}) => {
                 return {
                     rows: [{
                         exam_id: 'exam-1', appointment_id: 'appointment-1', patient_id: 'patient-1',
-                        external_referring_doctor_id: null, order_number: 'ORD-1', status: 'Finalized',
+                        external_referring_doctor_id: null, referring_doctor_id: 'doctor-1',
+                        order_number: 'ORD-1', status: 'Finalized',
                         report_status: 'Finalized', report_locked: true, report_finalized_at: new Date().toISOString(),
                         queue_stage: 'Finalized', current_station: 'Reporting',
                         phone_enc: null,
@@ -146,7 +147,7 @@ describe('result delivery', () => {
         expect(client.query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO result_deliveries'));
     });
 
-    test('records electronic delivery as pending and queues the notification after commit', async () => {
+    test('records electronic delivery and queues its notification in the same transaction', async () => {
         const client = makeClient();
         const db = { connect: jest.fn().mockResolvedValue(client) };
         const res = makeResponse();
@@ -159,6 +160,11 @@ describe('result delivery', () => {
         expect(queries).toContain('COMMIT');
         expect(queries).not.toContain('ROLLBACK');
         expect(queries.some(query => query.includes('INSERT INTO result_deliveries'))).toBe(true);
+        expect(triggerEvent).toHaveBeenCalledWith(client, 'ResultDelivered', expect.objectContaining({
+            patientId: 'patient-1',
+            required: true,
+            occurrenceKey: 'delivery-1'
+        }));
         expect(queries.some(query => query.includes('UPDATE examinations'))).toBe(false);
         expect(queries.some(query => query.includes('INSERT INTO queue_events'))).toBe(false);
         expect(client.query.mock.calls.every(([, params]) => params === undefined || Array.isArray(params))).toBe(true);
@@ -166,6 +172,58 @@ describe('result delivery', () => {
         expect(client.release).toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(201);
         expect(next).not.toHaveBeenCalled();
+    });
+
+    test('queues doctor portal notification for the linked referring doctor', async () => {
+        const client = makeClient();
+        const next = jest.fn();
+
+        await deliverResult({ connect: jest.fn().mockResolvedValue(client) })(
+            makeRequest({ deliveryMethod: 'Doctor Portal' }),
+            makeResponse(),
+            next
+        );
+
+        expect(triggerEvent).toHaveBeenCalledWith(client, 'ResultDelivered', expect.objectContaining({
+            doctorId: 'doctor-1',
+            channels: ['InApp'],
+            required: true
+        }));
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    test('rolls back delivery when the notification cannot be queued', async () => {
+        const client = makeClient();
+        triggerEvent.mockRejectedValueOnce(new Error('notification queue unavailable'));
+        const next = jest.fn();
+
+        await deliverResult({ connect: jest.fn().mockResolvedValue(client) })(
+            makeRequest({ deliveryMethod: 'Email' }),
+            makeResponse(),
+            next
+        );
+
+        const queries = client.query.mock.calls.map(([sql]) => String(sql));
+        expect(queries).toContain('ROLLBACK');
+        expect(queries).not.toContain('COMMIT');
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'notification queue unavailable'
+        }));
+    });
+
+    test('rejects doctor portal delivery without a linked referring doctor', async () => {
+        const client = makeClient({ exam: { referring_doctor_id: null } });
+        const next = jest.fn();
+
+        await deliverResult({ connect: jest.fn().mockResolvedValue(client) })(
+            makeRequest({ deliveryMethod: 'Doctor Portal' }),
+            makeResponse(),
+            next
+        );
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409 }));
+        expect(client.query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO result_deliveries'))).toBe(false);
+        expect(triggerEvent).not.toHaveBeenCalled();
     });
 
     test('rejects direct claims that an electronic result was delivered', async () => {

@@ -371,6 +371,8 @@ export const {
     useReleaseQueueTaskAssignmentMutation,
     useAssignQueueTaskMutation,
     useAcknowledgeCriticalResultMutation,
+    useGetCriticalResultFollowupsQuery,
+    useCompleteCriticalResultFollowupMutation,
     useUpdateInsuranceProviderMutation,
     useUpdateInsuranceContractMutation,
     useUpdateInsurancePolicyMutation,

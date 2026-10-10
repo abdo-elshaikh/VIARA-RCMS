@@ -83,7 +83,7 @@ const ROLE_DESTINATIONS = {
     Patient: '/patient/profile',
 };
 
-const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || 'ViaraAdmin@2026';
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || '';
 
 const DEMO_ACCOUNTS = import.meta.env.DEV
     ? [

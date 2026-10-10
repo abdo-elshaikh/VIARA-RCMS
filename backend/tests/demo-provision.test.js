@@ -248,9 +248,12 @@ describe('demo-provision CLI', () => {
 
         test('seeds the credentials seed.js demands', () => {
             // backend/seed.js exits without TEST_USER_PASSWORD rather than
-            // falling back to a committed default password.
+            // falling back to a committed default password. Each demo gets a
+            // unique password that the demo login uses as well.
             const env = cli.readEnvFile(envFile);
             expect(env.TEST_USER_PASSWORD).toBeTruthy();
+            expect(env.TEST_USER_PASSWORD).not.toBe('1'.repeat(64));
+            expect(env.VITE_DEMO_PASSWORD).toBe(env.TEST_USER_PASSWORD);
             expect(env.DATABASE_URL).toBeTruthy();
         });
 

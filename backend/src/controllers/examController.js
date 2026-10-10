@@ -5,7 +5,7 @@ const { assertQuota } = require('../services/quotaService');
 const { buildReportHtml } = require('../services/pdfService').default;
 const { buildReportPdf, cleanFilenamePart } = require('../services/reportPdfRenderer');
 const settingsService = require('../services/settingsService');
-const { triggerEvent } = require('../services/notificationJobService');
+const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 const { logAction } = require('../services/auditService');
 const { decrypt } = require('../utils/crypto');
 const aiReportService = require('../services/aiReportService');
@@ -375,7 +375,14 @@ const getCaseReports = (db, explicitQuery) => async (req, res, next) => {
         } else if (filters.queue === 'finalized') {
             where.push(`e.report_status IN ('Finalized', 'Amended') AND COALESCE(e.report_locked, FALSE) = TRUE AND e.report_finalized_at IS NOT NULL`);
         } else if (filters.queue === 'notDelivered') {
-            where.push(`e.report_status IN ('Finalized', 'Amended') AND COALESCE(e.report_locked, FALSE) = TRUE AND e.report_finalized_at IS NOT NULL AND e.delivered_at IS NULL AND last_delivery.delivery_status IS NULL`);
+            where.push(`e.report_status IN ('Finalized', 'Amended')
+                AND COALESCE(e.report_locked, FALSE) = TRUE
+                AND e.report_finalized_at IS NOT NULL
+                AND e.delivered_at IS NULL
+                AND (
+                    last_delivery.delivery_status IS NULL
+                    OR last_delivery.delivery_status NOT IN ('Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged')
+                )`);
         } else if (filters.queue === 'urgent') {
             where.push(`e.priority IN ('Emergency', 'Urgent')`);
         } else if (filters.queue === 'today') {
@@ -418,7 +425,9 @@ const getCaseReports = (db, explicitQuery) => async (req, res, next) => {
                            AND COALESCE(e.report_locked, FALSE) = TRUE
                            AND e.report_finalized_at IS NOT NULL
                        )) OVER() AS pending_count,
-                       COUNT(*) FILTER (WHERE e.delivered_at IS NOT NULL OR last_delivery.delivery_status IS NOT NULL) OVER() AS delivered_count,
+                       COUNT(*) FILTER (WHERE e.delivered_at IS NOT NULL OR last_delivery.delivery_status IN (
+                           'Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged'
+                       )) OVER() AS delivered_count,
                        COUNT(*) OVER() AS total_count
                 FROM examinations e
                 JOIN appointments a ON e.appointment_id = a.appointment_id
@@ -608,6 +617,7 @@ const updateReport = (db) => async (req, res, next) => {
     let committed = false;
     let patientPortalRelease = null;
     let criticalAcknowledgements = [];
+    let criticalFollowupTask = null;
     try {
         const { examId: bodyExamId, status, reportContent, findings, impression, sections, templateId, reportStatus, criticalResult } = req.body;
         // examId is supplied in the URL params; body field is optional for clients that echo it back.
@@ -917,28 +927,45 @@ const updateReport = (db) => async (req, res, next) => {
                     INSERT INTO critical_result_acknowledgements (
                         exam_id, referring_doctor_id, recipient_role, status, acknowledgement_due_at
                     )
-                    VALUES ($1, $2, 'Doctor', 'Pending', NOW() + INTERVAL '15 minutes')
+                    SELECT $1, rd.doctor_id, 'Doctor', 'Pending', NOW() + INTERVAL '15 minutes'
+                    FROM referring_doctors rd
+                    WHERE rd.doctor_id = $2
+                      AND rd.is_active = TRUE
+                      AND rd.portal_is_active = TRUE
                     ON CONFLICT DO NOTHING
                     RETURNING acknowledgement_id, referring_doctor_id, recipient_role
                 `, [examId, checkResult.rows[0].referring_doctor_id]);
                 criticalAcknowledgements = acknowledgementResult.rows;
-            } else {
+            }
+            if (criticalAcknowledgements.length === 0) {
                 const acknowledgementResult = await client.query(`
                     INSERT INTO critical_result_acknowledgements (
                         exam_id, recipient_user_id, recipient_role, status, acknowledgement_due_at
                     )
-                    SELECT $1, u.user_id, 'Admin', 'Pending', NOW() + INTERVAL '15 minutes'
+                    SELECT $1, u.user_id, 'Nurse', 'Pending', NOW() + INTERVAL '15 minutes'
                     FROM users u
                     WHERE u.is_active = TRUE AND u.role = 'Nurse'
                     ON CONFLICT DO NOTHING
                     RETURNING acknowledgement_id, recipient_user_id, recipient_role
                 `, [examId]);
                 criticalAcknowledgements = acknowledgementResult.rows;
+                if (criticalAcknowledgements.length === 0) {
+                    const followupResult = await client.query(`
+                        INSERT INTO critical_result_admin_followup_tasks (
+                            exam_id, critical_marked_at, created_by
+                        )
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (exam_id, critical_marked_at)
+                        DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+                        RETURNING task_id
+                    `, [examId, result.rows[0].critical_result_marked_at, userId]);
+                    criticalFollowupTask = followupResult.rows[0];
+                    if (!criticalFollowupTask?.task_id) {
+                        throw new AppError('Critical-result administrative follow-up task could not be created', 503);
+                    }
+                }
             }
         }
-
-        await client.query('COMMIT');
-        committed = true;
 
         if (newStatus === 'Finalized' && result.rows[0]?.critical_result) {
             const criticalMarkedAt = result.rows[0].critical_result_marked_at;
@@ -954,25 +981,53 @@ const updateReport = (db) => async (req, res, next) => {
                     force_delivery: true
                 }
             };
-            const notifications = [triggerEvent(db, 'CriticalResultFinalized', {
+            const finalizerNotification = await triggerEvent(client, 'CriticalResultFinalized', {
                 ...basePayload,
                 staffId: userId,
                 staffRole: 'Radiologist',
-                occurrenceKey: `${String(criticalMarkedAt)}:finalizer:${userId}`
-            })];
+                occurrenceKey: `${String(criticalMarkedAt)}:finalizer:${userId}`,
+                required: true
+            });
+            if (!finalizerNotification?.scheduled) {
+                throw new AppError('Critical result notification could not be queued', 503);
+            }
             for (const acknowledgement of criticalAcknowledgements) {
-                notifications.push(triggerEvent(db, 'CriticalResultFinalized', {
+                const acknowledgementNotification = await triggerEvent(client, 'CriticalResultFinalized', {
                     ...basePayload,
                     occurrenceKey: acknowledgement.acknowledgement_id,
                     doctorId: acknowledgement.referring_doctor_id || undefined,
                     staffId: acknowledgement.recipient_user_id || undefined,
-                    staffRole: acknowledgement.recipient_role || undefined
-                }));
+                    staffRole: acknowledgement.recipient_role || undefined,
+                    required: true
+                });
+                if (!acknowledgementNotification?.scheduled) {
+                    throw new AppError('Critical result acknowledgement notification could not be queued', 503);
+                }
             }
-            await Promise.allSettled(notifications);
+            if (criticalFollowupTask) {
+                const followupNotification = await triggerEventForRole(client, 'CriticalResultFollowUpRequired', 'Admin', {
+                    entityType: 'Exam',
+                    entityId: examId,
+                    occurrenceKey: criticalFollowupTask.task_id,
+                    channels: ['InApp'],
+                    priority: 'Critical',
+                    variables: {
+                        task_id: criticalFollowupTask.task_id,
+                        exam_id: examId,
+                        order_number: result.rows[0].order_number || checkResult.rows[0].order_number || ''
+                    },
+                    required: true
+                });
+                if (!followupNotification?.scheduled) {
+                    throw new AppError('Critical-result administrative follow-up notification could not be queued', 503);
+                }
+            }
         }
 
-        // Fire notifications outside the transaction (fire-and-forget)
+        await client.query('COMMIT');
+        committed = true;
+
+        // Non-critical notifications remain fire-and-forget after the transaction.
         if (newStatus === 'Finalized') {
             const examInfo = await db.query(
                 'SELECT patient_id, order_number, external_referring_doctor_id FROM examinations WHERE exam_id = $1',

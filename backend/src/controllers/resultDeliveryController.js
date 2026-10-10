@@ -17,13 +17,15 @@ const providerConfirmedChannels = new Set(['Email', 'SMS Link', 'WhatsApp Link',
 
 const getExamForDelivery = async (db, examId) => {
     const result = await db.query(`
-        SELECT e.exam_id, e.appointment_id, e.patient_id, e.external_referring_doctor_id, e.order_number,
+        SELECT e.exam_id, e.appointment_id, e.patient_id, e.external_referring_doctor_id,
+               a.referring_doctor_id, e.order_number,
                e.status, e.report_status, e.report_locked, e.report_finalized_at,
                e.report_request_status, e.exam_completed_at, e.images_ready_at, e.images_delivered_at,
                e.delivered_at, e.queue_stage, e.current_station,
                p.mrn, p.phone_enc, rd.full_name AS doctor_name, rd.phone AS doctor_phone
         FROM examinations e
         JOIN patients p ON e.patient_id = p.patient_id
+        LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
         LEFT JOIN referring_doctors rd ON e.external_referring_doctor_id = rd.doctor_id
         WHERE e.exam_id = $1
         FOR UPDATE OF e
@@ -77,6 +79,9 @@ const deliverResult = (db) => async (req, res, next) => {
         }
         if (includesImages && !exam.exam_completed_at) {
             throw new AppError('The acquisition must be completed before images can be delivered', 409);
+        }
+        if (data.deliveryMethod === 'Doctor Portal' && !exam.referring_doctor_id) {
+            throw new AppError('A referring doctor must be linked before portal delivery', 409);
         }
 
         const invoiceResult = await client.query(`
@@ -190,6 +195,46 @@ const deliverResult = (db) => async (req, res, next) => {
             }
         }
 
+        if (['Email', 'SMS Link', 'WhatsApp Link', 'Patient Portal'].includes(data.deliveryMethod)) {
+            const channel = {
+                Email: 'Email',
+                'SMS Link': 'SMS',
+                'WhatsApp Link': 'WhatsApp',
+                'Patient Portal': 'Email'
+            }[data.deliveryMethod];
+            const notification = await triggerEvent(client, 'ResultDelivered', {
+                patientId: exam.patient_id,
+                entityType: 'Exam',
+                entityId: exam.exam_id,
+                occurrenceKey: result.rows[0].delivery_id,
+                channels: [channel],
+                required: true,
+                variables: {
+                    order_number: exam.order_number || '',
+                    delivery_method: data.deliveryMethod
+                }
+            });
+            if (!notification?.scheduled) {
+                throw new AppError('Result delivery notification could not be queued', 503);
+            }
+        } else if (data.deliveryMethod === 'Doctor Portal') {
+            const notification = await triggerEvent(client, 'ResultDelivered', {
+                doctorId: exam.referring_doctor_id,
+                entityType: 'Exam',
+                entityId: exam.exam_id,
+                occurrenceKey: result.rows[0].delivery_id,
+                channels: ['InApp'],
+                required: true,
+                variables: {
+                    order_number: exam.order_number || '',
+                    delivery_method: data.deliveryMethod
+                }
+            });
+            if (!notification?.scheduled) {
+                throw new AppError('Doctor portal notification could not be queued', 503);
+            }
+        }
+
         await client.query('COMMIT');
         committed = true;
 
@@ -199,7 +244,6 @@ const deliverResult = (db) => async (req, res, next) => {
             appointmentId: exam.appointment_id
         }).catch(err => console.warn('Failed to award delivery visit completion reward:', err.message));
 
-        // Notifications are deliberately outside the transaction.
         if (['Email', 'SMS Link', 'WhatsApp Link', 'Patient Portal'].includes(data.deliveryMethod)) {
             const channel = {
                 Email: 'Email',
@@ -207,17 +251,6 @@ const deliverResult = (db) => async (req, res, next) => {
                 'WhatsApp Link': 'WhatsApp',
                 'Patient Portal': 'Email'
             }[data.deliveryMethod];
-            await triggerEvent(db, 'ResultDelivered', {
-                patientId: exam.patient_id,
-                entityType: 'Exam',
-                entityId: exam.exam_id,
-                channels: [channel],
-                variables: {
-                    order_number: exam.order_number || '',
-                    delivery_method: data.deliveryMethod
-                }
-            });
-
             // Schedule automated post-delivery CSAT feedback survey (2 hours post-delivery)
             triggerEvent(db, 'PatientFeedbackRequest', {
                 patientId: exam.patient_id,

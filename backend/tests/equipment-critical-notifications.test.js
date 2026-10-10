@@ -419,11 +419,16 @@ describe('critical result acknowledgement', () => {
 describe('critical result notification workflow', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        triggerEvent.mockResolvedValue(undefined);
+        triggerEvent.mockResolvedValue({ scheduled: 1 });
         triggerEventForRole.mockResolvedValue(undefined);
     });
 
-    const makeFinalizationClient = ({ failUpdate = false, referringDoctorId = '00000000-0000-4000-8000-000000000006' } = {}) => {
+    const makeFinalizationClient = ({
+        failUpdate = false,
+        referringDoctorId = '00000000-0000-4000-8000-000000000006',
+        noActiveNurses = false,
+        doctorCanAcknowledge = true
+    } = {}) => {
         const timeline = [];
         const markedAt = new Date('2026-08-28T22:00:00.000Z');
         const client = {
@@ -436,6 +441,13 @@ describe('critical result notification workflow', () => {
                 if (text.includes('SELECT e.status') && text.includes('FROM examinations e')) {
                     return { rows: [{
                         status: 'Reporting',
+                        queue_stage: 'Reporting',
+                        exam_completed_at: new Date('2026-08-28T21:30:00.000Z'),
+                        images_ready_at: new Date('2026-08-28T21:45:00.000Z'),
+                        study_instance_uid: '1.2.840.10008.1.2.3',
+                        images_available: true,
+                        image_count: 2,
+                        is_on_hold: false,
                         appointment_id: '00000000-0000-4000-8000-000000000005',
                         report_locked: false,
                         report_sections: { findings: 'Confirmed finding', impression: 'Critical diagnosis' },
@@ -457,6 +469,7 @@ describe('critical result notification workflow', () => {
                     }] };
                 }
                 if (text.includes('INSERT INTO critical_result_acknowledgements') && text.includes('referring_doctor_id')) {
+                    if (!doctorCanAcknowledge) return { rows: [] };
                     return { rows: [{
                         acknowledgement_id: '00000000-0000-4000-8000-000000000008',
                         referring_doctor_id: referringDoctorId,
@@ -464,6 +477,7 @@ describe('critical result notification workflow', () => {
                     }] };
                 }
                 if (text.includes('INSERT INTO critical_result_acknowledgements') && text.includes('u.role = \'Nurse\'')) {
+                    if (noActiveNurses) return { rows: [] };
                     return { rows: [{
                         acknowledgement_id: '00000000-0000-4000-8000-000000000010',
                         recipient_user_id: '00000000-0000-4000-8000-000000000011',
@@ -474,6 +488,12 @@ describe('critical result notification workflow', () => {
                         recipient_role: 'Nurse'
                     }] };
                 }
+                if (text.includes('INSERT INTO critical_result_admin_followup_tasks')) {
+                    return { rows: [{ task_id: '00000000-0000-4000-8000-000000000014' }] };
+                }
+                if (text.includes('FROM pacs_series ps') && text.includes('pacs_instances pi')) {
+                    return { rows: [{ image_count: 2 }] };
+                }
                 if (text.includes('SELECT COALESCE(MAX(version_number)')) return { rows: [{ version_number: 2 }] };
                 if (text.includes('FROM ready')) return { rows: [] };
                 return { rows: [] };
@@ -483,12 +503,13 @@ describe('critical result notification workflow', () => {
         return { client, timeline, markedAt };
     };
 
-    test('critical finalization creates acknowledgements atomically and notifies after commit', async () => {
+    test('critical finalization queues acknowledgement notifications atomically before commit', async () => {
         const { client, timeline, markedAt } = makeFinalizationClient();
         triggerEvent.mockImplementation(async (_db, eventType, payload) => {
             if (eventType === 'CriticalResultFinalized') {
                 timeline.push(`notify:${payload.doctorId ? 'Doctor' : payload.staffRole}`);
             }
+            return { scheduled: 1 };
         });
         const db = {
             connect: jest.fn().mockResolvedValue(client),
@@ -510,17 +531,19 @@ describe('critical result notification workflow', () => {
 
         const statements = client.query.mock.calls.map(([sql]) => String(sql));
         expect(statements.filter(sql => sql.includes('INSERT INTO critical_result_acknowledgements'))).toHaveLength(1);
-        expect(timeline.indexOf('COMMIT')).toBeLessThan(timeline.indexOf('notify:Radiologist'));
-        expect(timeline.indexOf('COMMIT')).toBeLessThan(timeline.indexOf('notify:Doctor'));
-        expect(triggerEvent).toHaveBeenCalledWith(db, 'CriticalResultFinalized', expect.objectContaining({
+        expect(timeline.indexOf('notify:Radiologist')).toBeLessThan(timeline.indexOf('COMMIT'));
+        expect(timeline.indexOf('notify:Doctor')).toBeLessThan(timeline.indexOf('COMMIT'));
+        expect(triggerEvent).toHaveBeenCalledWith(client, 'CriticalResultFinalized', expect.objectContaining({
             staffRole: 'Radiologist',
             entityType: 'Exam',
             entityId: EXAM_ID,
-            priority: 'Critical'
+            priority: 'Critical',
+            required: true
         }));
-        expect(triggerEvent).toHaveBeenCalledWith(db, 'CriticalResultFinalized', expect.objectContaining({
+        expect(triggerEvent).toHaveBeenCalledWith(client, 'CriticalResultFinalized', expect.objectContaining({
             doctorId: '00000000-0000-4000-8000-000000000006',
-            occurrenceKey: '00000000-0000-4000-8000-000000000008'
+            occurrenceKey: '00000000-0000-4000-8000-000000000008',
+            required: true
         }));
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ critical_result: true }));
         expect(next).not.toHaveBeenCalled();
@@ -545,6 +568,67 @@ describe('critical result notification workflow', () => {
         expect(triggerEventForRole).not.toHaveBeenCalled();
         expect(triggerEvent).not.toHaveBeenCalled();
         expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'finalization failed' }));
+    });
+
+    test('critical notification queue failure rolls back report finalization', async () => {
+        const { client } = makeFinalizationClient();
+        triggerEvent.mockRejectedValue(new Error('critical notification queue unavailable'));
+        const db = {
+            connect: jest.fn().mockResolvedValue(client),
+            query: jest.fn().mockResolvedValue({ rows: [] })
+        };
+        const res = makeResponse();
+        const next = jest.fn();
+
+        await updateReport(db)({
+            body: {
+                examId: EXAM_ID,
+                status: 'Finalized',
+                criticalResult: true,
+                sections: { findings: 'Confirmed finding', impression: 'Critical diagnosis' }
+            },
+            user: { user_id: '00000000-0000-4000-8000-000000000007', role: 'Radiologist' },
+            ip: '127.0.0.1'
+        }, res, next);
+
+        expect(triggerEvent).toHaveBeenCalledWith(client, 'CriticalResultFinalized', expect.objectContaining({
+            required: true
+        }));
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query).not.toHaveBeenCalledWith('COMMIT');
+        expect(res.json).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'critical notification queue unavailable'
+        }));
+    });
+
+    test('critical notification with no queued recipient rolls back report finalization', async () => {
+        const { client } = makeFinalizationClient();
+        triggerEvent.mockResolvedValue({ scheduled: 0 });
+        const db = {
+            connect: jest.fn().mockResolvedValue(client),
+            query: jest.fn().mockResolvedValue({ rows: [] })
+        };
+        const res = makeResponse();
+        const next = jest.fn();
+
+        await updateReport(db)({
+            body: {
+                examId: EXAM_ID,
+                status: 'Finalized',
+                criticalResult: true,
+                sections: { findings: 'Confirmed finding', impression: 'Critical diagnosis' }
+            },
+            user: { user_id: '00000000-0000-4000-8000-000000000007', role: 'Radiologist' },
+            ip: '127.0.0.1'
+        }, res, next);
+
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query).not.toHaveBeenCalledWith('COMMIT');
+        expect(res.json).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Critical result notification could not be queued'
+        }));
     });
 
     test('critical finalization without a referring doctor assigns acknowledgements to active nurses', async () => {
@@ -573,17 +657,123 @@ describe('critical result notification workflow', () => {
         );
         expect(nurseInsert).toBeDefined();
         expect(nurseInsert[0]).toContain('u.is_active = TRUE');
-        expect(triggerEvent).toHaveBeenCalledWith(db, 'CriticalResultFinalized', expect.objectContaining({
+        expect(triggerEvent).toHaveBeenCalledWith(client, 'CriticalResultFinalized', expect.objectContaining({
             staffId: '00000000-0000-4000-8000-000000000011',
             staffRole: 'Nurse',
-            occurrenceKey: '00000000-0000-4000-8000-000000000010'
+            occurrenceKey: '00000000-0000-4000-8000-000000000010',
+            required: true
         }));
-        expect(triggerEvent).toHaveBeenCalledWith(db, 'CriticalResultFinalized', expect.objectContaining({
+        expect(triggerEvent).toHaveBeenCalledWith(client, 'CriticalResultFinalized', expect.objectContaining({
             staffId: '00000000-0000-4000-8000-000000000013',
             staffRole: 'Nurse',
-            occurrenceKey: '00000000-0000-4000-8000-000000000012'
+            occurrenceKey: '00000000-0000-4000-8000-000000000012',
+            required: true
         }));
         expect(next).not.toHaveBeenCalled();
+    });
+
+    test('critical finalization routes away from a referring doctor without active portal access', async () => {
+        const { client } = makeFinalizationClient({ doctorCanAcknowledge: false });
+        triggerEvent.mockImplementation(async () => ({ scheduled: 1 }));
+        const db = {
+            connect: jest.fn().mockResolvedValue(client),
+            query: jest.fn().mockResolvedValue({ rows: [] })
+        };
+        const next = jest.fn();
+
+        await updateReport(db)({
+            body: {
+                examId: EXAM_ID,
+                status: 'Finalized',
+                criticalResult: true,
+                sections: { findings: 'Confirmed finding', impression: 'Critical diagnosis' }
+            },
+            user: { user_id: '00000000-0000-4000-8000-000000000007', role: 'Radiologist' },
+            ip: '127.0.0.1'
+        }, makeResponse(), next);
+
+        const doctorInsert = client.query.mock.calls.find(([sql]) =>
+            String(sql).includes('INSERT INTO critical_result_acknowledgements') &&
+            String(sql).includes('referring_doctor_id')
+        );
+        expect(doctorInsert[0]).toContain('rd.is_active = TRUE');
+        expect(doctorInsert[0]).toContain('rd.portal_is_active = TRUE');
+        expect(triggerEvent).not.toHaveBeenCalledWith(client, 'CriticalResultFinalized', expect.objectContaining({
+            doctorId: '00000000-0000-4000-8000-000000000006'
+        }));
+        expect(triggerEvent).toHaveBeenCalledWith(client, 'CriticalResultFinalized', expect.objectContaining({
+            staffRole: 'Nurse',
+            required: true
+        }));
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    test('critical finalization without a doctor or active nurses creates an administrative follow-up without clinical acknowledgement', async () => {
+        const { client, timeline } = makeFinalizationClient({ doctorCanAcknowledge: false, noActiveNurses: true });
+        triggerEventForRole.mockImplementation(async (_db, eventType, role) => {
+            timeline.push(`notify:${eventType}:${role}`);
+            return { recipients: 1, scheduled: 1 };
+        });
+        const db = {
+            connect: jest.fn().mockResolvedValue(client),
+            query: jest.fn().mockResolvedValue({ rows: [] })
+        };
+        const res = makeResponse();
+        const next = jest.fn();
+
+        await updateReport(db)({
+            body: {
+                examId: EXAM_ID,
+                status: 'Finalized',
+                criticalResult: true,
+                sections: { findings: 'Confirmed finding', impression: 'Critical diagnosis' }
+            },
+            user: { user_id: '00000000-0000-4000-8000-000000000007', role: 'Radiologist' },
+            ip: '127.0.0.1'
+        }, res, next);
+
+        const statements = client.query.mock.calls.map(([sql]) => String(sql));
+        expect(statements.some(sql => sql.includes('INSERT INTO critical_result_acknowledgements'))).toBe(true);
+        expect(statements.some(sql => sql.includes('INSERT INTO critical_result_admin_followup_tasks'))).toBe(true);
+        expect(timeline.indexOf('notify:CriticalResultFollowUpRequired:Admin')).toBeGreaterThan(-1);
+        expect(timeline.indexOf('notify:CriticalResultFollowUpRequired:Admin')).toBeLessThan(timeline.indexOf('COMMIT'));
+        expect(triggerEvent).not.toHaveBeenCalledWith(client, 'CriticalResultFinalized', expect.objectContaining({ staffRole: 'Admin' }));
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ critical_result: true }));
+        expect(next).not.toHaveBeenCalled();
+    });
+
+    test('critical finalization rolls back when the administrative follow-up alert cannot be queued', async () => {
+        const { client } = makeFinalizationClient({ referringDoctorId: null, noActiveNurses: true });
+        triggerEventForRole.mockResolvedValue({ recipients: 0, scheduled: 0 });
+        const db = {
+            connect: jest.fn().mockResolvedValue(client),
+            query: jest.fn().mockResolvedValue({ rows: [] })
+        };
+        const res = makeResponse();
+        const next = jest.fn();
+
+        await updateReport(db)({
+            body: {
+                examId: EXAM_ID,
+                status: 'Finalized',
+                criticalResult: true,
+                sections: { findings: 'Confirmed finding', impression: 'Critical diagnosis' }
+            },
+            user: { user_id: '00000000-0000-4000-8000-000000000007', role: 'Radiologist' },
+            ip: '127.0.0.1'
+        }, res, next);
+
+        expect(triggerEventForRole).toHaveBeenCalledWith(client, 'CriticalResultFollowUpRequired', 'Admin', expect.objectContaining({
+            required: true,
+            priority: 'Critical',
+            channels: ['InApp']
+        }));
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query).not.toHaveBeenCalledWith('COMMIT');
+        expect(res.json).not.toHaveBeenCalled();
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            message: 'Critical-result administrative follow-up notification could not be queued'
+        }));
     });
 
     test('critical marker cannot be inferred or set during a draft save', async () => {

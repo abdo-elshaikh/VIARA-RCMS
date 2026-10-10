@@ -11,6 +11,9 @@ ENV VITE_OHIF_URL=$VITE_OHIF_URL
 ARG VITE_PORTAL_PUBLIC_URL
 ENV VITE_PORTAL_PUBLIC_URL=$VITE_PORTAL_PUBLIC_URL
 
+ARG VITE_DEMO_PASSWORD=
+ENV VITE_DEMO_PASSWORD=$VITE_DEMO_PASSWORD
+
 COPY package*.json ./
 COPY scripts/harden-build-dependencies.cjs ./scripts/harden-build-dependencies.cjs
 RUN npm ci

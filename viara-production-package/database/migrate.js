@@ -225,7 +225,10 @@ const MIGRATION_FILES = [
     '191_pacs_measurement_drafts.sql',
     '192_system_updates_management.sql',
     '193_password_reset_tokens.sql',
-    '194_payroll_compensation_expansion.sql'
+    '194_payroll_compensation_expansion.sql',
+    '195_report_version_signature_metadata.sql',
+    '196_critical_result_reminder_policy.sql',
+    '197_critical_result_admin_followup_tasks.sql'
 ];
 
 const SEED_FILES = [

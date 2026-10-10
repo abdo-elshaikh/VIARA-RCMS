@@ -30,6 +30,11 @@ const {
 } = require('../schemas/reportTemplateSchema');
 
 const { deliverResultSchema } = require('../schemas/resultDeliverySchema');
+const { completeCriticalResultFollowupSchema } = require('../schemas/criticalResultFollowupSchema');
+const {
+    getOpenFollowups: getOpenCriticalResultFollowups,
+    completeFollowup: completeCriticalResultFollowup
+} = require('../controllers/criticalResultFollowupController');
 
 const {
     getWorklist,
@@ -138,6 +143,20 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         hasPermission(pool, 'VIEW_EXAMS'),
         validateRequest(acknowledgeCriticalResultSchema),
         acknowledgeCriticalResult(pool)
+    );
+
+    router.get('/critical-result-followups',
+        authenticateToken,
+        authorizeRole(['Admin']),
+        auditRead(auditService, { resourceTable: 'critical_result_admin_followup_tasks' }),
+        getOpenCriticalResultFollowups(pool)
+    );
+
+    router.post('/critical-result-followups/:id/complete',
+        authenticateToken,
+        authorizeRole(['Admin']),
+        validateRequest(completeCriticalResultFollowupSchema),
+        completeCriticalResultFollowup(pool)
     );
 
     router.post('/exams/:examId/complete-acquisition',

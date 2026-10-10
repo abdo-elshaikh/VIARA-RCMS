@@ -62,6 +62,8 @@ import {
     useMarkAllMyNotificationsReadMutation,
     useMarkMyNotificationReadMutation,
     useAcknowledgeCriticalResultMutation,
+    useGetCriticalResultFollowupsQuery,
+    useCompleteCriticalResultFollowupMutation,
     useSendManualNotificationMutation
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
@@ -117,6 +119,172 @@ const categoryDefinitions = [
 ];
 
 const fieldClass = 'h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-800 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
+
+function CriticalResultAdminFollowups({ isAr }) {
+    const navigate = useNavigate();
+    const { data, isLoading, isError, refetch } = useGetCriticalResultFollowupsQuery(undefined, {
+        pollingInterval: 30000,
+        refetchOnFocus: true,
+        refetchOnReconnect: true
+    });
+    const [completeFollowup, { isLoading: isCompleting }] = useCompleteCriticalResultFollowupMutation();
+    const [activeTaskId, setActiveTaskId] = useState(null);
+    const [contactedParty, setContactedParty] = useState('');
+    const [followUpNotes, setFollowUpNotes] = useState('');
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const text = isAr
+        ? {
+            title: 'متابعة النتائج الحرجة العاجلة',
+            description: 'هذه مهام متابعة إدارية عند تعذر تحديد مستلم سريري نشط. توثيق المتابعة لا يُعد إقرارًا سريريًا بالنتيجة.',
+            loading: 'جارٍ تحميل مهام المتابعة...',
+            error: 'تعذر تحميل مهام المتابعة.',
+            retry: 'إعادة المحاولة',
+            empty: 'لا توجد مهام متابعة إدارية مفتوحة.',
+            exam: 'فتح الفحص',
+            markedAt: 'وقت التصعيد',
+            document: 'توثيق المتابعة',
+            contactedParty: 'الشخص أو الجهة التي تم التواصل معها',
+            notes: 'ملاحظات المتابعة (10 أحرف على الأقل)',
+            complete: 'حفظ وإكمال المهمة',
+            cancel: 'إلغاء',
+            required: 'يرجى إدخال جهة الاتصال وملاحظات المتابعة المطلوبة.',
+            saved: 'تم توثيق المتابعة الإدارية.',
+            failed: 'تعذر إكمال مهمة المتابعة.'
+        }
+        : {
+            title: 'Urgent critical-result follow-up',
+            description: 'Administrative follow-up tasks created when no active clinical recipient was available. Recording follow-up is not clinical acknowledgement.',
+            loading: 'Loading follow-up tasks...',
+            error: 'Could not load follow-up tasks.',
+            retry: 'Retry',
+            empty: 'There are no open administrative follow-up tasks.',
+            exam: 'Open examination',
+            markedAt: 'Escalated',
+            document: 'Document follow-up',
+            contactedParty: 'Person or organization contacted',
+            notes: 'Follow-up notes (at least 10 characters)',
+            complete: 'Save and complete task',
+            cancel: 'Cancel',
+            required: 'Enter the contacted party and required follow-up notes.',
+            saved: 'Administrative follow-up documented.',
+            failed: 'Could not complete the follow-up task.'
+        };
+
+    const closeForm = () => {
+        setActiveTaskId(null);
+        setContactedParty('');
+        setFollowUpNotes('');
+    };
+
+    const submitFollowup = async (event, taskId) => {
+        event.preventDefault();
+        const party = contactedParty.trim();
+        const notes = followUpNotes.trim();
+        if (party.length < 2 || party.length > 160 || notes.length < 10 || notes.length > 2000) {
+            toast.error(text.required);
+            return;
+        }
+
+        try {
+            await completeFollowup({ taskId, contactedParty: party, followUpNotes: notes }).unwrap();
+            toast.success(text.saved);
+            closeForm();
+        } catch (error) {
+            toast.error(getErrorMessage(error, text.failed));
+        }
+    };
+
+    return (
+        <section className="space-y-3 rounded-2xl border border-rose-300/70 bg-rose-50/60 p-4 dark:border-rose-900/60 dark:bg-rose-950/20" aria-labelledby="critical-followups-title">
+            <div>
+                <h2 id="critical-followups-title" className="text-sm font-black text-rose-900 dark:text-rose-200">{text.title}</h2>
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-rose-800/90 dark:text-rose-300">{text.description}</p>
+            </div>
+
+            {isLoading && <p role="status" className="text-xs font-semibold text-slate-600 dark:text-slate-300">{text.loading}</p>}
+            {isError && (
+                <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-rose-700 dark:text-rose-300" role="alert">
+                    <span>{text.error}</span>
+                    <button type="button" onClick={refetch} className="underline underline-offset-2">{text.retry}</button>
+                </div>
+            )}
+            {!isLoading && !isError && items.length === 0 && (
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">{text.empty}</p>
+            )}
+
+            {items.map((item) => (
+                <article key={item.task_id} className="rounded-xl border border-rose-200 bg-white p-3 dark:border-rose-900/50 dark:bg-slate-900">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="space-y-1">
+                            <p className="text-xs font-black text-slate-900 dark:text-white">
+                                {isAr ? 'رقم الفحص' : 'Examination'}: <span className="font-mono">{item.order_number || item.exam_id}</span>
+                            </p>
+                            <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                {text.markedAt}: {item.critical_marked_at ? new Date(item.critical_marked_at).toLocaleString(isAr ? 'ar' : undefined) : '—'}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => navigate(`/cases/${item.exam_id}`)}
+                                className="rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                                {text.exam}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTaskId(activeTaskId === item.task_id ? null : item.task_id);
+                                    setContactedParty('');
+                                    setFollowUpNotes('');
+                                }}
+                                className="rounded-lg bg-rose-700 px-3 py-2 text-[11px] font-black text-white hover:bg-rose-800"
+                            >
+                                {text.document}
+                            </button>
+                        </div>
+                    </div>
+
+                    {activeTaskId === item.task_id && (
+                        <form onSubmit={(event) => submitFollowup(event, item.task_id)} className="mt-3 grid gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+                            <label className="grid gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                {text.contactedParty}
+                                <input
+                                    required
+                                    minLength={2}
+                                    maxLength={160}
+                                    value={contactedParty}
+                                    onChange={(event) => setContactedParty(event.target.value)}
+                                    className={fieldClass}
+                                />
+                            </label>
+                            <label className="grid gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                {text.notes}
+                                <textarea
+                                    required
+                                    minLength={10}
+                                    maxLength={2000}
+                                    rows={3}
+                                    value={followUpNotes}
+                                    onChange={(event) => setFollowUpNotes(event.target.value)}
+                                    className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-800 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+                                />
+                            </label>
+                            <div className="flex flex-wrap justify-end gap-2">
+                                <button type="button" onClick={closeForm} disabled={isCompleting} className="rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-bold text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">
+                                    {text.cancel}
+                                </button>
+                                <button type="submit" disabled={isCompleting} className="rounded-lg bg-teal-700 px-3 py-2 text-[11px] font-black text-white disabled:opacity-50">
+                                    {text.complete}
+                                </button>
+                            </div>
+                        </form>
+                    )}
+                </article>
+            ))}
+        </section>
+    );
+}
 
 export default function Notifications() {
     const { t, i18n } = useTranslation(['common', 'system', 'workspace']);
@@ -495,6 +663,8 @@ export default function Notifications() {
                 ]}
                 metricsLabel={t('notificationMessagingIndicators')}
             />
+
+            {currentUser?.role === 'Admin' && <CriticalResultAdminFollowups isAr={isAr} />}
 
             {/* 2. Scope Selector Deck: Personal vs Center Outbound Logs */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-xs dark:border-slate-800 dark:bg-slate-900/90">

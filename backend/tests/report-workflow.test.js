@@ -1,6 +1,23 @@
 const { getReportStatusForSave, getReportTransitionError } = require('../src/utils/reportWorkflow');
 
 describe('report workflow', () => {
+    test('pending electronic delivery does not count as delivered or leave the not-delivered queue', async () => {
+        const { getCaseReports } = require('../src/controllers/examController');
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+        const res = { json: jest.fn() };
+        const next = jest.fn();
+
+        await getCaseReports(db, { queue: 'notDelivered' })({
+            user: { role: 'Admin', user_id: 'admin-1' }
+        }, res, next);
+
+        const query = db.query.mock.calls[0][0];
+        expect(query).toContain("last_delivery.delivery_status NOT IN ('Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged')");
+        expect(query).toContain("'Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged'");
+        expect(query).not.toContain('last_delivery.delivery_status IS NOT NULL');
+        expect(next).not.toHaveBeenCalled();
+    });
+
     test('saving content promotes a draft once and preserves later workflow stages', () => {
         expect(getReportStatusForSave('Draft')).toBe('Typed');
         expect(getReportStatusForSave('Typed')).toBe('Typed');

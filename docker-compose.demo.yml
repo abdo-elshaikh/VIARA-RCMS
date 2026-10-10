@@ -48,6 +48,9 @@ services:
 
   frontend:
     container_name: !reset null
+    build:
+      args:
+        VITE_DEMO_PASSWORD: ${TEST_USER_PASSWORD:?Set TEST_USER_PASSWORD in the demo env file}
 
   portal:
     container_name: !reset null
