@@ -21,6 +21,8 @@ const override = path.join(testDir, 'override.json');
 const args = ['compose', '--project-name', project, '--env-file', envFile, '-f', path.join(stage, 'docker-compose.yml'), '-f', override];
 const compose = (extra, input) => execFileSync('docker', [...args, ...extra], { encoding:'utf8', input, stdio:[input === undefined ? 'ignore' : 'pipe','pipe','pipe'], timeout:600000 });
 async function main() {
+    const engine = execFileSync('docker',['info','--format','{{.OSType}}'],{encoding:'utf8',timeout:30000}).trim();
+    if(engine!=='linux') throw Error('A reachable Linux Docker Engine is required');
     const ports = {};
     for (const name of ['FRONTEND_PORT','BACKEND_PORT','PORTAL_PORT','POSTGRES_PORT','OHIF_PORT','PACS_DICOM_PORT','ORTHANC_REST_PORT']) ports[name] = String(await reservePort());
     const { publicKey, privateKey } = crypto.generateKeyPairSync('ec', { namedCurve:'prime256v1' });
@@ -126,5 +128,8 @@ async function main() {
 }
 main().catch(error=>{ console.error(error.message); if(launched){const logs=spawnSync('docker',[...args,'logs','--no-color','--tail','60'],{encoding:'utf8'});fs.writeFileSync(path.join(testDir,'failure.log'),(logs.stdout||'')+(logs.stderr||''));}process.exitCode=1; }).finally(()=>{
     // Delete only resources in the uniquely named synthetic project.
-    if(launched) compose(['down','--volumes','--remove-orphans']);
+    if(launched) {
+        try { compose(['down','--volumes','--remove-orphans']); }
+        catch(error) { console.error(`Cleanup failed for synthetic project ${project}: ${error.message}`); process.exitCode=1; }
+    }
 });
