@@ -1,5 +1,6 @@
 const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
+const { logAction } = require('../services/auditService');
 
 const getSafetyTemplates = (db) => async (req, res, next) => {
     try {
@@ -89,6 +90,8 @@ const evaluateSafetyContraindications = (answers = {}) => {
 };
 
 const submitSafetyResponse = (db) => async (req, res, next) => {
+    let client;
+    let committed = false;
     try {
         const { examId } = req.params;
         const { templateId, answers } = req.body;
@@ -97,8 +100,10 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
         // Safety screening is a write action tied to the assigned nurse or
         // technician; emergency (break-glass) elevation is read-only by design
         // and must never unlock submitting safety responses.
-        const examCheck = await db.query(`
-            SELECT e.status
+        client = await db.connect();
+        await client.query('BEGIN');
+        const examCheck = await client.query(`
+            SELECT e.status, e.queue_stage
             FROM examinations e
             JOIN appointments a ON a.appointment_id = e.appointment_id
             WHERE e.exam_id = $1
@@ -106,21 +111,19 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
                     ($2::text = 'Nurse' AND a.nurse_id = $3::uuid)
                     OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
               )
+            FOR UPDATE OF e, a
         `, [examId, req.user.role, userId]);
-        if (examCheck.rows.length === 0) return next(new AppError('Exam not found', 404));
+        if (examCheck.rows.length === 0) throw new AppError('Exam not found', 404);
 
-        const templateCheck = await db.query(`
+        const templateCheck = await client.query(`
             SELECT 1
             FROM safety_templates st
             JOIN examinations e ON e.modality_id = st.modality_id
             WHERE st.template_id = $1 AND e.exam_id = $2 AND st.is_active = TRUE
         `, [templateId, examId]);
-        if (templateCheck.rows.length === 0) {
-            return next(new AppError('Safety template is not valid for this exam', 400));
-        }
+        if (templateCheck.rows.length === 0) throw new AppError('Safety template is not valid for this exam', 400);
 
-        // Insert safety response
-        const result = await db.query(
+        const result = await client.query(
             `INSERT INTO exam_safety_responses (exam_id, template_id, answers_json, signed_by_user_id) 
              VALUES ($1, $2, $3, $4) RETURNING *`,
             [examId, templateId, JSON.stringify(answers), userId]
@@ -129,7 +132,7 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
         // Evaluate clinical safety contraindications
         const contraindication = evaluateSafetyContraindications(answers);
         if (contraindication.hasContraindication) {
-            await db.query(`
+            await client.query(`
                 UPDATE examinations
                 SET is_on_hold = TRUE,
                     hold_started_at = COALESCE(hold_started_at, NOW()),
@@ -145,10 +148,29 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
                 contraindication.renalRisk,
                 examId
             ]);
+        }
 
+        await logAction(client, {
+            userId,
+            action: 'SAFETY_RESPONSE_SUBMITTED',
+            resourceId: examId,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: {
+                safety_hold: contraindication.hasContraindication,
+                contraindication_reasons: contraindication.reasons,
+                queue_stage: examCheck.rows[0].queue_stage
+            },
+            required: true
+        });
+
+        await client.query('COMMIT');
+        committed = true;
+
+        if (contraindication.hasContraindication) {
             try {
                 const { triggerEventForRole } = require('../services/notificationJobService');
-                triggerEventForRole(db, 'ExamStatusChanged', 'Radiologist', {
+                const notification = await triggerEventForRole(db, 'ExamStatusChanged', 'Radiologist', {
                     priority: 'Critical',
                     entityType: 'Exam',
                     entityId: examId,
@@ -158,9 +180,12 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
                         safety_hold: true,
                         reason: contraindication.holdReason || 'Clinical contraindication detected in safety questionnaire'
                     }
-                }).catch(() => {});
-            } catch (e) {
-                // Ignore notification delivery errors
+                });
+                if (notification?.error) {
+                    console.error('[SafetyController] Safety-hold notification scheduling failed:', notification.error);
+                }
+            } catch (notificationError) {
+                console.error('[SafetyController] Safety-hold notification scheduling failed:', notificationError.message);
             }
         }
 
@@ -172,7 +197,16 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
             holdReason: contraindication.hasContraindication ? contraindication.holdReason : null
         });
     } catch (error) {
+        if (client && !committed) {
+            try {
+                await client.query('ROLLBACK');
+            } catch (rollbackError) {
+                console.error('[SafetyController] Safety transaction rollback failed:', rollbackError.message);
+            }
+        }
         next(error);
+    } finally {
+        client?.release();
     }
 };
 

@@ -7,6 +7,7 @@ const { aiReportLimiter, aiReportDailyLimiter } = require('../middleware/rateLim
 
 const {
     updateExamReportSchema,
+    acknowledgeCriticalResultSchema,
     getWorklistQuerySchema,
     improveReportSchema,
     generatePreliminaryReportSchema,
@@ -36,6 +37,7 @@ const {
     lookupCaseReport,
     getExamById,
     updateReport,
+    acknowledgeCriticalResult,
     getReportPdf,
     amendReport,
     improveReportFormat,
@@ -130,6 +132,14 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         updateReport(pool)
     );
 
+    router.post('/exams/:id/critical-result/acknowledge',
+        authenticateToken,
+        authorizeRole(['Nurse']),
+        hasPermission(pool, 'VIEW_EXAMS'),
+        validateRequest(acknowledgeCriticalResultSchema),
+        acknowledgeCriticalResult(pool)
+    );
+
     router.post('/exams/:examId/complete-acquisition',
         authenticateToken,
         authorizeRole(['Technician', 'Admin', 'Developer']),
@@ -205,7 +215,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
 
     router.post('/exams/:id/report/amend',
         authenticateToken,
-        authorizeRole(['Admin', 'Radiologist']),
+        authorizeRole(['Radiologist']),
         hasPermission(pool, 'AMEND_REPORTS'),
         validateRequest(amendReportSchema),
         amendReport(pool)

@@ -39,6 +39,7 @@ const clientFor = (existing, updated) => ({
     query: jest.fn(async (sql) => {
         const text = String(sql);
         if (text.includes('SELECT e.*')) return { rows: [existing] };
+        if (text.includes('FROM pacs_series ps')) return { rows: [{ image_count: 1 }] };
         if (text.includes('UPDATE examinations')) return { rows: [updated] };
         return { rows: [] };
     }),
@@ -62,6 +63,9 @@ describe('deferred reporting workflow', () => {
             status: 'Scanning',
             report_request_status: 'Requested',
             contrast_required: false,
+            study_instance_uid: '2.25.201',
+            images_available: true,
+            image_count: 1,
             technician_id: USER_ID,
             order_number: 'ORD-201'
         };
@@ -88,6 +92,41 @@ describe('deferred reporting workflow', () => {
         expect(client.query).toHaveBeenCalledWith('COMMIT');
         expect(res.json).toHaveBeenCalledWith(updated);
         expect(next).not.toHaveBeenCalled();
+    });
+
+    test('does not mark acquisition ready when no PACS study is linked', async () => {
+        const existing = {
+            exam_id: EXAM_ID,
+            appointment_id: APPOINTMENT_ID,
+            queue_stage: 'In Exam',
+            current_station: 'Modality',
+            status: 'Scanning',
+            report_request_status: 'Requested',
+            contrast_required: false,
+            technician_id: USER_ID,
+            order_number: 'ORD-201'
+        };
+        const client = {
+            query: jest.fn(async sql => {
+                const text = String(sql);
+                if (text === 'BEGIN' || text === 'ROLLBACK') return { rows: [] };
+                if (text.includes('SELECT e.*')) return { rows: [existing] };
+                if (text.includes('FROM pacs_series ps')) return { rows: [{ image_count: 0 }] };
+                return { rows: [] };
+            }),
+            release: jest.fn()
+        };
+        const next = jest.fn();
+
+        await completeAcquisition({ connect: jest.fn().mockResolvedValue(client) })({
+            params: { examId: EXAM_ID },
+            body: { resultMode: 'ImagesOnly' },
+            user: { user_id: USER_ID, role: 'Technician' }
+        }, response(), next);
+
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE examinations'))).toBe(false);
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'PACS_STUDY_NOT_READY' }));
     });
 
     test('reopens an images-delivered examination for a requested report', async () => {

@@ -77,4 +77,56 @@ describe('report workflow', () => {
         expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
         expect(mockClient.release).toHaveBeenCalled();
     });
+
+    test('controller rejects finalization when the linked PACS study has no images', async () => {
+        const { updateReport } = require('../src/controllers/examController');
+        const mockClient = {
+            query: jest.fn().mockImplementation(async sql => {
+                const text = String(sql || '');
+                if (text === 'BEGIN' || text === 'ROLLBACK') return { rows: [] };
+                if (text.includes('SELECT e.status') && text.includes('FROM examinations e')) {
+                    return {
+                        rows: [{
+                            status: 'Reporting',
+                            appointment_id: 'appointment-1',
+                            report_locked: false,
+                            report_sections: { findings: 'Finding', impression: 'Impression' },
+                            report_content: 'Existing report',
+                            report_status: 'Approved',
+                            report_request_status: 'Requested',
+                            queue_stage: 'Reporting',
+                            is_on_hold: false,
+                            exam_completed_at: new Date(),
+                            images_ready_at: new Date(),
+                            images_available: true,
+                            image_count: 1,
+                            study_instance_uid: '2.25.301'
+                        }]
+                    };
+                }
+                if (text.includes('FROM pacs_series ps')) return { rows: [{ image_count: 0 }] };
+                return { rows: [] };
+            }),
+            release: jest.fn()
+        };
+        const next = jest.fn();
+
+        await updateReport({ connect: jest.fn().mockResolvedValue(mockClient) })({
+            body: {
+                examId: 'exam-1',
+                status: 'Finalized',
+                reportStatus: 'Finalized',
+                sections: { findings: 'Finding', impression: 'Impression' }
+            },
+            user: { user_id: 'radiologist-1', role: 'Radiologist' }
+        }, {}, next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({
+            statusCode: 409,
+            code: 'PACS_STUDY_NOT_READY'
+        }));
+        expect(mockClient.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(mockClient.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE examinations'))).toBe(false);
+        expect(mockClient.release).toHaveBeenCalled();
+    });
 });

@@ -9,6 +9,7 @@ const { decrypt } = require('../utils/crypto');
 const { getPagination } = require('../utils/pagination');
 const realtimeService = require('../services/realtimeService');
 const { completeReceptionTask } = require('../services/receptionTaskService');
+const { assertPacsStudyAvailable } = require('../services/pacsStudyReadinessService');
 const {
     ROLE_CONFIG,
     roleForStation,
@@ -1581,6 +1582,7 @@ const completeAcquisition = (db) => async (req, res, next) => {
         }
 
         await assertAcquisitionContrastRecorded(client, existing);
+        await assertPacsStudyAvailable(client, existing);
 
         const updateResult = await client.query(`
             UPDATE examinations

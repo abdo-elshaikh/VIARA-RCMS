@@ -20,9 +20,12 @@ class ReportGenerator {
         if (summary.thresholdEvaluations?.length > 0) {
             console.log('\n--- 🎯 SLA Thresholds Evaluation ---');
             for (const t of summary.thresholdEvaluations) {
-                const mark = t.passed ? '✅ PASS' : '❌ FAIL';
+                const mark = t.passed === null ? '⚠️ NOT MEASURED' : t.passed ? '✅ PASS' : '❌ FAIL';
                 console.log(`   ${mark} [${t.name}]: Actual ${t.actual} (Target: ${t.target})`);
             }
+        }
+        if (summary.thresholdStatus) {
+            console.log(`\nOverall threshold status: ${summary.thresholdStatus}`);
         }
 
         if (summary.endpoints?.length > 0) {
@@ -82,8 +85,10 @@ class ReportGenerator {
             '## 2. تقييم معايير الخطة (SLA Thresholds)',
             '',
             summary.thresholdEvaluations?.length > 0
-                ? summary.thresholdEvaluations.map(t => `- **${t.passed ? '✅ [PASS]' : '❌ [FAIL]'} ${t.name}:** Actual = \`${t.actual}\`, Target = \`${t.target}\``).join('\n')
+                ? summary.thresholdEvaluations.map(t => `- **${t.passed === null ? '⚠️ [NOT MEASURED]' : t.passed ? '✅ [PASS]' : '❌ [FAIL]'} ${t.name}:** Actual = \`${t.actual}\`, Target = \`${t.target}\``).join('\n')
                 : '_لا توجد معايير مخصصة محددة لهذه الجولة._',
+            '',
+            `**Overall threshold status:** ${summary.thresholdStatus || 'NOT EVALUATED'}`,
             '',
             '## 3. تفاصيل أداء نقاط الاتصال البرمجية (Endpoints Breakdown)',
             '',

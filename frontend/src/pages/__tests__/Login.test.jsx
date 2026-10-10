@@ -200,4 +200,22 @@ describe('VIARA Login Page', () => {
         expect(screen.getByRole('alert')).toHaveTextContent('Password must be at least 8 characters');
         expect(mutations.reset).not.toHaveBeenCalled();
     });
+
+    it('displays friendly connection notice and suppresses raw HTML on gateway 502/503 errors', async () => {
+        mutations.login.mockReturnValue({
+            unwrap: () => Promise.reject({
+                status: 502,
+                data: '<!DOCTYPE html> <html lang="ar"> <head><title>صيانة</title></head> <body>Maintenance</body> </html>',
+            }),
+        });
+        renderLogin('en');
+        fireEvent.change(screen.getByLabelText('Email address'), { target: { value: 'admin@viara.com' } });
+        fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'ViaraAdmin@2026' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent('The system is currently unavailable. Try again or contact your center support team.');
+        expect(alert.textContent).not.toContain('<!DOCTYPE');
+        expect(alert.textContent).not.toContain('<html');
+    });
 });

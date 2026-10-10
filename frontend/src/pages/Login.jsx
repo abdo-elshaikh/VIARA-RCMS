@@ -399,11 +399,13 @@ export default function Login() {
             setServerError(
                 status === 'FETCH_ERROR' || status === 'TIMEOUT_ERROR'
                     ? c.network
-                    : status === 429
-                        ? c.rateLimit
-                        : status === 401
-                            ? c.invalidCredentials
-                            : getErrorMessage(error, c.loginFailed),
+                    : [502, 503, 504].includes(status)
+                        ? (c.connectionUnavailable || c.network)
+                        : status === 429
+                            ? c.rateLimit
+                            : status === 401
+                                ? c.invalidCredentials
+                                : getErrorMessage(error, c.loginFailed),
             );
         } finally {
             authenticationLock.current = false;

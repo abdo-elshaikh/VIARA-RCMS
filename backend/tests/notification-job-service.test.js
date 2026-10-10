@@ -632,31 +632,22 @@ describe('notification job service hardening', () => {
         expect(preview.blocked[0].reason).toBe('Exam has moved beyond the notified state');
     });
 
-    test('creates idempotent admin acknowledgement tasks before marking a critical escalation', async () => {
+    test('claims overdue critical acknowledgements once and reminds the assigned recipient without admin escalation', async () => {
         const calls = [];
         const db = {
             query: jest.fn(async (sql, params = []) => {
                 const text = String(sql);
                 calls.push(text);
-                if (text.includes("WHERE role = 'Admin'")) {
-                    return { rows: [{ user_id: 'admin-1', role: 'Admin' }] };
+                if (text.includes('SET escalated_at = NOW()')) {
+                    return { rows: [{ acknowledgement_id: 'doctor-ack-1' }] };
                 }
-                if (text.includes('cra.referring_doctor_id IS NOT NULL')) {
+                if (text.includes('SELECT cra.acknowledgement_id')) {
                     return { rows: [{
                         acknowledgement_id: 'doctor-ack-1',
                         exam_id: 'exam-1',
-                        acknowledgement_due_at: '2026-08-29T12:00:00.000Z'
-                    }] };
-                }
-                if (text.includes('INSERT INTO critical_result_acknowledgements')) return { rows: [], rowCount: 1 };
-                if (text.includes('SET escalated_at = NOW()')) return { rows: [{ acknowledgement_id: 'doctor-ack-1' }] };
-                if (text.includes('SELECT cra.acknowledgement_id')) {
-                    return { rows: [{
-                        acknowledgement_id: 'admin-ack-1',
-                        exam_id: 'exam-1',
-                        recipient_user_id: 'admin-1',
-                        referring_doctor_id: null,
-                        recipient_role: 'Admin',
+                        recipient_user_id: null,
+                        referring_doctor_id: 'doctor-1',
+                        recipient_role: 'Doctor',
                         escalation_level: 1,
                         acknowledgement_due_at: '2026-08-29T12:15:00.000Z',
                         order_number: 'ORD-1',
@@ -664,10 +655,10 @@ describe('notification job service hardening', () => {
                     }] };
                 }
                 if (text.includes('SELECT default_channels')) {
-                    return { rows: [{ default_channels: ['InApp'], default_priority: 'Critical' }] };
+                    return { rows: [{ default_channels: ['InApp', 'Email'], default_priority: 'Critical' }] };
                 }
-                if (text.includes('FROM notification_audience_policies')) {
-                    return { rows: [{ allowed_channels: ['InApp'], min_priority: 'Critical', inapp_enabled: true }] };
+                if (text.includes('FROM notification_preferences')) {
+                    return { rows: [{ email_enabled: true, sms_enabled: false, whatsapp_enabled: false, inapp_enabled: true }] };
                 }
                 if (text.includes('INSERT INTO notification_jobs')) return { rows: [{ job_id: 'job-1' }] };
                 return { rows: [] };
@@ -677,9 +668,15 @@ describe('notification job service hardening', () => {
         const result = await processCriticalResultEscalations(db);
 
         expect(result).toEqual({ escalated: 1, reconciled: 1 });
-        expect(calls.findIndex(text => text.includes('INSERT INTO critical_result_acknowledgements')))
-            .toBeLessThan(calls.findIndex(text => text.includes('SET escalated_at = NOW()')));
-        const jobCall = db.query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO notification_jobs'));
-        expect(jobCall[1][9]).toBe('CriticalResultEscalated:InApp:Staff:admin-1:Exam:exam-1:admin-ack-1');
+        expect(calls.some(text => text.includes("WHERE role = 'Admin'"))).toBe(false);
+        expect(calls.some(text => text.includes('INSERT INTO critical_result_acknowledgements'))).toBe(false);
+        const jobCalls = db.query.mock.calls.filter(([sql]) => String(sql).includes('INSERT INTO notification_jobs'));
+        expect(jobCalls.length).toBeGreaterThan(0);
+        expect(jobCalls.every(([, params]) => params[9].includes('CriticalResultEscalated'))).toBe(true);
+        expect(jobCalls.every(([, params]) => params[9].includes('doctor-1'))).toBe(true);
+        expect(jobCalls.every(([, params]) => params[9].includes('doctor-ack-1'))).toBe(true);
+        const claimCall = db.query.mock.calls.find(([sql]) => String(sql).includes('SET escalated_at = NOW()'));
+        expect(claimCall[0]).toContain("cra.status = 'Pending'");
+        expect(claimCall[0]).toContain('cra.escalated_at IS NULL');
     });
 });

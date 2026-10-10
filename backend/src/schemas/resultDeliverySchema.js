@@ -21,6 +21,8 @@ const deliveryStatusSchema = z.enum([
     'Printed'
 ]);
 
+const providerConfirmedChannels = ['Email', 'SMS Link', 'WhatsApp Link', 'Patient Portal', 'Doctor Portal'];
+
 const deliverResultSchema = z.object({
     deliveryMethod: deliveryMethodSchema,
     resultType: z.enum(['Images', 'Report', 'ImagesAndReport']).default('Report'),
@@ -54,6 +56,14 @@ const deliverResultSchema = z.object({
             code: z.ZodIssueCode.custom,
             path: ['acknowledgedByName'],
             message: 'Acknowledged by name is required for acknowledged deliveries'
+        });
+    }
+
+    if (providerConfirmedChannels.includes(data.deliveryMethod) && data.deliveryStatus !== undefined) {
+        context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['deliveryStatus'],
+            message: 'Electronic delivery status is assigned by the delivery workflow, not by the requester'
         });
     }
 });

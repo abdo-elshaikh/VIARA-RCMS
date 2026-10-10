@@ -16,9 +16,9 @@ try {
 
 const localBackendEnv = {};
 if (!process.env.DATABASE_URL && process.env.POSTGRES_PASSWORD) {
-  const user = encodeURIComponent(process.env.POSTGRES_USER || 'rcms');
+  const user = encodeURIComponent(process.env.POSTGRES_USER || 'VIARA');
   const password = encodeURIComponent(process.env.POSTGRES_PASSWORD);
-  const database = encodeURIComponent(process.env.POSTGRES_DB || 'rcms');
+  const database = encodeURIComponent(process.env.POSTGRES_DB || 'VIARA');
   const port = process.env.POSTGRES_PORT || '5432';
   localBackendEnv.DATABASE_URL = `postgresql://${user}:${password}@127.0.0.1:${port}/${database}`;
 }
@@ -348,21 +348,31 @@ function checkPortOpen(port, host = '127.0.0.1', timeoutMs = 800) {
 async function isLocalPostgresActive(port = 5432) {
   const isOpen = await checkPortOpen(port, '127.0.0.1', 800);
   if (!isOpen) return false;
+
+  const pgPath = path.join(__dirname, 'backend', 'node_modules', 'pg');
+  if (!fs.existsSync(pgPath)) return false;
+
+  const { Client } = require(pgPath);
+  const clientOptions = process.env.DATABASE_URL
+    ? { connectionString: process.env.DATABASE_URL }
+    : {
+        host: '127.0.0.1',
+        port,
+        user: process.env.POSTGRES_USER || 'VIARA',
+        password: process.env.POSTGRES_PASSWORD || '',
+        database: process.env.POSTGRES_DB || 'VIARA'
+      };
+  const client = new Client({ ...clientOptions, connectionTimeoutMillis: 1500 });
+  let connected = false;
   try {
-    const pgPath = path.join(__dirname, 'backend', 'node_modules', 'pg');
-    if (fs.existsSync(pgPath)) {
-      const { Client } = require(pgPath);
-      const dbUrl = process.env.DATABASE_URL ||
-        `postgresql://${process.env.POSTGRES_USER || 'postgres'}:${process.env.POSTGRES_PASSWORD || ''}@127.0.0.1:${port}/${process.env.POSTGRES_DB || 'rcms'}`;
-      const client = new Client({ connectionString: dbUrl, connectionTimeoutMillis: 1500 });
-      await client.connect();
-      await client.end();
-      return true;
-    }
-  } catch (err) {
+    await client.connect();
+    connected = true;
     return true;
+  } catch {
+    return false;
+  } finally {
+    if (connected) await client.end();
   }
-  return true;
 }
 
 async function handleDockerStartup() {
@@ -406,6 +416,8 @@ async function handleDockerStartup() {
     if (isLocalPg) {
       console.log(`${colors.cyan}[docker] ℹ️ Detected active PostgreSQL service on 127.0.0.1:${configuredPgPort}. Using host database and skipping Docker postgres.${colors.reset}`);
       infraServices = infraServices.filter(s => s !== 'postgres');
+    } else if (await checkPortOpen(configuredPgPort, '127.0.0.1', 800)) {
+      console.warn(`${colors.yellow}[docker] A service is listening on PostgreSQL port ${configuredPgPort}, but database readiness could not be confirmed. Docker startup will continue and report any port conflict.${colors.reset}`);
     }
   }
 
@@ -591,10 +603,14 @@ function stopAllServices() {
   process.exit(0);
 }
 
-process.on('SIGINT', stopAllServices);
-process.on('SIGTERM', stopAllServices);
+if (require.main === module) {
+  process.on('SIGINT', stopAllServices);
+  process.on('SIGTERM', stopAllServices);
 
-main().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
+  main().catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = { isLocalPostgresActive };

@@ -48,7 +48,8 @@ const {
     getMyNotifications: getDoctorNotifications,
     getMyNotificationUnreadCount: getDoctorNotificationUnreadCount,
     markMyNotificationRead: markDoctorNotificationRead,
-    markAllMyNotificationsRead: markAllDoctorNotificationsRead
+    markAllMyNotificationsRead: markAllDoctorNotificationsRead,
+    acknowledgeCriticalResult: acknowledgeDoctorCriticalResult
 } = require('../controllers/doctorPortalController');
 
 module.exports = function portalRoutes(pool, auditService) {
@@ -235,6 +236,11 @@ module.exports = function portalRoutes(pool, auditService) {
         authenticateToken,
         authorizeRole(['Doctor']),
         markDoctorNotificationRead(pool)
+    );
+    router.post('/doctor-portal/notifications/:id/critical-result/acknowledge',
+        authenticateToken,
+        authorizeRole(['Doctor']),
+        acknowledgeDoctorCriticalResult(pool)
     );
 
     return router;

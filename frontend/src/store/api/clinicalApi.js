@@ -200,7 +200,11 @@ export const clinicalApi = api.injectEndpoints({
             invalidatesTags: ['Queue'],
         }),
         acknowledgeCriticalResult: builder.mutation({
-            query: (id) => ({ url: `/notifications/critical/${id}/ack`, method: 'POST' }),
+            query: ({ examId, notes }) => ({
+                url: `/exams/${examId}/critical-result/acknowledge`,
+                method: 'POST',
+                body: { notes },
+            }),
             invalidatesTags: ['Notifications'],
         }),
         getSafetyTemplates: builder.query({

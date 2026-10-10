@@ -11,6 +11,7 @@ jest.mock('../src/utils/crypto', () => ({ decrypt: jest.fn((value) => value || '
 
 const { getReportPdf } = require('../src/controllers/examController');
 const { getMyRecords } = require('../src/controllers/portalController');
+const { buildReportPdf } = require('../src/services/reportPdfRenderer');
 
 const createResponse = () => ({
     json: jest.fn(),
@@ -62,6 +63,33 @@ describe('patient final report access', () => {
         expect(next).not.toHaveBeenCalled();
         expect(res.setHeader).toHaveBeenCalledWith('Content-Type', 'text/html; charset=utf-8');
         expect(res.send).toHaveBeenCalledWith(expect.stringContaining('Final report'));
+    });
+
+    test('does not apply a request-selected clinical template to a signed report', async () => {
+        const db = {
+            query: jest.fn()
+                .mockResolvedValueOnce({
+                    rows: [reportRow({
+                        report_status: 'Finalized',
+                        report_sections: { findings: 'Approved findings', impression: 'Approved impression' },
+                        digital_signature_hash: 'signed-hash'
+                    })]
+                })
+                .mockResolvedValue({ rows: [] })
+        };
+        const res = createResponse();
+        const next = jest.fn();
+
+        await getReportPdf(db)(patientRequest({
+            query: { format: 'pdf', templateId: '00000000-0000-4000-8000-000000000009' }
+        }), res, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(db.query.mock.calls.some(([sql]) => String(sql).includes('FROM report_templates'))).toBe(false);
+        expect(buildReportPdf).toHaveBeenCalledWith(expect.objectContaining({
+            report_sections: { findings: 'Approved findings', impression: 'Approved impression' },
+            digital_signature_hash: 'signed-hash'
+        }), expect.any(Object));
     });
 
     test('allows a finalized report through a short-lived public report capability', async () => {

@@ -83,6 +83,16 @@ describe('result delivery', () => {
         expect(parsed.data.resultType).toBe('Images');
     });
 
+    test('does not accept requester-asserted electronic delivery status', () => {
+        expect(deliverResultSchema.safeParse({
+            deliveryMethod: 'Email',
+            deliveryStatus: 'Delivered'
+        }).success).toBe(false);
+        expect(deliverResultSchema.safeParse({
+            deliveryMethod: 'Email'
+        }).success).toBe(true);
+    });
+
     test('records images-only pickup without marking a report delivered', async () => {
         const client = makeClient({
             exam: {
@@ -124,7 +134,7 @@ describe('result delivery', () => {
         const next = jest.fn();
 
         await deliverResult({ connect: jest.fn().mockResolvedValue(client) })(
-            makeRequest({ deliveryMethod: 'Email', deliveryStatus: 'Delivered' }),
+            makeRequest({ deliveryMethod: 'Email' }),
             makeResponse(),
             next
         );
@@ -136,22 +146,21 @@ describe('result delivery', () => {
         expect(client.query).not.toHaveBeenCalledWith(expect.stringContaining('INSERT INTO result_deliveries'));
     });
 
-    test('commits all delivery writes before notifying', async () => {
+    test('records electronic delivery as pending and queues the notification after commit', async () => {
         const client = makeClient();
         const db = { connect: jest.fn().mockResolvedValue(client) };
         const res = makeResponse();
         const next = jest.fn();
 
-        await deliverResult(db)(makeRequest({ deliveryMethod: 'Email', deliveryStatus: 'Delivered' }), res, next);
+        await deliverResult(db)(makeRequest({ deliveryMethod: 'Email' }), res, next);
 
         const queries = client.query.mock.calls.map(([sql]) => String(sql));
         expect(queries).toContain('BEGIN');
         expect(queries).toContain('COMMIT');
         expect(queries).not.toContain('ROLLBACK');
         expect(queries.some(query => query.includes('INSERT INTO result_deliveries'))).toBe(true);
-        expect(queries.some(query => query.includes('UPDATE examinations'))).toBe(true);
-        expect(queries.some(query => query.includes('INSERT INTO queue_events'))).toBe(true);
-        expect(queries.some(query => query.includes('INSERT INTO order_status_history'))).toBe(true);
+        expect(queries.some(query => query.includes('UPDATE examinations'))).toBe(false);
+        expect(queries.some(query => query.includes('INSERT INTO queue_events'))).toBe(false);
         expect(client.query.mock.calls.every(([, params]) => params === undefined || Array.isArray(params))).toBe(true);
         expect(triggerEvent).toHaveBeenCalled();
         expect(client.release).toHaveBeenCalled();
@@ -159,12 +168,27 @@ describe('result delivery', () => {
         expect(next).not.toHaveBeenCalled();
     });
 
+    test('rejects direct claims that an electronic result was delivered', async () => {
+        const client = makeClient();
+        const next = jest.fn();
+
+        await deliverResult({ connect: jest.fn().mockResolvedValue(client) })(
+            makeRequest({ deliveryMethod: 'Email', deliveryStatus: 'Delivered' }),
+            makeResponse(),
+            next
+        );
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 422 }));
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO result_deliveries'))).toBe(false);
+    });
+
     test('rolls back and does not notify when a delivery write fails', async () => {
-        const client = makeClient({ failOn: 'UPDATE examinations' });
+        const client = makeClient({ failOn: 'INSERT INTO result_deliveries' });
         const db = { connect: jest.fn().mockResolvedValue(client) };
         const next = jest.fn();
 
-        await deliverResult(db)(makeRequest({ deliveryMethod: 'Email', deliveryStatus: 'Delivered' }), makeResponse(), next);
+        await deliverResult(db)(makeRequest({ deliveryMethod: 'Email' }), makeResponse(), next);
 
         expect(client.query).toHaveBeenCalledWith('ROLLBACK');
         expect(client.release).toHaveBeenCalled();

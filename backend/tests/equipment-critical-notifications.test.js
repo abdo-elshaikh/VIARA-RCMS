@@ -423,7 +423,7 @@ describe('critical result notification workflow', () => {
         triggerEventForRole.mockResolvedValue(undefined);
     });
 
-    const makeFinalizationClient = ({ failUpdate = false } = {}) => {
+    const makeFinalizationClient = ({ failUpdate = false, referringDoctorId = '00000000-0000-4000-8000-000000000006' } = {}) => {
         const timeline = [];
         const markedAt = new Date('2026-08-28T22:00:00.000Z');
         const client = {
@@ -443,7 +443,7 @@ describe('critical result notification workflow', () => {
                         report_status: 'Approved',
                         critical_result: false,
                         order_number: 'ORD-CRITICAL-1',
-                        referring_doctor_id: '00000000-0000-4000-8000-000000000006'
+                        referring_doctor_id: referringDoctorId
                     }] };
                 }
                 if (text.includes('UPDATE examinations')) {
@@ -459,8 +459,19 @@ describe('critical result notification workflow', () => {
                 if (text.includes('INSERT INTO critical_result_acknowledgements') && text.includes('referring_doctor_id')) {
                     return { rows: [{
                         acknowledgement_id: '00000000-0000-4000-8000-000000000008',
-                        referring_doctor_id: '00000000-0000-4000-8000-000000000006',
+                        referring_doctor_id: referringDoctorId,
                         recipient_role: 'Doctor'
+                    }] };
+                }
+                if (text.includes('INSERT INTO critical_result_acknowledgements') && text.includes('u.role = \'Nurse\'')) {
+                    return { rows: [{
+                        acknowledgement_id: '00000000-0000-4000-8000-000000000010',
+                        recipient_user_id: '00000000-0000-4000-8000-000000000011',
+                        recipient_role: 'Nurse'
+                    }, {
+                        acknowledgement_id: '00000000-0000-4000-8000-000000000012',
+                        recipient_user_id: '00000000-0000-4000-8000-000000000013',
+                        recipient_role: 'Nurse'
                     }] };
                 }
                 if (text.includes('SELECT COALESCE(MAX(version_number)')) return { rows: [{ version_number: 2 }] };
@@ -534,6 +545,45 @@ describe('critical result notification workflow', () => {
         expect(triggerEventForRole).not.toHaveBeenCalled();
         expect(triggerEvent).not.toHaveBeenCalled();
         expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'finalization failed' }));
+    });
+
+    test('critical finalization without a referring doctor assigns acknowledgements to active nurses', async () => {
+        const { client } = makeFinalizationClient({ referringDoctorId: null });
+        triggerEvent.mockImplementation(async () => ({ scheduled: 1 }));
+        const db = {
+            connect: jest.fn().mockResolvedValue(client),
+            query: jest.fn().mockResolvedValue({ rows: [] })
+        };
+        const next = jest.fn();
+
+        await updateReport(db)({
+            body: {
+                examId: EXAM_ID,
+                status: 'Finalized',
+                criticalResult: true,
+                sections: { findings: 'Confirmed finding', impression: 'Critical diagnosis' }
+            },
+            user: { user_id: '00000000-0000-4000-8000-000000000007', role: 'Radiologist' },
+            ip: '127.0.0.1'
+        }, makeResponse(), next);
+
+        const nurseInsert = client.query.mock.calls.find(([sql]) =>
+            String(sql).includes('INSERT INTO critical_result_acknowledgements') &&
+            String(sql).includes("u.role = 'Nurse'")
+        );
+        expect(nurseInsert).toBeDefined();
+        expect(nurseInsert[0]).toContain('u.is_active = TRUE');
+        expect(triggerEvent).toHaveBeenCalledWith(db, 'CriticalResultFinalized', expect.objectContaining({
+            staffId: '00000000-0000-4000-8000-000000000011',
+            staffRole: 'Nurse',
+            occurrenceKey: '00000000-0000-4000-8000-000000000010'
+        }));
+        expect(triggerEvent).toHaveBeenCalledWith(db, 'CriticalResultFinalized', expect.objectContaining({
+            staffId: '00000000-0000-4000-8000-000000000013',
+            staffRole: 'Nurse',
+            occurrenceKey: '00000000-0000-4000-8000-000000000012'
+        }));
+        expect(next).not.toHaveBeenCalled();
     });
 
     test('critical marker cannot be inferred or set during a draft save', async () => {

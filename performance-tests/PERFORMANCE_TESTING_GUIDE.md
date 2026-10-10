@@ -247,7 +247,7 @@ node performance-tests/run.js --target=http://staging.viara.internal:3000 --scen
 
 ## 4. Acceptance Criteria
 
-These thresholds are enforced automatically by the harness and evaluated in every generated report.
+These thresholds are evaluated in every generated report. A measured threshold violation exits with code `1`; a required measurement that was not collected is reported as `NOT MEASURED` and exits with code `2`. A `PASS` requires every configured measurement to be present and within limits.
 
 | Metric | Threshold | Notes |
 |---|---|---|
@@ -260,7 +260,7 @@ These thresholds are enforced automatically by the harness and evaluated in ever
 | **Memory stability (soak)** | p95 must not grow > 20% | Compare start vs end of Scenario 13 |
 | **Zero 5xx for normal workflows** | 0 | Scenarios 01–08, 12, 13 must have 0 server errors |
 
-A test run **passes** when all threshold evaluations in the generated report show `✅ PASS`.
+The current scenarios do not yet collect diagnostic first-image render time from the imaging viewer. Therefore, a run remains `INCOMPLETE` for acceptance until that metric is instrumented. Quick smoke runs are exploratory only, not performance acceptance evidence.
 
 ---
 

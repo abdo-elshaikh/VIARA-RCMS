@@ -390,13 +390,15 @@ app.use((req, res, next) => {
 // CORS / CSP origin helpers (defined before helmet which uses them)
 const DEFAULT_ALLOWED_ORIGINS = [
     'http://localhost:5173',
+    'http://localhost:55173',
     'http://127.0.0.1:5173',
+    'http://127.0.0.1:55173',
     'http://localhost:5174',
     'http://127.0.0.1:5174',
     'http://localhost:3005',
     'http://127.0.0.1:3005',
 ];
-const DEV_ALLOWED_PORTS = new Set(['5173', '5174', '5175', '5176', '3005']);
+const DEV_ALLOWED_PORTS = new Set(['5173', '5174', '5175', '5176', '3005', '55173']);
 
 const normalizeOrigin = (value) => {
     if (!value || typeof value !== 'string') return null;

@@ -1274,56 +1274,28 @@ const reconcileCriticalResultNotifications = async (db) => {
 };
 
 const processCriticalResultEscalations = async (db) => {
-    const admins = await db.query(`
-        SELECT user_id, role
-        FROM users
-        WHERE role = 'Admin' AND is_active = TRUE
-        ORDER BY user_id
+    const claimed = await db.query(`
+        WITH due AS (
+            SELECT cra.acknowledgement_id
+            FROM critical_result_acknowledgements cra
+            JOIN examinations e ON e.exam_id = cra.exam_id
+            WHERE e.critical_result = TRUE
+              AND cra.status = 'Pending'
+              AND cra.acknowledgement_due_at <= NOW()
+              AND cra.escalated_at IS NULL
+            ORDER BY cra.acknowledgement_due_at ASC
+            FOR UPDATE OF cra SKIP LOCKED
+            LIMIT 50
+        )
+        UPDATE critical_result_acknowledgements cra
+        SET escalated_at = NOW(), escalation_level = 1, updated_at = NOW()
+        FROM due
+        WHERE cra.acknowledgement_id = due.acknowledgement_id
+        RETURNING cra.acknowledgement_id
     `);
-    if (admins.rows.length === 0) {
-        return { escalated: 0, reconciled: await reconcileCriticalResultNotifications(db) };
-    }
-
-    const dueResult = await db.query(`
-        SELECT cra.acknowledgement_id, cra.exam_id, cra.acknowledgement_due_at
-        FROM critical_result_acknowledgements cra
-        JOIN examinations e ON e.exam_id = cra.exam_id
-        WHERE cra.status = 'Pending'
-          AND cra.referring_doctor_id IS NOT NULL
-          AND cra.acknowledgement_due_at <= NOW()
-          AND cra.escalated_at IS NULL
-          AND e.critical_result = TRUE
-        ORDER BY cra.acknowledgement_due_at ASC
-        LIMIT 50
-    `);
-
-    let escalated = 0;
-    for (const acknowledgement of dueResult.rows) {
-
-        for (const admin of admins.rows) {
-            await db.query(`
-                INSERT INTO critical_result_acknowledgements (
-                    exam_id, recipient_user_id, recipient_role, status,
-                    acknowledgement_due_at, escalation_level
-                )
-                VALUES ($1, $2, 'Admin', 'Pending', NOW() + INTERVAL '15 minutes', 1)
-                ON CONFLICT (exam_id, recipient_user_id) WHERE recipient_user_id IS NOT NULL
-                DO UPDATE SET escalation_level = GREATEST(critical_result_acknowledgements.escalation_level, 1)
-            `, [acknowledgement.exam_id, admin.user_id]);
-        }
-        const claimed = await db.query(`
-            UPDATE critical_result_acknowledgements
-            SET escalated_at = NOW(), escalation_level = 1, updated_at = NOW()
-            WHERE acknowledgement_id = $1
-              AND status = 'Pending'
-              AND escalated_at IS NULL
-            RETURNING acknowledgement_id
-        `, [acknowledgement.acknowledgement_id]);
-        if (claimed.rows.length > 0) escalated += 1;
-    }
 
     const reconciled = await reconcileCriticalResultNotifications(db);
-    return { escalated, reconciled };
+    return { escalated: claimed.rows.length, reconciled };
 };
 
 const startPolling = (db, intervalMs = 60000) => {

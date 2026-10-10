@@ -77,7 +77,7 @@ const RecordList: React.FC<RecordListProps> = ({
               onClick={() => setExpandedRecordId(isOpen ? null : recordKey)}
               aria-expanded={isOpen}
               aria-controls={`record-details-${recordKey}`}
-              className="group flex w-full flex-col gap-4 p-5 text-start outline-none transition hover:bg-primary-50/60 dark:hover:bg-primary-400/10 sm:flex-row sm:items-center sm:justify-between"
+              className="group flex w-full flex-col gap-4 p-5 text-start outline-none transition hover:bg-primary-50/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 focus-visible:ring-offset-2 dark:hover:bg-primary-400/10 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex min-w-0 items-start gap-4">
                 <span

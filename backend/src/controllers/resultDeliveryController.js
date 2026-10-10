@@ -6,13 +6,14 @@ const { decrypt } = require('../utils/crypto');
 
 const methodDefaultStatus = {
     Printed: 'Printed',
-    Email: 'Sent',
-    'SMS Link': 'Sent',
-    'WhatsApp Link': 'Sent',
-    'Patient Portal': 'Delivered',
-    'Doctor Portal': 'Delivered',
+    Email: 'Pending',
+    'SMS Link': 'Pending',
+    'WhatsApp Link': 'Pending',
+    'Patient Portal': 'Pending',
+    'Doctor Portal': 'Pending',
     'Physical Pickup': 'Picked Up'
 };
+const providerConfirmedChannels = new Set(['Email', 'SMS Link', 'WhatsApp Link', 'Patient Portal', 'Doctor Portal']);
 
 const getExamForDelivery = async (db, examId) => {
     const result = await db.query(`
@@ -55,6 +56,10 @@ const deliverResult = (db) => async (req, res, next) => {
         const resultType = data.resultType || 'Report';
         const includesReport = ['Report', 'ImagesAndReport'].includes(resultType);
         const includesImages = ['Images', 'ImagesAndReport'].includes(resultType);
+
+        if (providerConfirmedChannels.has(data.deliveryMethod) && data.deliveryStatus !== undefined) {
+            throw new AppError('Electronic delivery status must be assigned by the delivery workflow', 422);
+        }
 
         if ((includesReport && exam.delivered_at) || (includesImages && exam.images_delivered_at)) {
             throw new AppError('This result has already been delivered', 409);
@@ -224,7 +229,7 @@ const deliverResult = (db) => async (req, res, next) => {
                     patient_name: exam.patient_name || 'Patient',
                     order_number: exam.order_number || ''
                 }
-            }).catch(() => {});
+            }).catch(error => console.error('[ResultDeliveryController] Feedback scheduling failed:', error.message));
         }
 
         res.status(201).json(result.rows[0]);

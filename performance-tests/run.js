@@ -119,6 +119,9 @@ async function main() {
 
     const userPool = new UserPool(config);
     const metricsCollector = new MetricsCollector(config.thresholds);
+    metricsCollector.start();
+    let thresholdFailure = false;
+    let thresholdIncomplete = false;
 
     // Determine scenarios to execute
     let selectedScenarios = [];
@@ -149,6 +152,8 @@ async function main() {
         });
 
         const summary = scCollector.getSummary();
+        thresholdFailure = thresholdFailure || summary.thresholdStatus === 'FAIL';
+        thresholdIncomplete = thresholdIncomplete || summary.thresholdStatus === 'INCOMPLETE';
         ReportGenerator.printConsoleSummary(summary, `Scenario [${sc.name}] Results`);
 
         const { markdownPath } = ReportGenerator.saveMarkdownReport(summary, {
@@ -167,10 +172,13 @@ async function main() {
     }
 
     if (selectedScenarios.length > 1) {
+        metricsCollector.stop();
         console.log('\n' + '='.repeat(80));
         console.log(' 🏁 Overall Test Suite Combined Summary');
         console.log('='.repeat(80));
         const combinedSummary = metricsCollector.getSummary();
+        thresholdFailure = thresholdFailure || combinedSummary.thresholdStatus === 'FAIL';
+        thresholdIncomplete = thresholdIncomplete || combinedSummary.thresholdStatus === 'INCOMPLETE';
         ReportGenerator.printConsoleSummary(combinedSummary, 'Combined Performance Test Run');
 
         const { markdownPath } = ReportGenerator.saveMarkdownReport(combinedSummary, {
@@ -182,7 +190,17 @@ async function main() {
         console.log(`📁 Master report generated: ${path.relative(process.cwd(), markdownPath)}`);
     }
 
-    console.log('\n✨ Performance test execution completed successfully!\n');
+    if (thresholdFailure) {
+        console.error('❌ One or more measured performance thresholds failed.');
+        process.exitCode = 1;
+        console.log('\n⚠️  Performance test execution completed with failed acceptance thresholds.\n');
+    } else if (thresholdIncomplete) {
+        console.error('⚠️ One or more configured performance thresholds could not be evaluated; the run is incomplete.');
+        process.exitCode = 2;
+        console.log('\n⚠️  Performance test execution completed, but acceptance evidence is incomplete.\n');
+    } else {
+        console.log('\n✨ Performance test execution completed without measured threshold failures.\n');
+    }
 }
 
 main().catch(err => {

@@ -11,6 +11,7 @@ const { decrypt } = require('../utils/crypto');
 const aiReportService = require('../services/aiReportService');
 const { isImageAnalysisUsable } = aiReportService;
 const { getReportStatusForSave, getReportTransitionError } = require('../utils/reportWorkflow');
+const { assertReportReadyForFinalization } = require('../services/pacsStudyReadinessService');
 
 const parseJSONSafe = (value) => {
     if (!value) return null;
@@ -29,6 +30,16 @@ const buildReportContent = (sections = {}, fallback = '') => {
         sections.recommendations && `Recommendations\n${sections.recommendations}`
     ].filter(Boolean).join('\n\n');
 };
+
+const createReportSignatureHash = ({ examId, userId, reportContent, reportSections, signedAt }) => (
+    crypto.createHash('sha256').update(JSON.stringify({
+        examId,
+        userId,
+        reportContent,
+        reportSections,
+        signedAt: signedAt.toISOString()
+    })).digest('hex').toUpperCase()
+);
 
 const extractReceiptLookupCode = (rawValue) => {
     const value = String(rawValue || '').trim();
@@ -70,7 +81,11 @@ const addReportVersion = async (db, {
     reportContent,
     reportSections,
     amendmentReason,
-    userId
+    userId,
+    signatureHash = null,
+    signatoryName = null,
+    signatoryRole = null,
+    signedAt = null
 }) => {
     const nextVersion = await db.query(
         'SELECT COALESCE(MAX(version_number), 0) + 1 as version_number FROM report_versions WHERE exam_id = $1',
@@ -82,9 +97,10 @@ const addReportVersion = async (db, {
     await db.query(`
         INSERT INTO report_versions (
             exam_id, version_number, report_status, report_content,
-            report_sections, amendment_reason, created_by
+            report_sections, amendment_reason, created_by, signature_hash,
+            signatory_name, signatory_role, signed_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     `, [
         examId,
         versionNum,
@@ -92,7 +108,11 @@ const addReportVersion = async (db, {
         reportContent || null,
         reportSections || {},
         amendmentReason || null,
-        userId
+        userId,
+        signatureHash,
+        signatoryName,
+        signatoryRole,
+        signedAt
     ]);
 };
 
@@ -628,6 +648,8 @@ const updateReport = (db) => async (req, res, next) => {
             SELECT e.status, e.appointment_id, e.report_locked, e.report_sections,
                     e.report_content, e.report_status, e.critical_result,
                     e.report_request_status,
+                    e.queue_stage, e.is_on_hold, e.exam_completed_at, e.images_ready_at,
+                    e.images_available, e.image_count, e.study_instance_uid,
                     e.order_number,
                     COALESCE(e.external_referring_doctor_id, a.referring_doctor_id) AS referring_doctor_id
             FROM examinations e
@@ -695,10 +717,23 @@ const updateReport = (db) => async (req, res, next) => {
             }
         }
         if (newStatus === 'Finalized') {
+            try {
+                await assertReportReadyForFinalization(client, checkResult.rows[0]);
+            } catch (error) {
+                await client.query('ROLLBACK');
+                return next(error);
+            }
             await assertQuota(client, 'reports', { transaction: true });
         }
-        const signatureHash = newStatus === 'Finalized'
-            ? crypto.createHash('sha256').update(`${examId}:${userId}:${mergedReportContent}:${Date.now()}`).digest('hex')
+        const signatureTimestamp = newStatus === 'Finalized' ? new Date() : null;
+        const signatureHash = signatureTimestamp
+            ? createReportSignatureHash({
+                examId,
+                userId,
+                reportContent: mergedReportContent,
+                reportSections: nextSections,
+                signedAt: signatureTimestamp
+            })
             : null;
         const queueStage = newStatus === 'Finalized' ? 'Finalized'
             : newStatus === 'Reporting' ? 'Reporting'
@@ -748,7 +783,7 @@ const updateReport = (db) => async (req, res, next) => {
             exam_started_at = CASE WHEN $2::exam_status = 'Scanning' THEN COALESCE(exam_started_at, NOW()) ELSE exam_started_at END,
             exam_completed_at = CASE WHEN $2::exam_status = 'Reporting' THEN COALESCE(exam_completed_at, NOW()) ELSE exam_completed_at END,
             reporting_started_at = CASE WHEN $2::exam_status = 'Reporting' THEN COALESCE(reporting_started_at, NOW()) ELSE reporting_started_at END,
-            report_finalized_at = CASE WHEN $2::exam_status = 'Finalized' THEN NOW() ELSE report_finalized_at END
+            report_finalized_at = CASE WHEN $2::exam_status = 'Finalized' THEN $15::timestamptz ELSE report_finalized_at END
         WHERE exam_id = $3
         RETURNING *
     `;
@@ -767,7 +802,8 @@ const updateReport = (db) => async (req, res, next) => {
             role,
             signatureHash,
             isRadiologist,
-            criticalResultProvided ? criticalResult : null
+            criticalResultProvided ? criticalResult : null,
+            signatureTimestamp
         ]);
 
         if (isRadiologist) {
@@ -784,7 +820,11 @@ const updateReport = (db) => async (req, res, next) => {
                 reportStatus: newReportStatus,
                 reportContent: mergedReportContent,
                 reportSections: nextSections,
-                userId
+                userId,
+                signatureHash,
+                signatoryName: signatureTimestamp ? (req.user.name || req.user.full_name || 'Signed Radiologist') : null,
+                signatoryRole: signatureTimestamp ? role : null,
+                signedAt: signatureTimestamp
             });
         }
 
@@ -889,7 +929,7 @@ const updateReport = (db) => async (req, res, next) => {
                     )
                     SELECT $1, u.user_id, 'Admin', 'Pending', NOW() + INTERVAL '15 minutes'
                     FROM users u
-                    WHERE u.is_active = TRUE AND u.role = 'Admin'
+                    WHERE u.is_active = TRUE AND u.role = 'Nurse'
                     ON CONFLICT DO NOTHING
                     RETURNING acknowledgement_id, recipient_user_id, recipient_role
                 `, [examId]);
@@ -1159,26 +1199,6 @@ const getReportPdf = (db) => async (req, res, next) => {
         delete report.last_name_enc;
         delete report.date_of_birth_enc;
 
-        const { templateId } = getRequestQuery(req);
-        if (templateId) {
-            const templateResult = await db.query(`
-                SELECT clinical_history, technique, findings, impression, recommendations
-                FROM report_templates
-                WHERE template_id = $1 AND is_active = TRUE
-            `, [templateId]);
-            const template = templateResult.rows[0];
-            if (template) {
-                const currentSections = report.report_sections || {};
-                report.report_sections = {
-                    clinicalHistory: currentSections.clinicalHistory || report.clinical_indication || template.clinical_history || '',
-                    technique: currentSections.technique || template.technique || '',
-                    findings: currentSections.findings || template.findings || '',
-                    impression: currentSections.impression || template.impression || '',
-                    recommendations: currentSections.recommendations || template.recommendations || ''
-                };
-            }
-        }
-
         const isDoctorPortalUser = ['Doctor', 'Referring Doctor', 'Referring_Doctor'].includes(userRole);
         const method = userRole === 'Patient'
             ? 'Patient Portal'
@@ -1318,6 +1338,11 @@ const amendReport = (db) => async (req, res, next) => {
             return next(new AppError('Only finalized reports can be amended', 400));
         }
 
+        if (req.user.role !== 'Radiologist') {
+            await client.query('ROLLBACK');
+            return next(new AppError('Only an authorized radiologist may amend clinical report content', 403));
+        }
+
         // Emergency (break-glass) elevation is read-only by design and never includes amendment rights
         if (req.user.emergencyAccessId) {
             await client.query('ROLLBACK');
@@ -1326,8 +1351,7 @@ const amendReport = (db) => async (req, res, next) => {
 
         const isReportOwner = req.user.role === 'Radiologist'
             && String(existing.rows[0].performing_radiologist_id || '') === String(req.user.user_id || '');
-        const isDeveloperOrAdmin = ['Developer', 'Admin'].includes(req.user.role);
-        const hasAmendPermission = isDeveloperOrAdmin || (await roleHasAnyPermission(client, req.user.role, ['AMEND_FINALIZED_REPORTS']));
+        const hasAmendPermission = await roleHasAnyPermission(client, req.user.role, ['AMEND_FINALIZED_REPORTS']);
 
         if (!isReportOwner && !hasAmendPermission) {
             await client.query('ROLLBACK');
@@ -1339,6 +1363,15 @@ const amendReport = (db) => async (req, res, next) => {
             ...(sections || {})
         };
         const nextContent = buildReportContent(nextSections, reportContent || existing.rows[0].report_content);
+        const signatureTimestamp = new Date();
+        const signatureName = req.user.name || req.user.full_name || 'Signed Radiologist';
+        const signatureHash = createReportSignatureHash({
+            examId: id,
+            userId: req.user.user_id,
+            reportContent: nextContent,
+            reportSections: nextSections,
+            signedAt: signatureTimestamp
+        });
 
         await addReportVersion(client, {
             examId: id,
@@ -1346,7 +1379,11 @@ const amendReport = (db) => async (req, res, next) => {
             reportContent: existing.rows[0].report_content,
             reportSections: existing.rows[0].report_sections || {},
             amendmentReason: reason,
-            userId: req.user.user_id
+            userId: req.user.user_id,
+            signatureHash: existing.rows[0].digital_signature_hash,
+            signatoryName: existing.rows[0].digital_signature_name,
+            signatoryRole: existing.rows[0].digital_signature_role,
+            signedAt: existing.rows[0].report_finalized_at
         });
 
         const result = await client.query(`
@@ -1359,10 +1396,23 @@ const amendReport = (db) => async (req, res, next) => {
                 amended_at = NOW(),
                 amended_by = $4,
                 report_locked = TRUE,
-                report_locked_at = COALESCE(report_locked_at, NOW())
-            WHERE exam_id = $5
+                report_locked_at = COALESCE(report_locked_at, $5),
+                report_finalized_at = $5,
+                digital_signature_hash = $6,
+                digital_signature_name = $7,
+                digital_signature_role = 'Radiologist'
+            WHERE exam_id = $8
             RETURNING *
-        `, [nextContent, nextSections, reason, req.user.user_id, id]);
+        `, [
+            nextContent,
+            nextSections,
+            reason,
+            req.user.user_id,
+            signatureTimestamp,
+            signatureHash,
+            signatureName,
+            id
+        ]);
 
         await logAction(client, {
             userId: req.user?.user_id,

@@ -22,12 +22,13 @@ class MetricsCollector {
         this.endTime = Date.now();
     }
 
-    record({ scenario, action, method, endpoint, duration, status, ok, error }) {
+    record({ scenario, action, method, endpoint, duration, status, ok, error, metric }) {
         const item = {
             scenario: scenario || 'default',
             action: action || `${method} ${endpoint}`,
             method: (method || 'GET').toUpperCase(),
             endpoint: endpoint || '/',
+            metric: metric || null,
             duration: Number(duration) || 0,
             status: Number(status) || 0,
             ok: Boolean(ok),
@@ -124,46 +125,57 @@ class MetricsCollector {
 
         // Threshold checks
         const thresholdEvaluations = [];
-        if (this.thresholds) {
-            if (this.thresholds.maxErrorRatePercent !== undefined) {
-                thresholdEvaluations.push({
-                    name: 'Error Rate < 1%',
-                    target: `< ${this.thresholds.maxErrorRatePercent}%`,
-                    actual: `${errorRatePercent.toFixed(2)}%`,
-                    passed: errorRatePercent <= this.thresholds.maxErrorRatePercent
-                });
-            }
+        const evaluatePercentile = (name, durations, percentile, limit) => {
+            if (limit === undefined) return;
+            const stats = this._calculatePercentiles(durations);
+            thresholdEvaluations.push({
+                name,
+                target: `<= ${limit}ms`,
+                actual: durations.length ? `${stats[percentile].toFixed(1)}ms` : 'Not measured',
+                passed: durations.length ? stats[percentile] <= limit : null
+            });
+        };
 
-            const readDurations = this.records
-                .filter(r => r.method === 'GET')
-                .map(r => r.duration)
-                .sort((a, b) => a - b);
-            const readStats = this._calculatePercentiles(readDurations);
-
-            const writeDurations = this.records
-                .filter(r => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.method))
-                .map(r => r.duration)
-                .sort((a, b) => a - b);
-            const writeStats = this._calculatePercentiles(writeDurations);
-
-            if (this.thresholds.apiRead?.p95 !== undefined) {
-                thresholdEvaluations.push({
-                    name: 'Read API Latency (p95)',
-                    target: `<= ${this.thresholds.apiRead.p95}ms`,
-                    actual: `${readStats.p95.toFixed(1)}ms`,
-                    passed: readDurations.length === 0 || readStats.p95 <= this.thresholds.apiRead.p95
-                });
-            }
-
-            if (this.thresholds.apiWriteAndSearch?.p95 !== undefined) {
-                thresholdEvaluations.push({
-                    name: 'Write & Mutation Latency (p95)',
-                    target: `<= ${this.thresholds.apiWriteAndSearch.p95}ms`,
-                    actual: `${writeStats.p95.toFixed(1)}ms`,
-                    passed: writeDurations.length === 0 || writeStats.p95 <= this.thresholds.apiWriteAndSearch.p95
-                });
-            }
+        if (this.thresholds.maxErrorRatePercent !== undefined) {
+            thresholdEvaluations.push({
+                name: 'Request Error Rate',
+                target: `<= ${this.thresholds.maxErrorRatePercent}%`,
+                actual: totalRequests ? `${errorRatePercent.toFixed(2)}%` : 'Not measured',
+                passed: totalRequests ? errorRatePercent <= this.thresholds.maxErrorRatePercent : null
+            });
         }
+
+        const readDurations = this.records
+            .filter(r => r.method === 'GET' && r.metric !== 'diagnosticImageFirstLoad')
+            .map(r => r.duration)
+            .sort((a, b) => a - b);
+        const writeDurations = this.records
+            .filter(r => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(r.method))
+            .map(r => r.duration)
+            .sort((a, b) => a - b);
+        const imageLoadDurations = this.records
+            .filter(r => r.metric === 'diagnosticImageFirstLoad')
+            .map(r => r.duration)
+            .sort((a, b) => a - b);
+
+        for (const percentile of ['p95', 'p99']) {
+            evaluatePercentile(`Read API Latency (${percentile})`, readDurations, percentile, this.thresholds.apiRead?.[percentile]);
+            evaluatePercentile(`Write & Mutation Latency (${percentile})`, writeDurations, percentile, this.thresholds.apiWriteAndSearch?.[percentile]);
+        }
+        evaluatePercentile(
+            'Diagnostic Image First Load (p95)',
+            imageLoadDurations,
+            'p95',
+            this.thresholds.diagnosticImageFirstLoad?.p95
+        );
+
+        const failedThresholds = thresholdEvaluations.filter(evaluation => evaluation.passed === false).length;
+        const unmeasuredThresholds = thresholdEvaluations.filter(evaluation => evaluation.passed === null).length;
+        const thresholdStatus = failedThresholds > 0
+            ? 'FAIL'
+            : unmeasuredThresholds > 0
+                ? 'INCOMPLETE'
+                : 'PASS';
 
         return {
             startTime: new Date(this.startTime).toISOString(),
@@ -176,6 +188,7 @@ class MetricsCollector {
             throughputRps,
             latency: overallLatency,
             thresholdEvaluations,
+            thresholdStatus,
             endpoints
         };
     }
