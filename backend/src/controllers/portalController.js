@@ -1,12 +1,24 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const jwt = require('jsonwebtoken');
 const { decrypt } = require('../utils/crypto');
 const bcrypt = require('bcrypt');
 const { AppError } = require('../middleware/errorHandler');
 const { generateTokens } = require('./authController');
+const { triggerEventForRole } = require('../services/notificationJobService');
+const { resolvePortalDocument, UUID } = require('../services/portalDocumentService');
+const { buildPortalInvoicePdf } = require('../services/portalInvoicePdfService');
+const settingsService = require('../services/settingsService');
+const {
+    buildPortalNotificationEnvelope,
+    getPortalNotificationPage
+} = require('../utils/portalNotificationInbox');
 
 const decryptOptional = (value) => value ? decrypt(value) : '';
 const INVALID_LOGIN_ERROR = 'Invalid credentials';
 const UNKNOWN_ACCOUNT_HASH = '$2b$10$j58V.FjnUf.jiJK9F4/LEe0HeU5NIOS0/mQVANGNvtCJBVor2cUV6';
+
+const PORTAL_INVOICES_CACHE_TTL_MS = 3000;
+const portalInvoicesCache = new Map();
 
 const recordFailedPatientLogin = (db, patientId) => db.query(`
     UPDATE patients
@@ -49,7 +61,8 @@ const patientLogin = (db) => async (req, res, next) => {
     try {
         const { mrn, password } = req.body;
 
-        if (!mrn || !password) {
+        if (typeof mrn !== 'string' || !mrn.trim() || mrn.length > 64
+            || typeof password !== 'string' || !password || Buffer.byteLength(password, 'utf8') > 72) {
             return next(new AppError('MRN and password are required', 400));
         }
 
@@ -85,11 +98,11 @@ const patientLogin = (db) => async (req, res, next) => {
               AND (portal_failed_login_attempts <> 0 OR portal_locked_until IS NOT NULL)
         `, [patient.patient_id]);
 
-        res.cookie('refreshToken', refreshToken, {
+        res.cookie('portalRefreshToken', refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
-            path: '/api/auth',
+            path: '/api/portal',
             maxAge: 7 * 24 * 60 * 60 * 1000
         });
 
@@ -127,13 +140,27 @@ const getMyRecords = (db) => async (req, res, next) => {
                 e.exam_id,
                 e.status as exam_status,
                 e.report_status,
-                e.report_content,
+                e.report_locked,
+                e.report_finalized_at,
+                CASE WHEN (
+                    e.report_status IN ('Finalized', 'Amended')
+                    AND COALESCE(e.report_locked, FALSE) = TRUE
+                    AND e.report_finalized_at IS NOT NULL
+                ) THEN e.report_content ELSE NULL END AS report_content,
                 e.clinical_indication as exam_clinical_indication,
                 e.provisional_diagnosis as exam_provisional_diagnosis,
                 e.body_part as exam_body_part,
                 e.contrast_required as exam_contrast_required,
-                e.report_sections,
-                u.full_name as radiologist_name
+                CASE WHEN (
+                    e.report_status IN ('Finalized', 'Amended')
+                    AND COALESCE(e.report_locked, FALSE) = TRUE
+                    AND e.report_finalized_at IS NOT NULL
+                ) THEN e.report_sections ELSE NULL END AS report_sections,
+                CASE WHEN (
+                    e.report_status IN ('Finalized', 'Amended')
+                    AND COALESCE(e.report_locked, FALSE) = TRUE
+                    AND e.report_finalized_at IS NOT NULL
+                ) THEN u.full_name ELSE NULL END AS radiologist_name
             FROM appointments a
             LEFT JOIN modalities m ON a.modality_id = m.modality_id
             LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
@@ -153,48 +180,47 @@ const getMyRecords = (db) => async (req, res, next) => {
 
 const getMyInvoices = (db) => async (req, res, next) => {
     try {
+        const userId = req.user.userId;
+        if (process.env.NODE_ENV !== 'test') {
+            const cached = portalInvoicesCache.get(userId);
+            if (cached && (Date.now() - cached.timestamp < PORTAL_INVOICES_CACHE_TTL_MS)) {
+                return res.json(cached.data);
+            }
+        }
+
         const result = await db.query(`
-            WITH payment_totals AS (
-                SELECT invoice_id,
-                       COALESCE(SUM(amount) FILTER (WHERE payment_status = 'Completed'), 0) as paid_amount
-                FROM payments
-                GROUP BY invoice_id
-            ),
-            refund_totals AS (
-                SELECT invoice_id,
-                       COALESCE(SUM(amount) FILTER (WHERE status = 'Processed'), 0) as refunded_amount
-                FROM refunds
-                GROUP BY invoice_id
-            ),
-            credit_totals AS (
-                SELECT invoice_id,
-                       COALESCE(SUM(patient_amount) FILTER (WHERE reversed_at IS NULL), 0) as credited_amount
-                FROM credit_notes
-                GROUP BY invoice_id
-            )
             SELECT i.invoice_id, i.invoice_number, i.invoice_status, i.total_amount,
                    i.patient_payable_amount, i.generated_at, i.due_date,
-                   COALESCE(pt.paid_amount, 0) as paid_amount,
-                   COALESCE(rt.refunded_amount, 0) as refunded_amount,
-                   COALESCE(ct.credited_amount, 0) as credited_amount,
+                   COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.invoice_id AND p.payment_status = 'Completed'), 0) as paid_amount,
+                   COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0) as refunded_amount,
+                   COALESCE((SELECT SUM(c.patient_amount) FROM credit_notes c WHERE c.invoice_id = i.invoice_id AND c.reversed_at IS NULL), 0) as credited_amount,
                    GREATEST(
                        i.patient_payable_amount
-                       - COALESCE(ct.credited_amount, 0)
-                       - COALESCE(pt.paid_amount, 0)
-                       + COALESCE(rt.refunded_amount, 0),
+                       - COALESCE((SELECT SUM(c.patient_amount) FROM credit_notes c WHERE c.invoice_id = i.invoice_id AND c.reversed_at IS NULL), 0)
+                       - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.invoice_id AND p.payment_status = 'Completed'), 0)
+                       + COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0),
                        0
                    ) as balance_amount,
-                   a.order_number, et.name as exam_type_name
+                   COALESCE(a.order_number, e.order_number) as order_number,
+                   COALESCE(et.name, 'Medical Examination / فحص طبي') as exam_type_name
             FROM invoices i
-            LEFT JOIN payment_totals pt ON pt.invoice_id = i.invoice_id
-            LEFT JOIN refund_totals rt ON rt.invoice_id = i.invoice_id
-            LEFT JOIN credit_totals ct ON ct.invoice_id = i.invoice_id
             LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
-            LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
-            WHERE i.patient_id = $1
+            LEFT JOIN examinations e ON (i.exam_id = e.exam_id OR (i.exam_id IS NULL AND a.appointment_id IS NOT NULL AND e.appointment_id = a.appointment_id))
+            LEFT JOIN examination_types et ON et.type_id = COALESCE(a.exam_type_id, e.exam_type_id)
+            WHERE i.patient_id = $1::uuid
+              AND (a.patient_id IS NULL OR a.patient_id = $1::uuid)
+              AND (e.patient_id IS NULL OR e.patient_id = $1::uuid)
               AND i.invoice_status != 'Voided'
             ORDER BY i.generated_at DESC
-        `, [req.user.userId]);
+        `, [userId]);
+
+        if (process.env.NODE_ENV !== 'test') {
+            portalInvoicesCache.set(userId, { timestamp: Date.now(), data: result.rows });
+            if (portalInvoicesCache.size > 200) {
+                const oldest = portalInvoicesCache.keys().next().value;
+                portalInvoicesCache.delete(oldest);
+            }
+        }
 
         res.json(result.rows);
     } catch (error) {
@@ -206,7 +232,7 @@ const getMyDocuments = (db) => async (req, res, next) => {
     try {
         const result = await db.query(`
             SELECT document_id, appointment_id, exam_id, title, document_type,
-                   file_url, uploaded_at, notes
+                   uploaded_at, notes
             FROM patient_portal_documents
             WHERE patient_id = $1
               AND is_patient_visible = TRUE
@@ -221,6 +247,7 @@ const getMyDocuments = (db) => async (req, res, next) => {
 
 const downloadMyDocument = (db) => async (req, res, next) => {
     try {
+        if (!UUID.test(req.params.documentId || '')) return next(new AppError('Document not found', 404));
         const result = await db.query(`
             SELECT document_id, title, document_type, file_url
             FROM patient_portal_documents
@@ -233,6 +260,8 @@ const downloadMyDocument = (db) => async (req, res, next) => {
             return next(new AppError('Document not found', 404));
         }
 
+        const file = await resolvePortalDocument(db, result.rows[0].file_url, req.user.userId);
+
         await logPortalAudit(db, req, {
             eventType: 'DocumentDownloaded',
             resourceType: 'Document',
@@ -240,10 +269,66 @@ const downloadMyDocument = (db) => async (req, res, next) => {
             details: { title: result.rows[0].title, documentType: result.rows[0].document_type }
         });
 
-        res.json(result.rows[0]);
+        triggerEventForRole(db, 'DocumentDownloaded', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                document_title: result.rows[0].title,
+                patient_id: req.user.userId,
+                downloaded_by: req.user?.email || 'Unknown'
+            }
+        }).catch(() => {});
+
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+        res.download(file.realFile, file.file_name, error => {
+            if (error && !res.headersSent) next(new AppError('Document could not be downloaded', 503));
+            else if (error) res.destroy(error);
+        });
     } catch (error) {
         next(error);
     }
+};
+
+const getMyInvoicePdf = (db) => async (req, res, next) => {
+    try {
+        const { invoiceId } = req.params;
+        const patientId = req.user.userId;
+        if (!UUID.test(invoiceId || '')) return next(new AppError('Invoice not found', 404));
+        const result = await db.query(`
+            SELECT i.invoice_id, i.invoice_number, i.invoice_status, i.generated_at,
+                   i.subtotal_amount, i.discount_amount, i.tax_amount, i.total_amount,
+                   i.insurance_covered_amount, i.patient_payable_amount,
+                   p.mrn, p.first_name_enc, p.last_name_enc,
+                   COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.invoice_id AND payment_status = 'Completed'), 0) AS paid_amount,
+                   COALESCE((SELECT SUM(amount) FROM refunds WHERE invoice_id = i.invoice_id AND status = 'Processed'), 0) AS refunded_amount,
+                   COALESCE((SELECT SUM(patient_amount) FROM credit_notes WHERE invoice_id = i.invoice_id AND reversed_at IS NULL), 0) AS credited_amount
+            FROM invoices i
+            JOIN patients p ON p.patient_id = i.patient_id
+            LEFT JOIN appointments a ON a.appointment_id = i.appointment_id
+            LEFT JOIN examinations e ON e.exam_id = i.exam_id
+            WHERE i.invoice_id = $1::uuid AND i.patient_id = $2::uuid
+              AND i.invoice_status <> 'Voided'
+              AND (a.patient_id IS NULL OR a.patient_id = $2::uuid)
+              AND (e.patient_id IS NULL OR e.patient_id = $2::uuid)
+        `, [invoiceId, patientId]);
+        if (!result.rows.length) return next(new AppError('Invoice not found', 404));
+        const invoice = result.rows[0];
+        invoice.patient_name = [decryptOptional(invoice.first_name_enc), decryptOptional(invoice.last_name_enc)].filter(Boolean).join(' ');
+        invoice.balance_amount = Math.max(0, Number(invoice.patient_payable_amount || 0) - Number(invoice.paid_amount) + Number(invoice.refunded_amount) - Number(invoice.credited_amount));
+        const [items, payments, settings] = await Promise.all([
+            db.query('SELECT description, quantity, unit_price, total_amount FROM invoice_items WHERE invoice_id = $1 ORDER BY created_at', [invoiceId]),
+            db.query("SELECT transaction_date, method, amount FROM payments WHERE invoice_id = $1 AND payment_status = 'Completed' ORDER BY transaction_date", [invoiceId]),
+            settingsService.getAll()
+        ]);
+        const pdf = await buildPortalInvoicePdf(invoice, items.rows, payments.rows, settings);
+        await logPortalAudit(db, req, { eventType: 'InvoiceDownloaded', resourceType: 'Invoice', resourceId: invoiceId });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoiceId}.pdf"`);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.send(pdf);
+    } catch (error) { next(error); }
 };
 
 const getMyAppointmentRequests = (db) => async (req, res, next) => {
@@ -290,6 +375,15 @@ const createAppointmentRequest = (db) => async (req, res, next) => {
             details: { preferredDate: data.preferredDate, modalityType: data.modalityType }
         });
 
+        triggerEventForRole(db, 'AppointmentRequested', 'Receptionist', {
+            priority: 'Normal',
+            variables: {
+                patient_id: req.user.userId,
+                preferred_date: data.preferredDate || '',
+                exam_type: data.modalityType || ''
+            }
+        }).catch(() => {});
+
         res.status(201).json(result.rows[0]);
     } catch (error) {
         next(error);
@@ -310,6 +404,14 @@ const createProfileUpdateRequest = (db) => async (req, res, next) => {
             resourceId: result.rows[0].update_request_id,
             details: { fields: Object.keys(req.body) }
         });
+
+        triggerEventForRole(db, 'ProfileUpdateRequested', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                patient_id: req.user.userId,
+                fields: Object.keys(req.body).join(', ')
+            }
+        }).catch(() => {});
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -403,6 +505,20 @@ const reviewPortalAppointmentRequest = (db) => async (req, res, next) => {
         ]);
 
         await client.query('COMMIT');
+
+        triggerEvent(db, 'AppointmentRequestReviewed', {
+            patientId: existing.rows[0].patient_id,
+            entityType: 'AppointmentRequest',
+            entityId: req.params.requestId,
+            channels: ['Email'],
+            priority: 'Normal',
+            variables: {
+                patient_name: '',
+                status: req.body.status,
+                staff_notes: req.body.staffNotes || ''
+            }
+        }).catch(() => {});
+
         res.json(updated.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -535,23 +651,35 @@ const decryptStored = (value) => {
 const getMyNotifications = (db) => async (req, res, next) => {
     try {
         const patientId = req.user.userId;
-        const result = await db.query(`
-            SELECT notification_id, channel, event_type, subject, content,
-                   status, is_read, read_at, created_at
-            FROM notifications
-            WHERE patient_id = $1
-              AND channel = 'InApp'
-            ORDER BY created_at DESC
-            LIMIT 100
-        `, [patientId]);
+        const page = getPortalNotificationPage(getRequestQuery(req));
+        const [itemsResult, countsResult] = await Promise.all([
+            db.query(`
+                SELECT n.notification_id, n.channel, n.event_type, n.entity_id,
+                       n.subject, n.content, n.status, n.priority,
+                       n.is_read, n.read_at, n.created_at, ec.category
+                FROM notifications n
+                LEFT JOIN notification_event_catalog ec ON ec.event_type = n.event_type
+                WHERE n.patient_id = $1
+                  AND n.channel = 'InApp'
+                ORDER BY n.created_at DESC, n.notification_id DESC
+                LIMIT $2 OFFSET $3
+            `, [patientId, page.limit, page.offset]),
+            db.query(`
+                SELECT COUNT(*)::int AS total,
+                       COUNT(*) FILTER (WHERE is_read = FALSE)::int AS unread_count
+                FROM notifications
+                WHERE patient_id = $1
+                  AND channel = 'InApp'
+            `, [patientId])
+        ]);
 
-        const items = result.rows.map((row) => ({
-            ...row,
-            subject: decryptStored(row.subject),
-            content: decryptStored(row.content)
+        res.json(buildPortalNotificationEnvelope({
+            rows: itemsResult.rows,
+            counts: countsResult.rows[0],
+            persona: 'patient',
+            page,
+            decryptStored
         }));
-
-        res.json(items);
     } catch (error) {
         next(error);
     }
@@ -611,6 +739,7 @@ module.exports = {
     patientLogin,
     getMyRecords,
     getMyInvoices,
+    getMyInvoicePdf,
     getMyDocuments,
     downloadMyDocument,
     getMyAppointmentRequests,

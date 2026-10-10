@@ -1,3 +1,4 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const crypto = require('crypto');
 const fs = require('fs');
 const net = require('net');
@@ -8,287 +9,48 @@ const { AppError } = require('../middleware/errorHandler');
 const logger = require('../config/logger');
 const settingsService = require('../services/settingsService');
 const { reconcileInstance, reconcileQuarantine, discardQuarantine, writeAudit } = require('../services/pacsReconcileService');
+const { enqueueReconciliation } = require('../services/pacsReconciliationQueue');
 const { proxyToOrthanc, getOrthancUrl, getOrthancAuthHeader } = require('../services/pacsDicomWebService');
 const { uploadFilesToExam, getUploadProgress } = require('../services/pacsUploadService');
 const { fetchScheduledWorklist, regenerateWorklists, validateWorklistRow, WORKLIST_DIR } = require('../services/pacsMwlService');
 const { tierColdInstances, TIERING_DAYS, BATCH_SIZE, COLD_PREFIX } = require('../services/pacsTieringService');
 const { getPacsAiConfig, processQueuedPacsAiJobs } = require('../services/pacsAiAnalysisService');
 const { buildOrthancHeaders, registerModalityInOrthanc } = require('../services/pacsModalityRegistryService');
-const { decrypt } = require('../utils/crypto');
-const { createStoredZip } = require('../utils/zipStore');
-
-const safeEqual = (actual, expected) => {
-    const a = Buffer.from(actual || '', 'utf8');
-    const b = Buffer.from(expected || '', 'utf8');
-    return a.length === b.length && crypto.timingSafeEqual(a, b);
-};
-
-const safeDecrypt = (value) => {
-    if (!value) return '';
-    try {
-        return decrypt(value);
-    } catch {
-        return '';
-    }
-};
-
-const getRemoteIp = (req) => req.headers?.['x-forwarded-for'] || req.ip || req.socket?.remoteAddress || null;
-
-const parseStudyUidList = (value) => {
-    const raw = Array.isArray(value) ? value : String(value || '').split(',');
-    return [...new Set(raw
-        .map((v) => String(v || '').trim())
-        .filter(Boolean))];
-};
-
-const hasEffectivePermission = (user, permission) => {
-    if (user?.role === 'Developer') return true;
-    const permissions = Array.isArray(user?.permissions) ? user.permissions : [];
-    if (permissions.includes(permission)) return true;
-    return Array.isArray(user?.elevatedPermissions)
-        && Number(user?.breakGlassExpiry) > Date.now()
-        && user.elevatedPermissions.includes(permission);
-};
-
-const hasGlobalPacsAccess = (user) => (
-    ['Developer', 'Admin'].includes(user?.role)
-    || hasEffectivePermission(user, 'MANAGE_PACS')
-);
-
-const isValidStudyUid = (uid) => /^[0-9][0-9.]{2,127}$/.test(uid) && !uid.includes('..') && !uid.endsWith('.');
-
-const decodeDicomUid = (value) => {
-    try {
-        return decodeURIComponent(value);
-    } catch {
-        throw new AppError('Invalid DICOM UID', 400);
-    }
-};
-
-const getRequestedStudyUids = (subPath, query = {}) => {
-    const found = [];
-    const pathMatch = subPath.match(/\/studies\/([0-9.]+)(?:$|[/?])/);
-    if (pathMatch) found.push(pathMatch[1]);
-
-    for (const key of ['StudyInstanceUID', 'StudyInstanceUIDs', 'studyUID', 'studyUIDs', '0020000D']) {
-        if (query[key]) found.push(...parseStudyUidList(query[key]));
-    }
-
-    return [...new Set(found)];
-};
-
-const getDicomEntityUids = (subPath, query = {}) => {
-    const seriesUids = [];
-    const sopUids = [];
-
-    for (const match of subPath.matchAll(/\/series\/([^/]+)/g)) {
-        seriesUids.push(decodeDicomUid(match[1]));
-    }
-    for (const match of subPath.matchAll(/\/instances\/([^/]+)/g)) {
-        sopUids.push(decodeDicomUid(match[1]));
-    }
-
-    for (const key of ['SeriesInstanceUID', 'SeriesInstanceUIDs', 'seriesUID', 'seriesUIDs', '0020000E']) {
-        if (query[key]) seriesUids.push(...parseStudyUidList(query[key]));
-    }
-    for (const key of ['SOPInstanceUID', 'SOPInstanceUIDs', 'objectUID', 'objectUIDs', '00080018']) {
-        if (query[key]) sopUids.push(...parseStudyUidList(query[key]));
-    }
-
-    return {
-        seriesUids: [...new Set(seriesUids.map((uid) => String(uid || '').trim()).filter(Boolean))],
-        sopUids: [...new Set(sopUids.map((uid) => String(uid || '').trim()).filter(Boolean))]
-    };
-};
-
-const resolveDicomWebStudyScope = async (db, subPath, query = {}) => {
-    const requestedStudyUids = getRequestedStudyUids(subPath, query);
-    const { seriesUids, sopUids } = getDicomEntityUids(subPath, query);
-    const allEntityUids = [...seriesUids, ...sopUids];
-    if (allEntityUids.some((uid) => !isValidStudyUid(uid))) {
-        throw new AppError('Invalid DICOM UID', 400);
-    }
-
-    const resolvedStudyUids = [];
-    const resolvedSeriesUids = new Set();
-    const resolvedSopUids = new Set();
-
-    if (seriesUids.length) {
-        const { rows } = await db.query(
-            `SELECT series_instance_uid, study_instance_uid
-             FROM pacs_series
-             WHERE series_instance_uid = ANY($1::text[])`,
-            [seriesUids]
-        );
-        rows.forEach((row) => {
-            resolvedSeriesUids.add(row.series_instance_uid);
-            resolvedStudyUids.push(row.study_instance_uid);
-        });
-    }
-
-    if (sopUids.length) {
-        const { rows } = await db.query(
-            `SELECT pi.sop_instance_uid, ps.study_instance_uid
-             FROM pacs_instances pi
-             JOIN pacs_series ps ON ps.series_instance_uid = pi.series_instance_uid
-             WHERE pi.sop_instance_uid = ANY($1::text[])`,
-            [sopUids]
-        );
-        rows.forEach((row) => {
-            resolvedSopUids.add(row.sop_instance_uid);
-            resolvedStudyUids.push(row.study_instance_uid);
-        });
-    }
-
-    return {
-        studyUids: [...new Set([...requestedStudyUids, ...resolvedStudyUids])],
-        unresolvedEntityUids: [
-            ...seriesUids.filter((uid) => !resolvedSeriesUids.has(uid)),
-            ...sopUids.filter((uid) => !resolvedSopUids.has(uid))
-        ]
-    };
-};
-
-const assertStudyAccess = async (db, user, studyUids) => {
-    const uids = parseStudyUidList(studyUids);
-    if (!uids.length) {
-        throw new AppError('A study UID is required for PACS viewer access', 400);
-    }
-    if (uids.some((uid) => !isValidStudyUid(uid))) {
-        throw new AppError('Invalid StudyInstanceUID', 400);
-    }
-
-    const { rows } = await db.query(
-        `SELECT e.study_instance_uid
-         FROM examinations e
-         LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
-         WHERE e.study_instance_uid = ANY($1::text[])
-           AND (
-                $2::text IN ('Developer', 'Admin')
-                OR $4::boolean
-                OR ($2::text = 'Radiologist' AND (e.performing_radiologist_id = $3::uuid OR e.performing_radiologist_id IS NULL))
-                OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
-           )`,
-        [uids, user.role, user.user_id, hasGlobalPacsAccess(user)]
-    );
-
-    const allowed = new Set(rows.map((row) => row.study_instance_uid));
-    const denied = uids.filter((uid) => !allowed.has(uid));
-    if (denied.length) {
-        throw new AppError('Study not found or not assigned to this user', 403);
-    }
-    return uids;
-};
-
-const assertExamViewerAccess = async (db, user, { examId = null, accessionNumber = null, studyUids = [] } = {}) => {
-    const requestedUids = parseStudyUidList(studyUids);
-    const normalizedExamId = String(examId || '').trim();
-    const normalizedAccession = String(accessionNumber || '').trim();
-
-    if (!normalizedExamId && !normalizedAccession) {
-        return null;
-    }
-
-    const { rows } = await db.query(
-        `SELECT e.exam_id, e.order_number, e.study_instance_uid,
-                e.images_available, e.image_count, e.first_image_received_at,
-                et.name AS exam_type_name, m.name AS modality_name, p.mrn
-         FROM examinations e
-         LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
-         LEFT JOIN examination_types et ON et.type_id = e.exam_type_id
-         LEFT JOIN modalities m ON m.modality_id = e.modality_id
-         JOIN patients p ON p.patient_id = e.patient_id
-         WHERE (($3::text <> '' AND e.exam_id::text = $3::text)
-             OR ($4::text <> '' AND e.order_number = $4::text))
-           AND (
-                $1::text IN ('Developer', 'Admin')
-                OR $5::boolean
-                OR ($1::text = 'Radiologist' AND (e.performing_radiologist_id = $2::uuid OR e.performing_radiologist_id IS NULL))
-                OR ($1::text = 'Technician' AND a.technician_id = $2::uuid)
-           )
-         LIMIT 1`,
-        [user.role, user.user_id, normalizedExamId, normalizedAccession, hasGlobalPacsAccess(user)]
-    );
-
-    if (!rows.length) {
-        throw new AppError('Examination not found or not assigned to this user', 403);
-    }
-
-    const exam = rows[0];
-    if (!exam.study_instance_uid) {
-        throw new AppError('This examination does not have linked PACS images yet', 404);
-    }
-
-    if (requestedUids.length && !requestedUids.includes(exam.study_instance_uid)) {
-        throw new AppError('Requested study does not belong to this examination order', 403);
-    }
-
-    return exam;
-};
-
-const assertExamImagingAccess = async (db, user, examId) => {
-    const { rows } = await db.query(
-        `SELECT e.exam_id, e.order_number, e.study_instance_uid, e.orthanc_study_id,
-                e.images_available, e.image_count, e.priority,
-                e.status,
-                et.name AS exam_type_name, m.name AS modality_name, m.type AS modality_type, p.mrn
-         FROM examinations e
-         LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
-         LEFT JOIN examination_types et ON et.type_id = e.exam_type_id
-         LEFT JOIN modalities m ON m.modality_id = e.modality_id
-         JOIN patients p ON p.patient_id = e.patient_id
-         WHERE e.exam_id = $1
-           AND (
-                $2::text IN ('Developer', 'Admin')
-                OR $4::boolean
-                OR ($2::text = 'Radiologist' AND (e.performing_radiologist_id = $3::uuid OR e.performing_radiologist_id IS NULL))
-                OR ($2::text = 'Technician' AND a.technician_id = $3::uuid)
-           )
-         LIMIT 1`,
-        [examId, user.role, user.user_id, hasGlobalPacsAccess(user)]
-    );
-
-    if (!rows.length) {
-        throw new AppError('Examination not found or not assigned to this user', 403);
-    }
-    return rows[0];
-};
-
-const assertDicomWebStudyScope = async (db, req, subPath) => {
-    const { studyUids: requested, unresolvedEntityUids } = await resolveDicomWebStudyScope(db, subPath, req.query || {});
-    const isStudyBrowse = req.method === 'GET' && /^\/dicom-web\/studies\/?$/.test(subPath);
-    const isGlobal = hasGlobalPacsAccess(req.user);
-
-    if (['pacs_viewer_cookie', 'pacs_viewer_bearer'].includes(req.authType)) {
-        const allowed = parseStudyUidList(req.user?.study_instance_uids || []);
-        if (!requested.length) {
-            throw new AppError('Scoped PACS viewer sessions cannot browse all studies', 403);
-        }
-        if (unresolvedEntityUids.length) {
-            throw new AppError('Requested DICOM object is not indexed for this viewer session', 403);
-        }
-        const denied = requested.filter((uid) => !allowed.includes(uid));
-        if (denied.length) {
-            throw new AppError('PACS viewer session is not scoped to this study', 403);
-        }
-        return;
-    }
-
-    if (!isGlobal) {
-        if (isStudyBrowse && !requested.length) {
-            throw new AppError('Study-scoped PACS access is required', 403);
-        }
-        if (!requested.length) {
-            throw new AppError('Study-scoped PACS access is required', 403);
-        }
-        if (unresolvedEntityUids.length) {
-            throw new AppError('Requested DICOM object is not indexed for this user', 403);
-        }
-        if (requested.length) {
-            await assertStudyAccess(db, req.user, requested);
-        }
-    }
-};
+const { decrypt, encrypt } = require('../utils/crypto');
+const { triggerEventForRole } = require('../services/notificationJobService');
+const {
+    safeEqual,
+    safeDecrypt,
+    getRemoteIp,
+    parseStudyUidList,
+    hasEffectivePermission,
+    hasGlobalPacsAccess,
+    hasEmergencyClinicalPacsAccess,
+    isValidStudyUid,
+    decodeDicomUid,
+    getRequestedStudyUids,
+    getPathStudyUids,
+    getDicomEntityUids,
+    resolveDicomWebStudyScope,
+    assertStudyAccess,
+    assertExamViewerAccess,
+    assertExamImagingAccess,
+    assertDicomWebStudyScope,
+    shouldReturnEmptyScopedStudyBrowse,
+    assertPacsAiJobAccess,
+    auditPacsAccessDenied
+} = require('../services/pacsAccessPolicyService');
+const {
+    safeFileStem,
+    parseOrthancLookupResult,
+    fetchOrthancJson,
+    lookupOrthancStudyId,
+    resolveExportStudyContext,
+    auditPacsStudyExport,
+    streamOrthancStudyPackage,
+    extensionForImage,
+    exportRenderedImagesZip
+} = require('../services/pacsExportService');
 
 const authorizeExamImagingAccess = (db) => async (req, res, next) => {
     try {
@@ -299,245 +61,8 @@ const authorizeExamImagingAccess = (db) => async (req, res, next) => {
     }
 };
 
-const assertPacsAiJobAccess = async (db, user, jobId) => {
-    const { rows } = await db.query(
-        `SELECT job_id, exam_id
-         FROM pacs_ai_analysis_jobs
-         WHERE job_id = $1
-         LIMIT 1`,
-        [jobId]
-    );
-    if (!rows.length) {
-        throw new AppError('Job not found', 404);
-    }
-    await assertExamImagingAccess(db, user, rows[0].exam_id);
-    return rows[0];
-};
-
-const auditPacsAccessDenied = async (db, req, error, detail = {}) => {
-    const statusCode = Number(error?.statusCode || error?.status || 0);
-    if (![401, 403].includes(statusCode)) return;
-    await writeAudit(db, {
-        eventType: 'PACS_ACCESS_DENIED',
-        actorUserId: req.user?.user_id || null,
-        actorRole: req.user?.role || null,
-        remoteIp: getRemoteIp(req),
-        detail: {
-            path: req.originalUrl || req.url || req.path || null,
-            method: req.method || null,
-            auth_type: req.authType || null,
-            reason: error.message,
-            ...detail
-        },
-        httpMethod: req.method || null,
-        requestPath: req.originalUrl || req.url || req.path || null,
-        statusCode
-    });
-};
-
-const safeFileStem = (value, fallback = 'pacs-case') => {
-    const stem = String(value || fallback)
-        .replace(/[\\/:*?"<>|\r\n]+/g, '_')
-        .replace(/\s+/g, '_')
-        .replace(/_+/g, '_')
-        .slice(0, 96)
-        .replace(/^_+|_+$/g, '');
-    return stem || fallback;
-};
-
-const parseOrthancLookupResult = (data) => {
-    if (!Array.isArray(data)) return null;
-    for (const item of data) {
-        if (typeof item === 'string') return item;
-        if (item?.Type === 'Study' && item?.ID) return item.ID;
-        if (item?.ID) return item.ID;
-    }
-    return null;
-};
-
-const fetchOrthancJson = async (url, auth, path, options = {}) => {
-    const response = await fetch(`${url}${path}`, {
-        ...options,
-        headers: {
-            Authorization: auth,
-            Accept: 'application/json',
-            ...(options.headers || {})
-        }
-    });
-    if (!response.ok) {
-        throw new AppError(`PACS archive lookup failed (${response.status})`, 502);
-    }
-    return response.json();
-};
-
-const lookupOrthancStudyId = async (orthancUrl, auth, studyInstanceUid) => {
-    const response = await fetch(`${orthancUrl}/tools/find`, {
-        method: 'POST',
-        headers: {
-            Authorization: auth,
-            'Content-Type': 'application/json',
-            Accept: 'application/json'
-        },
-        body: JSON.stringify({
-            Level: 'Study',
-            Query: { StudyInstanceUID: studyInstanceUid },
-            Limit: 1
-        })
-    });
-
-    if (!response.ok) {
-        throw new AppError(`PACS archive lookup failed (${response.status})`, 502);
-    }
-    const id = parseOrthancLookupResult(await response.json());
-    if (!id) throw new AppError('Study was not found in the PACS archive', 404);
-    return id;
-};
-
-const resolveExportStudyContext = async (db, req, studyInstanceUid) => {
-    await assertStudyAccess(db, req.user, [studyInstanceUid]);
-    const examId = String(req.query?.examId || req.query?.exam_id || '').trim();
-    const { rows } = await db.query(
-        `SELECT e.exam_id, e.order_number, e.study_instance_uid, e.orthanc_study_id,
-                e.image_count, et.name AS exam_type_name, m.name AS modality_name, p.mrn
-         FROM examinations e
-         LEFT JOIN examination_types et ON et.type_id = e.exam_type_id
-         LEFT JOIN modalities m ON m.modality_id = e.modality_id
-         JOIN patients p ON p.patient_id = e.patient_id
-         WHERE e.study_instance_uid = $1
-           AND ($2::text = '' OR e.exam_id::text = $2::text)
-         LIMIT 1`,
-        [studyInstanceUid, examId]
-    );
-    return rows[0] || { study_instance_uid: studyInstanceUid };
-};
-
-const auditPacsStudyExport = async (db, req, study, format, detail = {}) => {
-    await writeAudit(db, {
-        eventType: 'STUDY_EXPORTED',
-        actorUserId: req.user?.user_id || null,
-        actorRole: req.user?.role || null,
-        studyInstanceUid: study.study_instance_uid,
-        accessionNumber: study.order_number || null,
-        remoteIp: getRemoteIp(req),
-        detail: {
-            format,
-            exam_id: study.exam_id || null,
-            orthanc_study_id: study.orthanc_study_id || null,
-            ...detail
-        },
-        httpMethod: req.method || null,
-        requestPath: req.originalUrl || req.url || req.path || null,
-        statusCode: 200
-    });
-};
-
-const streamOrthancStudyPackage = async ({ orthancUrl, auth, orthancStudyId, mode, filename, res }) => {
-    const endpoint = mode === 'cd' ? 'media' : 'archive';
-    const response = await fetch(`${orthancUrl}/studies/${encodeURIComponent(orthancStudyId)}/${endpoint}`, {
-        headers: { Authorization: auth, Accept: 'application/zip, application/octet-stream;q=0.9, */*;q=0.1' }
-    });
-
-    if (!response.ok) {
-        const message = await response.text().catch(() => '');
-        throw new AppError(message || `PACS export failed (${response.status})`, 502);
-    }
-
-    res.status(200);
-    res.setHeader('Content-Type', response.headers.get('content-type') || 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-RCMS-PACS-Export-Format', mode);
-    if (response.headers.get('content-length')) {
-        res.setHeader('Content-Length', response.headers.get('content-length'));
-    }
-
-    if (!response.body) {
-        res.end();
-        return;
-    }
-    await pipeline(Readable.fromWeb(response.body), res);
-};
-
-const extensionForImage = (contentType = '') => {
-    if (/png/i.test(contentType)) return 'png';
-    if (/bmp/i.test(contentType)) return 'bmp';
-    return 'jpg';
-};
-
-const exportRenderedImagesZip = async ({ orthancUrl, auth, orthancStudyId, study, filename, res }) => {
-    const studyInfo = await fetchOrthancJson(orthancUrl, auth, `/studies/${encodeURIComponent(orthancStudyId)}`);
-    const seriesIds = Array.isArray(studyInfo.Series) ? studyInfo.Series : [];
-    const files = [{
-        name: 'README.txt',
-        data: [
-            'RCMS PACS rendered image export',
-            `StudyInstanceUID: ${study.study_instance_uid || ''}`,
-            `Accession: ${study.order_number || ''}`,
-            'Images are rendered previews for review/sharing. Use the DICOM export for diagnostic fidelity.',
-            ''
-        ].join('\r\n')
-    }];
-    const manifest = {
-        exportedAt: new Date().toISOString(),
-        format: 'images',
-        studyInstanceUid: study.study_instance_uid || null,
-        accessionNumber: study.order_number || null,
-        examId: study.exam_id || null,
-        series: []
-    };
-
-    for (let s = 0; s < seriesIds.length; s += 1) {
-        const seriesId = seriesIds[s];
-        const seriesInfo = await fetchOrthancJson(orthancUrl, auth, `/series/${encodeURIComponent(seriesId)}`);
-        const seriesNumber = seriesInfo.MainDicomTags?.SeriesNumber || String(s + 1).padStart(2, '0');
-        const seriesLabel = safeFileStem(seriesInfo.MainDicomTags?.SeriesDescription || `series-${seriesNumber}`, `series-${seriesNumber}`);
-        const instances = Array.isArray(seriesInfo.Instances) ? seriesInfo.Instances : [];
-        const manifestSeries = {
-            seriesId,
-            seriesNumber,
-            description: seriesInfo.MainDicomTags?.SeriesDescription || null,
-            images: []
-        };
-
-        for (let i = 0; i < instances.length; i += 1) {
-            const instanceId = instances[i];
-            const preview = await fetch(`${orthancUrl}/instances/${encodeURIComponent(instanceId)}/preview`, {
-                headers: { Authorization: auth, Accept: 'image/jpeg, image/png;q=0.9, image/bmp;q=0.8, */*;q=0.1' }
-            });
-            if (!preview.ok) continue;
-            const data = Buffer.from(await preview.arrayBuffer());
-            const contentType = preview.headers.get('content-type') || 'image/jpeg';
-            const ext = extensionForImage(contentType);
-            const imageName = `${String(i + 1).padStart(4, '0')}.${ext}`;
-            const path = `images/series-${String(seriesNumber).padStart(2, '0')}-${seriesLabel}/${imageName}`;
-            files.push({ name: path, data });
-            manifestSeries.images.push({ instanceId, file: path, contentType });
-        }
-        manifest.series.push(manifestSeries);
-    }
-
-    if (files.length === 1) {
-        throw new AppError('No rendered images were available for this study export', 502);
-    }
-
-    files.push({
-        name: 'manifest.json',
-        data: JSON.stringify(manifest, null, 2)
-    });
-
-    const zip = createStoredZip(files);
-    res.status(200);
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('Content-Length', String(zip.length));
-    res.setHeader('X-RCMS-PACS-Export-Format', 'images');
-    res.end(zip);
-    return { imageCount: files.length - 2, seriesCount: manifest.series.length };
-};
-
 /**
- * Webhook auth middleware for the Orthanc -> RCMS reconcile bridge.
+ * Webhook auth middleware for the Orthanc -> VIARA reconcile bridge.
  *
  * This endpoint is machine-to-machine (called by Orthanc's Lua script on the
  * compose-internal network), so it uses a shared secret in X-Pacs-Signature
@@ -558,16 +83,19 @@ const verifyPacsWebhook = (req, res, next) => {
 };
 
 /**
- * POST /api/pacs/webhook — receive one stored-instance notification from Orthanc
- * and reconcile it to the scheduled examination. Returns fast; heavy fan-out can
- * later move to a queue worker (Phase 7) without changing this contract.
+ * POST /api/pacs/webhook — receive one stored-instance notification from Orthanc.
+ * Acknowledges immediately and enqueues reconciliation for background processing.
+ * This prevents webhook timeouts from Orthanc and decouples reconciliation from the request lifecycle.
  */
 const handleWebhook = (db) => async (req, res, next) => {
     try {
         const payload = req.body || {};
         const remoteIp = req.headers['x-forwarded-for'] || req.ip || req.socket?.remoteAddress || null;
-        const result = await reconcileInstance(db, payload, { remoteIp });
-        res.status(200).json({ success: true, ...result });
+
+        // Enqueue for async processing — return immediately so Orthanc doesn't retry
+        await enqueueReconciliation(db, payload, { remoteIp });
+
+        res.status(200).json({ success: true, message: 'Webhook accepted for async processing' });
     } catch (error) {
         next(error);
     }
@@ -579,10 +107,9 @@ const handleWebhook = (db) => async (req, res, next) => {
  */
 const getOrthancSystemStatus = () => async (req, res, next) => {
     try {
-        const orthancUrl = await settingsService.get('orthanc_api_url', process.env.ORTHANC_API_URL || 'http://orthanc:8042');
-        const username = await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'orthanc');
-        const password = await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD || 'orthanc');
-        
+        const { getOrthancConnection } = require('../services/pacsModalityRegistryService');
+        const { url: orthancUrl, username, password } = await getOrthancConnection();
+
         let authHeader = {};
         if (username) {
             authHeader['Authorization'] = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
@@ -596,28 +123,47 @@ const getOrthancSystemStatus = () => async (req, res, next) => {
         ]);
 
         if (!systemRes.ok || !statsRes.ok) {
-            return next(new AppError('Failed to fetch Orthanc system stats', 502));
+            return res.status(200).json({
+                status: 'unreachable',
+                message: 'Orthanc server health check failing. Check REST URL, credentials, or DICOM service status.',
+                version: null,
+                aet: null,
+                databaseVersion: null,
+                totalDiskSizeMB: 0,
+                countPatients: 0,
+                countStudies: 0,
+                countSeries: 0,
+                countInstances: 0
+            });
         }
 
         const system = await systemRes.json();
         const stats = await statsRes.json();
 
         res.json({
-            success: true,
-            data: {
-                version: system.Version,
-                aet: system.DicomAet,
-                databaseVersion: system.DatabaseVersion,
-                totalDiskSizeMB: Math.round(stats.TotalDiskSizeMB || 0),
-                countPatients: stats.CountPatients || 0,
-                countStudies: stats.CountStudies || 0,
-                countSeries: stats.CountSeries || 0,
-                countInstances: stats.CountInstances || 0
-            }
+            version: system.Version,
+            aet: system.DicomAet,
+            databaseVersion: system.DatabaseVersion,
+            totalDiskSizeMB: Math.round(stats.TotalDiskSizeMB || 0),
+            countPatients: stats.CountPatients || 0,
+            countStudies: stats.CountStudies || 0,
+            countSeries: stats.CountSeries || 0,
+            countInstances: stats.CountInstances || 0
         });
     } catch (error) {
-        logger.error(`Error fetching Orthanc stats: ${error.message}`);
-        next(new AppError('PACS is currently unreachable', 503));
+        logger.warn(`Orthanc system status unavailable: ${error.message}`);
+        res.status(200).json({
+            status: 'unreachable',
+            message: 'PACS is currently unreachable. Check Orthanc service, REST URL, credentials, host networking, and firewall rules.',
+            version: null,
+            aet: null,
+            databaseVersion: null,
+            totalDiskSizeMB: 0,
+            countPatients: 0,
+            countStudies: 0,
+            countSeries: 0,
+            countInstances: 0
+        });
     }
 };
 
@@ -638,7 +184,7 @@ const syncModalityToOrthanc = (db) => async (req, res, next) => {
         const port = parseInt(req.body?.port, 10);
 
         if (!aet) return next(new AppError('Application Entity Title (AET) is required', 400));
-        if (aet.length > 50) return next(new AppError('AET must be 50 characters or fewer', 400));
+        if (!aet || aet.length > 16 || /[\\\x00-\x1f\x7f]/.test(aet)) return next(new AppError('AET must contain 1-16 valid characters', 400));
         if (!isValidDicomHost(ipAddress)) {
             return next(new AppError('A valid modality host or IPv4 address is required', 400));
         }
@@ -660,9 +206,11 @@ const syncModalityToOrthanc = (db) => async (req, res, next) => {
             [aet, ipAddress, port, dicomRole, id]
         );
 
-        const orthancUrl = await settingsService.get('orthanc_api_url', process.env.ORTHANC_API_URL || 'http://orthanc:8042');
-        const username = await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'orthanc');
-        const password = await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD || 'orthanc');
+        const { getOrthancConnection } = require('../services/pacsModalityRegistryService');
+        const { url: orthancUrl, username, password } = await getOrthancConnection();
+        if (!password) {
+            throw new Error('ORTHANC_PASSWORD is required but not set');
+        }
 
         try {
             await registerModalityInOrthanc({
@@ -683,7 +231,7 @@ const syncModalityToOrthanc = (db) => async (req, res, next) => {
                 remoteIp: req.headers['x-forwarded-for'] || req.ip || null,
                 detail: { modality_id: id, name: modality.name, aet, ip_address: ipAddress, port, dicom_role: dicomRole, orthanc_id: orthancId, error: error.message }
             });
-            return next(new AppError('Connection details saved, but Orthanc rejected the registration', 502));
+            return next(new AppError(`Connection details saved, but Orthanc rejected the registration: ${error.message}`, 502));
         }
 
         await db.query('UPDATE modalities SET dicom_synced = true WHERE modality_id = $1', [id]);
@@ -713,7 +261,7 @@ const pingModality = (db) => async (req, res, next) => {
         await ensureModalityDicomSchema(db);
         const { id } = req.params;
         const { rows } = await db.query('SELECT name, aet, ip_address, port, dicom_synced, dicom_role FROM modalities WHERE modality_id = $1', [id]);
-        
+
         if (!rows.length) return next(new AppError('Modality not found', 404));
         if (!rows[0].dicom_synced) return next(new AppError('Modality must be synced to PACS before testing connection', 400));
 
@@ -740,11 +288,9 @@ const pingModality = (db) => async (req, res, next) => {
             });
         }
         const orthancId = modality.name.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
-        
-        const orthancUrl = await settingsService.get('orthanc_api_url', process.env.ORTHANC_API_URL || 'http://orthanc:8042');
-        const username = await settingsService.get('orthanc_username', process.env.ORTHANC_USERNAME || 'orthanc');
-        const password = await settingsService.get('orthanc_password', process.env.ORTHANC_PASSWORD || 'orthanc');
-        
+
+        const { url: orthancUrl, username, password } = await getOrthancConnection();
+
         let authHeader = {};
         if (username) {
             authHeader['Authorization'] = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
@@ -814,7 +360,25 @@ const PACS_CONFIG_KEYS = [
     'pacs_server_ip',
     'pacs_server_port',
     'orthanc_api_url',
-    'orthanc_username'
+    'orthanc_username',
+    'pacs_is_enabled',
+    'pacs_auto_import',
+    'pacs_storage_mode',
+    'pacs_local_storage_path',
+    'pacs_cloud_provider',
+    'pacs_s3_bucket',
+    'pacs_s3_region',
+    'pacs_s3_endpoint',
+    'pacs_s3_access_key',
+    'pacs_s3_storage_class',
+    'pacs_azure_container',
+    'pacs_peer_url',
+    'pacs_peer_aet',
+    'pacs_peer_username',
+    'pacs_auto_sync_enabled',
+    'pacs_tiering_days',
+    'pacs_cold_prefix',
+    'pacs_external_viewer_url'
 ];
 
 const diagnosticCheck = (key, label, status, detail = '', meta = {}) => ({
@@ -919,6 +483,10 @@ const getPacsConfig = () => async (req, res, next) => {
         }
         data.orthanc_password = '';
         data.has_orthanc_password = Boolean(all.orthanc_password);
+        data.pacs_s3_secret_key = '';
+        data.has_s3_secret = Boolean(all.pacs_s3_secret_key);
+        data.pacs_peer_password = '';
+        data.has_peer_password = Boolean(all.pacs_peer_password);
         res.json({ success: true, data });
     } catch (error) {
         next(error);
@@ -934,7 +502,7 @@ const getPacsDiagnostics = (db) => async (req, res, next) => {
         const orthancUrl = String(all.orthanc_api_url || process.env.ORTHANC_API_URL || process.env.ORTHANC_URL || 'http://orthanc:8042').replace(/\/+$/, '');
         const orthancDicomHost = process.env.ORTHANC_DICOM_HOST || getHostFromUrl(orthancUrl);
         const orthancUsername = String(all.orthanc_username || process.env.ORTHANC_USERNAME || '').trim();
-        const orthancPassword = String(all.orthanc_password || process.env.ORTHANC_PASSWORD || '');
+        const orthancPassword = safeDecrypt(all.orthanc_password) || process.env.ORTHANC_PASSWORD || '';
         const headers = buildOrthancHeaders(orthancUsername, orthancPassword);
         const checks = [];
         const network = {
@@ -984,7 +552,7 @@ const getPacsDiagnostics = (db) => async (req, res, next) => {
                     'aet_alignment',
                     'AET alignment',
                     'warning',
-                    `RCMS is configured as ${pacsAet}, but Orthanc reports ${system.DicomAet}. Modalities should use ${system.DicomAet}.`,
+                    `VIARA is configured as ${pacsAet}, but Orthanc reports ${system.DicomAet}. Modalities should use ${system.DicomAet}.`,
                     { configured_aet: pacsAet, orthanc_aet: system.DicomAet }
                 ));
             }
@@ -1089,7 +657,7 @@ const updatePacsConfig = (db) => async (req, res, next) => {
 
         if (body.pacs_server_aet !== undefined) {
             const aet = String(body.pacs_server_aet).trim();
-            if (aet.length > 50) return next(new AppError('AET must be 50 characters or fewer', 400));
+            if (!aet || aet.length > 16 || /[\\\x00-\x1f\x7f]/.test(aet)) return next(new AppError('AET must contain 1-16 valid characters', 400));
             updates.pacs_server_aet = aet;
         }
         if (body.pacs_server_ip !== undefined) {
@@ -1110,7 +678,8 @@ const updatePacsConfig = (db) => async (req, res, next) => {
             const url = String(body.orthanc_api_url).trim();
             try {
                 // eslint-disable-next-line no-new
-                new URL(url);
+                const parsed = new URL(url);
+                if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error('Invalid protocol or embedded credentials');
             } catch {
                 return next(new AppError('A valid Orthanc API URL is required', 400));
             }
@@ -1119,9 +688,62 @@ const updatePacsConfig = (db) => async (req, res, next) => {
         if (body.orthanc_username !== undefined) {
             updates.orthanc_username = String(body.orthanc_username).trim();
         }
+        if (body.is_pacs_enabled !== undefined) {
+            updates.pacs_is_enabled = String(body.is_pacs_enabled === true);
+        }
+        if (body.auto_import_dicom !== undefined) {
+            updates.pacs_auto_import = String(body.auto_import_dicom === true);
+        }
         // Only overwrite the password when a real value is provided.
         if (body.orthanc_password !== undefined && String(body.orthanc_password).length > 0) {
-            updates.orthanc_password = String(body.orthanc_password);
+            updates.orthanc_password = encrypt(String(body.orthanc_password));
+        }
+
+        // Storage & Cloud Sync Configuration
+        if (body.pacs_storage_mode !== undefined) {
+            const mode = String(body.pacs_storage_mode).trim().toLowerCase();
+            if (['local', 'cloud', 'hybrid'].includes(mode)) {
+                updates.pacs_storage_mode = mode;
+            }
+        }
+        if (body.pacs_local_storage_path !== undefined) {
+            updates.pacs_local_storage_path = String(body.pacs_local_storage_path).trim().slice(0, 500);
+        }
+        if (body.pacs_cloud_provider !== undefined) {
+            const provider = String(body.pacs_cloud_provider).trim().toLowerCase();
+            if (['s3', 'wasabi', 'r2', 'azure', 'minio', 'gcs'].includes(provider)) {
+                updates.pacs_cloud_provider = provider;
+            }
+        }
+        if (body.pacs_s3_bucket !== undefined) updates.pacs_s3_bucket = String(body.pacs_s3_bucket).trim().slice(0, 100);
+        if (body.pacs_s3_region !== undefined) updates.pacs_s3_region = String(body.pacs_s3_region).trim().slice(0, 50);
+        if (body.pacs_s3_endpoint !== undefined) updates.pacs_s3_endpoint = String(body.pacs_s3_endpoint).trim().slice(0, 255);
+        if (body.pacs_s3_access_key !== undefined) updates.pacs_s3_access_key = String(body.pacs_s3_access_key).trim().slice(0, 150);
+        if (body.pacs_s3_storage_class !== undefined) updates.pacs_s3_storage_class = String(body.pacs_s3_storage_class).trim().slice(0, 50);
+        if (body.pacs_s3_secret_key !== undefined && String(body.pacs_s3_secret_key).length > 0) {
+            updates.pacs_s3_secret_key = encrypt(String(body.pacs_s3_secret_key));
+        }
+        if (body.pacs_azure_container !== undefined) updates.pacs_azure_container = String(body.pacs_azure_container).trim().slice(0, 100);
+        if (body.pacs_peer_url !== undefined) updates.pacs_peer_url = String(body.pacs_peer_url).trim().slice(0, 255);
+        if (body.pacs_peer_aet !== undefined) updates.pacs_peer_aet = String(body.pacs_peer_aet).trim().slice(0, 50);
+        if (body.pacs_peer_username !== undefined) updates.pacs_peer_username = String(body.pacs_peer_username).trim().slice(0, 100);
+        if (body.pacs_peer_password !== undefined && String(body.pacs_peer_password).length > 0) {
+            updates.pacs_peer_password = encrypt(String(body.pacs_peer_password));
+        }
+        if (body.pacs_auto_sync_enabled !== undefined) {
+            updates.pacs_auto_sync_enabled = String(body.pacs_auto_sync_enabled === true);
+        }
+        if (body.pacs_tiering_days !== undefined) {
+            const days = parseInt(body.pacs_tiering_days, 10);
+            if (Number.isInteger(days) && days > 0) {
+                updates.pacs_tiering_days = String(days);
+            }
+        }
+        if (body.pacs_cold_prefix !== undefined) {
+            updates.pacs_cold_prefix = String(body.pacs_cold_prefix).trim().slice(0, 255);
+        }
+        if (body.pacs_external_viewer_url !== undefined) {
+            updates.pacs_external_viewer_url = String(body.pacs_external_viewer_url).trim().slice(0, 500);
         }
 
         if (!Object.keys(updates).length) {
@@ -1142,6 +764,31 @@ const updatePacsConfig = (db) => async (req, res, next) => {
                 password_changed: Object.prototype.hasOwnProperty.call(updates, 'orthanc_password')
             }
         });
+
+        triggerEventForRole(db, 'PACS_CONFIG_UPDATED', 'Radiologist', {
+            priority: 'Warning',
+            variables: {
+                updated_by: req.user?.full_name || req.user?.email || 'Unknown',
+                changes: Object.keys(updates).join(', ')
+            }
+        }).catch(() => { });
+
+        triggerEventForRole(db, 'PACS_CONFIG_UPDATED', 'Technician', {
+            priority: 'Warning',
+            variables: {
+                updated_by: req.user?.full_name || req.user?.email || 'Unknown',
+                changes: Object.keys(updates).join(', ')
+            }
+        }).catch(() => { });
+
+        triggerEventForRole(db, 'PACS_CONFIG_UPDATED', 'Admin', {
+            priority: 'Warning',
+            variables: {
+                updated_by: req.user?.full_name || req.user?.email || 'Unknown',
+                changes: Object.keys(updates).join(', ')
+            }
+        }).catch(() => { });
+
         res.json({ success: true, message: 'PACS configuration updated successfully' });
     } catch (error) {
         next(error);
@@ -1150,8 +797,8 @@ const updatePacsConfig = (db) => async (req, res, next) => {
 
 const getPacsAudit = (db) => async (req, res, next) => {
     try {
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
-        const eventType = String(req.query.eventType || '').trim();
+        const limit = Math.min(Math.max(parseInt(getRequestQuery(req).limit, 10) || 50, 1), 200);
+        const eventType = String(getRequestQuery(req).eventType || '').trim();
         const values = [];
         const where = [];
 
@@ -1177,12 +824,21 @@ const getPacsAudit = (db) => async (req, res, next) => {
     }
 };
 
+const PACS_WORKLIST_PREVIEW_CACHE_TTL_MS = 3000;
+const pacsWorklistPreviewCache = new Map();
+
 const getPacsWorklistPreview = (db) => async (req, res, next) => {
     try {
-        const date = String(req.query.date || '').trim() || null;
-        const modalityId = String(req.query.modalityId || '').trim() || null;
-        const includeInvalid = String(req.query.includeInvalid || 'true').toLowerCase() !== 'false';
-        const rows = await fetchScheduledWorklist(db, { date, modalityId, includeInvalid });
+        const date = String(getRequestQuery(req).date || '').trim() || null;
+        const modalityId = String(getRequestQuery(req).modalityId || '').trim() || null;
+        const includeInvalid = String(getRequestQuery(req).includeInvalid || 'true').toLowerCase() !== 'false';
+        const cacheKey = `${date || ''}:${modalityId || ''}:${includeInvalid}`;
+        const cached = pacsWorklistPreviewCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp < PACS_WORKLIST_PREVIEW_CACHE_TTL_MS)) {
+            return res.json(cached.data);
+        }
+
+        const rows = await fetchScheduledWorklist(db, { date, modalityId, includeInvalid, autoProvision: false });
         const items = rows.map((row) => {
             const validation = validateWorklistRow(row);
             return {
@@ -1200,14 +856,22 @@ const getPacsWorklistPreview = (db) => async (req, res, next) => {
             };
         });
 
-        res.json({
+        const responsePayload = {
             date: date || new Date().toISOString().slice(0, 10),
             worklist_dir: WORKLIST_DIR,
             total: items.length,
             valid: items.filter((item) => item.valid).length,
             warnings: items.filter((item) => !item.valid).length,
             items
-        });
+        };
+
+        pacsWorklistPreviewCache.set(cacheKey, { timestamp: Date.now(), data: responsePayload });
+        if (pacsWorklistPreviewCache.size > 100) {
+            const oldest = pacsWorklistPreviewCache.keys().next().value;
+            pacsWorklistPreviewCache.delete(oldest);
+        }
+
+        res.json(responsePayload);
     } catch (error) {
         next(error);
     }
@@ -1215,6 +879,7 @@ const getPacsWorklistPreview = (db) => async (req, res, next) => {
 
 const refreshPacsWorklist = (db) => async (req, res, next) => {
     try {
+        pacsWorklistPreviewCache.clear();
         const result = await regenerateWorklists(db);
         await writeAudit(db, {
             eventType: 'PACS_MWL_REGENERATED',
@@ -1234,6 +899,7 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
         const { rows: tierRows } = await db.query(
             `SELECT storage_tier, COUNT(*)::int AS instances,
                     COALESCE(SUM(file_size_bytes), 0)::bigint AS bytes,
+                    COUNT(*) FILTER (WHERE file_size_bytes IS NULL)::int AS unknown_size_instances,
                     MIN(created_at) AS oldest_instance_at,
                     MAX(created_at) AS newest_instance_at
              FROM pacs_instances
@@ -1241,6 +907,7 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
         );
         const { rows: indexRows } = await db.query(
             `SELECT
+                (SELECT COUNT(DISTINCT study_instance_uid)::int FROM pacs_series) AS study_count,
                 (SELECT COUNT(*)::int FROM pacs_series) AS series_count,
                 (SELECT COUNT(*)::int FROM pacs_instances) AS instance_count,
                 (SELECT COUNT(*)::int FROM pacs_quarantine_studies WHERE status = 'Pending') AS pending_quarantine,
@@ -1274,9 +941,9 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
             const orthancUrl = String(all.orthanc_api_url || process.env.ORTHANC_API_URL || process.env.ORTHANC_URL || 'http://orthanc:8042').replace(/\/+$/, '');
             const headers = buildOrthancHeaders(
                 String(all.orthanc_username || process.env.ORTHANC_USERNAME || '').trim(),
-                String(all.orthanc_password || process.env.ORTHANC_PASSWORD || '')
+                safeDecrypt(all.orthanc_password) || process.env.ORTHANC_PASSWORD || ''
             );
-            const response = await fetch(`${orthancUrl}/statistics`, { headers });
+            const response = await fetch(`${orthancUrl}/statistics`, { headers, signal: AbortSignal.timeout(15000) });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const stats = await response.json();
             orthanc = {
@@ -1295,6 +962,7 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
             tiers[row.storage_tier] = {
                 instances: row.instances,
                 bytes: Number(row.bytes || 0),
+                unknown_size_instances: Number(row.unknown_size_instances || 0),
                 oldest_instance_at: row.oldest_instance_at,
                 newest_instance_at: row.newest_instance_at
             };
@@ -1303,6 +971,7 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
             if (!tiers[tier]) tiers[tier] = { instances: 0, bytes: 0, oldest_instance_at: null, newest_instance_at: null };
         }
         const indexedBytes = Object.values(tiers).reduce((sum, tier) => sum + Number(tier.bytes || 0), 0);
+        const unknownSizeInstances = Object.values(tiers).reduce((sum, tier) => sum + Number(tier.unknown_size_instances || 0), 0);
         const indexedInstances = Number(indexRows[0]?.instance_count || 0);
         const orthancInstances = Number(orthanc?.instances || 0);
         const instanceGap = orthanc ? orthancInstances - indexedInstances : null;
@@ -1328,11 +997,14 @@ const getPacsStorageSummary = (db) => async (req, res, next) => {
                 oldest_eligible_at: eligible.oldest_eligible_at || null,
                 last_run_at: lastTiering?.created_at || null,
                 last_result: lastTiering?.detail || null,
-                physical_archiver: Boolean(process.env.PACS_COLD_ARCHIVER)
+                physical_archiver: Boolean(process.env.PACS_COLD_STORAGE_DIR),
+                archive_mode: 'verified-encrypted-copy',
+                hot_eviction: false
             },
             index: indexRows[0] || {},
             totals: {
                 indexed_bytes: indexedBytes,
+                unknown_size_instances: unknownSizeInstances,
                 indexed_instances: indexedInstances,
                 orthanc_instances: orthancInstances,
                 instance_gap: instanceGap
@@ -1376,7 +1048,7 @@ const runPacsAiAnalysisQueue = (db) => async (req, res, next) => {
 
 const getPacsRequests = (db) => async (req, res, next) => {
     try {
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+        const limit = Math.min(Math.max(parseInt(getRequestQuery(req).limit, 10) || 50, 1), 200);
         const { rows } = await db.query(
             `WITH recent_audit AS (
                 SELECT 'audit'::text AS source, audit_id::text AS id, event_type AS type,
@@ -1494,8 +1166,8 @@ const getExamAiAnalysisJobs = (db) => async (req, res, next) => {
 const getPacsAiAnalysisQueue = (db) => async (req, res, next) => {
     try {
         res.set('Cache-Control', 'no-store');
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 80, 1), 200);
-        const status = String(req.query.status || '').trim();
+        const limit = Math.min(Math.max(parseInt(getRequestQuery(req).limit, 10) || 80, 1), 200);
+        const status = String(getRequestQuery(req).status || '').trim();
         const values = [];
         const where = [];
 
@@ -1679,6 +1351,22 @@ const requestExamAiAnalysis = (db) => async (req, res, next) => {
             }
         });
 
+        triggerEventForRole(db, 'AI_ANALYSIS_REQUESTED', 'Radiologist', {
+            priority: 'Normal',
+            variables: {
+                accession_number: exam.order_number || '',
+                ai_model: config.model || ''
+            }
+        }).catch(() => { });
+
+        triggerEventForRole(db, 'AI_ANALYSIS_REQUESTED', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                accession_number: exam.order_number || '',
+                ai_model: config.model || ''
+            }
+        }).catch(() => { });
+
         res.status(202).json({ success: true, existing: false, job: rows[0] });
     } catch (error) {
         await auditPacsAccessDenied(db, req, error, { exam_id: req.params?.examId, action: 'request_ai_analysis' });
@@ -1691,7 +1379,7 @@ const requestExamAiAnalysis = (db) => async (req, res, next) => {
  */
 const getQuarantine = (db) => async (req, res, next) => {
     try {
-        const status = req.query.status || 'Pending';
+        const status = getRequestQuery(req).status || 'Pending';
         const { rows } = await db.query(
             `SELECT quarantine_id, study_instance_uid, orthanc_study_id,
                     raw_patient_id, raw_patient_name, raw_accession_number,
@@ -1713,7 +1401,7 @@ const getQuarantine = (db) => async (req, res, next) => {
  * This URL is the stable "swap-later" contract the browser viewer (OHIF) talks
  * to; Orthanc is never exposed to the browser. The JWT + VIEW_PACS_IMAGES guard
  * runs in the route chain before this handler. We record a lightweight view
- * audit for WADO study fetches (best-effort, never blocks the stream).
+ * audit for study-level reads before proxying PHI.
  */
 const dicomWebProxy = (db) => async (req, res, next) => {
     try {
@@ -1728,19 +1416,57 @@ const dicomWebProxy = (db) => async (req, res, next) => {
         const rest = req.params[1] || '';
         const subPath = `/${prefix}${rest}`;
 
+        if (shouldReturnEmptyScopedStudyBrowse(req, subPath)) {
+            res.setHeader('Content-Type', 'application/dicom+json; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('X-VIARA-DICOMweb-Scoped', 'empty-study-browse');
+            return res.status(200).json([]);
+        }
+
         await assertDicomWebStudyScope(db, req, subPath);
+        await require('../services/pacsColdStorageService').ensureArchivedStudiesAvailable(db, getRequestedStudyUids(subPath, getRequestQuery(req) || {}));
 
         // Audit study-level access (WADO/QIDO on a specific study) without
         // spamming on every per-frame request.
-        const studyMatch = subPath.match(/\/studies\/([0-9.]+)(?:$|\/(?:metadata|series)?$)/);
-        if (req.method === 'GET' && studyMatch) {
-            const remoteIp = req.headers['x-forwarded-for'] || req.ip || null;
+        const pathStudy = subPath.match(/^\/(?:dicom-web|wado)\/studies\/([0-9.]+)(?=\/|$)/);
+        const queriedStudies = /^\/dicom-web\/studies\/?$/.test(subPath)
+            ? getRequestedStudyUids(subPath, getRequestQuery(req) || {})
+            : [];
+        const studyUidsToAudit = pathStudy && !/\/frames(?:\/|$)/.test(subPath)
+            ? [pathStudy[1]]
+            : queriedStudies;
+        if (req.method === 'GET' && studyUidsToAudit.length) {
+            const remoteIp = req.headers?.['x-forwarded-for'] || req.ip || null;
+            for (const studyInstanceUid of studyUidsToAudit) {
+                await writeAudit(db, {
+                    eventType: 'IMAGE_VIEW',
+                    actorUserId: req.user?.user_id || null,
+                    actorRole: req.user?.role || null,
+                    studyInstanceUid,
+                    remoteIp,
+                    detail: { path: '/api/pacs/dicom-web/studies/:studyUid' },
+                    httpMethod: req.method,
+                    requestPath: '/api/pacs/dicom-web/studies/:studyUid',
+                    required: true
+                });
+            }
+            triggerEventForRole(db, 'IMAGE_VIEW', 'Radiologist', {
+                priority: 'Normal',
+                variables: {
+                    accession_number: '',
+                    viewed_by: req.user?.full_name || req.user?.email || 'Unknown'
+                }
+            }).catch(() => { });
+        } else if (req.method === 'GET' && /^\/dicom-web\/studies\/?$/.test(subPath)) {
             await writeAudit(db, {
-                eventType: 'IMAGE_VIEW',
+                eventType: 'PACS_STUDY_SEARCH',
                 actorUserId: req.user?.user_id || null,
-                studyInstanceUid: studyMatch[1],
-                remoteIp,
-                detail: { path: subPath }
+                actorRole: req.user?.role || null,
+                remoteIp: req.headers?.['x-forwarded-for'] || req.ip || null,
+                detail: { path: '/api/pacs/dicom-web/studies' },
+                httpMethod: req.method,
+                requestPath: '/api/pacs/dicom-web/studies',
+                required: true
             });
         }
 
@@ -1799,10 +1525,13 @@ const discardQuarantineStudy = (db) => async (req, res, next) => {
  */
 const searchScheduledExams = (db) => async (req, res, next) => {
     try {
-        const q = String(req.query.q || '').trim();
+        const q = String(getRequestQuery(req).q || '').trim();
         if (q.length < 2) return res.json([]);
-        const { rows } = await db.query(
-            `SELECT e.exam_id, e.order_number, e.study_instance_uid, e.status,
+        const searchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
+
+        // 1. Fetch active examinations
+        const examResult = await db.query(
+            `SELECT e.exam_id, COALESCE(e.order_number, a.order_number) AS order_number, e.study_instance_uid, e.status,
                     COALESCE(a.start_time, e.created_at) AS scheduled_datetime,
                     et.name AS exam_type_name, et.code AS exam_type_code,
                     m.name AS modality_name, m.type AS modality_type,
@@ -1812,39 +1541,105 @@ const searchScheduledExams = (db) => async (req, res, next) => {
              LEFT JOIN appointments a ON e.appointment_id = a.appointment_id
              LEFT JOIN examination_types et ON e.exam_type_id = et.type_id
              LEFT JOIN modalities m ON e.modality_id = m.modality_id
-             WHERE e.status IN ('Scheduled', 'Checked-in')
-               AND e.study_instance_uid IS NULL
-             ORDER BY
-                CASE
-                    WHEN e.order_number ILIKE $1 THEN 0
-                    WHEN p.mrn ILIKE $1 THEN 1
-                    WHEN et.name ILIKE $1 THEN 2
-                    WHEN m.name ILIKE $1 OR m.type ILIKE $1 THEN 3
-                    ELSE 4
-                END,
-                COALESCE(a.start_time, e.created_at) DESC
-             LIMIT 300`,
-            [`%${q}%`]
+             WHERE e.status::text IN ('Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Arrived', 'In-Progress', 'Completed', 'Finalized')
+             ORDER BY COALESCE(a.start_time, e.created_at) DESC
+             LIMIT 150`
         );
-        const needle = q.toLowerCase();
-        const candidates = rows
-            .map(({ first_name_enc, last_name_enc, ...row }) => ({
-                ...row,
-                patient_name: [safeDecrypt(first_name_enc), safeDecrypt(last_name_enc)]
-                    .filter(Boolean)
-                    .join(' ')
-            }))
-            .filter((row) => [
-                row.order_number,
-                row.mrn,
-                row.patient_name,
-                row.exam_type_name,
-                row.exam_type_code,
-                row.modality_name,
-                row.modality_type,
-                row.status
-            ].filter(Boolean).join(' ').toLowerCase().includes(needle))
-            .slice(0, 25);
+
+        // 2. Fetch active appointments that may not have an examination created yet
+        const apptResult = await db.query(
+            `SELECT a.appointment_id, a.patient_id, a.modality_id, a.exam_type_id,
+                    COALESCE(a.order_number, 'APT-' || SUBSTRING(a.appointment_id::text, 1, 8)) AS order_number,
+                    a.status, a.start_time AS scheduled_datetime,
+                    et.name AS exam_type_name, et.code AS exam_type_code,
+                    m.name AS modality_name, m.type AS modality_type,
+                    p.mrn, p.first_name_enc, p.last_name_enc,
+                    e.exam_id
+             FROM appointments a
+             JOIN patients p ON a.patient_id = p.patient_id
+             LEFT JOIN examinations e ON e.appointment_id = a.appointment_id
+             LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
+             LEFT JOIN modalities m ON a.modality_id = m.modality_id
+             WHERE a.status::text IN ('Scheduled', 'Confirmed', 'Arrived', 'In-Progress', 'Checked-in', 'Completed')
+             ORDER BY a.start_time DESC
+             LIMIT 150`
+        );
+
+        const existingExamIds = new Set(examResult.rows.map(r => r.exam_id));
+        const apptExamRows = [];
+
+        for (const appt of apptResult.rows) {
+            let examId = appt.exam_id;
+            if (!examId) {
+                try {
+                    const ins = await db.query(
+                        `INSERT INTO examinations (
+                            appointment_id, patient_id, modality_id, exam_type_id,
+                            status, queue_stage, order_number
+                         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                         RETURNING exam_id`,
+                        [
+                            appt.appointment_id,
+                            appt.patient_id,
+                            appt.modality_id,
+                            appt.exam_type_id,
+                            appt.status === 'Arrived' ? 'Checked-in' : 'Scheduled',
+                            appt.status === 'Arrived' ? 'Arrived' : 'Scheduled',
+                            appt.order_number
+                        ]
+                    );
+                    if (ins.rows.length) {
+                        examId = ins.rows[0].exam_id;
+                    }
+                } catch {
+                    // Ignore insert conflicts
+                }
+            }
+
+            if (examId && !existingExamIds.has(examId)) {
+                existingExamIds.add(examId);
+                apptExamRows.push({
+                    exam_id: examId,
+                    order_number: appt.order_number,
+                    study_instance_uid: null,
+                    status: appt.status,
+                    scheduled_datetime: appt.scheduled_datetime,
+                    exam_type_name: appt.exam_type_name,
+                    exam_type_code: appt.exam_type_code,
+                    modality_name: appt.modality_name,
+                    modality_type: appt.modality_type,
+                    mrn: appt.mrn,
+                    first_name_enc: appt.first_name_enc,
+                    last_name_enc: appt.last_name_enc
+                });
+            }
+        }
+
+        const combinedRows = [...examResult.rows, ...apptExamRows];
+
+        const candidates = combinedRows
+            .map(({ first_name_enc, last_name_enc, ...row }) => {
+                const firstName = safeDecrypt(first_name_enc) || '';
+                const lastName = safeDecrypt(last_name_enc) || '';
+                return {
+                    ...row,
+                    patient_name: [firstName, lastName].filter(Boolean).join(' ')
+                };
+            })
+            .filter((row) => {
+                const text = [
+                    row.order_number,
+                    row.mrn,
+                    row.patient_name,
+                    row.exam_type_name,
+                    row.exam_type_code,
+                    row.modality_name,
+                    row.modality_type,
+                    row.status
+                ].filter(Boolean).join(' ').toLowerCase();
+                return searchTerms.every(term => text.includes(term));
+            })
+            .slice(0, 30);
 
         res.json(candidates);
     } catch (error) {
@@ -1899,6 +1694,33 @@ const uploadExamImages = (db) => async (req, res, next) => {
             }
         });
 
+        triggerEventForRole(db, 'STUDY_IMPORTED', 'Radiologist', {
+            priority: 'Normal',
+            variables: {
+                accession_number: result.order_number || '',
+                patient_name: result.patient_name || '',
+                modality: result.modality_name || ''
+            }
+        }).catch(() => { });
+
+        triggerEventForRole(db, 'STUDY_IMPORTED', 'Technician', {
+            priority: 'Normal',
+            variables: {
+                accession_number: result.order_number || '',
+                patient_name: result.patient_name || '',
+                modality: result.modality_name || ''
+            }
+        }).catch(() => { });
+
+        triggerEventForRole(db, 'STUDY_IMPORTED', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                accession_number: result.order_number || '',
+                patient_name: result.patient_name || '',
+                modality: result.modality_name || ''
+            }
+        }).catch(() => { });
+
         if (res.headersSent) return;
         const complete = result.reconciled === result.total;
         return res.status(complete ? 201 : 207).json({ success: result.reconciled > 0, ...result });
@@ -1948,9 +1770,15 @@ const getExamUploadProgress = (db) => async (req, res, next) => {
  * it everywhere else, so it is not a general-purpose credential.
  */
 const exportPacsStudy = (db) => async (req, res, next) => {
-    const studyInstanceUid = decodeDicomUid(req.params.studyInstanceUid || '');
-    const format = String(req.query?.format || 'dicom').toLowerCase();
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 30 * 60 * 1000);
+    deadline.unref();
+    const cancel = () => { if (!res.writableFinished) controller.abort(); };
+    res.on('close', cancel);
+    let studyInstanceUid;
+    const format = String(getRequestQuery(req)?.format || 'dicom').toLowerCase();
     try {
+        studyInstanceUid = decodeDicomUid(req.params.studyInstanceUid || '');
         if (!isValidStudyUid(studyInstanceUid)) {
             throw new AppError('Invalid StudyInstanceUID', 400);
         }
@@ -1962,6 +1790,8 @@ const exportPacsStudy = (db) => async (req, res, next) => {
         res.setTimeout(30 * 60 * 1000);
 
         const study = await resolveExportStudyContext(db, req, studyInstanceUid);
+        const auditStudy = { ...study, study_instance_uid: studyInstanceUid };
+        await auditPacsStudyExport(db, req, auditStudy, format, { phase: 'started' }, { required: true, notify: false });
         const orthancUrl = await getOrthancUrl();
         const auth = await getOrthancAuthHeader();
         const orthancStudyId = study.orthanc_study_id || await lookupOrthancStudyId(orthancUrl, auth, studyInstanceUid);
@@ -1974,33 +1804,52 @@ const exportPacsStudy = (db) => async (req, res, next) => {
                 orthancStudyId,
                 study: { ...study, orthanc_study_id: orthancStudyId },
                 filename: `${baseName}-images.zip`,
-                res
+                res, signal: controller.signal
             });
-            await auditPacsStudyExport(db, req, { ...study, orthanc_study_id: orthancStudyId }, format, result);
+            await auditPacsStudyExport(db, req, { ...study, study_instance_uid: studyInstanceUid, orthanc_study_id: orthancStudyId }, format, { ...result, phase: 'completed' });
             return;
         }
 
-        await auditPacsStudyExport(db, req, { ...study, orthanc_study_id: orthancStudyId }, format);
         await streamOrthancStudyPackage({
             orthancUrl,
             auth,
             orthancStudyId,
             mode: format === 'cd' ? 'cd' : 'dicom',
             filename: `${baseName}-${format === 'cd' ? 'cd-media' : 'dicom'}.zip`,
-            res
+            res, signal: controller.signal
         });
+        await auditPacsStudyExport(db, req, { ...study, study_instance_uid: studyInstanceUid, orthanc_study_id: orthancStudyId }, format, { phase: 'completed' });
     } catch (error) {
+        if (studyInstanceUid && !res.headersSent) {
+            try {
+                await auditPacsStudyExport(db, req, { study_instance_uid: studyInstanceUid }, format, {
+                    phase: 'failed',
+                    error_code: error.code || 'EXPORT_FAILED',
+                    statusCode: error.statusCode || 500
+                }, { required: true, notify: false });
+            } catch (auditError) {
+                logger.error('PACS export failure audit could not be persisted', {
+                    error: auditError.message,
+                    code: auditError.code
+                });
+            }
+        }
         await auditPacsAccessDenied(db, req, error, {
             requested_study_uids: [studyInstanceUid],
             action: 'export_study',
             format
         });
-        next(error);
+        if (res.headersSent) res.destroy(error);
+        else next(error);
+    } finally {
+        clearTimeout(deadline);
+        res.off('close', cancel);
     }
 };
 
 const createViewerSession = (db) => async (req, res, next) => {
     try {
+        if (!req.user.session_id) throw new AppError('An active staff login is required for the viewer', 401);
         const requestedUids = parseStudyUidList(req.body?.studyInstanceUids || req.body?.StudyInstanceUIDs);
         const accessionNumber =
             req.body?.accessionNumber ||
@@ -2019,6 +1868,8 @@ const createViewerSession = (db) => async (req, res, next) => {
         const token = jwt.sign(
             {
                 user_id: req.user.user_id,
+                session_id: req.user.session_id,
+                parent_session_expires_at: req.user.exp,
                 role: req.user.role,
                 scope: 'pacs-viewer',
                 study_instance_uids: studyUids,
@@ -2026,20 +1877,16 @@ const createViewerSession = (db) => async (req, res, next) => {
                 order_number: examContext?.order_number || null
             },
             process.env.JWT_SECRET,
-            { expiresIn: process.env.PACS_VIEWER_TOKEN_TTL || '12h' }
+            { expiresIn: 10 * 60 }
         );
-        res.cookie('pacs_viewer_token', token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            path: '/api/pacs',
-            maxAge: 12 * 60 * 60 * 1000
-        });
+        res.set('Cache-Control', 'no-store');
         res.json({
             success: true,
             studyInstanceUids: studyUids,
             viewerSessionReady: true,
-            authMode: 'httpOnlyCookie',
+            authMode: 'scopedBearer',
+            viewerToken: token,
+            expiresInSeconds: 10 * 60,
             exam: examContext || null
         });
     } catch (error) {

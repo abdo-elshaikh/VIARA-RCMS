@@ -125,7 +125,8 @@ describe('AI provider profiles', () => {
                     findings: [{ label: 'Effusion', present: true }],
                     summary: 'Pleural effusion.',
                     quality: { supported: true, imageCountAnalyzed: 1 },
-                    model: { provider: 'pacs-worker', name: 'test-model' }
+                    model: { provider: 'pacs-worker', name: 'test-model' },
+                    evidence: [{ seriesInstanceUid: 'series-1', imageCountAnalyzed: 1 }]
                 }
             }
         });
@@ -177,5 +178,81 @@ describe('AI provider profiles', () => {
         });
         expect(requestBody.max_tokens).toBeUndefined();
         expect(requestBody.temperature).toBeUndefined();
+    });
+
+    it('uses the requested Arabic language and rejects an English report response', async () => {
+        aiProfileService.getActiveConfig.mockResolvedValue({
+            id: 'openai-profile',
+            enabled: true,
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            apiKey: 'openai-secret',
+            baseUrl: ''
+        });
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+                choices: [{ message: { content: JSON.stringify({
+                    findings: 'No acute abnormality.',
+                    impression: 'Normal study.'
+                }) } }]
+            })
+        });
+
+        await expect(aiReportService.generatePreliminaryDraft({
+            exam: { clinical_indication: 'ألم' },
+            language: 'ar'
+        })).rejects.toThrow(/different language than requested/i);
+
+        const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+        expect(requestBody.messages[0].content).toContain('Respond entirely in Arabic');
+    });
+
+    it('overrides invented findings when no verified image analysis is supplied', async () => {
+        aiProfileService.getActiveConfig.mockResolvedValue({
+            id: 'openai-profile',
+            enabled: true,
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            apiKey: 'openai-secret',
+            baseUrl: ''
+        });
+        global.fetch = jest.fn().mockResolvedValue({
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify({
+                choices: [{ message: { content: JSON.stringify({
+                    findings: 'A fracture is present.',
+                    impression: 'Acute fracture.',
+                    recommendations: 'Urgent orthopedic consultation.'
+                }) } }]
+            })
+        });
+
+        const result = await aiReportService.generatePreliminaryDraft({
+            exam: {
+                order_number: 'SENSITIVE-ORDER',
+                patient_name: 'SYNTHETIC-PATIENT',
+                clinical_indication: 'Cough',
+                prior_report_content: 'SENSITIVE PRIOR REPORT'
+            },
+            imageAnalysis: {
+                payload: {
+                    findings: [{ label: 'Invented fracture', present: true }],
+                    quality: { supported: true, imageCountAnalyzed: 1 },
+                    provenance: { mode: 'metadata-only-analysis' }
+                }
+            }
+        });
+
+        expect(result.sections.findings).toMatch(/pending radiologist review/i);
+        expect(result.sections.impression).toMatch(/pending radiologist review/i);
+        expect(result.sections.recommendations).toBe('');
+        expect(result.provenance.sourceMode).toBe('exam-metadata');
+        const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+        const providerPayload = requestBody.messages[1].content;
+        expect(providerPayload).not.toMatch(/SENSITIVE-ORDER|SYNTHETIC-PATIENT|SENSITIVE PRIOR REPORT|Invented fracture/);
+        expect(providerPayload).toContain('"imageAnalysis": null');
     });
 });

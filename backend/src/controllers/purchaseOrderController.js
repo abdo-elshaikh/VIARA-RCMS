@@ -1,6 +1,10 @@
 const { z } = require('zod');
 const { AppError } = require('../middleware/errorHandler');
 const { createPurchaseOrderSchema, updatePurchaseOrderStatusSchema, receiveStockSchema } = require('../schemas/inventorySchema');
+const { triggerEventForRole } = require('../services/notificationJobService');
+const Decimal = require('decimal.js');
+
+const money = (value) => new Decimal(value || 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
 const getPurchaseOrders = (db) => async (req, res, next) => {
     try {
@@ -60,23 +64,25 @@ const createPurchaseOrder = (db) => async (req, res, next) => {
         await client.query('BEGIN');
 
         // Total amount calc
-        const totalAmount = data.items.reduce((acc, item) => acc + (item.orderedQuantity * item.unitPrice), 0);
+        const totalAmount = data.items
+            .reduce((acc, item) => acc.plus(money(item.unitPrice).mul(item.orderedQuantity)), new Decimal(0))
+            .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
         const poResult = await client.query(`
             INSERT INTO purchase_orders (po_number, supplier_id, status, expected_date, notes, total_amount, created_by)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
-        `, [data.poNumber, data.supplierId, data.status, data.expectedDate || null, data.notes, totalAmount, userId]);
+        `, [data.poNumber, data.supplierId, 'Draft', data.expectedDate || null, data.notes, totalAmount.toFixed(2), userId]);
 
         const poId = poResult.rows[0].po_id;
 
         // Insert items
         for (const item of data.items) {
-            const totalPrice = item.orderedQuantity * item.unitPrice;
+            const totalPrice = money(item.unitPrice).mul(item.orderedQuantity).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
             await client.query(`
                 INSERT INTO purchase_order_items (po_id, item_id, ordered_quantity, unit_price, total_price)
                 VALUES ($1, $2, $3, $4, $5)
-            `, [poId, item.itemId, item.orderedQuantity, item.unitPrice, totalPrice]);
+            `, [poId, item.itemId, item.orderedQuantity, money(item.unitPrice).toFixed(2), totalPrice.toFixed(2)]);
         }
 
         await client.query('COMMIT');
@@ -96,27 +102,43 @@ const createPurchaseOrder = (db) => async (req, res, next) => {
 };
 
 const updatePurchaseOrderStatus = (db) => async (req, res, next) => {
+    let client;
     try {
         const { id } = req.params;
         const data = updatePurchaseOrderStatusSchema.parse(req.body);
-        
-        const result = await db.query(`
+        client = await db.connect();
+        await client.query('BEGIN');
+        const existingResult = await client.query(
+            'SELECT status FROM purchase_orders WHERE po_id = $1 FOR UPDATE',
+            [id]
+        );
+        if (!existingResult.rows.length) throw new AppError('Purchase Order not found', 404);
+
+        const allowedTransitions = {
+            Draft: ['Sent', 'Cancelled'],
+            Sent: ['Cancelled']
+        };
+        const currentStatus = existingResult.rows[0].status;
+        if (!(allowedTransitions[currentStatus] || []).includes(data.status)) {
+            throw new AppError(`Invalid purchase order transition from ${currentStatus} to ${data.status}`, 409);
+        }
+
+        const result = await client.query(`
             UPDATE purchase_orders 
             SET status = $1, updated_at = CURRENT_TIMESTAMP
             WHERE po_id = $2
             RETURNING *
         `, [data.status, id]);
-        
-        if (result.rows.length === 0) {
-            return next(new AppError('Purchase Order not found', 404));
-        }
-        
+        await client.query('COMMIT');
         res.json(result.rows[0]);
     } catch (error) {
+        if (client) await client.query('ROLLBACK');
         if (error instanceof z.ZodError) {
             return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         }
         next(error);
+    } finally {
+        if (client) client.release();
     }
 };
 
@@ -132,11 +154,11 @@ const receiveStock = (db) => async (req, res, next) => {
         await client.query('BEGIN');
 
         // Lock the order so concurrent receipts cannot over-receive the same lines.
-        const poCheck = await client.query(`SELECT status FROM purchase_orders WHERE po_id = $1 FOR UPDATE`, [id]);
+        const poCheck = await client.query(`SELECT po.*, s.name as supplier_name FROM purchase_orders po JOIN suppliers s ON po.supplier_id = s.supplier_id WHERE po.po_id = $1 FOR UPDATE`, [id]);
         if (poCheck.rows.length === 0) {
             throw new AppError('Purchase Order not found', 404);
         }
-        if (poCheck.rows[0].status === 'Completed' || poCheck.rows[0].status === 'Cancelled') {
+        if (!['Sent', 'Partially Received'].includes(poCheck.rows[0].status)) {
             throw new AppError(`Cannot receive stock for a ${poCheck.rows[0].status} PO`, 400);
         }
 
@@ -162,14 +184,14 @@ const receiveStock = (db) => async (req, res, next) => {
             await client.query(`
                 INSERT INTO stock_movements (item_id, batch_id, movement_type, quantity_change, unit_price, total_amount, reference_type, reference_id, created_by)
                 VALUES ($1, $2, 'Receive', $3, $4, $5, 'PO', $6, $7)
-            `, [poi.item_id, batchId, rItem.receivedQuantity, Number(poi.unit_price || 0), rItem.receivedQuantity * Number(poi.unit_price || 0), id, userId]);
+            `, [poi.item_id, batchId, rItem.receivedQuantity, money(poi.unit_price).toFixed(2), money(poi.unit_price).mul(rItem.receivedQuantity).toFixed(2), id, userId]);
 
             // Update inventory_items cache
             await client.query(`
                 UPDATE inventory_items
                 SET quantity = quantity + $1, unit_price = $3, last_updated = CURRENT_TIMESTAMP
                 WHERE item_id = $2
-            `, [rItem.receivedQuantity, poi.item_id, Number(poi.unit_price || 0)]);
+            `, [rItem.receivedQuantity, poi.item_id, money(poi.unit_price).toFixed(2)]);
 
             // Update PO item received quantity
             await client.query(`
@@ -194,6 +216,25 @@ const receiveStock = (db) => async (req, res, next) => {
         `, [id]);
 
         await client.query('COMMIT');
+
+        triggerEventForRole(db, 'PurchaseOrderReceived', 'Technician', {
+            priority: 'Normal',
+            variables: {
+                po_number: poCheck.rows[0].po_number || id,
+                supplier_name: poCheck.rows[0].supplier_name || '',
+                item_count: data.items.length
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'PurchaseOrderReceived', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                po_number: poCheck.rows[0].po_number || id,
+                supplier_name: poCheck.rows[0].supplier_name || '',
+                item_count: data.items.length
+            }
+        }).catch(() => {});
+
         res.json({ message: 'Stock received successfully' });
     } catch (error) {
         if (client) await client.query('ROLLBACK');

@@ -1,5 +1,11 @@
 const state = {};
 
+jest.mock('dns', () => ({
+    promises: {
+        lookup: jest.fn().mockResolvedValue({ address: '93.184.216.34' })
+    }
+}));
+
 jest.mock('../src/services/settingsService', () => ({
     getAll: jest.fn(async () => ({ ...state })),
     get: jest.fn(async (key, fallback = null) => state[key] ?? fallback),

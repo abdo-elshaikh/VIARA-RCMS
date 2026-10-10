@@ -4,6 +4,7 @@ const fsp = fs.promises;
 const dcmjs = require('dcmjs');
 const logger = require('../config/logger');
 const { decrypt } = require('../utils/crypto');
+const { toDicomPatientName } = require('../utils/arabicTransliteration');
 const { reconcileInstance } = require('./pacsReconcileService');
 const { getOrthancUrl, getOrthancAuthHeader } = require('./pacsDicomWebService');
 
@@ -16,6 +17,7 @@ const SC_SOP_CLASS_UID = '1.2.840.10008.5.1.4.1.1.7';
 
 const IMAGE_MIME = { 'image/jpeg': 'jpeg', 'image/jpg': 'jpeg', 'image/png': 'png' };
 
+const MAX_PROGRESS_ENTRIES = 10000;
 const uploadProgress = new Map();
 const activeUserUploads = new Map();
 
@@ -34,6 +36,22 @@ const readUploadBuffer = async (file) => {
         return Buffer.concat(chunks);
     }
     return null;
+};
+
+const evictOldProgressEntries = () => {
+    if (uploadProgress.size <= MAX_PROGRESS_ENTRIES) return;
+    const now = Date.now();
+    for (const [key, val] of uploadProgress.entries()) {
+        const updated = new Date(val.updatedAt || 0).getTime();
+        if (now - updated > 30 * 60 * 1000) {
+            uploadProgress.delete(key);
+        }
+    }
+};
+
+const clearUploadSession = (uploadSessionId) => {
+    if (!uploadSessionId) return;
+    uploadProgress.delete(uploadSessionId);
 };
 
 const initUploadProgress = (uploadSessionId, total = 0, metadata = {}) => {
@@ -57,6 +75,7 @@ const initUploadProgress = (uploadSessionId, total = 0, metadata = {}) => {
         updatedAt: new Date().toISOString()
     };
     uploadProgress.set(uploadSessionId, next);
+    evictOldProgressEntries();
     return next;
 };
 
@@ -148,10 +167,10 @@ const safeDecrypt = (value) => {
     try { return decrypt(value); } catch { return ''; }
 };
 
-// DICOM PN "Family^Given"; strip stray carets so components stay clean.
+// DICOM PN "Family^Given"; transliterates Arabic names to clean Latin characters to prevent
+// modality console Mojibake/reversals and allow technician search with standard English keyboards.
 const buildPatientName = (last, first) => {
-    const clean = (s) => String(s || '').replace(/\^/g, ' ').trim();
-    return `${clean(last)}^${clean(first)}`;
+    return toDicomPatientName(last, first, { dualGroup: true, nativeFirst: true });
 };
 
 /**
@@ -176,6 +195,11 @@ const parseDicomIdentity = (buffer) => {
         const parsed = DicomMessage.readFile(arrayBuffer, { ignoreErrors: true });
         const ds = DicomMetaDictionary.naturalizeDataset(parsed.dict);
         return {
+            patientId: String(ds.PatientID || '').trim(),
+            patientName: ds.PatientName || '',
+            accessionNumber: ds.AccessionNumber || '',
+            studyInstanceUid: ds.StudyInstanceUID || null,
+            hasReferencedObjects: containsDicomReferences(ds),
             seriesInstanceUid: ds.SeriesInstanceUID || null,
             sopInstanceUid: ds.SOPInstanceUID || null,
             sopClassUid: ds.SOPClassUID || SC_SOP_CLASS_UID,
@@ -187,6 +211,10 @@ const parseDicomIdentity = (buffer) => {
         };
     } catch {
         return {
+            patientId: '',
+            patientName: '',
+            accessionNumber: '',
+            studyInstanceUid: null,
             seriesInstanceUid: null,
             sopInstanceUid: null,
             sopClassUid: SC_SOP_CLASS_UID,
@@ -199,17 +227,34 @@ const parseDicomIdentity = (buffer) => {
     }
 };
 
-const buildDicomModifyRequest = (identity) => ({
+const containsDicomReferences = (value) => {
+    if (!value || typeof value !== 'object' || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return false;
+    if (Array.isArray(value)) return value.some(containsDicomReferences);
+    return Object.entries(value).some(([key, entry]) => key !== 'PixelData'
+        && ((/^(?:Referenced.*(?:Sequence|InstanceUID)|SourceImageSequence)$/.test(key) && entry != null)
+            || containsDicomReferences(entry)));
+};
+
+const mappedDicomUid = (studyUid, sourceUid) => '2.25.' + BigInt('0x' + crypto.createHash('sha256')
+    .update(`${studyUid}|${sourceUid}`).digest('hex').slice(0, 32)).toString();
+
+const buildDicomModifyRequest = (identity, source = {}) => ({
     Replace: {
+        SpecificCharacterSet: 'ISO_IR 192',
         PatientID: identity.patientId,
-        PatientName: identity.patientName,
+        ...(source.patientId ? {} : { PatientName: identity.patientName }),
         AccessionNumber: identity.accessionNumber,
-        StudyInstanceUID: identity.studyInstanceUid
+        StudyInstanceUID: identity.studyInstanceUid,
+        ...(source.studyInstanceUid && source.studyInstanceUid !== identity.studyInstanceUid ? {
+            SeriesInstanceUID: mappedDicomUid(identity.studyInstanceUid, source.seriesInstanceUid),
+            SOPInstanceUID: mappedDicomUid(identity.studyInstanceUid, source.sopInstanceUid)
+        } : (source.sopInstanceUid ? { SOPInstanceUID: mappedDicomUid(identity.studyInstanceUid, `derived:${source.sopInstanceUid}`) } : {}))
     },
     // Orthanc regenerates hierarchy UIDs by default when patient/study identity
     // changes. Keeping these two values preserves the modality's real series
     // grouping and keeps reconciliation idempotent across webhook replays.
-    Keep: ['SeriesInstanceUID', 'SOPInstanceUID'],
+    Keep: source.studyInstanceUid && source.studyInstanceUid !== identity.studyInstanceUid ? []
+        : (source.sopInstanceUid ? ['SeriesInstanceUID'] : ['SeriesInstanceUID', 'SOPInstanceUID']),
     Force: true,
     KeepSource: false
 });
@@ -222,9 +267,21 @@ const buildDicomModifyRequest = (identity) => ({
 const storeAndStampDicom = async (source, buffer, identity) => {
     // 1. Read identity from the file (no re-encoding — pixels are untouched).
     const fileId = parseDicomIdentity(buffer);
+    if (!fileId.patientId || fileId.patientId !== identity.patientId) {
+        throw new Error('DICOM patient identity does not match this examination. Review the source patient ID before importing.');
+    }
+    if (![fileId.studyInstanceUid, fileId.seriesInstanceUid, fileId.sopInstanceUid].every(uid => typeof uid === 'string' && uid.length <= 64 && /^[0-9]+(?:\.[0-9]+)+$/.test(uid))) {
+        throw new Error('DICOM study, series and instance UIDs are required');
+    }
+    if (fileId.studyInstanceUid !== identity.studyInstanceUid && fileId.hasReferencedObjects) {
+        throw new Error('Referenced DICOM objects must be imported into their original study; moving them would break source-image references.');
+    }
 
     // 2. Push the original buffer to Orthanc.
     const uploaded = await storeDicomBuffer(source);
+    if (fileId.studyInstanceUid === identity.studyInstanceUid && fileId.accessionNumber === identity.accessionNumber) {
+        return { ...uploaded, ...fileId };
+    }
 
     // 3. Re-stamp identity tags using Orthanc's server-side /modify endpoint.
     // This preserves the transfer syntax and pixel data perfectly.
@@ -233,7 +290,7 @@ const storeAndStampDicom = async (source, buffer, identity) => {
     const modifyRes = await fetch(`${url}/instances/${uploaded.orthancInstanceId}/modify`, {
         method: 'POST',
         headers: { Authorization: auth, 'Content-Type': 'application/json' },
-        body: JSON.stringify(buildDicomModifyRequest(identity))
+        body: JSON.stringify(buildDicomModifyRequest(identity, fileId))
     });
 
     if (!modifyRes.ok) {
@@ -252,6 +309,11 @@ const storeAndStampDicom = async (source, buffer, identity) => {
     // /modify returns the new instance's binary DICOM; we need to re-upload it.
     const modifiedBuffer = Buffer.from(await modifyRes.arrayBuffer());
     const modifiedFileId = parseDicomIdentity(modifiedBuffer);
+    if (modifiedFileId.patientId !== identity.patientId || modifiedFileId.studyInstanceUid !== identity.studyInstanceUid
+        || modifiedFileId.accessionNumber !== identity.accessionNumber || !modifiedFileId.seriesInstanceUid || !modifiedFileId.sopInstanceUid) {
+        if (uploaded.orthancStatus !== 'AlreadyStored') await deleteOrthancInstance(url, auth, uploaded.orthancInstanceId);
+        throw new Error('Orthanc returned a DICOM object with an unexpected patient or study identity');
+    }
     // Store the stamped instance before removing the temporary source. This
     // avoids losing the upload if the second PACS write fails.
     const stamped = await storeDicomBuffer(modifiedBuffer);
@@ -366,6 +428,7 @@ const storeImageAsDicom = async (buffer, mimetype, identity, description) => {
             Force: true,
             Keep: true,
             Tags: {
+                SpecificCharacterSet: 'ISO_IR 192',
                 PatientID: identity.patientId,
                 PatientName: identity.patientName,
                 AccessionNumber: identity.accessionNumber,
@@ -409,12 +472,13 @@ const loadExamIdentity = async (pool, examId, uploadSessionId = null) => {
     let studyUid = exam.study_instance_uid;
     if (!studyUid) {
         studyUid = DicomMetaDictionary.uid();
-        await pool.query(
+        const { rows: assigned } = await pool.query(
             `UPDATE examinations
              SET study_instance_uid = COALESCE(study_instance_uid, $2)
-             WHERE exam_id = $1`,
+             WHERE exam_id = $1 RETURNING study_instance_uid`,
             [examId, studyUid]
         );
+        studyUid = assigned[0]?.study_instance_uid || studyUid;
     }
 
     return {

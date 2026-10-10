@@ -1,111 +1,311 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { BadgeCheck, BarChart3, CheckSquare, Megaphone, MessageCircle, Network, ShieldCheck, Zap } from 'lucide-react';
+import {
+    Activity,
+    Award,
+    BarChart3,
+    Calendar,
+    CheckSquare,
+    ChevronDown,
+    ChevronUp,
+    Download,
+    HeartHandshake,
+    Megaphone,
+    MessageCircle,
+    Network,
+    Plus,
+    RefreshCw,
+    Send,
+    Sparkles,
+    Star,
+    Stethoscope,
+    TrendingUp,
+    UserCheck,
+    Users,
+    Zap
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import CampaignManager from '../components/crm/CampaignManager';
 import TaskBoard from '../components/crm/TaskBoard';
 import FeedbackDashboard from '../components/crm/FeedbackDashboard';
 import ReferralsTab from '../components/marketing/ReferralsTab';
 import MarketingDashboard from '../components/marketing/MarketingDashboard';
-import PageHeader from '../components/ui/PageHeader';
+import ClinicalRecallsTab from '../components/crm/ClinicalRecallsTab';
 import { selectCurrentUser } from '../store/authSlice';
 import { hasDeveloperOrAdminRole } from '../utils/roles';
+import PageHeader from '../components/ui/PageHeader';
+import {
+    useGetCampaignsQuery,
+    useGetCrmActivitiesQuery,
+    useGetFeedbackQuery,
+    useGetReferralAnalyticsQuery,
+    useGetSegmentsQuery
+} from '../store/api';
+
+const DAY = 24 * 60 * 60 * 1000;
+const isoDate = (date) => date.toISOString().split('T')[0];
+
+const formatMoney = (val, currency = 'EGP') => {
+    const formatted = new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency,
+        maximumFractionDigits: 0
+    }).format(Number(val || 0));
+    return formatted.replace(/\s+/g, '\u00A0');
+};
 
 const Marketing = () => {
-    const [activeTab, setActiveTab] = useState('dashboard');
-    const { t } = useTranslation('workspace');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const { t, i18n } = useTranslation('workspace');
+    const isArabic = i18n.language?.startsWith('ar');
+    const isRtl = i18n.dir() === 'rtl';
     const user = useSelector(selectCurrentUser);
     const hasSystemRole = hasDeveloperOrAdminRole(user?.role);
-    
+
     const canViewCampaigns = hasSystemRole || ['Receptionist', 'Marketing'].includes(user?.role);
     const canViewTasks = hasSystemRole || ['Receptionist', 'HR', 'Marketing'].includes(user?.role);
     const canViewFeedback = hasSystemRole || ['Receptionist', 'Marketing'].includes(user?.role);
     const canViewReferrals = hasSystemRole || ['Accountant', 'Marketing'].includes(user?.role);
     const canViewDashboard = canViewCampaigns || canViewTasks || canViewFeedback || canViewReferrals;
 
+    const referralRange = useMemo(() => ({
+        startDate: isoDate(new Date(Date.now() - 30 * DAY)),
+        endDate: isoDate(new Date())
+    }), []);
+
+    const campaignsQuery = useGetCampaignsQuery(undefined, { skip: !canViewCampaigns });
+    const segmentsQuery = useGetSegmentsQuery(undefined, { skip: !canViewCampaigns });
+    const tasksQuery = useGetCrmActivitiesQuery({}, { skip: !canViewTasks });
+    const feedbackQuery = useGetFeedbackQuery(undefined, { skip: !canViewFeedback });
+    const referralsQuery = useGetReferralAnalyticsQuery(referralRange, { skip: !canViewReferrals });
+
+    const campaigns = Array.isArray(campaignsQuery.data) ? campaignsQuery.data : [];
+    const segments = Array.isArray(segmentsQuery.data) ? segmentsQuery.data : [];
+    const tasks = Array.isArray(tasksQuery.data) ? tasksQuery.data : [];
+    const feedback = Array.isArray(feedbackQuery.data) ? feedbackQuery.data : [];
+    const referralDoctors = Array.isArray(referralsQuery.data?.topDoctors) ? referralsQuery.data.topDoctors : [];
+
+    const now = Date.now();
+    const activeCampaigns = campaigns.filter(item => item.status === 'Active').length;
+    const pendingTasks = tasks.filter(item => item.status === 'Pending').length;
+    const overdueTasks = tasks.filter(item => item.status === 'Pending' && item.due_date && new Date(item.due_date).getTime() < now).length;
+    const averageRating = feedback.length ? (feedback.reduce((sum, item) => sum + Number(item.rating || 0), 0) / feedback.length).toFixed(1) : '5.0';
+    const lowFeedback = feedback.filter(item => Number(item.rating) <= 2).length;
+    const referralVolume = referralDoctors.reduce((sum, item) => sum + Number(item.totalExams || 0), 0);
+    const referralRevenue = referralDoctors.reduce((sum, item) => sum + Number(item.totalRevenue || 0), 0);
+
+    const headerLoading = campaignsQuery.isLoading || tasksQuery.isLoading || feedbackQuery.isLoading || referralsQuery.isLoading;
+    const headerFetching = campaignsQuery.isFetching || tasksQuery.isFetching || feedbackQuery.isFetching || referralsQuery.isFetching;
+
+    const refreshHeader = () => {
+        if (canViewCampaigns) {
+            campaignsQuery.refetch();
+            segmentsQuery.refetch();
+        }
+        if (canViewTasks) tasksQuery.refetch();
+        if (canViewFeedback) feedbackQuery.refetch();
+        if (canViewReferrals) referralsQuery.refetch();
+    };
+
     const tabs = useMemo(() => [
-        { id: 'dashboard', icon: BarChart3, label: t('marketing.tabs.dashboard', 'Dashboard'), visible: canViewDashboard, tone: 'rose' },
-        { id: 'campaigns', icon: Megaphone, label: t('marketing.tabs.campaigns', 'Campaigns'), visible: canViewCampaigns, tone: 'indigo' },
-        { id: 'tasks', icon: CheckSquare, label: t('marketing.tabs.tasks', 'Tasks'), visible: canViewTasks, tone: 'cyan' },
-        { id: 'feedback', icon: MessageCircle, label: t('marketing.tabs.feedback', 'Feedback'), visible: canViewFeedback, tone: 'amber' },
-        { id: 'referrals', icon: Network, label: t('marketing.tabs.referrals', 'Referrals'), visible: canViewReferrals, tone: 'emerald' },
-    ].filter(tab => tab.visible), [canViewCampaigns, canViewDashboard, canViewFeedback, canViewReferrals, canViewTasks, t]);
-    
-    const safeTab = tabs.some(tab => tab.id === activeTab) ? activeTab : tabs[0]?.id;
+        {
+            id: 'dashboard',
+            icon: BarChart3,
+            label: isArabic ? 'لوحة الأداء والنمو' : 'Overview & Growth KPIs',
+            badge: `${campaigns.length} ${isArabic ? 'حملات' : 'campaigns'}`,
+            visible: canViewDashboard
+        },
+        {
+            id: 'campaigns',
+            icon: Megaphone,
+            label: isArabic ? 'الحملات والشرائح الموجهة' : 'Promotional Campaigns',
+            badge: activeCampaigns > 0 ? `${activeCampaigns} ${isArabic ? 'نشطة' : 'active'}` : null,
+            visible: canViewCampaigns
+        },
+        {
+            id: 'tasks',
+            icon: CheckSquare,
+            label: isArabic ? 'متابعات ومهام CRM' : 'CRM Task Board',
+            badge: pendingTasks > 0 ? `${pendingTasks}` : null,
+            visible: canViewTasks
+        },
+        {
+            id: 'feedback',
+            icon: MessageCircle,
+            label: isArabic ? 'رضا المرضى والتقييمات' : 'Patient Feedback & CSAT',
+            badge: `${averageRating}★`,
+            visible: canViewFeedback
+        },
+        {
+            id: 'recalls',
+            icon: HeartHandshake,
+            label: isArabic ? 'الاستدعاء الدوري والفحوصات الوقائية' : 'Clinical Recalls & Screening',
+            badge: isArabic ? 'وقائي' : 'Recall',
+            visible: canViewTasks || canViewCampaigns
+        },
+        {
+            id: 'referrals',
+            icon: Stethoscope,
+            label: isArabic ? 'شبكة الأطباء والإحالات' : 'Referring Network & Doctors',
+            badge: `${referralDoctors.length} ${isArabic ? 'أطباء' : 'doctors'}`,
+            visible: canViewReferrals
+        },
+    ].filter(tab => tab.visible), [
+        canViewCampaigns,
+        canViewDashboard,
+        canViewFeedback,
+        canViewReferrals,
+        canViewTasks,
+        isArabic,
+        campaigns.length,
+        activeCampaigns,
+        pendingTasks,
+        averageRating,
+        referralDoctors.length
+    ]);
+
+    const requestedTab = searchParams.get('tab');
+    const safeTab = tabs.some(tab => tab.id === requestedTab) ? requestedTab : (tabs[0]?.id || 'dashboard');
+    const setActiveTab = (tab) => setSearchParams((current) => { const next = new URLSearchParams(current); next.set('tab', tab); return next; }, { replace: true });
 
     return (
-        <main className="app-page">
-            <div className="mx-auto max-w-screen-2xl space-y-6 pb-12">
-                {/* Executive Page Header */}
-                <PageHeader
-                    icon={Megaphone}
-                    eyebrow={t('marketing.eyebrow', { defaultValue: 'Growth & Patient Engagement' })}
-                    title={t('marketing.title', { defaultValue: 'Marketing & CRM' })}
-                    description={t('marketing.description', { defaultValue: 'Track promotional campaigns, patient feedback, CRM task workflows, and referral channels.' })}
-                    className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50/50 to-rose-50/40 p-6 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:from-slate-950 dark:via-slate-900/90 dark:to-rose-950/20 dark:shadow-none"
-                    meta={
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-200/80 bg-rose-50/90 px-3 py-1 text-xs font-bold text-rose-800 shadow-sm dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
-                                <Megaphone size={13} className="text-rose-600 dark:text-rose-400" />
-                                Campaign Tracking
+        <main className="mx-auto max-w-[1680px] space-y-4" dir={isRtl ? 'rtl' : 'ltr'}>
+            {/* 1. Unified PageHeader */}
+            <PageHeader
+                icon={Megaphone}
+                eyebrowIcon={Network}
+                eyebrow={isArabic ? 'التسويق وعلاقات المرضى والإحالات الطبية' : 'Growth, Patient Engagement & CRM'}
+                title={isArabic ? 'منظومة التسويق وإدارة علاقات المرضى' : 'Marketing, Growth & Patient CRM'}
+                description={isArabic
+                    ? 'إدارة الحملات الترويجية والرسائل التفاعلية، قياس رضا وتقييمات المرضى، متابعة مهام الـ CRM، وتحليل شبكة إحالات الأطباء.'
+                    : 'Track multi-channel promotional campaigns, patient feedback, CRM task workflows, and doctor referral networks.'}
+                meta={
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-bold text-teal-700 dark:text-teal-300">
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-75" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-500" />
                             </span>
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200/80 bg-cyan-50/90 px-3 py-1 text-xs font-bold text-cyan-800 shadow-sm dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-300">
-                                <BadgeCheck size={13} className="text-cyan-600 dark:text-cyan-400" />
-                                Patient Feedback
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50/90 px-3 py-1 text-xs font-bold text-emerald-800 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                                <Zap size={13} className="text-emerald-600 dark:text-emerald-400" />
-                                Growth Analytics
-                            </span>
-                        </div>
+                            <span>{isArabic ? 'محرك النمو والعلاقات نشط' : 'Growth Engine Active'}</span>
+                        </span>
+                        <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                            {segments.length} {isArabic ? 'شرائح مستهدفة' : 'Audience Segments'}
+                        </span>
+                        <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                            {isArabic ? 'آخر ٣٠ يوماً' : '30-Day Window'}
+                        </span>
+                    </div>
+                }
+                actions={
+                    <div className="flex flex-wrap items-center gap-2">
+                        {canViewCampaigns && (
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('campaigns')}
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-xs font-bold text-white shadow-md shadow-teal-600/20 transition hover:brightness-110"
+                            >
+                                <Plus size={15} />
+                                <span>{isArabic ? 'حملة ترويجية جديدة' : 'New Campaign'}</span>
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={refreshHeader}
+                            disabled={headerFetching}
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                        >
+                            <RefreshCw size={14} className={headerFetching ? 'animate-spin text-teal-600' : ''} />
+                            <span>{isArabic ? 'تحديث السجلات' : 'Refresh'}</span>
+                        </button>
+                    </div>
+                }
+                metrics={[
+                    canViewCampaigns && {
+                        key: 'campaigns',
+                        icon: Megaphone,
+                        label: isArabic ? 'الحملات التسويقية النشطة' : 'Active Campaigns',
+                        value: activeCampaigns,
+                        detail: `${campaigns.length} ${isArabic ? 'إجمالي الحملات' : 'total campaigns'}`,
+                        tone: 'teal',
+                        loading: headerLoading,
+                        error: campaignsQuery.isError
+                    },
+                    canViewTasks && {
+                        key: 'tasks',
+                        icon: CheckSquare,
+                        label: isArabic ? 'مهام ومتابعات CRM' : 'Pending CRM Tasks',
+                        value: pendingTasks,
+                        detail: overdueTasks > 0 ? `${overdueTasks} ${isArabic ? 'متأخرة' : 'overdue'}` : (isArabic ? 'مكتملة ومحدثة' : 'On schedule'),
+                        tone: overdueTasks > 0 ? 'rose' : pendingTasks > 0 ? 'amber' : 'emerald',
+                        loading: headerLoading,
+                        error: tasksQuery.isError
+                    },
+                    canViewFeedback && {
+                        key: 'feedback',
+                        icon: Star,
+                        label: isArabic ? 'مؤشر رضا المرضى (CSAT)' : 'Patient CSAT Rating',
+                        value: `${averageRating} / 5`,
+                        detail: `${feedback.length} ${isArabic ? 'استجابة وتقييم' : 'reviews'}`,
+                        tone: Number(averageRating) >= 4.0 ? 'emerald' : 'amber',
+                        loading: headerLoading,
+                        error: feedbackQuery.isError
+                    },
+                    canViewReferrals && {
+                        key: 'referrals',
+                        icon: Stethoscope,
+                        label: isArabic ? 'إيرادات الإحالات الطبية (30 يوم)' : 'Referral Revenue (30d)',
+                        value: formatMoney(referralRevenue, 'EGP'),
+                        detail: `${referralVolume} ${isArabic ? 'فحص مُحال' : 'referred exams'}`,
+                        tone: 'indigo',
+                        loading: headerLoading,
+                        error: referralsQuery.isError
                     }
-                />
+                ].filter(Boolean)}
+                metricsLabel={isArabic ? 'مؤشرات التسويق والنمو' : 'Marketing & Growth Indicators'}
+            />
 
-                {/* Segmented Tab Strip */}
-                <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 p-3 shadow-lg shadow-slate-200/40 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
-                    <nav className="flex space-x-2 overflow-x-auto p-1 scrollbar-none" aria-label="Marketing Sections">
-                        {tabs.map((tab) => {
-                            const Icon = tab.icon;
-                            const active = safeTab === tab.id;
-                            return (
-                                <button
-                                    key={tab.id}
-                                    type="button"
-                                    onClick={() => setActiveTab(tab.id)}
-                                    aria-current={active ? 'page' : undefined}
-                                    className={`group relative flex shrink-0 items-center gap-2.5 rounded-2xl border px-4 py-3 text-xs font-bold transition-all duration-300 ${
-                                        active
-                                            ? 'border-rose-400/80 bg-rose-50/90 text-rose-950 shadow-md ring-4 ring-rose-500/15 dark:border-rose-500/80 dark:bg-rose-950/40 dark:text-rose-200 dark:ring-rose-500/20'
-                                            : 'border-slate-200/80 bg-white/70 text-slate-600 hover:border-slate-300 hover:bg-slate-100/80 dark:border-white/5 dark:bg-white/[0.02] dark:text-slate-300 dark:hover:border-white/10 dark:hover:bg-white/5'
+            {/* 2. Single-Tier Segmented Tabs Navigation Bar */}
+            <div data-workspace-tabs className="rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
+                <nav aria-label={isArabic ? 'أقسام التسويق' : 'Marketing sections'} className="flex flex-wrap gap-1">
+                    {tabs.map((tab) => {
+                        const Icon = tab.icon;
+                        const isActive = safeTab === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                aria-current={isActive ? 'page' : undefined}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`flex min-h-9 items-center gap-2 rounded-xl px-4 py-1.5 text-xs font-bold transition-all ${isActive
+                                        ? 'bg-teal-700 text-white shadow-sm font-black'
+                                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
                                     }`}
-                                >
-                                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-110 ${
-                                        active
-                                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300'
-                                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                                    }`}>
-                                        <Icon size={16} />
+                            >
+                                <Icon size={14} aria-hidden="true" />
+                                <span className="whitespace-nowrap">{tab.label}</span>
+                                {tab.badge && (
+                                    <span className={`rounded-md px-1.5 py-0.2 text-[10px] font-black whitespace-nowrap ${isActive
+                                            ? 'bg-teal-900/60 text-teal-200'
+                                            : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                        }`}>
+                                        {tab.badge}
                                     </span>
-                                    <span className="block text-xs font-black tracking-tight text-slate-900 dark:text-white">
-                                        {tab.label}
-                                    </span>
-                                    {active && (
-                                        <span className="ms-1 flex h-2 w-2 rounded-full bg-rose-500 shadow-sm shadow-rose-500/50" />
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </nav>
-                </div>
+                                )}
+                            </button>
+                        );
+                    })}
+                </nav>
+            </div>
 
-                {/* Tab Component Views */}
-                <div className="transition-all duration-300">
-                    {safeTab === 'dashboard' && <MarketingDashboard onOpenTab={setActiveTab} />}
-                    {safeTab === 'campaigns' && <CampaignManager />}
-                    {safeTab === 'tasks' && <TaskBoard />}
-                    {safeTab === 'feedback' && <FeedbackDashboard />}
-                    {safeTab === 'referrals' && <ReferralsTab />}
-                </div>
+            {/* 3. Tab Component Views */}
+            <div className="transition-all duration-300">
+                {safeTab === 'dashboard' && <MarketingDashboard onOpenTab={setActiveTab} />}
+                {safeTab === 'campaigns' && <CampaignManager />}
+                {safeTab === 'tasks' && <TaskBoard />}
+                {safeTab === 'feedback' && <FeedbackDashboard />}
+                {safeTab === 'recalls' && <ClinicalRecallsTab />}
+                {safeTab === 'referrals' && <ReferralsTab />}
             </div>
         </main>
     );

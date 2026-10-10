@@ -22,17 +22,32 @@
     "claim": "Claims",
     "penalty": "Penalties",
     "rule": "Payroll rules",
+    "deduction": "Deductions & Advances",
     "payroll": "Payroll runs",
     "variance": "Cash variances",
     "partialPayment": "Partial payment exceptions",
     "portalAppointment": "Portal appointments",
     "profileUpdate": "Profile changes",
-    "authorization": "Pre-authorizations"
+    "authorization": "Pre-authorizations",
+    "attendancePermission": "Departure & Attendance Permissions",
+    "shiftRequest": "Shift Swaps & Modifications"
   },
   "risk": {
     "critical": "Critical",
     "high": "Priority",
     "routine": "Routine"
+  },
+  "status": {
+    "pending": "Pending",
+    "pendingApproval": "Pending approval",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "cancelled": "Cancelled",
+    "requiresReview": "Requires review",
+    "inReview": "In review",
+    "draft": "Draft",
+    "resolved": "Resolved",
+    "completed": "Completed"
   },
   "filters": {
     "search": "Search requests",
@@ -70,6 +85,7 @@
     "refundSubtitle": "Refund for invoice {{invoice}}",
     "penaltySubtitle": "{{type}} penalty",
     "payrollRuleSubtitle": "{{type}} payroll rule",
+    "deductionSubtitle": "{{type}} deduction · {{amount}}",
     "payrollReviewSubtitle": "Calculated payroll run awaiting review",
     "payrollSubtitle": "Reviewed payroll run awaiting approval",
     "payrollPaymentSubtitle": "Approved payroll run awaiting payment",
@@ -78,7 +94,10 @@
     "partialPaymentSubtitle": "{{transaction}} exception for invoice {{invoice}}",
     "portalAppointmentSubtitle": "Patient portal appointment request",
     "profileUpdateSubtitle": "Patient portal profile-change request",
-    "authorizationSubtitle": "Insurance pre-authorization request"
+    "authorizationSubtitle": "Insurance pre-authorization request",
+    "attendancePermissionSubtitle": "{{type}} ({{minutes}} mins) on {{date}}",
+    "shiftSwapSubtitle": "Shift swap request · with {{colleague}}",
+    "shiftModificationSubtitle": "Shift modification request · on {{date}}"
   },
   "facts": {
     "requestedBy": "Requested by",
@@ -102,6 +121,9 @@
     "value": "Value",
     "effectiveFrom": "Effective from",
     "source": "Source",
+    "requestSource": "Request source",
+    "sourceStatus": "Source status",
+    "approvalStatus": "Approval status",
     "period": "Payroll period",
     "employees": "Employees",
     "netPay": "Net payroll",
@@ -119,7 +141,21 @@
     "requestedAmount": "Requested amount",
     "approvalNumber": "Approval number",
     "fields": "{{count}} field",
-    "fields_other": "{{count}} fields"
+    "fields_other": "{{count}} fields",
+    "permissionType": "Permission type",
+    "permittedMinutes": "Permitted minutes",
+    "allowedTime": "Allowed time",
+    "minutesGranted": "Minutes granted",
+    "minutes": "minutes",
+    "shift": "Shift",
+    "currentShift": "Current shift",
+    "targetColleague": "Substitute colleague",
+    "proposedTime": "Proposed time",
+    "reason": "Reason",
+    "targetTime": "Target time",
+    "effectiveDate": "Effective date",
+    "employee": "Employee",
+    "paymentReference": "Bank payment reference"
   },
   "privacyTypes": {
     "Export": "Data export",
@@ -158,6 +194,7 @@
     "payrollReviewMessage": "Mark {{title}} as reviewed? This sends the payroll run to approval.",
     "payrollPaidMessage": "Mark {{title}} as paid for {{amount}} on {{date}}? The payment will be posted to payroll journals.",
     "payrollLockMessage": "Lock {{title}}? Locked payroll runs cannot be changed from the approval inbox.",
+    "payrollPaymentReferenceMessage": "Enter the bank transfer reference before marking {{title}} as paid.",
     "rejectWithoutReason": "Reject {{title}} from {{source}}? This decision cannot be changed from the inbox.",
     "approveNotesMessage": "Add review notes before approving {{title}}.",
     "approvalNumberMessage": "Enter the insurer's approval number for {{title}}. The requested amount will be recorded as approved.",
@@ -166,6 +203,7 @@
     "reasonLabel": "Rejection reason",
     "notesPlaceholder": "Summarize the checks completed before approval",
     "approvalNumberPlaceholder": "Enter the insurer authorization number",
+    "paymentReferencePlaceholder": "Enter the bank transfer reference number",
     "reasonPlaceholder": "Explain why this request cannot be accepted",
     "required": "Enter a reason or review note.",
     "tooShort": "Use at least 3 characters."
@@ -204,6 +242,15 @@
     "payrollRun": "Payroll run",
     "payrollTeam": "Payroll team",
     "cashier": "Cashier",
-    "notSpecified": "Not specified"
+    "notSpecified": "Not specified",
+    "deduction": "Deduction",
+    "peerStaff": "Colleague",
+    "shiftSwap": "Shift swap request",
+    "shiftModification": "Shift modification request"
+  },
+  "attendancePermissionTypes": {
+    "earlyDeparture": "Early Departure",
+    "lateArrival": "Late Arrival",
+    "emergencyAccess": "Emergency System Access"
   }
 }

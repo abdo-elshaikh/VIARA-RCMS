@@ -13,7 +13,11 @@
     "urgent": "فحوصات ذات أولوية",
     "urgentDetail": "الحالات العاجلة والطارئة التي تتطلب المتابعة",
     "noShow": "عدم الحضور",
-    "noShowDetail": "المواعيد الفائتة ضمن نطاق الجدول"
+    "noShowDetail": "المواعيد الفائتة ضمن نطاق الجدول",
+    "attention": "تحتاج إلى متابعة",
+    "attentionDetail": "{{urgent}} أولوية · {{missed}} عدم حضور · {{cancelled}} ملغى",
+    "bookedTooltip": "عرض كافة المواعيد",
+    "disruptions": "غياب / ملغي"
   },
   "navigation": {
     "previous": "الفترة السابقة",
@@ -28,15 +32,30 @@
     "allStatuses": "كل الحالات",
     "allPriorities": "كل الأولويات",
     "results": "{{shown}} من {{total}} موعد",
-    "reset": "إعادة ضبط"
+    "reset": "إعادة ضبط",
+    "searchLabel": "البحث في المواعيد",
+    "roomLabel": "التصفية حسب الغرفة أو الجهاز",
+    "clearSearch": "مسح البحث",
+    "show": "الفلاتر",
+    "hide": "إخفاء الفلاتر",
+    "status": "الحالة",
+    "priority": "الأولوية"
   },
   "mobile": {
     "remind": "تذكير",
-    "move": "نقل"
+    "move": "نقل",
+    "noShow": "عدم حضور",
+    "cancel": "إلغاء"
   },
   "actions": {
     "newAppointment": "حجز موعد",
-    "exportSchedule": "تصدير الجدول"
+    "exportSchedule": "تصدير الجدول",
+    "print": "طباعة الجدول",
+    "refresh": "تحديث البيانات",
+    "retry": "إعادة المحاولة",
+    "bulkRemind": "إرسال التذكيرات",
+    "clearSelection": "إلغاء التحديد",
+    "close": "إغلاق"
   },
   "export": {
     "dateTime": "التاريخ والوقت",
@@ -77,8 +96,12 @@
       "rowsPerPage": "صفوف الصفحة",
       "page": "{{page}} / {{pages}}",
       "previous": "صفحة المواعيد السابقة",
-      "next": "صفحة المواعيد التالية"
+      "next": "صفحة المواعيد التالية",
+      "aria": "ترقيم صفحات المواعيد"
     }
+  },
+  "agenda": {
+    "title": "جدول المواعيد"
   },
   "table": {
     "time": "الوقت",
@@ -105,7 +128,18 @@
     "selectRow": "تحديد الصف",
     "priority": "الأولوية",
     "followUp": "متابعة",
-    "priorStudy": "الفحص السابق"
+    "priorStudy": "الفحص السابق",
+    "mrn": "الرقم الطبي",
+    "details": "الغرفة والفحص",
+    "room": "الغرفة / الجهاز",
+    "exam": "الفحص",
+    "radiologist": "أخصائي الأشعة",
+    "appointmentList": "قائمة المواعيد",
+    "appointmentTable": "المواعيد",
+    "selectAppointment": "تحديد الموعد",
+    "viewCase": "فتح الحالة",
+    "cancelAppt": "إلغاء الموعد",
+    "copyMrn": "نسخ الرقم الطبي"
   },
   "availability": {
     "title": "التوفر",
@@ -130,6 +164,9 @@
     "activeRequests": "{{count}} طلبات نشطة",
     "selectPatient": "اختر مريضًا",
     "searchPatientPlaceholder": "ابحث عن مريض بالرقم الطبي أو الاسم...",
+    "searchPatient": "ابحث عن المريض بالاسم أو الرقم الطبي...",
+    "clearPatient": "مسح المريض المحدد",
+    "noPatientResults": "لم يتم العثور على مرضى",
     "noPatientsFound": "لم يتم العثور على مرضى مطابقين",
     "unnamedPatient": "مريض بدون اسم",
     "preferredDate": "التاريخ المفضل",
@@ -160,7 +197,10 @@
     "contacted": "تم التواصل",
     "cancel": "إلغاء",
     "bookNow": "حجز",
-    "collapseForm": "طي النموذج"
+    "collapseForm": "طي النموذج",
+    "search": "البحث في قائمة الانتظار",
+    "hide": "إخفاء الشريط",
+    "show": "الانتظار والغرف"
   },
   "reschedule": {
     "title": "إعادة جدولة الموعد",
@@ -175,7 +215,37 @@
     "today": "اليوم",
     "tomorrow": "الغد",
     "in2days": "بعد يومين",
-    "nextWeek": "بعد أسبوع"
+    "nextWeek": "بعد أسبوع",
+    "reactivateNotice": "هذا الموعد ملغى. إعادة جدولته ستعيد تنشيطه كموعد مؤكد.",
+    "reactivateConfirm": "إعادة تنشيط وجدولة",
+    "reasonPlaceholder": "وضّح سبب نقل الموعد..."
+  },
+  "command": {
+    "eyebrow": "مركز قيادة الجدولة",
+    "period": "الفترة",
+    "roomScope": "نطاق الغرف",
+    "visible": "المعروض",
+    "next": "الموعد التالي",
+    "noNext": "لا توجد مواعيد قادمة",
+    "readiness": "جاهزية الجدول",
+    "operationalControl": "التحكم التشغيلي اليومي",
+    "operationalControlDescription": "تابع السعة ومخاطر التعطيل وضغط قائمة الانتظار وتغطية الطاقم قبل تأثر سير الجدول.",
+    "completionRate": "معدل الإكمال",
+    "completedOfActive": "{{completed}} من {{active}} فحوصات نشطة",
+    "disruptionRate": "معدل التعطيل",
+    "cancelNoShow": "{{count}} ملغى أو لم يحضر",
+    "waitingPressure": "ضغط قائمة الانتظار",
+    "busiestRoom": "أكثر الغرف انشغالاً",
+    "filteredView": "العرض المركز",
+    "filteredViewDetail": "المواعيد المعروضة بعد تطبيق فلاتر الغرفة والبحث والحالة والأولوية.",
+    "visibleShare": "نسبة المعروض",
+    "activeRooms": "غرف نشطة",
+    "activeRoomsCount": "{{count}} غرف نشطة",
+    "staffAssigned": "طاقم مخصص",
+    "capacityHours": "ساعات السعة",
+    "unassigned": "غير مخصص",
+    "patientFlow": "تدفق المرضى",
+    "patientFlowDetail": "الجدول الحالي حسب حالة سير العمل"
   },
   "status": {
     "Confirmed": "مؤكد",
@@ -183,8 +253,12 @@
     "Cancelled": "ملغى",
     "No-Show": "لم يحضر",
     "Scheduled": "مجدول",
+    "Checked-In": "تم الوصول",
+    "In-Progress": "قيد التنفيذ",
     "Waiting": "بانتظار التواصل",
-    "Contacted": "تم التواصل"
+    "Contacted": "تم التواصل",
+    "refreshing": "جارٍ التحديث",
+    "Arrived": "حاضر بالمركز"
   },
   "priority": {
     "Routine": "روتيني",
@@ -240,6 +314,24 @@
     "waitlistFailed": "تعذّرت إضافة إدخال قائمة الانتظار.",
     "waitlistMarked": "تم تعليم إدخال قائمة الانتظار كـ {{status}}.",
     "waitlistUpdateFailed": "تعذّر تحديث إدخال قائمة الانتظار.",
-    "reminderSentBulk": "تم إرسال {{count}} تذكير."
+    "reminderSentBulk": "تم إرسال {{count}} تذكير.",
+    "cancelled": "تم إلغاء الموعد بنجاح.",
+    "cancelFailed": "تعذّر إلغاء الموعد."
+  },
+  "metrics": {
+    "show": "إظهار المؤشرات",
+    "hide": "إخفاء المؤشرات"
+  },
+  "focused": {
+    "title": "الموعد المحدد"
+  },
+  "error": {
+    "loadFailed": "تعذّر تحميل بيانات المواعيد."
+  },
+  "viewMode": "نطاق الجدول",
+  "layoutMode": "طريقة عرض الجدول",
+  "analytics": {
+    "hide": "إخفاء التحليلات",
+    "show": "التحليلات والتدفق"
   }
 }

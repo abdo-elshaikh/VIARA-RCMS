@@ -3,7 +3,7 @@ jest.mock('../../src/config/logger', () => ({
 }));
 
 process.env.ORTHANC_URL = 'http://orthanc:8042';
-process.env.ORTHANC_USERNAME = 'rcms';
+process.env.ORTHANC_USERNAME = 'VIARA';
 process.env.ORTHANC_PASSWORD = 'secret';
 
 const dcmjs = require('dcmjs');
@@ -97,7 +97,7 @@ describe('pacsDicomWebService', () => {
             'http://orthanc:8042/dicom-web/studies/1.2.3/series/4.5.6/instances/7.8.9/rendered',
             expect.objectContaining({
                 headers: expect.objectContaining({
-                    Authorization: 'Basic cmNtczpzZWNyZXQ=',
+                    Authorization: 'Basic VklBUkE6c2VjcmV0',
                     accept: 'image/jpeg'
                 })
             })
@@ -203,7 +203,7 @@ describe('pacsDicomWebService', () => {
         expect(res.body().subarray(0, 2).toString('ascii')).toBe('BM');
     });
 
-    it('rewrites nested Orthanc bulk data URIs through the authenticated RCMS proxy', () => {
+    it('rewrites nested Orthanc bulk data URIs through the authenticated VIARA proxy', () => {
         const payload = [{
             '60003000': {
                 vr: 'OW',

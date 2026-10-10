@@ -1,16 +1,17 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { z } = require('zod');
 const { AppError } = require('../middleware/errorHandler');
-const { consumeStockSchema, adjustStockSchema } = require('../schemas/inventorySchema');
 const { scheduleJob, triggerEvent } = require('../services/notificationJobService');
 const { decrypt } = require('../utils/crypto');
-// Schema
-const createItemSchema = z.object({
-    name: z.string().min(1),
-    category: z.string().optional(),
-    quantity: z.number().int().min(0),
-    unit: z.string().optional(),
-    minLevel: z.number().int().min(0)
-});
+const { triggerEventForRole } = require('../services/notificationJobService');
+const {
+    createInventoryItemSchema,
+    updateInventoryStockSchema,
+    consumeStockSchema,
+    adjustStockSchema
+} = require('../schemas/inventorySchema');
+const { recalculateInvoiceAfterItemChange } = require('../services/billingEngineService');
+const { moneyNumber } = require('../services/financialPostingService');
 
 const getInventory = (db) => async (req, res, next) => {
     try {
@@ -39,15 +40,82 @@ const getInventory = (db) => async (req, res, next) => {
 };
 
 const addItem = (db) => async (req, res, next) => {
+    let client;
     try {
-        const data = createItemSchema.parse(req.body);
-
-        const result = await db.query(
-            "INSERT INTO inventory_items (name, category, quantity, unit, min_level, unit_price) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-            [data.name, data.category, data.quantity, data.unit, data.minLevel, data.unitPrice]
+        const data = createInventoryItemSchema.parse(req.body);
+        client = await db.connect();
+        await client.query('BEGIN');
+        const isContrast = data.isContrastAgent ?? (/contrast/i.test(data.category || '') || /صبغة|contrast/i.test(data.name || ''));
+        const result = await client.query(
+            "INSERT INTO inventory_items (name, category, quantity, unit, min_level, unit_price, is_contrast_agent) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
+            [data.name, data.category || null, data.quantity, data.unit || null, data.minLevel, data.unitPrice ?? 0, isContrast]
         );
 
+        if (data.quantity > 0) {
+            await client.query(`
+                INSERT INTO stock_movements (
+                    item_id, movement_type, quantity_change, unit_price,
+                    total_amount, reference_type, notes, created_by
+                )
+                VALUES ($1, 'Adjust', $2, $3, $4, 'Manual', 'Initial stock balance', $5)
+            `, [
+                result.rows[0].item_id,
+                data.quantity,
+                moneyNumber(data.unitPrice),
+                moneyNumber(data.quantity * data.unitPrice),
+                req.user.user_id
+            ]);
+        }
+
+        await client.query('COMMIT');
+
         res.status(201).json(result.rows[0]);
+    } catch (error) {
+        if (client) await client.query('ROLLBACK');
+        if (error instanceof z.ZodError) {
+            return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
+        }
+        next(error);
+    } finally {
+        if (client) client.release();
+    }
+};
+
+// Flexible inventory update
+const updateStock = (db) => async (req, res, next) => {
+    try {
+        const { itemId } = req.params;
+        const data = updateInventoryStockSchema.parse(req.body);
+
+        const price = data.unitPrice !== undefined ? data.unitPrice : data.unit_price;
+        const minLvl = data.minLevel !== undefined ? data.minLevel : data.min_level;
+
+        const result = await db.query(`
+            UPDATE inventory_items
+            SET unit_price = COALESCE($1, unit_price),
+                name = COALESCE($2, name),
+                unit = COALESCE($3, unit),
+                min_level = COALESCE($4, min_level),
+                category = COALESCE($5, category),
+                is_contrast_agent = COALESCE($6, is_contrast_agent),
+                last_updated = CURRENT_TIMESTAMP
+            WHERE item_id = $7
+            RETURNING *
+        `, [
+            price !== undefined ? price : null,
+            data.name || null,
+            data.unit || null,
+            minLvl !== undefined ? minLvl : null,
+            data.category || null,
+            data.isContrastAgent !== undefined ? data.isContrastAgent : null,
+            itemId
+        ]);
+
+        if (result.rows.length === 0) {
+            return next(new AppError('Item not found', 404));
+        }
+
+        res.json(result.rows[0]);
     } catch (error) {
         if (error instanceof z.ZodError) {
             return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
@@ -56,44 +124,30 @@ const addItem = (db) => async (req, res, next) => {
     }
 };
 
-// Simple update (legacy, keeping for backwards compatibility or simple systems)
-const updateStock = (db) => async (req, res, next) => {
-    try {
-        const { itemId } = req.params;
-        const { quantity } = req.body; 
-
-        if (typeof quantity !== 'number') {
-            return next(new AppError('Quantity must be a number', 400));
-        }
-
-        const result = await db.query(
-            "UPDATE inventory_items SET quantity = $1, last_updated = CURRENT_TIMESTAMP WHERE item_id = $2 RETURNING *",
-            [quantity, itemId]
-        );
-
-        if (result.rows.length === 0) {
-            return next(new AppError('Item not found', 404));
-        }
-
-        res.json(result.rows[0]);
-    } catch (error) {
-        next(error);
-    }
-};
-
 // ─── Phase 13 Advanced Endpoints ──────────────────────────────────────────────
+
+const defaultConsumeStockSchema = z.object({
+    itemId: z.string().uuid(),
+    quantity: z.number().int().min(1),
+    batchId: z.string().uuid().optional(),
+    referenceType: z.enum(['Exam', 'Manual']).default('Manual'),
+    referenceId: z.string().uuid().optional(),
+    notes: z.string().optional()
+});
 
 const consumeStock = (db) => async (req, res, next) => {
     let client;
+    let supplyNotificationPayload = null;
     try {
-        const data = consumeStockSchema.parse(req.body);
+        const schema = typeof consumeStockSchema !== 'undefined' && consumeStockSchema ? consumeStockSchema : defaultConsumeStockSchema;
+        const data = schema.parse(req.body);
         const userId = req.user.user_id;
 
         client = await db.connect();
         await client.query('BEGIN');
 
         const itemResult = await client.query(`
-            SELECT quantity, unit_price
+            SELECT item_id, name, category, quantity, unit, unit_price
             FROM inventory_items
             WHERE item_id = $1
             FOR UPDATE
@@ -103,14 +157,26 @@ const consumeStock = (db) => async (req, res, next) => {
             throw new AppError('Insufficient total stock', 400);
         }
 
-        const unitPrice = Number(itemResult.rows[0].unit_price || 0);
-        const totalAmount = data.quantity * unitPrice;
+        // Billing always uses the governed inventory price. Price maintenance
+        // is a separate privileged operation and cannot be overridden while
+        // consuming stock.
+        const unitPrice = moneyNumber(itemResult.rows[0].unit_price);
+        const totalAmount = moneyNumber(data.quantity * unitPrice);
         let remainingToConsume = data.quantity;
 
         // If batch is specified, deduct from it
         if (data.batchId) {
-            const batchRes = await client.query(`SELECT quantity FROM inventory_batches WHERE batch_id = $1 AND item_id = $2 FOR UPDATE`, [data.batchId, data.itemId]);
+            const batchRes = await client.query(`
+                SELECT quantity, expiry_date,
+                       (expiry_date IS NOT NULL AND expiry_date < CURRENT_DATE) AS is_expired
+                FROM inventory_batches
+                WHERE batch_id = $1 AND item_id = $2
+                FOR UPDATE
+            `, [data.batchId, data.itemId]);
             if (batchRes.rows.length === 0) throw new AppError('Batch not found', 404);
+            if (batchRes.rows[0].is_expired) {
+                throw new AppError('Expired inventory batches cannot be consumed', 409);
+            }
             if (batchRes.rows[0].quantity < remainingToConsume) throw new AppError('Insufficient quantity in batch', 400);
 
             await client.query(`UPDATE inventory_batches SET quantity = quantity - $1 WHERE batch_id = $2 AND quantity >= $1`, [remainingToConsume, data.batchId]);
@@ -121,16 +187,26 @@ const consumeStock = (db) => async (req, res, next) => {
             `, [data.itemId, data.batchId, -remainingToConsume, unitPrice, remainingToConsume * unitPrice, data.referenceType, data.referenceId || null, data.notes, userId]);
 
         } else {
-            // FIFO: Find oldest non-expired batches with stock
+            // Lock all batches first so expired stock cannot accidentally be
+            // treated as unbatched generic stock.
             const batches = await client.query(`
-                SELECT batch_id, quantity
+                SELECT batch_id, quantity, expiry_date,
+                       (expiry_date IS NULL OR expiry_date >= CURRENT_DATE) AS is_eligible
                 FROM inventory_batches
-                WHERE item_id = $1 AND quantity > 0 AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)
+                WHERE item_id = $1 AND quantity > 0
                 ORDER BY COALESCE(expiry_date, '9999-12-31') ASC, received_date ASC
                 FOR UPDATE
             `, [data.itemId]);
 
-            for (const batch of batches.rows) {
+            const eligibleBatches = batches.rows.filter((batch) => batch.is_eligible);
+            const batchedQuantity = batches.rows.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+            const eligibleBatchedQuantity = eligibleBatches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+            const unbatchedQuantity = Math.max(0, Number(itemResult.rows[0].quantity) - batchedQuantity);
+            if (eligibleBatchedQuantity + unbatchedQuantity < data.quantity) {
+                throw new AppError('Insufficient non-expired stock', 409);
+            }
+
+            for (const batch of eligibleBatches) {
                 if (remainingToConsume <= 0) break;
 
                 const deduct = Math.min(batch.quantity, remainingToConsume);
@@ -160,7 +236,79 @@ const consumeStock = (db) => async (req, res, next) => {
             WHERE item_id = $2 AND quantity >= $1
         `, [data.quantity, data.itemId]);
 
+        // If consumed for an exam, check if an active invoice already exists and auto-append the item
+        if (data.referenceType === 'Exam' && data.referenceId) {
+            const existingInvoice = await client.query(`
+                SELECT i.invoice_id, i.invoice_number, i.subtotal_amount, i.total_amount, i.patient_payable_amount,
+                       p.first_name_enc, p.last_name_enc, p.mrn, e.exam_id
+                FROM invoices i
+                LEFT JOIN examinations e ON i.exam_id = e.exam_id OR i.appointment_id = e.appointment_id
+                LEFT JOIN patients p ON i.patient_id = p.patient_id
+                WHERE (i.exam_id = $1 OR e.exam_id = $1 OR i.appointment_id = (SELECT appointment_id FROM examinations WHERE exam_id = $1))
+                  AND i.invoice_status <> 'Voided'
+                ORDER BY i.generated_at DESC
+                LIMIT 1
+                FOR UPDATE OF i
+            `, [data.referenceId]);
+
+            if (existingInvoice.rows.length > 0) {
+                const inv = existingInvoice.rows[0];
+                const itemName = itemResult.rows[0].name || 'مستلزمات فحص';
+
+                await client.query(`
+                    INSERT INTO invoice_items (
+                        invoice_id, exam_id, description, quantity, unit_price,
+                        discount_amount, tax_amount, total_amount
+                    )
+                    VALUES ($1, $2, $3, $4, $5, 0, 0, $6)
+                `, [
+                    inv.invoice_id,
+                    data.referenceId,
+                    `مستلزم فحص: ${itemName}`,
+                    data.quantity,
+                    unitPrice,
+                    totalAmount
+                ]);
+
+                const updatedInvoice = await recalculateInvoiceAfterItemChange(client, inv.invoice_id, userId);
+                const balanceResult = await client.query(`
+                    SELECT GREATEST(
+                        i.patient_payable_amount
+                        - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.invoice_id AND p.payment_status = 'Completed'), 0)
+                        + COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0)
+                        - COALESCE((SELECT SUM(c.patient_amount) FROM credit_notes c WHERE c.invoice_id = i.invoice_id AND c.reversed_at IS NULL), 0),
+                        0
+                    ) AS balance_amount
+                    FROM invoices i
+                    WHERE i.invoice_id = $1
+                `, [inv.invoice_id]);
+
+                // Dispatch notification to Cashier and Accountant
+                const patName = [decrypt(inv.first_name_enc), decrypt(inv.last_name_enc)].filter(Boolean).join(' ') || 'المريض';
+                supplyNotificationPayload = {
+                    priority: 'Action',
+                    entityType: 'Invoice',
+                    entityId: inv.invoice_id,
+                    variables: {
+                        patient_name: patName,
+                        mrn: inv.mrn || '',
+                        invoice_number: inv.invoice_number || '',
+                        item_name: itemName,
+                        item_amount: totalAmount,
+                        balance_amount: balanceResult.rows[0]?.balance_amount ?? updatedInvoice?.patient_payable_amount ?? totalAmount,
+                        exam_id: data.referenceId
+                    }
+                };
+            }
+        }
+
         await client.query('COMMIT');
+        if (supplyNotificationPayload) {
+            triggerEventForRole(db, 'SUPPLY_ADDED_PAYMENT_DUE', 'Accountant', supplyNotificationPayload)
+                .catch(err => req.log?.warn?.({ err }, 'Failed to notify Accountant about supply charge'));
+            triggerEventForRole(db, 'SUPPLY_ADDED_PAYMENT_DUE', 'Cashier', supplyNotificationPayload)
+                .catch(err => req.log?.warn?.({ err }, 'Failed to notify Cashier about supply charge'));
+        }
         res.json({ message: 'Stock consumed successfully', quantity: data.quantity, unitPrice, totalAmount });
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -173,10 +321,18 @@ const consumeStock = (db) => async (req, res, next) => {
     }
 };
 
+const defaultAdjustStockSchema = z.object({
+    itemId: z.string().uuid(),
+    quantityChange: z.number().int().refine(value => value !== 0, 'Quantity change cannot be zero'),
+    batchId: z.string().uuid().optional(),
+    notes: z.string().optional()
+});
+
 const adjustStock = (db) => async (req, res, next) => {
     let client;
     try {
-        const data = adjustStockSchema.parse(req.body);
+        const schema = typeof adjustStockSchema !== 'undefined' && adjustStockSchema ? adjustStockSchema : defaultAdjustStockSchema;
+        const data = schema.parse(req.body);
         const userId = req.user.user_id;
 
         client = await db.connect();
@@ -227,6 +383,27 @@ const adjustStock = (db) => async (req, res, next) => {
 
 const getStockMovements = (db) => async (req, res, next) => {
     try {
+        const limit = Math.min(1000, Math.max(1, Number.parseInt(getRequestQuery(req).limit, 10) || 200));
+        const referenceType = getRequestQuery(req).referenceType;
+        const referenceIds = String(getRequestQuery(req).referenceIds || '')
+            .split(',')
+            .map((value) => value.trim())
+            .filter(Boolean);
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        if (referenceIds.some((value) => !uuidPattern.test(value))) {
+            throw new AppError('Invalid stock movement reference id', 400);
+        }
+        const values = [];
+        const where = [];
+        if (referenceType) {
+            values.push(referenceType);
+            where.push(`sm.reference_type = $${values.length}`);
+        }
+        if (referenceIds.length) {
+            values.push(referenceIds);
+            where.push(`sm.reference_id = ANY($${values.length}::uuid[])`);
+        }
+        values.push(limit);
         const result = await db.query(`
             SELECT sm.*,
                    COALESCE(NULLIF(sm.unit_price, 0), i.unit_price, 0)::numeric AS unit_price,
@@ -239,16 +416,22 @@ const getStockMovements = (db) => async (req, res, next) => {
             LEFT JOIN users u ON sm.created_by = u.user_id
             LEFT JOIN examinations e ON sm.reference_type = 'Exam' AND sm.reference_id = e.exam_id
             LEFT JOIN patients p ON e.patient_id = p.patient_id
+            ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
             ORDER BY sm.created_at DESC
-            LIMIT 200
-        `);
+            LIMIT $${values.length}
+        `, values);
 
         const mappedRows = result.rows.map(row => {
             const mapped = { ...row };
             if (row.patient_first_name_enc || row.patient_last_name_enc) {
-                mapped.patient_name = [decrypt(row.patient_first_name_enc), decrypt(row.patient_last_name_enc)]
-                    .filter(Boolean)
-                    .join(' ');
+                try {
+                    mapped.patient_name = [
+                        row.patient_first_name_enc ? decrypt(row.patient_first_name_enc) : null,
+                        row.patient_last_name_enc ? decrypt(row.patient_last_name_enc) : null
+                    ].filter(Boolean).join(' ');
+                } catch {
+                    mapped.patient_name = '—';
+                }
             }
             delete mapped.patient_first_name_enc;
             delete mapped.patient_last_name_enc;

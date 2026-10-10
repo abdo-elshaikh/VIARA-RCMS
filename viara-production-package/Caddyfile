@@ -1,0 +1,11 @@
+# Public HTTPS serves the patient/referring-physician portal only.
+# The portal nginx enforces the API allowlist before the backend.
+# Clinical access uses the separate VPN/mTLS gateway.
+{$DOMAIN} {
+    reverse_proxy portal:80
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+    }
+}

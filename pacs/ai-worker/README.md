@@ -1,6 +1,6 @@
-# RCMS PACS AI Worker
+# VIARA PACS AI Worker
 
-This optional GPU service processes RCMS PACS AI queue jobs. Version 1 supports
+This optional GPU service processes VIARA PACS AI queue jobs. Version 1 supports
 adult chest radiographs only. CT, MRI, mammography, ultrasound, pediatric cases,
 and non-chest radiographs return a successful but explicit `unsupported_study`
 result without generating findings.
@@ -13,7 +13,7 @@ clinical validation.
 
 - TorchXRayVision `densenet121-res224-all` is the default. The CPU worker avoids
   CUDA/driver coupling and returns structured adult chest X-ray screening scores.
-- A read-only connection to the RCMS Orthanc container.
+- A read-only connection to the VIARA Orthanc container.
 
 The scores are not calibrated diagnostic probabilities, do not localize a
 finding, and cannot establish that a study is normal. The worker applies a
@@ -41,11 +41,11 @@ PACS_AI_ALLOW_CPU_INFERENCE=true
 
 ## Windows host start
 
-For the current RCMS development setup, where the Node backend also runs on
+For the current VIARA development setup, where the Node backend also runs on
 Windows, install the worker dependencies once and start the worker directly:
 
 ```powershell
-cd D:\RCMS\pacs\ai-worker
+cd D:\VIARA\pacs\ai-worker
 python -m pip install -r requirements-dev.txt
 .\start-local.ps1 -PreloadModel
 ```

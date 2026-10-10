@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 
 const mapProfile = (row) => ({
     id: row.user_id,
@@ -109,7 +109,7 @@ const changePassword = (db) => async (req, res, next) => {
 
         const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
         await client.query(
-            'UPDATE users SET password_hash = $1, must_change_password = FALSE, failed_login_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
+            'UPDATE users SET password_hash = $1, current_session_id = NULL, must_change_password = FALSE, failed_login_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
             [passwordHash, userId]
         );
         await client.query(`
@@ -145,10 +145,22 @@ const changePassword = (db) => async (req, res, next) => {
 const getPreferences = (db) => async (req, res, next) => {
     try {
         const userId = req.user.user_id;
-        const result = await db.query('SELECT preferences FROM users WHERE user_id = $1', [userId]);
+        const result = await db.query(`
+            SELECT u.preferences,
+                   COALESCE((
+                       SELECT setting_value
+                       FROM system_settings
+                       WHERE setting_key = 'admin.session_timeout_mins'
+                       LIMIT 1
+                   ), '30') AS organization_session_timeout
+            FROM users u
+            WHERE u.user_id = $1
+        `, [userId]);
         
         if (result.rows.length === 0) return next(new AppError('User not found', 404));
-        res.json(result.rows[0].preferences || {});
+        const preferences = result.rows[0].preferences || {};
+        const organizationSessionTimeout = Number(result.rows[0].organization_session_timeout) || 30;
+        res.json({ ...preferences, organizationSessionTimeout });
     } catch (error) {
         next(error);
     }

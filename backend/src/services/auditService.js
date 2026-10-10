@@ -9,6 +9,8 @@ const {
   actionFromEventCode,
 } = require('./auditTaxonomy');
 const { persistAuditAlerts } = require('./auditDetectionService');
+const { logSecurityEvent } = require('./securityEventService');
+const logger = require('../config/logger');
 
 const MAX_AUDIT_STRING_LENGTH = 2000;
 
@@ -16,6 +18,12 @@ const SENSITIVE_KEYS = new Set([
   'password',
   'passwordhash',
   'password_hash',
+  'currentpassword',
+  'current_password',
+  'newpassword',
+  'new_password',
+  'confirmpassword',
+  'passwordconfirmation',
   'token',
   'authorization',
   'secret',
@@ -23,6 +31,8 @@ const SENSITIVE_KEYS = new Set([
   'api_key',
   'apisecret',
   'api_secret',
+  'webhooksecret',
+  'webhook_secret',
   'paymentreference',
   'two_factor_secret',
   'firstname',
@@ -87,6 +97,23 @@ const SENSITIVE_KEYS = new Set([
   'resubmission_notes',
   'cancellationreason',
   'cancellation_reason',
+  'clinicalindication',
+  'clinical_indication',
+  'provisionaldiagnosis',
+  'provisional_diagnosis',
+  'diagnosis',
+  'diagnosiscode',
+  'diagnosis_code',
+  'icdcode',
+  'icd_code',
+  'medicalhistory',
+  'medical_history',
+  'symptoms',
+  'medications',
+  'proceduredescription',
+  'procedure_description',
+  'preparationinstructions',
+  'preparation_instructions',
 ]);
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -417,7 +444,7 @@ async function executeLogQuery(db, rawEntry) {
     }
   };
 
-  const runWithFallback = async (query, values, fallback) => {
+  const runWithFallback = async (query, values, fallback, retries = 2) => {
     try {
       await createSavepoint();
       const logId = await tryInsert(db, query, values);
@@ -425,11 +452,15 @@ async function executeLogQuery(db, rawEntry) {
       return logId;
     } catch (err) {
       await rollbackSavepoint();
+      if (retries > 0 && ['40P01', '40001', '55P03'].includes(err.code)) {
+        await new Promise(res => setTimeout(res, 30 * (3 - retries)));
+        return runWithFallback(query, values, fallback, retries - 1);
+      }
       if (fallback && ['42703', '42P01'].includes(err.code)) {
         return fallback();
       }
       await releaseSavepoint();
-      console.error('AuditService: Logging failed:', err.message);
+      logger.error('AuditService: Logging failed', { error: err.message, action: entry.action });
       return null;
     }
   };
@@ -439,6 +470,43 @@ async function executeLogQuery(db, rawEntry) {
       runWithFallback(legacyQuery, legacyValues)
     ))
   ));
+
+  if (logId === null) {
+    logger.warn('AuditService: audit entry could not be persisted', {
+      action: entry.action,
+      userId: entry.userId,
+      resourceTable: entry.resourceTable,
+      resourceId: entry.resourceId
+    });
+
+    try {
+      await logSecurityEvent(db, {
+        eventType: 'AUDIT_LOG_FAILURE',
+        severity: 'warning',
+        userId: entry.user_id || null,
+        patientId: entry.patient_id || null,
+        ipAddress: entry.ip_address,
+        userAgent: entry.user_agent,
+        details: {
+          action: entry.action,
+          resourceTable: entry.resource_table,
+          resourceId: entry.resource_id,
+          reason: 'Audit entry could not be persisted'
+        }
+      });
+    } catch (securityLogError) {
+      logger.error('AuditService: secondary security event logging failed', {
+        error: securityLogError.message,
+        action: entry.action,
+      });
+    }
+
+    if (rawEntry.required === true) {
+      const error = new Error(`Required audit entry could not be persisted for ${entry.action}`);
+      error.code = 'AUDIT_LOG_REQUIRED_FAILED';
+      throw error;
+    }
+  }
 
   await persistAuditAlerts(db, entry, logId);
   return logId;

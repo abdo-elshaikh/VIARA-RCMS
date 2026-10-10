@@ -1,17 +1,15 @@
 import React from 'react';
 import toast from 'react-hot-toast';
+import { useEffect, useState } from 'react';
 import {
     Accessibility,
-    Activity,
-    Check,
-    CheckCircle2,
-    Eye,
     Gauge,
     Laptop,
     LayoutList,
     Moon,
     Palette,
     RotateCcw,
+    SlidersHorizontal,
     Sparkles,
     Sun,
     Type,
@@ -24,6 +22,18 @@ import { useTranslation } from 'react-i18next';
 import { DEFAULT_PREFERENCES, selectPreferences, updateAllPreferences } from '../../store/preferencesSlice';
 import { useUpdatePreferencesMutation } from '../../store/api';
 import { getErrorMessage } from '../../utils/getErrorMessage';
+import {
+    getPaletteTextContrastStatus,
+    SEMANTIC_PALETTE_DEFAULTS,
+} from '../../utils/themePalette';
+import {
+    SettingsChoice as ChoiceButton,
+    SettingsFact as Fact,
+    SettingsPanel as Panel,
+    SettingsSwitch as Toggle,
+    SettingsSyncStatus,
+    settingsPanelClass,
+} from './SettingsControls';
 
 const DEFAULT_APPEARANCE = DEFAULT_PREFERENCES;
 
@@ -34,12 +44,12 @@ const THEMES = [
 ];
 
 const COLORS = [
-    { id: 'cyan', name: 'Clinical Cyan', value: '#0891b2', bg: 'bg-cyan-600', ring: 'ring-cyan-500', text: 'text-cyan-600 dark:text-cyan-400' },
-    { id: 'indigo', name: 'Deep Indigo', value: '#4f46e5', bg: 'bg-indigo-600', ring: 'ring-indigo-500', text: 'text-indigo-600 dark:text-indigo-400' },
-    { id: 'emerald', name: 'Medical Mint', value: '#059669', bg: 'bg-emerald-600', ring: 'ring-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
-    { id: 'rose', name: 'Diagnostic Rose', value: '#e11d48', bg: 'bg-rose-600', ring: 'ring-rose-500', text: 'text-rose-600 dark:text-rose-400' },
-    { id: 'amber', name: 'Radiology Amber', value: '#d97706', bg: 'bg-amber-600', ring: 'ring-amber-500', text: 'text-amber-600 dark:text-amber-400' },
-    { id: 'slate', name: 'Obsidian Slate', value: '#475569', bg: 'bg-slate-700', ring: 'ring-slate-600', text: 'text-slate-700 dark:text-slate-300' },
+    { id: 'emerald', name: 'VIARA Emerald', value: '#087F5B', bg: 'bg-emerald-700', ring: 'ring-emerald-600', text: 'text-emerald-700 dark:text-emerald-300' },
+    { id: 'cyan', name: 'VIARA Emerald Legacy', value: '#087F5B', bg: 'bg-emerald-700', ring: 'ring-emerald-600', text: 'text-emerald-700 dark:text-emerald-300' },
+    { id: 'indigo', name: 'Clinical Neutral', value: '#5F6F6B', bg: 'bg-slate-600', ring: 'ring-slate-500', text: 'text-slate-600 dark:text-slate-300' },
+    { id: 'rose', name: 'Critical Coral', value: '#D95757', bg: 'bg-rose-600', ring: 'ring-rose-500', text: 'text-rose-600 dark:text-rose-400' },
+    { id: 'amber', name: 'AI Amber', value: '#F4B942', bg: 'bg-amber-500', ring: 'ring-amber-400', text: 'text-amber-700 dark:text-amber-300' },
+    { id: 'slate', name: 'Clinical Charcoal', value: '#172326', bg: 'bg-slate-900', ring: 'ring-slate-700', text: 'text-slate-800 dark:text-slate-300' },
     { id: 'custom', name: 'Custom Hex', value: 'custom', bg: 'bg-slate-900', ring: 'ring-slate-800', text: 'text-slate-900 dark:text-slate-100' }
 ];
 
@@ -71,9 +81,26 @@ const DENSITIES = [
     { id: 'spacious', py: 'py-3 px-4', gap: 'gap-3' }
 ];
 
-const fieldPanel = 'rounded-2xl border border-slate-200/80 bg-white shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/50';
+const SEMANTIC_COLOR_OPTIONS = [
+    ['canvas', 'Canvas'],
+    ['surface', 'Surface'],
+    ['surfaceSecondary', 'Secondary surface'],
+    ['surfaceMuted', 'Muted surface'],
+    ['border', 'Border'],
+    ['borderStrong', 'Strong border'],
+    ['text', 'Primary text'],
+    ['textSecondary', 'Secondary text'],
+    ['textMuted', 'Muted text'],
+    ['success', 'Success'],
+    ['warning', 'Warning'],
+    ['danger', 'Danger'],
+    ['info', 'Information'],
+    ['viewerBackground', 'Viewer canvas'],
+    ['viewerPanel', 'Viewer panel'],
+];
 
-const safeHex = (value, fallback = '#0ea5e9') => (/^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback);
+const safeHex = (value, fallback = '#087F5B') => (/^#[0-9a-f]{6}$/i.test(value || '') ? value : fallback);
+const isHexColor = (value) => /^#[0-9a-f]{6}$/i.test(value || '');
 
 const AppearanceSettings = () => {
     const { t } = useTranslation('settings');
@@ -81,6 +108,11 @@ const AppearanceSettings = () => {
     const stored = useSelector(selectPreferences) || {};
     const preferences = { ...DEFAULT_APPEARANCE, ...stored };
     const [updatePreferences, { isLoading }] = useUpdatePreferencesMutation();
+    const [customColorDraft, setCustomColorDraft] = useState(preferences.customColor || DEFAULT_APPEARANCE.customColor);
+
+    useEffect(() => {
+        setCustomColorDraft(preferences.customColor || DEFAULT_APPEARANCE.customColor);
+    }, [preferences.customColor]);
 
     const persist = async (changes) => {
         const previous = preferences;
@@ -89,9 +121,11 @@ const AppearanceSettings = () => {
         try {
             await updatePreferences(next).unwrap();
             toast.success(t('settings.appearance.saved', { defaultValue: 'Appearance settings updated.' }));
+            return true;
         } catch (error) {
             dispatch(updateAllPreferences(previous));
             toast.error(getErrorMessage(error, t('settings.errors.preferenceSaveFailed', { defaultValue: 'Failed to save appearance settings.' })));
+            return false;
         }
     };
 
@@ -99,6 +133,7 @@ const AppearanceSettings = () => {
         theme: DEFAULT_APPEARANCE.theme,
         primaryColor: DEFAULT_APPEARANCE.primaryColor,
         customColor: DEFAULT_APPEARANCE.customColor,
+        colorOverrides: DEFAULT_APPEARANCE.colorOverrides,
         density: DEFAULT_APPEARANCE.density,
         fontScale: DEFAULT_APPEARANCE.fontScale,
         fontFamily: DEFAULT_APPEARANCE.fontFamily,
@@ -107,59 +142,140 @@ const AppearanceSettings = () => {
         motion: DEFAULT_APPEARANCE.motion,
         compactSidebar: DEFAULT_APPEARANCE.compactSidebar
     });
-    const selectedColor = preferences.primaryColor === 'custom' 
-        ? { ...COLORS.find(c => c.id === 'custom'), value: safeHex(preferences.customColor) } 
+
+    const selectedColor = preferences.primaryColor === 'custom'
+        ? { ...COLORS.find(c => c.id === 'custom'), value: safeHex(preferences.customColor) }
         : (COLORS.find(c => c.id === preferences.primaryColor) || COLORS[0]);
+    const semanticOverrideCount = ['light', 'dark'].reduce(
+        (count, mode) => count + Object.keys(preferences.colorOverrides?.[mode] || {}).length,
+        0
+    );
+
+    const updateSemanticColor = (mode, key, value) => persist({
+        colorOverrides: {
+            ...preferences.colorOverrides,
+            [mode]: {
+                ...(preferences.colorOverrides?.[mode] || {}),
+                [key]: safeHex(value, SEMANTIC_PALETTE_DEFAULTS[mode][key]),
+            },
+        },
+    });
+
+    const resetSemanticPalette = (mode) => persist({
+        colorOverrides: {
+            ...preferences.colorOverrides,
+            [mode]: {},
+        },
+    });
+
+    const resetSemanticColor = (mode, key) => {
+        const nextMode = { ...(preferences.colorOverrides?.[mode] || {}) };
+        delete nextMode[key];
+        return persist({
+            colorOverrides: {
+                ...preferences.colorOverrides,
+                [mode]: nextMode,
+            },
+        });
+    };
+
+    const paletteContrastWarnings = ['light', 'dark'].reduce((warnings, mode) => {
+        const palette = {
+            ...SEMANTIC_PALETTE_DEFAULTS[mode],
+            ...(preferences.colorOverrides?.[mode] || {}),
+        };
+        const contrastStatus = getPaletteTextContrastStatus(palette);
+        warnings[mode] = {
+            adjustedText: contrastStatus.some(({ adjusted }) => adjusted),
+            incompatibleSurfaces: contrastStatus.some(({ passes }) => !passes),
+        };
+        return warnings;
+    }, {});
+
+    const commitCustomColor = () => {
+        if (!isHexColor(customColorDraft)) {
+            setCustomColorDraft(preferences.customColor || DEFAULT_APPEARANCE.customColor);
+            toast.error(t('settings.appearance.invalidColor', { defaultValue: 'Enter a complete six-digit hex color.' }));
+            return;
+        }
+        const normalized = customColorDraft.toUpperCase();
+        setCustomColorDraft(normalized);
+        if (normalized !== preferences.customColor) persist({ customColor: normalized, primaryColor: 'custom' });
+    };
 
     return (
-        <div className="space-y-4">
-            {/* Overview Header & Live Interactive Specimen Preview */}
-            <section className={`${fieldPanel} overflow-hidden`}>
-                <div className="grid gap-5 p-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:p-5">
+        <div className="space-y-6">
+            {/* Appearance summary */}
+            <section className={`${settingsPanelClass} relative overflow-hidden p-5 sm:p-7`}>
+                <div className="pointer-events-none absolute -end-16 -top-16 h-64 w-64 rounded-full bg-teal-500/10 blur-3xl dark:bg-teal-500/5" />
+                <div className="pointer-events-none absolute -bottom-16 -start-16 h-64 w-64 rounded-full bg-sky-500/10 blur-3xl dark:bg-sky-500/5" />
+
+                <div className="relative">
                     <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-3">
-                            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
-                                <Palette size={18} aria-hidden="true" />
-                            </span>
+                        <div className="flex flex-wrap items-center gap-3.5">
+                            <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-teal-500/20 to-sky-500/20 text-teal-700 dark:text-teal-300 ring-1 ring-teal-500/30 shadow-inner">
+                                <Palette size={26} aria-hidden="true" />
+                            </div>
                             <div>
-                                <h2 className="text-base font-black text-slate-950 dark:text-white">
-                                    {t('settings.appearance.previewTitle', { defaultValue: 'Theme & Visual Styling Engine' })}
-                                </h2>
-                                <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                                    {t('settings.appearance.previewDescription', { defaultValue: 'Customize UI themes, medical color palettes, display densities, typography sizes, and motion preferences.' })}
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-300">
+                                    <Sparkles size={11} />
+                                    <span>{t('settings.appearance.overviewEyebrow')}</span>
+                                </span>
+                                <h1 className="mt-1 break-words text-2xl font-black text-slate-900 dark:text-white sm:text-3xl">
+                                    {t('settings.appearance.overviewTitle')}
+                                </h1>
+                                <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400 sm:text-sm">
+                                    {t('settings.appearance.overviewDescription')}
                                 </p>
                             </div>
                         </div>
 
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="mt-6 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
                             <Fact label={t('settings.themeMode', { defaultValue: 'Theme' })} value={t(`settings.appearance.themes.${preferences.theme}`, { defaultValue: preferences.theme })} />
-                            <Fact label={t('settings.primaryColor', { defaultValue: 'Accent Color' })} value={selectedColor.name} />
+                            <Fact label={t('settings.primaryColor', { defaultValue: 'Accent Color' })} value={t(`settings.appearance.colors.${selectedColor.id}`, { defaultValue: selectedColor.name })} />
                             <Fact label={t('settings.density', { defaultValue: 'Layout Density' })} value={t(`settings.appearance.densities.${preferences.density}.label`, { defaultValue: preferences.density })} />
-                            <Fact label={t('settings.appearance.textSize', { defaultValue: 'Font Scale' })} value={preferences.fontScale} />
+                            <Fact label={t('settings.appearance.textSize', { defaultValue: 'Font Scale' })} value={t(`settings.appearance.fontScales.${preferences.fontScale}`, { defaultValue: preferences.fontScale })} />
                         </div>
 
                         <div className="mt-4 flex flex-wrap items-center gap-2">
-                            <SyncBadge loading={isLoading} t={t} />
+                            <SettingsSyncStatus
+                                loading={isLoading}
+                                label={t('settings.appearance.applied', { defaultValue: 'Appearance is active' })}
+                                loadingLabel={t('settings.appearance.applying', { defaultValue: 'Applying and synchronizing...' })}
+                            />
                             <button
                                 type="button"
                                 onClick={reset}
                                 disabled={isLoading}
-                                className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                                className="ds-button ds-button-secondary ds-button-sm"
                             >
                                 <RotateCcw size={14} aria-hidden="true" />
                                 {t('settings.appearance.reset', { defaultValue: 'Reset Defaults' })}
                             </button>
                         </div>
                     </div>
-
-                    <AppearancePreview preferences={preferences} color={selectedColor} t={t} />
                 </div>
             </section>
 
-            <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_380px]">
-                <div className="space-y-4">
+            <nav className="flex flex-wrap gap-2" aria-label={t('settings.appearance.sectionsLabel', { defaultValue: 'Appearance setting sections' })}>
+                {[
+                    ['appearance-theme', Sun, t('settings.themeMode', { defaultValue: 'Theme' })],
+                    ['appearance-colors', Palette, t('settings.primaryColor', { defaultValue: 'Colors' })],
+                    ['appearance-layout', Gauge, t('settings.density', { defaultValue: 'Layout' })],
+                    ['appearance-type', Type, t('settings.appearance.textSize', { defaultValue: 'Typography' })],
+                    ['appearance-accessibility', Accessibility, t('settings.appearance.motion', { defaultValue: 'Accessibility' })],
+                ].map(([id, Icon, label]) => (
+                    <a key={id} href={`#${id}`} className="settings-jump-link inline-flex min-h-9 items-center gap-2 px-3 text-xs font-bold">
+                        <Icon size={14} aria-hidden="true" />
+                        {label}
+                    </a>
+                ))}
+            </nav>
+
+            <div className="grid min-w-0 gap-6">
+                <div className="space-y-6">
                     {/* Theme Mode Selector */}
-                    <Panel icon={Sun} title={t('settings.themeMode', { defaultValue: 'Interface Theme Mode' })} description={t('settings.appearance.themeDescription', { defaultValue: 'Switch between Light, Dark, or Automatic System Theme.' })}>
+                    <Panel id="appearance-theme" icon={Sun} title={t('settings.themeMode', { defaultValue: 'Interface Theme Mode' })} description={t('settings.appearance.themeDescription', { defaultValue: 'Switch between Light, Dark, or Automatic System Theme.' })}>
                         <div className="grid gap-3 sm:grid-cols-3">
                             {THEMES.map(({ id, icon: Icon }) => (
                                 <ChoiceButton
@@ -183,7 +299,7 @@ const AppearanceSettings = () => {
                     </Panel>
 
                     {/* Medical Accent Color Palette */}
-                    <Panel icon={Palette} title={t('settings.primaryColor', { defaultValue: 'Medical Accent Palette' })} description={t('settings.appearance.colorDescription', { defaultValue: 'Choose primary highlight colors for icons, active buttons, and progress meters.' })}>
+                    <Panel id="appearance-colors" icon={Palette} title={t('settings.primaryColor', { defaultValue: 'Medical Accent Palette' })} description={t('settings.appearance.colorDescription', { defaultValue: 'Choose primary highlight colors for icons, active buttons, and progress meters.' })}>
                         <div className="space-y-4">
                             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                                 {COLORS.map(color => (
@@ -194,44 +310,148 @@ const AppearanceSettings = () => {
                                         onClick={() => persist({ primaryColor: color.id })}
                                         compact
                                     >
-                                        <span 
-                                            className="h-8 w-8 shrink-0 rounded-lg shadow-sm ring-1 ring-black/10 flex items-center justify-center overflow-hidden" 
-                                            style={{ backgroundColor: color.id === 'custom' ? (preferences.customColor || '#0ea5e9') : color.value }}
+                                        <span
+                                            className="h-8 w-8 shrink-0 rounded-lg shadow-sm ring-1 ring-black/10 flex items-center justify-center overflow-hidden"
+                                            style={{ backgroundColor: color.id === 'custom' ? (preferences.customColor || '#087F5B') : color.value }}
                                         >
                                             {color.id === 'custom' && <Palette size={14} className="text-white drop-shadow-md" />}
                                         </span>
-                                        <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">{color.name}</span>
+                                        <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200">{t(`settings.appearance.colors.${color.id}`, { defaultValue: color.name })}</span>
                                     </ChoiceButton>
                                 ))}
                             </div>
-                            
+
                             {preferences.primaryColor === 'custom' && (
-                                <div className="flex items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900/50">
-                                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">Custom Hex Color:</label>
+                                <div className="settings-color-field flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
+                                    <label htmlFor="appearance-custom-color-text" className="text-xs font-bold text-[var(--VIARA-ink)]">{t('settings.appearance.customColorLabel', { defaultValue: 'Custom hex color' })}</label>
                                     <div className="flex items-center gap-2">
-                                        <input 
-                                            type="color" 
+                                        <input
+                                            type="color"
                                             value={safeHex(preferences.customColor)}
-                                            onChange={(e) => persist({ customColor: e.target.value })}
-                                            className="h-8 w-12 cursor-pointer rounded bg-transparent p-0 outline-none"
+                                            onChange={(e) => {
+                                                setCustomColorDraft(e.target.value.toUpperCase());
+                                                persist({ customColor: e.target.value.toUpperCase(), primaryColor: 'custom' });
+                                            }}
+                                            disabled={isLoading}
+                                            className="h-9 w-12 cursor-pointer rounded bg-transparent p-0 outline-none disabled:cursor-wait"
+                                            aria-label={t('settings.appearance.customColorPicker', { defaultValue: 'Choose custom accent color' })}
                                         />
-                                        <input 
+                                        <input
+                                            id="appearance-custom-color-text"
                                             type="text"
-                                            value={preferences.customColor || '#0ea5e9'}
-                                            onBlur={(e) => persist({ customColor: safeHex(e.target.value) })}
-                                            onChange={(e) => dispatch(updateAllPreferences({ ...preferences, customColor: e.target.value }))}
-                                            className="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-mono font-bold text-slate-900 outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                                            value={customColorDraft}
+                                            maxLength={7}
+                                            spellCheck="false"
+                                            inputMode="text"
+                                            onBlur={commitCustomColor}
+                                            onKeyDown={(event) => {
+                                                if (event.key === 'Enter') {
+                                                    event.preventDefault();
+                                                    commitCustomColor();
+                                                }
+                                                if (event.key === 'Escape') {
+                                                    setCustomColorDraft(preferences.customColor || DEFAULT_APPEARANCE.customColor);
+                                                    event.currentTarget.blur();
+                                                }
+                                            }}
+                                            onChange={(e) => setCustomColorDraft(e.target.value)}
+                                            aria-invalid={!isHexColor(customColorDraft)}
+                                            disabled={isLoading}
+                                            className={`ds-field min-h-9 w-28 py-1 text-xs font-mono font-bold uppercase ${!isHexColor(customColorDraft) ? 'ds-field-error' : ''}`}
                                         />
                                     </div>
                                 </div>
                             )}
                         </div>
                     </Panel>
+
+                    <Panel
+                        id="appearance-semantic-colors"
+                        icon={SlidersHorizontal}
+                        title={t('settings.appearance.semanticPalette.title', { defaultValue: 'Advanced semantic palette' })}
+                        description={t('settings.appearance.semanticPalette.description', { defaultValue: 'Customize every interface surface and state color independently for light and dark mode. Unchanged colors inherit the audited VIARA defaults.' })}
+                        action={(
+                            <span className={`ds-status inline-flex border px-2.5 py-1 text-[10px] font-black ${semanticOverrideCount ? 'ds-status-accent' : 'ds-status-neutral'}`}>
+                                {t('settings.appearance.semanticPalette.overrideCount', { count: semanticOverrideCount, defaultValue: `${semanticOverrideCount} overrides` })}
+                            </span>
+                        )}
+                    >
+                        <div className="grid gap-4 xl:grid-cols-2">
+                            {['light', 'dark'].map((mode) => (
+                                <section key={mode} className="min-w-0 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-3 sm:p-4">
+                                    {(paletteContrastWarnings[mode].adjustedText || paletteContrastWarnings[mode].incompatibleSurfaces) && (
+                                            <p
+                                                className={`mb-3 rounded-xl border px-3 py-2 text-xs leading-5 ${
+                                                    paletteContrastWarnings[mode].incompatibleSurfaces
+                                                        ? 'border-amber-400 bg-amber-50 text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100'
+                                                        : 'border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] text-[var(--VIARA-muted)]'
+                                                }`}
+                                                role={paletteContrastWarnings[mode].incompatibleSurfaces ? 'alert' : 'status'}
+                                                aria-live={paletteContrastWarnings[mode].incompatibleSurfaces ? 'assertive' : 'polite'}
+                                            >
+                                                {paletteContrastWarnings[mode].incompatibleSurfaces
+                                                    ? t('settings.appearance.semanticPalette.incompatibleSurfaces', { defaultValue: 'These surface colors are too different for one text color to meet contrast requirements everywhere. Adjust the surfaces or restore the defaults; text colors are adjusted to the best available contrast.' })
+                                                    : t('settings.appearance.semanticPalette.adjustedText', { defaultValue: 'Text colors are automatically adjusted when needed to maintain readable contrast across the selected surfaces.' })}
+                                            </p>
+                                    )}
+                                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                                        <h3 className="text-sm font-black text-[var(--VIARA-ink)]">
+                                            {t(`settings.appearance.semanticPalette.${mode}`, { defaultValue: mode === 'light' ? 'Light palette' : 'Dark palette' })}
+                                        </h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => resetSemanticPalette(mode)}
+                                            disabled={isLoading}
+                                            className="rounded-lg border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] px-2.5 py-1.5 text-[10px] font-bold text-[var(--VIARA-muted)] transition hover:border-[var(--VIARA-accent)] hover:text-[var(--VIARA-accent)] disabled:opacity-50"
+                                        >
+                                            {t('settings.appearance.semanticPalette.resetMode', { defaultValue: 'Restore mode' })}
+                                        </button>
+                                    </div>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        {SEMANTIC_COLOR_OPTIONS.map(([key, fallbackLabel]) => {
+                                            const value = preferences.colorOverrides?.[mode]?.[key]
+                                                || SEMANTIC_PALETTE_DEFAULTS[mode][key];
+                                            return (
+                                                <div key={key} className="settings-color-field flex min-h-12 min-w-0 items-center gap-2 rounded-xl border px-2.5 py-2">
+                                                    <label className="grid min-w-0 flex-1 cursor-pointer grid-cols-[36px_minmax(0,1fr)] items-center gap-2 text-[11px] font-bold text-[var(--VIARA-ink)]">
+                                                        <input
+                                                            type="color"
+                                                            value={value}
+                                                            onChange={(event) => updateSemanticColor(mode, key, event.target.value)}
+                                                            disabled={isLoading}
+                                                            className="h-8 w-9 shrink-0 cursor-pointer rounded-md border-0 bg-transparent p-0 disabled:cursor-wait"
+                                                            aria-label={t(`settings.appearance.semanticPalette.colors.${key}`, { defaultValue: fallbackLabel })}
+                                                        />
+                                                        <span className="min-w-0 break-words leading-4">
+                                                            {t(`settings.appearance.semanticPalette.colors.${key}`, { defaultValue: fallbackLabel })}
+                                                            <code className="mt-0.5 block text-[9px] font-semibold uppercase text-[var(--VIARA-muted)]">{value}</code>
+                                                        </span>
+                                                    </label>
+                                                    {preferences.colorOverrides?.[mode]?.[key] && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => resetSemanticColor(mode, key)}
+                                                            disabled={isLoading}
+                                                            className="ds-button ds-button-ghost ds-button-sm !min-h-8 !px-2 text-[10px]"
+                                                            aria-label={t('settings.appearance.semanticPalette.resetColor', { color: fallbackLabel, defaultValue: `Restore ${fallbackLabel}` })}
+                                                            title={t('settings.appearance.semanticPalette.resetColor', { color: fallbackLabel, defaultValue: `Restore ${fallbackLabel}` })}
+                                                        >
+                                                            <RotateCcw size={12} aria-hidden="true" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </section>
+                            ))}
+                        </div>
+                    </Panel>
                 </div>
 
                 <div className="space-y-4">
                     {/* UI Layout Density */}
-                    <Panel icon={Gauge} title={t('settings.density', { defaultValue: 'UI Layout Density' })} description={t('settings.appearance.densityDescription', { defaultValue: 'Adjust row padding and spacing density for tables and data grids.' })}>
+                    <Panel id="appearance-layout" icon={Gauge} title={t('settings.density', { defaultValue: 'UI Layout Density' })} description={t('settings.appearance.densityDescription', { defaultValue: 'Adjust row padding and spacing density for tables and data grids.' })}>
                         <div className="space-y-4">
                             <div className="grid gap-3 sm:grid-cols-3">
                                 {DENSITIES.map(d => (
@@ -252,7 +472,7 @@ const AppearanceSettings = () => {
                             <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
                                 <h4 className="mb-3 text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
                                     <Square size={14} className="text-slate-400" />
-                                    Component Border Radius
+                                    {t('settings.appearance.radiusTitle', { defaultValue: 'Component border radius' })}
                                 </h4>
                                 <div className="grid grid-cols-5 gap-2">
                                     {BORDER_RADII.map(radius => (
@@ -263,8 +483,10 @@ const AppearanceSettings = () => {
                                             onClick={() => persist({ borderRadius: radius.id })}
                                             center
                                         >
-                                            <div className={`h-8 w-8 border-2 border-slate-300 dark:border-slate-600 ${radius.class}`} />
-                                            <span className="mt-2 block text-[10px] font-bold text-slate-500 dark:text-slate-400">{radius.name}</span>
+                                            <div className="h-8 w-8 border-2 border-slate-300 dark:border-slate-600" style={{ borderRadius: radius.value }} />
+                                            <span className="mt-2 block text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                                {t(`settings.appearance.radii.${radius.id}`, { defaultValue: radius.name })}
+                                            </span>
                                         </ChoiceButton>
                                     ))}
                                 </div>
@@ -297,7 +519,7 @@ const AppearanceSettings = () => {
                     </Panel>
 
                     {/* Font Scale & Typography */}
-                    <Panel icon={Type} title={t('settings.appearance.textSize', { defaultValue: 'Typography & Font Scale' })} description={t('settings.appearance.textSizeDescription', { defaultValue: 'Scale base text size across clinical records and forms.' })}>
+                    <Panel id="appearance-type" icon={Type} title={t('settings.appearance.textSize', { defaultValue: 'Typography & Font Scale' })} description={t('settings.appearance.textSizeDescription', { defaultValue: 'Scale base text size across clinical records and forms.' })}>
                         <div className="space-y-4">
                             <div className="grid grid-cols-4 gap-2">
                                 {FONT_SCALES.map((scaleObj) => (
@@ -309,15 +531,17 @@ const AppearanceSettings = () => {
                                         center
                                     >
                                         <span className="font-black text-slate-900 dark:text-white" style={{ fontSize: `${scaleObj.px}px` }}>Aa</span>
-                                        <span className="mt-1 block text-[11px] font-bold text-slate-500 dark:text-slate-400 capitalize">{scaleObj.id} ({scaleObj.scale})</span>
+                                        <span className="mt-1 block text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                                            {t(`settings.appearance.fontScales.${scaleObj.id}`, { defaultValue: scaleObj.id })} ({scaleObj.scale})
+                                        </span>
                                     </ChoiceButton>
                                 ))}
                             </div>
-                            
+
                             <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
                                 <h4 className="mb-3 text-xs font-black text-slate-900 dark:text-white flex items-center gap-2">
                                     <Type size={14} className="text-slate-400" />
-                                    Font Family
+                                    {t('settings.appearance.fontFamilyTitle', { defaultValue: 'Font family' })}
                                 </h4>
                                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                                     {FONT_FAMILIES.map(font => (
@@ -329,7 +553,9 @@ const AppearanceSettings = () => {
                                             center
                                         >
                                             <span className={`text-base font-bold text-slate-900 dark:text-white ${font.class}`}>Aa</span>
-                                            <span className="mt-1 block text-[10px] font-bold text-slate-500 dark:text-slate-400">{font.name}</span>
+                                            <span className="mt-1 block text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                                {t(`settings.appearance.fontFamilies.${font.id}`, { defaultValue: font.name })}
+                                            </span>
                                         </ChoiceButton>
                                     ))}
                                 </div>
@@ -338,15 +564,15 @@ const AppearanceSettings = () => {
                     </Panel>
 
                     {/* High Contrast & Motion Accessibility */}
-                    <Panel icon={Accessibility} title={t('settings.appearance.motion', { defaultValue: 'Accessibility & Motion' })} description={t('settings.appearance.motionDescription', { defaultValue: 'Configure high contrast borders and reduced animation effects.' })}>
+                    <Panel id="appearance-accessibility" icon={Accessibility} title={t('settings.appearance.motion', { defaultValue: 'Accessibility & Motion' })} description={t('settings.appearance.motionDescription', { defaultValue: 'Configure high contrast borders and reduced animation effects.' })}>
                         <div className="space-y-4">
                             <div className="flex items-center justify-between gap-4">
                                 <div>
-                                    <p className="text-xs font-extrabold text-slate-900 dark:text-white">High Contrast Enforced</p>
-                                    <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">Increase border contrast for low-light diagnostic rooms</p>
+                                    <p className="text-xs font-extrabold text-slate-900 dark:text-white">{t('settings.appearance.highContrastTitle', { defaultValue: 'Enforce high contrast' })}</p>
+                                    <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{t('settings.appearance.highContrastHelp', { defaultValue: 'Increase border contrast for low-light diagnostic rooms.' })}</p>
                                 </div>
                                 <Toggle
-                                    label="High Contrast"
+                                    label={t('settings.appearance.highContrastTitle', { defaultValue: 'High contrast' })}
                                     checked={Boolean(preferences.highContrast)}
                                     disabled={isLoading}
                                     onChange={checked => persist({ highContrast: checked })}
@@ -368,59 +594,10 @@ const AppearanceSettings = () => {
                         </div>
                     </Panel>
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 };
-
-const Panel = ({ icon: Icon, title, description, children }) => (
-    <section className={`${fieldPanel} p-4 sm:p-5`}>
-        <div className="mb-4 flex items-start gap-3">
-            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                <Icon size={16} aria-hidden="true" />
-            </span>
-            <div>
-                <h3 className="text-sm font-black text-slate-950 dark:text-white">{title}</h3>
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{description}</p>
-            </div>
-        </div>
-        {children}
-    </section>
-);
-
-const ChoiceButton = ({ selected, disabled, onClick, compact, center, children }) => (
-    <button
-        type="button"
-        disabled={disabled}
-        onClick={onClick}
-        className={`relative flex ${compact ? 'flex-row items-center gap-3' : 'flex-col'} ${center ? 'items-center text-center' : 'items-start text-start'} rounded-2xl border p-3.5 transition-all ${
-            selected
-                ? 'border-cyan-500 bg-cyan-50/50 shadow-md ring-2 ring-cyan-500/20 dark:border-cyan-500 dark:bg-cyan-950/40'
-                : 'border-slate-200/80 bg-white hover:border-slate-300 hover:bg-slate-50/80 dark:border-slate-800 dark:bg-slate-900/40 dark:hover:bg-slate-800/50'
-        } disabled:opacity-50`}
-    >
-        {children}
-        {selected && (
-            <span className="absolute end-2.5 top-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-cyan-600 text-white shadow-sm dark:bg-cyan-500">
-                <Check size={12} strokeWidth={3} />
-            </span>
-        )}
-    </button>
-);
-
-const Fact = ({ label, value }) => (
-    <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-2.5 dark:border-slate-800 dark:bg-slate-950/50">
-        <span className="text-[10px] font-bold uppercase text-slate-400">{label}</span>
-        <p className="mt-0.5 truncate text-xs font-black text-slate-900 dark:text-white">{value}</p>
-    </div>
-);
-
-const SyncBadge = ({ loading }) => (
-    <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-955/30 dark:text-emerald-300">
-        {loading ? <Sparkles size={13} className="animate-spin text-emerald-600" /> : <CheckCircle2 size={13} />}
-        {loading ? 'Saving...' : 'Appearance Synced'}
-    </span>
-);
 
 const DensityPreview = ({ mode }) => (
     <div className="w-full space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-950">
@@ -433,74 +610,6 @@ const DensityPreview = ({ mode }) => (
             <div className="h-2 w-6 rounded bg-slate-300 dark:bg-slate-700" />
         </div>
     </div>
-);
-
-const AppearancePreview = ({ preferences, color }) => (
-    <div className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-slate-950 p-4 text-white shadow-xl dark:border-slate-800 dark:bg-slate-950">
-        <div>
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                    <span className="h-3 w-3 rounded-full" style={{ backgroundColor: color.value }} />
-                    <span className="text-xs font-extrabold text-white">Live Specimen Box</span>
-                </div>
-                <span className="rounded-md bg-slate-800 px-2 py-0.5 text-[10px] font-mono font-bold text-slate-300">
-                    {preferences.theme}
-                </span>
-            </div>
-
-            <div className="mt-4 space-y-3">
-                <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/90 p-3">
-                    <div>
-                        <p className="text-xs font-bold text-white">Brain MRI with Contrast</p>
-                        <p className="text-[10px] font-mono text-slate-400">CPT: 70553 · 45 min</p>
-                    </div>
-                    <button
-                        type="button"
-                        className="rounded-lg px-3 py-1.5 text-xs font-bold text-white shadow-sm"
-                        style={{ backgroundColor: color.value }}
-                    >
-                        Action
-                    </button>
-                </div>
-
-                <div className="space-y-1.5">
-                    <div className="flex justify-between text-[10px] font-bold text-slate-400">
-                        <span>Workstation Sync</span>
-                        <span>100%</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-800">
-                        <div className="h-full rounded-full transition-all duration-300" style={{ width: '100%', backgroundColor: color.value }} />
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div className="mt-4 border-t border-slate-800 pt-3 flex flex-wrap gap-2 text-[10px] text-slate-400 items-center">
-            <span>Font: <strong className="text-white capitalize">{preferences.fontScale} {preferences.fontFamily}</strong></span>
-            <span>Radius: <strong className="text-white capitalize">{preferences.borderRadius}</strong></span>
-            <span>Density: <strong className="text-white capitalize">{preferences.density}</strong></span>
-        </div>
-    </div>
-);
-
-const Toggle = ({ label, checked, disabled, onChange }) => (
-    <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        aria-label={label}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-            checked ? 'bg-cyan-600' : 'bg-slate-200 dark:bg-slate-800'
-        } disabled:opacity-50`}
-    >
-        <span
-            className={`pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                checked ? 'translate-x-5' : 'translate-x-0'
-            }`}
-        />
-    </button>
 );
 
 export default AppearanceSettings;

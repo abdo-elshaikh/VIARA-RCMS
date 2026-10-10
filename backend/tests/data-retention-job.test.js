@@ -6,7 +6,7 @@ describe('data retention privacy export cleanup', () => {
     let tempDir;
 
     beforeEach(async () => {
-        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rcms-retention-'));
+        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'VIARA-retention-'));
         process.env.PRIVACY_EXPORT_DIR = tempDir;
         jest.resetModules();
     });
@@ -41,7 +41,7 @@ describe('data retention privacy export cleanup', () => {
     });
 
     test('skips expired export rows that point outside the export directory', async () => {
-        const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rcms-retention-outside-'));
+        const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'VIARA-retention-outside-'));
         const outsidePath = path.join(outsideDir, 'expired.json.enc');
         await fs.writeFile(outsidePath, 'encrypted');
         const pool = {
@@ -61,5 +61,23 @@ describe('data retention privacy export cleanup', () => {
         expect(result).toEqual({ scanned: 1, deleted: 0, skipped: 1 });
 
         await fs.rm(outsideDir, { recursive: true, force: true });
+    });
+
+    test('purges revoked and expired password reset tokens older than 90 days', async () => {
+        let executedSql = '';
+        const pool = {
+            query: jest.fn(async (sql) => {
+                executedSql = sql;
+                return { rowCount: 4 };
+            })
+        };
+
+        const { cleanupPasswordResetTokens } = require('../src/jobs/dataRetentionJob');
+        const result = await cleanupPasswordResetTokens(pool);
+
+        expect(executedSql).toContain('DELETE FROM password_reset_tokens');
+        expect(executedSql).toContain('revoked = TRUE');
+        expect(executedSql).toContain("expires_at < NOW() - INTERVAL '90 days'");
+        expect(result).toEqual({ deleted: 4 });
     });
 });

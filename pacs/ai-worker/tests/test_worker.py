@@ -17,7 +17,7 @@ def settings(**overrides):
     values = {
         "worker_api_key": API_KEY,
         "orthanc_url": "http://orthanc:8042",
-        "orthanc_username": "rcms",
+        "orthanc_username": "VIARA",
         "orthanc_password": "secret",
         "model_backend": "safe-placeholder",
         "model_id": "test-model",
@@ -37,6 +37,11 @@ def settings(**overrides):
 
 def auth_headers():
     return {"Authorization": f"Bearer {API_KEY}"}
+
+
+def test_medgemma_requires_pinned_model_commit():
+    assert any("MODEL_REVISION" in error for error in settings(model_backend="medgemma", model_revision="main").configuration_errors)
+    assert not settings(model_backend="medgemma", model_revision="a" * 40).configuration_errors
 
 
 def request_payload(modality="DX", body_part="CHEST"):

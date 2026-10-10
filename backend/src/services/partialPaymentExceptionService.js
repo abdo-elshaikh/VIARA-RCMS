@@ -16,15 +16,18 @@ const getInvoicePaymentPosition = async (db, invoiceId) => {
                    i.appointment_id,
                    i.exam_id,
                    i.patient_payable_amount,
+                   patient.first_name_enc,
+                   patient.last_name_enc,
                    COALESCE(SUM(p.amount) FILTER (WHERE p.payment_status = 'Completed'), 0) AS paid_amount,
                    COALESCE((SELECT SUM(r.amount) FROM refunds r
                              WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0) AS refunded_amount,
                    COALESCE((SELECT SUM(cn.patient_amount) FROM credit_notes cn
                              WHERE cn.invoice_id = i.invoice_id AND cn.reversed_at IS NULL), 0) AS credited_amount
             FROM invoices i
+            LEFT JOIN patients patient ON patient.patient_id = i.patient_id
             LEFT JOIN payments p ON p.invoice_id = i.invoice_id
             WHERE i.invoice_id = $1
-            GROUP BY i.invoice_id
+            GROUP BY i.invoice_id, patient.first_name_enc, patient.last_name_enc
         )
         SELECT *,
                GREATEST(paid_amount - refunded_amount, 0) AS net_paid_amount,
@@ -44,7 +47,9 @@ const getInvoicePaymentPosition = async (db, invoiceId) => {
     };
 };
 
-const getApprovedPartialPaymentException = async (db, invoiceId, transactionType) => {
+const getApprovedPartialPaymentException = async (db, invoiceId, transactionType, targetStage) => {
+    // For ClinicalQueueTransition, an approved exception covers all subsequent clinical workflow steps
+    // (Nurse prep, Modality waiting, Examination, Reporting).
     const result = await db.query(`
         SELECT *
         FROM partial_payment_exceptions
@@ -54,6 +59,7 @@ const getApprovedPartialPaymentException = async (db, invoiceId, transactionType
           AND (expires_at IS NULL OR expires_at > NOW())
         ORDER BY reviewed_at DESC NULLS LAST, requested_at DESC
         LIMIT 1
+        FOR UPDATE SKIP LOCKED
     `, [invoiceId, transactionType]);
 
     return result.rows[0] || null;
@@ -62,6 +68,7 @@ const getApprovedPartialPaymentException = async (db, invoiceId, transactionType
 const assertInvoiceTransactionAllowed = async (db, {
     invoiceId,
     transactionType,
+    targetStage,
     transactionLabel = 'this transaction'
 }) => {
     if (!Object.values(RESTRICTED_PARTIAL_PAYMENT_TRANSACTIONS).includes(transactionType)) {
@@ -88,8 +95,18 @@ const assertInvoiceTransactionAllowed = async (db, {
         throw error;
     }
 
-    const exception = await getApprovedPartialPaymentException(db, invoiceId, transactionType);
+    const exception = await getApprovedPartialPaymentException(db, invoiceId, transactionType, targetStage);
     if (exception) {
+        // Record clinical progression without invalidating the exception for subsequent steps
+        await db.query(`
+            UPDATE partial_payment_exceptions
+            SET metadata = jsonb_set(
+                    COALESCE(metadata, '{}'::jsonb),
+                    '{clinicalProgress}',
+                    COALESCE(metadata->'clinicalProgress', '[]'::jsonb) || jsonb_build_array(jsonb_build_object('stage', $2::text, 'passedAt', NOW()))
+                ) || jsonb_build_object('lastPassedStage', $2::text, 'lastPassedAt', NOW())
+            WHERE exception_id = $1 AND status = 'Approved'
+        `, [exception.exception_id, targetStage]);
         return { allowed: true, position, exception };
     }
 
@@ -98,6 +115,7 @@ const assertInvoiceTransactionAllowed = async (db, {
         code: 'PARTIAL_PAYMENT_EXCEPTION_REQUIRED',
         invoiceId,
         transactionType,
+        targetStage,
         invoiceNumber: position.invoice_number,
         netPaidAmount: position.net_paid_amount,
         balanceAmount: position.balance_amount

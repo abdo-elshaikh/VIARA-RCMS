@@ -1,1128 +1,1287 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import {
     Activity,
     AlertCircle,
     ArrowLeft,
     ArrowRight,
-    CheckCircle2,
-    Clock3,
+    Building2,
+    Check,
+    Copy,
     Eye,
     EyeOff,
     Fingerprint,
-    HeartPulse,
+    FileText,
+    Globe,
     KeyRound,
-    LockKeyhole,
+    Loader2,
+    Lock,
+    LogIn,
     Mail,
     Moon,
-    Radio,
+    ScanLine,
+    Search,
     ShieldCheck,
+    Sparkles,
     Sun,
-    UserRound,
+    UserCheck,
+    Users,
+    X,
+    Zap,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { useLoginMutation, useGetPublicCenterSettingsQuery } from '../store/api';
+import {
+    api,
+    useLoginMutation,
+    usePasskeyAuthenticationOptionsMutation,
+    usePasskeyAuthenticationVerifyMutation,
+    useForgotPasswordMutation,
+    useResetPasswordMutation,
+} from '../store/api';
 import { setCredentials } from '../store/authSlice';
-import { setTheme, updateAllPreferences } from '../store/preferencesSlice';
+import {
+    selectPreferences,
+    setLanguage,
+    setTheme,
+    updateAllPreferences,
+} from '../store/preferencesSlice';
 import { getErrorMessage } from '../utils/getErrorMessage';
-import { getPatientPortalLoginUrl } from '../utils/portalUrls';
-import LanguageToggle from '../components/ui/LanguageToggle';
-import { normalizeCenterSettings } from '../utils/centerSettings';
-import loginRadiologyBackground from '../assets/login-radiology-background.png';
+import {
+    authenticateWithPasskey,
+    getPasskeyErrorKind,
+    getPasskeySupport,
+} from '../utils/passkeys';
+import { VIARA_BRAND } from '../config/brand';
+import usePageTitle from '../hooks/usePageTitle';
+import usePublicAppearance from '../hooks/usePublicAppearance';
+import PublicDialog from '../components/public/PublicDialog';
+import PublicSupportDialog from '../components/public/PublicSupportDialog';
+import PublicConnectionNotice from '../components/public/PublicConnectionNotice';
+import { resolvePreferredStartPage } from '../utils/startPage';
+import LandingServiceHealthModal from './LandingServiceHealthModal';
+import '../styles/LoginIllustrative.css';
+import '../styles/LoginReference.css';
+import '../styles/LoginModern.css';
+import '../styles/LoginReferenceDesign.css';
 
 const ROLE_DESTINATIONS = {
     Developer: '/admin',
     Admin: '/admin',
     Radiologist: '/worklist',
+    Technician: '/modality',
     Receptionist: '/reception',
     Accountant: '/financials',
-    HR: '/hr',
-    Technician: '/modality',
-    Nurse: '/nurse',
+    Cashier: '/reception?tab=billing',
+    HR: '/admin',
     Insurance_Staff: '/insurance',
-    Marketing: '/marketing',
+    Doctor: '/dashboard',
+    Nurse: '/dashboard',
+    Patient: '/patient/profile',
 };
 
-const WORKSPACE_SIGNALS = [
-    { icon: ShieldCheck, labelKey: 'brand.signals.secureAccess' },
-    { icon: Radio, labelKey: 'brand.signals.pacsReady' },
-    { icon: Activity, labelKey: 'brand.signals.liveOperations' },
-];
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || '';
 
-const TRUST_CHIPS = [
-    { icon: ShieldCheck, labelKey: 'login.trust.encrypted' },
-    { icon: Clock3, labelKey: 'login.trust.alwaysOn' },
-    { icon: UserRound, labelKey: 'login.trust.staffOnly' },
-];
+const DEMO_ACCOUNTS = import.meta.env.DEV
+    ? [
+        {
+            id: 'radiologist',
+            role: 'Radiologist',
+            category: 'clinical',
+            nameAr: 'د. أليس مورغان',
+            nameEn: 'Dr. Alice Morgan',
+            titleAr: 'طبيب الأشعة التشخيصية',
+            titleEn: 'Consultant Radiologist',
+            email: 'alice@viara.com',
+            badgeColor: 'emerald',
+            icon: Activity,
+        },
+        {
+            id: 'technician',
+            role: 'Technician',
+            category: 'clinical',
+            nameAr: 'م. محمد علي',
+            nameEn: 'Mohamed Ali',
+            titleAr: 'فني أشعة أول',
+            titleEn: 'Senior Radiographer',
+            email: 'tech@viara.com',
+            badgeColor: 'cyan',
+            icon: ScanLine,
+        },
+        {
+            id: 'nurse',
+            role: 'Nurse',
+            category: 'clinical',
+            nameAr: 'سارة محمود',
+            nameEn: 'Sarah Mahmoud',
+            titleAr: 'تمريض الرعاية والفرز',
+            titleEn: 'Clinical Nurse',
+            email: 'nurse@viara.com',
+            badgeColor: 'teal',
+            icon: Zap,
+        },
+        {
+            id: 'receptionist',
+            role: 'Receptionist',
+            category: 'operations',
+            nameAr: 'فاطمة أحمد',
+            nameEn: 'Fatima Ahmed',
+            titleAr: 'مسؤول الاستقبال والحجوزات',
+            titleEn: 'Front Desk Specialist',
+            email: 'reception@viara.com',
+            badgeColor: 'amber',
+            icon: Users,
+        },
+        {
+            id: 'cashier',
+            role: 'Cashier',
+            category: 'operations',
+            nameAr: 'عمر خالد',
+            nameEn: 'Omar Khaled',
+            titleAr: 'أمين الصندوق والتحصيل',
+            titleEn: 'Cashier & Billing',
+            email: 'cashier@viara.com',
+            badgeColor: 'orange',
+            icon: Building2,
+        },
+        {
+            id: 'accountant',
+            role: 'Accountant',
+            category: 'operations',
+            nameAr: 'كريم مصطفى',
+            nameEn: 'Karim Mostafa',
+            titleAr: 'المحاسب المالي',
+            titleEn: 'Financial Accountant',
+            email: 'accountant@viara.com',
+            badgeColor: 'indigo',
+            icon: Building2,
+        },
+        {
+            id: 'hr',
+            role: 'HR',
+            category: 'admin',
+            nameAr: 'هدى إبراهيم',
+            nameEn: 'Hoda Ibrahim',
+            titleAr: 'مسؤول الموارد البشرية',
+            titleEn: 'HR Specialist',
+            email: 'hr@viara.com',
+            badgeColor: 'purple',
+            icon: UserCheck,
+        },
+        {
+            id: 'admin',
+            role: 'Admin',
+            category: 'admin',
+            nameAr: 'عبد الرحمن الشريف',
+            nameEn: 'Abdelrahman Elsharif',
+            titleAr: 'مدير النظام الشامل',
+            titleEn: 'System Administrator',
+            email: 'admin@viara.com',
+            badgeColor: 'rose',
+            icon: ShieldCheck,
+        },
+        {
+            id: 'developer',
+            role: 'Developer',
+            category: 'admin',
+            nameAr: 'مهندس المنظومة التقنية',
+            nameEn: 'Platform Engineer',
+            titleAr: 'مهندس التطوير والنظم',
+            titleEn: 'Lead Platform Engineer',
+            email: 'developer@viara.com',
+            badgeColor: 'blue',
+            icon: ShieldCheck,
+        },
+    ]
+    : [];
 
-const Login = () => {
+function getReturnDestination(from) {
+    const destination =
+        typeof from === 'string'
+            ? from
+            : from?.pathname
+                ? `${from.pathname}${from.search || ''}${from.hash || ''}`
+                : '';
+    if (
+        !destination.startsWith('/') ||
+        destination.startsWith('//') ||
+        destination.includes('\\') ||
+        [...destination].some((ch) => ch.codePointAt(0) <= 0x20)
+    )
+        return null;
+    if (/^\/login(?:[/?#]|$)/.test(destination)) return null;
+    return destination;
+}
+
+export default function Login() {
     const dispatch = useDispatch();
     const navigate = useNavigate();
-    const { t, i18n } = useTranslation(['auth', 'common']);
+    const location = useLocation();
+
+    // ── Password Reset via URL token ───────────────────────────────────────────
+    const urlSearchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+    const urlResetToken = urlSearchParams.get('resetToken') || '';
+    const urlResetEmail = urlSearchParams.get('email') || '';
+    const preferences = useSelector(selectPreferences);
+    const { i18n, t } = useTranslation(['auth', 'common']);
     const isRtl = i18n.dir() === 'rtl';
-    const patientPortalLoginUrl = getPatientPortalLoginUrl();
-    const { data: publicSettings } = useGetPublicCenterSettingsQuery();
-    const centerSettings = useMemo(() => normalizeCenterSettings(publicSettings || {}), [publicSettings]);
-    const centerName = [centerSettings.center_name, centerSettings.branch_name].filter(Boolean).join(' - ') || 'RCMS';
-    const centerInitials = String(centerSettings.center_name || 'RCMS').trim().slice(0, 4).toUpperCase();
-    const [login, { isLoading }] = useLoginMutation();
-    const [errorMsg, setErrorMsg] = useState(null);
+    const c = t('publicLogin', { returnObjects: true });
+    usePageTitle(c.signIn);
+    const { dark, reduceMotion } = usePublicAppearance();
+    const DirectionArrow = isRtl ? ArrowLeft : ArrowRight;
+    const BackArrow = isRtl ? ArrowRight : ArrowLeft;
+
+    const [login, { isLoading: isApiSubmitting }] = useLoginMutation();
+    const [getPasskeyOptions, { isLoading: isPasskeyOptionsLoading }] =
+        usePasskeyAuthenticationOptionsMutation();
+    const [verifyPasskey, { isLoading: isPasskeyVerifyLoading }] =
+        usePasskeyAuthenticationVerifyMutation();
+    const [forgotPasswordMutation, { isLoading: isSendingResetLink }] = useForgotPasswordMutation();
+    const [resetPasswordMutation, { isLoading: isResettingPassword }] = useResetPasswordMutation();
+
+    const [selectedRole, setSelectedRole] = useState('Radiologist');
     const [showPassword, setShowPassword] = useState(false);
-    const [rememberMe, setRememberMe] = useState(false);
-    const [shakeError, setShakeError] = useState(false);
     const [capsLockActive, setCapsLockActive] = useState(false);
-    const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
-    const emailInputRef = useRef(null);
-    const errorRef = useRef(null);
+    const [isPasskeyPromptOpen, setIsPasskeyPromptOpen] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [helpOpen, setHelpOpen] = useState(false);
+    const [demoOpen, setDemoOpen] = useState(false);
+    const [serviceModalOpen, setServiceModalOpen] = useState(false);
+    const [serverError, setServerError] = useState('');
+    const [brandFailed, setBrandFailed] = useState(false);
+    // Forgot / Reset password dialog state
+    const [forgotOpen, setForgotOpen] = useState(false);
+    const [forgotEmail, setForgotEmail] = useState('');
+    const [forgotSent, setForgotSent] = useState(false);
+    const [forgotError, setForgotError] = useState('');
+    const [resetNewPw, setResetNewPw] = useState('');
+    const [resetConfirmPw, setResetConfirmPw] = useState('');
+    const [resetError, setResetError] = useState('');
+    const [resetSuccess, setResetSuccess] = useState(false);
+    const [showResetPw, setShowResetPw] = useState(false);
+    const [languageBusy, setLanguageBusy] = useState(false);
+    const [demoSearch, setDemoSearch] = useState('');
+    const [demoCategory, setDemoCategory] = useState('all');
+    const [copiedField, setCopiedField] = useState(null);
+
+    const forgotEmailRef = useRef(null);
+    const resetPasswordRef = useRef(null);
+    const demoDialogRef = useRef(null);
+    const demoTriggerRef = useRef(null);
+    const serviceTriggerRef = useRef(null);
+    const supportTriggerRef = useRef(null);
+    const authenticationLock = useRef(false);
+    const appliedPresetRef = useRef(false);
 
     const {
         register,
         handleSubmit,
-        watch,
+        setValue,
+        getValues,
+        setError,
         clearErrors,
+        setFocus,
         formState: { errors },
     } = useForm({
-        defaultValues: { email: '', password: '' },
         mode: 'onTouched',
         reValidateMode: 'onChange',
-        shouldFocusError: true,
+        defaultValues: { email: '', password: '', rememberMe: false },
     });
 
-    const emailValue = watch('email');
-    const passwordValue = watch('password');
-    const emailReg = register('email', {
-        required: t('errors.emailRequired', { defaultValue: 'Email is required' }),
-        pattern: {
-            value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-            message: t('errors.emailInvalid', { defaultValue: 'Enter a valid email address.' }),
-        },
-        onChange: () => {
-            if (errorMsg) setErrorMsg(null);
-            if (errors.email) clearErrors('email');
-        },
-        setValueAs: (value) => String(value || '').trim(),
-    });
-    const passwordReg = register('password', {
-        required: t('errors.passwordRequired', { defaultValue: 'Password is required' }),
-        onChange: () => {
-            if (errorMsg) setErrorMsg(null);
-            if (errors.password) clearErrors('password');
-        },
-    });
+    const passkeySupport = getPasskeySupport();
+    const isPasskeyLoading =
+        isPasskeyPromptOpen ||
+        isPasskeyOptionsLoading ||
+        isPasskeyVerifyLoading;
+    const busy = isSubmitting || isApiSubmitting || isPasskeyLoading;
+    const passkeyNote = passkeySupport.supported
+        ? c.passkeyHint
+        : passkeySupport.reason === 'insecure'
+            ? c.insecure
+            : c.unsupported;
+    const brandName = VIARA_BRAND.name || 'VIARA';
 
     useEffect(() => {
-        const observer = new MutationObserver(() => {
-            setIsDark(document.documentElement.classList.contains('dark'));
-        });
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
-    }, []);
+        if (!resetSuccess || urlResetToken) return undefined;
+        const frame = window.requestAnimationFrame(() => setFocus('email'));
+        return () => window.cancelAnimationFrame(frame);
+    }, [resetSuccess, urlResetToken, setFocus]);
 
     useEffect(() => {
-        const id = window.setTimeout(() => emailInputRef.current?.focus(), 120);
-        return () => window.clearTimeout(id);
-    }, []);
+        if (!demoOpen) return undefined;
+        const dialog = demoDialogRef.current;
+        const trigger = demoTriggerRef.current;
+        if (dialog && !dialog.open) dialog.showModal();
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            if (dialog && dialog.open) dialog.close();
+            document.body.style.overflow = previousOverflow;
+            trigger?.focus();
+        };
+    }, [demoOpen]);
 
     useEffect(() => {
-        if (errorMsg) errorRef.current?.focus();
-    }, [errorMsg]);
+        if (!import.meta.env.DEV || appliedPresetRef.current) return;
+        if (!location.state?.presetRole) return;
+        const match = DEMO_ACCOUNTS.find(
+            (account) =>
+                account.role.toLowerCase() ===
+                String(location.state.presetRole).toLowerCase(),
+        );
+        if (!match) return;
+        appliedPresetRef.current = true;
+        setSelectedRole(match.role);
+        setValue('email', match.email);
+        setValue('password', DEMO_PASSWORD);
+    }, [location.state, setValue]);
 
-    const toggleTheme = () => dispatch(setTheme(isDark ? 'light' : 'dark'));
-
-    const resolveDestination = (user) => {
-        const preferredStartPage = user?.preferences?.startPage;
-        const isSafeStartPage = typeof preferredStartPage === 'string'
-            && preferredStartPage.startsWith('/')
-            && !preferredStartPage.startsWith('//');
-        return isSafeStartPage ? preferredStartPage : (ROLE_DESTINATIONS[user?.role] || '/dashboard');
-    };
-
-    const onSubmit = async (data) => {
-        setErrorMsg(null);
-        setShakeError(false);
+    const toggleLanguage = async () => {
+        if (languageBusy) return;
+        const next = isRtl ? 'en' : 'ar';
+        setLanguageBusy(true);
         try {
-            const result = await login({
-                email: String(data.email || '').trim().toLowerCase(),
-                password: data.password,
-                rememberMe,
-            }).unwrap();
-
-            dispatch(setCredentials({ user: result.user, token: result.token }));
-
-            if (result.user?.preferences && typeof result.user.preferences === 'object') {
-                dispatch(updateAllPreferences(result.user.preferences));
-                if (result.user.preferences.language && result.user.preferences.language !== i18n.resolvedLanguage) {
-                    await i18n.changeLanguage(result.user.preferences.language);
-                }
+            await i18n.changeLanguage(next);
+            dispatch(setLanguage(next));
+            clearErrors();
+            setServerError('');
+            try {
+                localStorage.setItem('VIARA_lang', next);
+            } catch {
+                /* Optional persistence */
             }
-
-            if (result.user?.mustChangePassword) {
-                navigate('/settings?tab=security');
-                return;
-            }
-
-            navigate(resolveDestination(result.user));
-        } catch (error) {
-            const message = error?.status === 401
-                ? t('errors.invalidLogin', { defaultValue: 'Invalid email or password.' })
-                : getErrorMessage(error, t('errors.invalidCredentials', { defaultValue: 'Invalid credentials provided.' }));
-            setErrorMsg(message);
-            setShakeError(true);
-            window.setTimeout(() => setShakeError(false), 560);
+        } catch {
+            /* Retain current language on error */
+        } finally {
+            setLanguageBusy(false);
         }
     };
+
+    const completeAuthentication = (res, rememberMe) => {
+        const token = res?.token || res?.data?.token;
+        const user = res?.user || res?.data?.user;
+        if (!token || !user) throw new Error(c.loginFailed);
+
+        dispatch(api.util.resetApiState());
+        dispatch(setCredentials({ token, user, rememberMe }));
+        if (user.preferences) dispatch(updateAllPreferences(user.preferences));
+        toast.success(`${c.welcome} ${user.name || user.email}`);
+        setValue('password', '');
+        const fallback =
+            ROLE_DESTINATIONS[user.role || selectedRole] || '/dashboard';
+        const destination = resolvePreferredStartPage({
+            user,
+            preferences: { ...preferences, ...user.preferences },
+            fallback,
+        });
+        navigate(getReturnDestination(location.state?.from) || destination, {
+            replace: true,
+        });
+    };
+
+    const onSubmit = async (formData) => {
+        if (authenticationLock.current) return;
+        authenticationLock.current = true;
+        setIsSubmitting(true);
+        setServerError('');
+        try {
+            const res = await login({
+                email: formData.email.trim().toLowerCase(),
+                password: formData.password,
+                rememberMe: formData.rememberMe,
+            }).unwrap();
+            completeAuthentication(res, formData.rememberMe);
+        } catch (error) {
+            const status = error?.status || error?.originalStatus;
+            setServerError(
+                status === 'FETCH_ERROR' || status === 'TIMEOUT_ERROR'
+                    ? c.network
+                    : [502, 503, 504].includes(status)
+                        ? (c.connectionUnavailable || c.network)
+                        : status === 429
+                            ? c.rateLimit
+                            : status === 401
+                                ? c.invalidCredentials
+                                : getErrorMessage(error, c.loginFailed),
+            );
+        } finally {
+            authenticationLock.current = false;
+            setIsSubmitting(false);
+        }
+    };
+
+    const handlePasskeySignIn = async () => {
+        if (authenticationLock.current) return;
+        const email = getValues('email').trim().toLowerCase();
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            setError('email', {
+                type: 'validate',
+                message: email ? c.invalidEmail : c.emailRequired,
+            });
+            setFocus('email');
+            return;
+        }
+        if (!passkeySupport.supported) {
+            setServerError(passkeyNote);
+            return;
+        }
+        const rememberMe = getValues('rememberMe');
+        authenticationLock.current = true;
+        setIsPasskeyPromptOpen(true);
+        setServerError('');
+        clearErrors();
+        try {
+            const ceremony = await getPasskeyOptions({ email }).unwrap();
+            const response = await authenticateWithPasskey(ceremony.options);
+            const result = await verifyPasskey({
+                ceremonyId: ceremony.ceremonyId,
+                response,
+            }).unwrap();
+            completeAuthentication(result, rememberMe);
+        } catch (error) {
+            const kind = getPasskeyErrorKind(error);
+            if (error?.data?.code === 'PASSKEY_ACCOUNT_MISMATCH')
+                setServerError(c.mismatch);
+            else if (kind !== 'cancelled')
+                setServerError(getErrorMessage(error, c.passkeyFailed));
+        } finally {
+            authenticationLock.current = false;
+            setIsPasskeyPromptOpen(false);
+        }
+    };
+
+    const copyToClipboard = async (text, fieldKey, toastMsg) => {
+        try {
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const el = document.createElement('textarea');
+                el.value = text;
+                el.style.position = 'fixed';
+                el.style.opacity = '0';
+                document.body.appendChild(el);
+                el.select();
+                document.execCommand('copy');
+                document.body.removeChild(el);
+            }
+            setCopiedField(fieldKey);
+            toast.success(toastMsg);
+            setTimeout(() => setCopiedField(null), 2500);
+        } catch {
+            toast.error(c.copyFailed);
+        }
+    };
+
+    const fillAndLoginDemo = (account) => {
+        setSelectedRole(account.role);
+        setValue('email', account.email, { shouldValidate: true });
+        setValue('password', DEMO_PASSWORD, { shouldValidate: true });
+        clearErrors();
+        setServerError('');
+        setDemoOpen(false);
+        onSubmit({
+            email: account.email,
+            password: DEMO_PASSWORD,
+            rememberMe: getValues('rememberMe') || false,
+        });
+    };
+
+    const fillOnlyDemo = (account, event) => {
+        event.stopPropagation();
+        setSelectedRole(account.role);
+        setValue('email', account.email, { shouldValidate: true });
+        setValue('password', DEMO_PASSWORD, { shouldValidate: true });
+        clearErrors();
+        setServerError('');
+        setDemoOpen(false);
+        toast.success(isRtl ? `تمت تعبئة بيانات: ${account.nameAr}` : `Filled: ${account.nameEn}`);
+    };
+
+    // ── Forgot Password handlers ───────────────────────────────────────────────
+    const handleForgotOpen = () => {
+        // Pre-fill email from the login form if already typed
+        const emailInForm = getValues('email')?.trim() || '';
+        setForgotEmail(emailInForm);
+        setForgotSent(false);
+        setForgotError('');
+        setForgotOpen(true);
+    };
+
+    const openServices = (event) => {
+        serviceTriggerRef.current = event.currentTarget;
+        setServiceModalOpen(true);
+    };
+    const openSupport = (event) => {
+        supportTriggerRef.current = event?.currentTarget || serviceTriggerRef.current;
+        setHelpOpen(true);
+    };
+
+    const handleForgotSubmit = async (e) => {
+        e.preventDefault();
+        setForgotError('');
+        const email = forgotEmail.trim().toLowerCase();
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            setForgotError(c.forgotInvalidEmail);
+            return;
+        }
+        try {
+            await forgotPasswordMutation({ email }).unwrap();
+            setForgotSent(true);
+        } catch {
+            setForgotError(c.forgotFailed);
+        }
+    };
+
+    // ── Reset Password with token (from URL) ──────────────────────────────────
+    const handleResetPasswordSubmit = async (e) => {
+        e.preventDefault();
+        setResetError('');
+        if (resetNewPw.length < 8 || !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/.test(resetNewPw)) {
+            setResetError(c.passwordTooWeak);
+            return;
+        }
+        if (resetNewPw !== resetConfirmPw) {
+            setResetError(c.passwordMismatch);
+            return;
+        }
+        try {
+            await resetPasswordMutation({ token: urlResetToken, email: urlResetEmail, newPassword: resetNewPw }).unwrap();
+            setResetSuccess(true);
+            setResetNewPw('');
+            setResetConfirmPw('');
+            setShowResetPw(false);
+            // Clean the URL so the token isn't reused
+            navigate('/login', { replace: true });
+        } catch (err) {
+            setResetError(getErrorMessage(err, c.resetFailed));
+        }
+    };
+
+    const filteredAccounts = useMemo(() => {
+        return DEMO_ACCOUNTS.filter((acc) => {
+            const matchesCat = demoCategory === 'all' || acc.category === demoCategory;
+            if (!matchesCat) return false;
+            if (!demoSearch.trim()) return true;
+            const q = demoSearch.toLowerCase().trim();
+            return (
+                acc.nameAr.toLowerCase().includes(q) ||
+                acc.nameEn.toLowerCase().includes(q) ||
+                acc.email.toLowerCase().includes(q) ||
+                acc.role.toLowerCase().includes(q) ||
+                acc.titleAr.toLowerCase().includes(q) ||
+                acc.titleEn.toLowerCase().includes(q)
+            );
+        });
+    }, [demoSearch, demoCategory]);
 
     return (
         <main
+            className={`vlogin${import.meta.env.DEV ? ' vlogin--developer' : ''}${dark ? ' vlogin--dark' : ''}${reduceMotion ? ' vlogin--reduce-motion' : ''}`}
             dir={isRtl ? 'rtl' : 'ltr'}
             lang={isRtl ? 'ar' : 'en'}
-            className={`auth-page relative min-h-[100svh] overflow-x-hidden bg-white text-slate-950 selection:bg-cyan-200/50 dark:text-slate-100 dark:selection:bg-cyan-500/25 ${isRtl ? 'font-arabic' : 'font-sans'}`}
         >
-            <AuthStyles />
-            <div className="grid min-h-[100svh] lg:grid-cols-[minmax(0,1.08fr)_minmax(430px,0.92fr)]">
-                <BrandStory
-                    t={t}
-                    centerName={centerName}
-                    centerInitials={centerInitials}
-                    logoUrl={centerSettings.logo_url}
-                />
+            {/* Ambient Background Glow matching Landing Page */}
+            <div className="vlogin__ambient" aria-hidden="true">
+                <div className="vlogin__ambient-backdrop" />
+                <div className="vlogin__ambient-orb-1" />
+                <div className="vlogin__ambient-orb-2" />
+            </div>
 
-                <section className="auth-login-shell relative flex min-h-[100svh] items-start justify-center overflow-hidden bg-white px-5 pb-8 pt-24 sm:px-8 sm:pb-10 lg:items-center lg:px-10 lg:py-20 xl:px-12">
-                    <div className="absolute inset-0 lg:hidden" aria-hidden="true">
+            {/* ════════════════════════════════════════════════
+                UNIFIED STICKY HEADER (Aligned with Landing Page)
+                ════════════════════════════════════════════════ */}
+            <header className="vlogin__header" role="banner">
+                {/* Brand Logo & Name */}
+                <Link to="/" className="vlogin__header-brand" aria-label={brandName}>
+                    {!brandFailed ? (
                         <img
-                            src={loginRadiologyBackground}
+                            src={VIARA_BRAND.iconUrl || VIARA_BRAND.logoUrl || '/logo.png'}
                             alt=""
-                            className="h-full w-full object-cover object-[58%_center]"
+                            width="38"
+                            height="38"
+                            onError={() => setBrandFailed(true)}
                         />
-                        <div className="absolute inset-0 bg-slate-950/55 backdrop-blur-[1px]" />
-                    </div>
+                    ) : (
+                        <span className="vlogin__header-brand-fallback" aria-hidden="true">
+                            V
+                        </span>
+                    )}
+                    <span className="vlogin__brand-lockup">
+                        <strong dir="ltr">{brandName}</strong>
+                        <small>{isRtl ? 'نظام متكامل لإدارة مراكز الأشعة' : 'Connected radiology management'}</small>
+                    </span>
+                </Link>
 
-                    <Toolbar t={t} isRtl={isRtl} isDark={isDark} toggleTheme={toggleTheme} />
-
-                    <div className="auth-form-wrap auth-rise relative z-10 w-full max-w-[460px]" style={{ animationDelay: '60ms' }}>
-                        <LoginOverlay
-                            t={t}
-                            isRtl={isRtl}
-                            isDark={isDark}
-                            centerName={centerName}
-                            centerInitials={centerInitials}
-                            logoUrl={centerSettings.logo_url}
-                            onSubmit={handleSubmit(onSubmit)}
-                            errorMsg={errorMsg}
-                            errorRef={errorRef}
-                            errors={errors}
-                            emailReg={emailReg}
-                            passwordReg={passwordReg}
-                            emailInputRef={emailInputRef}
-                            emailValue={emailValue}
-                            passwordValue={passwordValue}
-                            showPassword={showPassword}
-                            setShowPassword={setShowPassword}
-                            rememberMe={rememberMe}
-                            setRememberMe={setRememberMe}
-                            capsLockActive={capsLockActive}
-                            setCapsLockActive={setCapsLockActive}
-                            isLoading={isLoading}
-                            shakeError={shakeError}
-                            patientPortalLoginUrl={patientPortalLoginUrl}
-                        />
-                    </div>
-                </section>
-            </div>
-        </main>
-    );
-};
-
-const Toolbar = ({ t, isRtl, isDark, toggleTheme }) => (
-    <header className="auth-rise absolute inset-x-0 top-0 z-20 flex justify-center px-3 pt-3 sm:pt-5 lg:justify-end lg:px-8">
-        <div className="auth-toolbar flex w-full max-w-max items-center gap-0.5 border border-slate-200 bg-white/90 p-1 shadow-[0_12px_38px_-22px_rgba(15,23,42,.55)] backdrop-blur-xl sm:gap-1 sm:p-1.5">
-            <Link
-                to="/"
-                className="flex h-9 items-center gap-2 px-3 text-[13px] font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 sm:h-10"
-            >
-                {isRtl ? <ArrowRight size={15} strokeWidth={2.25} /> : <ArrowLeft size={15} strokeWidth={2.25} />}
-            </Link>
-
-            <div className="auth-toolbar-divider mx-0.5 h-4 w-px bg-slate-200" aria-hidden="true" />
-
-            <button
-                type="button"
-                onClick={toggleTheme}
-                aria-label={t(isDark ? 'nav.lightMode' : 'nav.darkMode', { ns: 'common', defaultValue: isDark ? 'Switch to light mode' : 'Switch to dark mode' })}
-                className="flex h-9 w-9 items-center justify-center text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 sm:h-10 sm:w-10"
-            >
-                {isDark ? <Sun size={16} strokeWidth={2} /> : <Moon size={16} strokeWidth={2} />}
-            </button>
-
-            <div className="auth-toolbar-divider mx-0.5 h-4 w-px bg-slate-200" aria-hidden="true" />
-
-            <LanguageToggle
-                variant="light"
-                className="!h-9 !border-0 !bg-transparent hover:!bg-slate-100 sm:!h-10"
-            />
-        </div>
-    </header>
-);
-
-const BrandStory = ({ t, centerName, centerInitials, logoUrl }) => (
-    <section className="auth-brand-story auth-rise relative hidden min-h-[100svh] overflow-hidden text-white lg:flex">
-        <img
-            src={loginRadiologyBackground}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover object-[42%_center]"
-        />
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-950/82 via-slate-950/42 to-cyan-950/20" />
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/55 via-transparent to-transparent" />
-
-        <div className="auth-brand-content relative z-10 flex w-full flex-col justify-between px-14 py-12 xl:px-20">
-            <BrandMark centerName={centerName} centerInitials={centerInitials} logoUrl={logoUrl} />
-
-            <div className="auth-brand-copy mx-auto max-w-xl text-center">
-                <div className="auth-kicker mb-8 inline-flex items-center gap-2 border border-white/20 bg-white/10 px-4 py-2 text-[11px] font-black uppercase tracking-[0.08em] text-cyan-100 backdrop-blur-md">
-                    <Fingerprint size={14} strokeWidth={2.25} />
-                    {t('login.secureWorkspace')}
-                </div>
-                <h2 className="auth-brand-title text-[3rem] font-black leading-[1.08] text-white xl:text-[3.75rem]">
-                    {t('brand.welcome')}{' '}
-                    <span className="block">{centerName}</span>
-                </h2>
-                <p className="auth-brand-subtitle mx-auto mt-5 max-w-lg text-base font-semibold leading-7 text-white/82">
-                    {t('brand.subtitle')}
-                </p>
-            </div>
-
-            <ul className="flex list-none justify-center gap-2.5 p-0">
-                {WORKSPACE_SIGNALS.map(({ icon: Icon, labelKey }) => (
-                    <li
-                        key={labelKey}
-                        className="auth-chip inline-flex items-center gap-2 border border-white/15 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white backdrop-blur-md"
-                    >
-                        <Icon size={13} className="text-cyan-200" strokeWidth={2.25} />
-                        {t(labelKey)}
-                    </li>
-                ))}
-            </ul>
-        </div>
-    </section>
-);
-
-const LoginOverlay = ({
-    t,
-    isRtl,
-    isDark,
-    centerName,
-    centerInitials,
-    logoUrl,
-    onSubmit,
-    errorMsg,
-    errorRef,
-    errors,
-    emailReg,
-    passwordReg,
-    emailInputRef,
-    emailValue,
-    passwordValue,
-    showPassword,
-    setShowPassword,
-    rememberMe,
-    setRememberMe,
-    capsLockActive,
-    setCapsLockActive,
-    isLoading,
-    shakeError,
-    patientPortalLoginUrl,
-}) => (
-    <div
-        aria-labelledby="staff-login-title"
-        className={`auth-panel relative overflow-hidden border border-slate-200/90 bg-white/95 p-5 text-slate-950 shadow-[0_28px_90px_-38px_rgba(15,23,42,.8)] backdrop-blur-xl transition duration-300 sm:p-6 xl:p-7 ${shakeError ? 'auth-shake' : ''}`}
-    >
-        <div
-            className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/45 to-transparent lg:hidden"
-            aria-hidden="true"
-        />
-
-        <div className="mb-5 flex items-center gap-3 lg:hidden">
-            <BrandLogoCompact centerInitials={centerInitials} logoUrl={logoUrl} />
-            <span className="min-w-0">
-                <span className="block truncate text-sm font-bold text-slate-950">{centerName}</span>
-                <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-cyan-600">Radiology Management System</span>
-            </span>
-        </div>
-
-        <header className="auth-form-header mb-4 border-b border-slate-200 pb-4">
-            <div className="auth-form-kicker inline-flex items-center gap-2 border border-cyan-100 bg-cyan-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.05em] text-cyan-700">
-                <Fingerprint size={12} strokeWidth={2.25} />
-                {t('login.secureWorkspace')}
-            </div>
-            <h1 id="staff-login-title" className="mt-3 text-[1.65rem] font-black leading-tight text-slate-950 sm:text-[1.9rem]">
-                {t('login.title')}
-            </h1>
-            <p className="mt-1.5 text-sm leading-6 text-slate-500">
-                {t('login.formHint')}
-            </p>
-        </header>
-
-        <div className="auth-security-grid mb-5 grid grid-cols-2 gap-2 border border-slate-200 bg-slate-50 p-2">
-            <SecuritySignal icon={ShieldCheck} label={t('login.secureSession')} />
-            <SecuritySignal icon={Clock3} label={t('login.auditReady')} />
-        </div>
-
-        <form onSubmit={onSubmit} className="space-y-3.5" noValidate aria-busy={isLoading}>
-            {errorMsg && (
-                <div
-                    ref={errorRef}
-                    role="alert"
-                    tabIndex={-1}
-                    className="auth-error flex gap-3 border border-rose-200 bg-rose-50 p-3.5 text-sm font-semibold leading-5 text-rose-700 outline-none dark:border-rose-500/30 dark:bg-rose-950/20 dark:text-rose-200"
-                >
-                    <LockKeyhole size={17} className="mt-0.5 shrink-0 text-rose-500" strokeWidth={2} />
-                    <span>{errorMsg}</span>
-                </div>
-            )}
-
-            <TextField
-                id="email"
-                type="email"
-                icon={Mail}
-                label={t('login.email')}
-                placeholder={t('login.emailPlaceholder', { defaultValue: 'user@rcms.com' })}
-                autoComplete="username"
-                inputMode="email"
-                inputDir="ltr"
-                value={emailValue}
-                error={errors.email?.message}
-                autoCapitalize="none"
-                autoCorrect="off"
-                inputRef={(node) => {
-                    emailInputRef.current = node;
-                }}
-                registration={emailReg}
-            />
-
-            <TextField
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                icon={LockKeyhole}
-                label={t('login.password')}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                inputDir="ltr"
-                value={passwordValue}
-                error={errors.password?.message}
-                hint={capsLockActive ? t('login.capsLockOn') : ''}
-                hintTone="warning"
-                registration={passwordReg}
-                onKeyEvent={(event) => setCapsLockActive(Boolean(event.getModifierState?.('CapsLock')))}
-                onBlur={() => setCapsLockActive(false)}
-                trailing={(
+                {/* Header Action Utilities */}
+                <div className="vlogin__header-actions">
+                    {/* Live Service Health Check (same modal as Landing Page) */}
                     <button
                         type="button"
-                        tabIndex={0}
-                        onClick={() => setShowPassword((v) => !v)}
-                        className="flex h-8 w-8 items-center justify-center text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-100"
-                        aria-label={t(showPassword ? 'login.hidePassword' : 'login.showPassword')}
-                        aria-pressed={showPassword}
+                        className="vlogin__util-service"
+                        onClick={openServices}
+                        aria-label={c.serviceHealth}
+                        title={c.serviceHealth}
                     >
-                        {showPassword ? <EyeOff size={16} strokeWidth={2} /> : <Eye size={16} strokeWidth={2} />}
+                        <Activity size={15} aria-hidden="true" />
+                        <span>{c.services}</span>
+                        <i aria-hidden="true" />
                     </button>
-                )}
-            />
 
-            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 pt-0.5">
-                <label className="group inline-flex cursor-pointer items-center gap-2.5 text-sm font-medium text-slate-600 transition hover:text-slate-900">
-                    <span className="relative flex h-4 w-4 items-center justify-center">
-                        <input
-                            type="checkbox"
-                            checked={rememberMe}
-                            onChange={(e) => setRememberMe(e.target.checked)}
-                            className="peer h-4 w-4 cursor-pointer appearance-none border border-slate-300 bg-white transition checked:border-emerald-500 checked:bg-emerald-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40 dark:border-slate-600 dark:bg-[#101b2b] dark:checked:border-emerald-400 dark:checked:bg-emerald-500"
-                        />
-                        <CheckCircle2
-                            size={12}
-                            strokeWidth={3}
-                            className="pointer-events-none absolute text-white opacity-0 peer-checked:opacity-100"
-                        />
-                    </span>
-                    {t('login.rememberMe')}
-                </label>
-                <button
-                    type="button"
-                    onClick={() => toast(t('login.forgotPasswordToast'), {
-                        icon: <KeyRound size={15} />,
-                        style: {
-                            borderRadius: 0,
-                            background: isDark ? '#0a1219' : '#fff',
-                            color: isDark ? '#e2e8f0' : '#0f172a',
-                            fontSize: '13px',
-                        },
-                    })}
-                    className="text-sm font-semibold text-cyan-700 transition hover:text-cyan-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/40 dark:text-cyan-300 dark:hover:text-cyan-100"
-                >
-                    {t('login.forgotPassword')}
-                </button>
-            </div>
-
-            <button
-                type="submit"
-                disabled={isLoading}
-                className="auth-btn group relative mt-1 flex min-h-[46px] w-full items-center justify-center gap-2 overflow-hidden bg-gradient-to-b from-emerald-500 to-teal-500 px-5 text-sm font-bold text-white shadow-[0_14px_28px_-16px_rgba(16,185,129,.8)] transition duration-200 hover:-translate-y-px hover:from-emerald-400 hover:to-teal-500 hover:shadow-[0_18px_34px_-18px_rgba(16,185,129,.85)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 focus-visible:ring-offset-2 focus-visible:ring-offset-white active:translate-y-0 disabled:pointer-events-none disabled:opacity-60 dark:focus-visible:ring-offset-[#08111e]"
-            >
-                {isLoading && (
-                    <span className="auth-sheen absolute inset-y-0 w-2/5 bg-gradient-to-r from-transparent via-white/35 to-transparent" aria-hidden="true" />
-                )}
-                <span className="relative z-10 flex items-center gap-2">
-                    {isLoading ? (
-                        <>
-                            <span className="inline-block h-4 w-4 animate-spin border-2 border-white/35 border-t-white" aria-hidden="true" />
-                            <span>{t('status.verifying', { ns: 'common', defaultValue: 'Verifying...' })}</span>
-                        </>
-                    ) : (
-                        <>
-                            {t('actions.signIn', { ns: 'common', defaultValue: 'Sign in' })}
-                            <ArrowRight
-                                size={16}
-                                strokeWidth={2.5}
-                                className={`transition-transform duration-200 ${isRtl ? 'rotate-180 group-hover:-translate-x-0.5' : 'group-hover:translate-x-0.5'}`}
-                            />
-                        </>
+                    {/* Dev Mode Demo Accounts Trigger */}
+                    {import.meta.env.DEV && (
+                        <button
+                            type="button"
+                            ref={demoTriggerRef}
+                            onClick={() => setDemoOpen(true)}
+                            className="vlogin__util-demo"
+                            aria-label={c.demoAccounts}
+                            title={c.demoAccounts}
+                        >
+                            <Sparkles size={14} aria-hidden="true" />
+                            <span>{c.demoAccounts}</span>
+                            <span className="vlogin__util-demo-count" aria-hidden="true">
+                                {DEMO_ACCOUNTS.length}
+                            </span>
+                        </button>
                     )}
-                </span>
-            </button>
-        </form>
 
-        <div className="auth-divider my-4 flex items-center gap-3" role="separator">
-            <span className="h-px flex-1 bg-slate-200" />
-            <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-400">
-                {t('login.patientAccess')}
-            </span>
-            <span className="h-px flex-1 bg-slate-200" />
-        </div>
+                    {/* Theme Toggle (Sun / Moon with smooth spring) */}
+                    <button
+                        type="button"
+                        className="vlogin__util-icon"
+                        onClick={() => dispatch(setTheme(dark ? 'light' : 'dark'))}
+                        aria-label={dark ? c.light : c.dark}
+                        title={dark ? c.light : c.dark}
+                    >
+                        <AnimatePresence mode="wait" initial={false}>
+                            <motion.span
+                                key={dark ? 'sun' : 'moon'}
+                                initial={reduceMotion ? false : { rotate: -90, opacity: 0, scale: 0.7 }}
+                                animate={{ rotate: 0, opacity: 1, scale: 1 }}
+                                exit={reduceMotion ? { opacity: 0 } : { rotate: 90, opacity: 0, scale: 0.7 }}
+                                transition={{ duration: reduceMotion ? 0 : 0.22 }}
+                                style={{ display: 'flex' }}
+                            >
+                                {dark ? <Sun size={18} /> : <Moon size={18} />}
+                            </motion.span>
+                        </AnimatePresence>
+                    </button>
 
-        <a
-            href={patientPortalLoginUrl}
-            className="auth-portal-btn flex min-h-[42px] w-full items-center justify-center gap-2.5 border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition duration-200 hover:-translate-y-px hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/30 dark:border-slate-700 dark:bg-[#0d1726] dark:text-slate-200 dark:hover:border-rose-400/35 dark:hover:bg-rose-950/20 dark:hover:text-rose-100"
-        >
-            <HeartPulse size={16} className="text-rose-400" strokeWidth={2} />
-            {t('login.goToPatientPortal')}
-        </a>
+                    {/* Language Switcher */}
+                    <button
+                        type="button"
+                        className="vlogin__util-lang"
+                        onClick={toggleLanguage}
+                        disabled={languageBusy}
+                        title={isRtl ? 'Switch to English' : '\u0627\u0644\u062a\u0628\u062f\u064a\u0644 \u0625\u0644\u0649 \u0627\u0644\u0639\u0631\u0628\u064a\u0629'}
+                        aria-label={isRtl ? 'Switch to English' : 'التبديل إلى العربية'}
+                    >
+                        <Globe size={18} aria-hidden="true" /><span>{isRtl ? 'العربية' : 'English'}</span>
+                    </button>
 
-    </div>
-);
+                    <span className="vlogin__util-sep" aria-hidden="true" />
 
-const BrandMark = ({ centerName, centerInitials, logoUrl, compact = false }) => (
-    <Link to="/" aria-label={centerName} className="group inline-flex min-w-0 items-center gap-3 text-white">
-        <span className={`relative flex shrink-0 items-center justify-center border border-white/50 bg-white text-slate-950 shadow-lg shadow-black/20 transition duration-200 group-hover:scale-[1.03] ${compact ? 'h-10 w-10' : 'h-11 w-11 sm:h-12 sm:w-12'}`}>
-            {logoUrl ? (
-                <img src={logoUrl} alt="" className="h-7 w-7 object-contain sm:h-8 sm:w-8" />
-            ) : (
-                <span className="font-mono text-[10px] font-black tracking-tight sm:text-[11px]">{centerInitials}</span>
-            )}
-            <span className="absolute -end-0.5 -top-0.5 h-2.5 w-2.5 bg-emerald-400 ring-[2.5px] ring-[#071018]" aria-hidden="true" />
-        </span>
-        <span className="min-w-0">
-            <span className={`block truncate font-bold tracking-tight ${compact ? 'text-sm' : 'text-base'}`}>{centerName}</span>
-            <span className="block text-[10px] font-semibold uppercase tracking-[0.08em] text-cyan-400/80">Radiology Management System</span>
-        </span>
-    </Link>
-);
+                    {/* Back to Home CTA */}
+                    <Link to="/" className="vlogin__header-home" aria-label={c.back} title={c.back}>
+                        <BackArrow size={15} aria-hidden="true" />
+                        <span>{c.home}</span>
+                    </Link>
+                </div>
+            </header>
+            <PublicConnectionNotice onSupport={openSupport} />
 
-const BrandLogoCompact = ({ centerInitials, logoUrl }) => (
-    <span className="flex h-10 w-10 shrink-0 items-center justify-center border border-slate-200 bg-white text-slate-950 shadow-lg shadow-slate-950/10">
-        {logoUrl ? (
-            <img src={logoUrl} alt="" className="h-6 w-6 object-contain" />
-        ) : (
-            <span className="font-mono text-[10px] font-black tracking-tight">{centerInitials}</span>
-        )}
-    </span>
-);
+            {/* ════════════════════════════════════════════════
+                MAIN STAGE (Card with Form & Medical Showcase)
+                ════════════════════════════════════════════════ */}
+            <div className="vlogin__body">
+                <div className="vlogin__card">
+                    {/* Visual Showcase Side (Desktop Medical Intelligence) */}
+                    <aside className="vlogin__visual" aria-label={c.sceneAlt}>
+                        {/* Top Visual Headline */}
+                        <div className="vlogin__visual-header">
+                            <div className="vlogin__visual-tag">
+                                <span>{isRtl ? 'بوابة الدخول إلى النظام' : 'Your connected workspace'}</span>
+                            </div>
+                            <h2 className="vlogin__visual-title">
+                                {isRtl ? 'إدارة أكثر سلاسة' : 'Simpler management'}
+                                <span>{isRtl ? 'لمراكز الأشعة.' : 'for radiology centers.'}</span>
+                            </h2>
+                            <p className="vlogin__visual-desc"><strong>{isRtl ? 'من استقبال المريض إلى تسليم التقرير،' : 'From patient reception to report delivery,'}</strong><br />{isRtl ? 'كل خدمات مركزك في منصة عمل واحدة.' : 'all your center’s services in one workspace.'}</p>
+                            <div className="vlogin__benefits">
+                                {[
+                                    [Activity, 'متابعة التشغيل', 'Operations overview'],
+                                    [Users, 'المرضى والمواعيد', 'Patients & appointments'],
+                                    [ShieldCheck, 'إدارة الصلاحيات', 'Access management'],
+                                    [Building2, 'تقارير دقيقة وسريعة', 'Clear, connected reports'],
+                                ].map(([Icon, ar, en]) => <div key={en}><span><Icon size={22} aria-hidden="true" /></span><strong>{isRtl ? ar : en}</strong></div>)}
+                            </div>
+                            <div className="vlogin__scene-summary" aria-label={isRtl ? 'منظومة عمل متكاملة' : 'One connected workflow'}>
+                                {[
+                                    [Building2, 'RIS + PACS', 'مركزك في منصة واحدة', 'Your center, connected'],
+                                    [Users, 'RBAC', 'مساحة عمل لكل دور', 'A workspace for every role'],
+                                    [FileText, 'DICOM', 'من الفحص إلى التقرير', 'From imaging to reporting'],
+                                ].map(([Icon, value, ar, en]) => (
+                                    <div key={en}>
+                                        <span className="vlogin__scene-summary-icon"><Icon size={26} aria-hidden="true" /></span>
+                                        <span><strong dir="ltr">{value}</strong><small>{isRtl ? ar : en}</small></span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
 
-const SecuritySignal = ({ icon: Icon, label }) => (
-    <div className="auth-security-signal flex min-h-9 min-w-0 items-center justify-center gap-2 border border-cyan-100 bg-white px-2.5 text-[11px] font-bold text-cyan-800">
-        <Icon size={13} className="shrink-0 text-cyan-500" strokeWidth={2.25} />
-        <span className="truncate">{label}</span>
-    </div>
-);
+                    </aside>
 
-const TextField = ({
-    id,
-    icon: Icon,
-    label,
-    placeholder,
-    type,
-    autoComplete,
-    inputMode,
-    inputDir,
-    autoCapitalize,
-    autoCorrect,
-    value,
-    error,
-    hint,
-    hintTone = 'default',
-    registration,
-    inputRef,
-    onKeyEvent,
-    onBlur,
-    trailing,
-}) => {
-    const hasValue = Boolean(value);
-    const { ref: registrationRef, ...registrationProps } = registration || {};
-    const setInputRef = (node) => {
-        registrationRef?.(node);
-        inputRef?.(node);
-    };
+                    {/* Authentication Form Side */}
+                    <section
+                        className="vlogin__form-pane"
+                        aria-labelledby="viara-login-title"
+                    >
+                        <div className="vlogin__form-inner">
+                            <div className="vlogin__form-brand" aria-label={brandName}>
+                                {!brandFailed && (
+                                    <img
+                                        src={VIARA_BRAND.iconUrl || VIARA_BRAND.logoUrl || '/logo.png'}
+                                        alt=""
+                                        width="44"
+                                        height="44"
+                                        onError={() => setBrandFailed(true)}
+                                    />
+                                )}
+                                <span dir="ltr">{brandName}</span>
+                            </div>
+                            <p className="vlogin__form-descriptor">{isRtl ? 'نظام متكامل لإدارة مراكز الأشعة' : 'Connected radiology management'}</p>
+                            <div className="vlogin__form-header">
+                                <h1 id="viara-login-title">{isRtl ? 'مرحبًا بعودتك' : 'Welcome back'}</h1>
+                                <p className="vlogin__subtitle">{c.subtitle}</p>
+                            </div>
 
-    return (
-        <div>
-            <label htmlFor={id} className="mb-1.5 block text-[12px] font-semibold text-slate-700">
-                {label}
-            </label>
-            <div
-                className={`auth-field group relative grid min-h-[50px] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2.5 border bg-slate-50 px-3 transition duration-150 ${error
-                    ? 'border-rose-300 bg-rose-50/70 ring-2 ring-rose-100 dark:border-rose-500/45 dark:bg-rose-950/20 dark:ring-rose-500/10'
-                    : hasValue
-                        ? 'border-slate-300 bg-white dark:border-slate-600 dark:bg-[#101b2b]'
-                        : 'border-slate-200 hover:border-slate-300 dark:border-slate-700 dark:bg-[#0d1726] dark:hover:border-slate-600'
-                } focus-within:!border-cyan-500 focus-within:!bg-white focus-within:!ring-2 focus-within:!ring-cyan-100 dark:focus-within:!border-cyan-400/70 dark:focus-within:!bg-[#101d2e] dark:focus-within:!ring-cyan-400/10`}
-            >
-                <span className="auth-field-icon flex h-9 w-9 items-center justify-center border border-slate-200 bg-white">
-                    <Icon
-                        size={16}
-                        strokeWidth={2}
-                        className={`transition ${error ? 'text-rose-500' : 'text-slate-400 group-focus-within:text-cyan-600'}`}
-                    />
-                </span>
-                <input
-                    id={id}
-                    type={type}
-                    autoComplete={autoComplete}
-                    inputMode={inputMode}
-                    dir={inputDir}
-                    autoCapitalize={autoCapitalize}
-                    autoCorrect={autoCorrect}
-                    spellCheck={false}
-                    placeholder={placeholder}
-                    aria-invalid={error ? 'true' : 'false'}
-                    aria-describedby={[error ? `${id}-error` : null, hint ? `${id}-hint` : null].filter(Boolean).join(' ') || undefined}
-                    className="h-11 min-w-0 bg-transparent text-start text-sm font-semibold text-slate-950 outline-none placeholder:text-slate-400 dark:text-slate-50 dark:placeholder:text-slate-500"
-                    onKeyDown={onKeyEvent}
-                    onKeyUp={onKeyEvent}
-                    {...registrationProps}
-                    onBlur={(event) => {
-                        registrationProps.onBlur?.(event);
-                        onBlur?.(event);
-                    }}
-                    ref={setInputRef}
-                />
-                <div className="flex min-w-9 items-center justify-center gap-0.5">
-                    {trailing}
-                    {hasValue && !error && (
-                        <CheckCircle2 size={15} className="text-emerald-500" strokeWidth={2.25} aria-hidden="true" />
+                            {resetSuccess && (
+                                <div className="vlogin__reset-success" role="status">
+                                    <Check size={22} aria-hidden="true" />
+                                    <div><strong>{c.resetSuccessTitle}</strong><p>{c.resetPasswordSuccess}</p></div>
+                                    <button type="button" onClick={() => { setResetSuccess(false); window.requestAnimationFrame(() => setFocus('email')); }}>{c.continueSignIn}</button>
+                                </div>
+                            )}
+
+                            <form
+                                onSubmit={handleSubmit(onSubmit)}
+                                noValidate
+                                aria-busy={busy}
+                            >
+                                {/* Email Field */}
+                                <div className="vlogin__field">
+                                    <label htmlFor="staff-email">{c.email}</label>
+                                    <div
+                                        className={`vlogin__input-wrap ${errors.email ? 'vlogin__input-wrap--invalid' : ''}`}
+                                    >
+                                        <Mail className="vlogin__input-icon" size={19} aria-hidden="true" />
+                                        <input
+                                            id="staff-email"
+                                            type="email"
+                                            inputMode="email"
+                                            autoComplete="username"
+                                            autoCapitalize="none"
+                                            spellCheck={false}
+                                            dir="ltr"
+                                            placeholder="name@center.com"
+                                            readOnly={busy}
+                                            aria-invalid={Boolean(errors.email)}
+                                            aria-describedby={
+                                                errors.email
+                                                    ? 'staff-email-error'
+                                                    : undefined
+                                            }
+                                            {...register('email', {
+                                                setValueAs: (value) => value.trim(),
+                                                required: c.emailRequired,
+                                                pattern: {
+                                                    value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+                                                    message: c.invalidEmail,
+                                                },
+                                            })}
+                                        />
+                                    </div>
+                                    {errors.email && (
+                                        <p
+                                            className="vlogin__field-error"
+                                            id="staff-email-error"
+                                            role="alert"
+                                        >
+                                            <AlertCircle size={14} aria-hidden="true" />
+                                            <span>{errors.email.message}</span>
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Password Field */}
+                                <div className="vlogin__field">
+                                    <label htmlFor="staff-password">
+                                        <span>{c.password}</span>
+                                    </label>
+                                    <div
+                                        className={`vlogin__input-wrap ${errors.password ? 'vlogin__input-wrap--invalid' : ''}`}
+                                    >
+                                        <Lock className="vlogin__input-icon" size={19} aria-hidden="true" />
+                                        <input
+                                            id="staff-password"
+                                            type={showPassword ? 'text' : 'password'}
+                                            autoComplete="current-password"
+                                            dir="ltr"
+                                            placeholder="••••••••"
+                                            readOnly={busy}
+                                            aria-invalid={Boolean(errors.password)}
+                                            aria-describedby={
+                                                [
+                                                    errors.password
+                                                        ? 'staff-password-error'
+                                                        : '',
+                                                    capsLockActive
+                                                        ? 'staff-caps-warning'
+                                                        : '',
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(' ') || undefined
+                                            }
+                                            {...register('password', {
+                                                required: c.passwordRequired,
+                                                onBlur: () => setCapsLockActive(false),
+                                            })}
+                                            onKeyDown={(event) =>
+                                                setCapsLockActive(
+                                                    Boolean(
+                                                        event.getModifierState?.(
+                                                            'CapsLock',
+                                                        ),
+                                                    ),
+                                                )
+                                            }
+                                            onKeyUp={(event) =>
+                                                setCapsLockActive(
+                                                    Boolean(
+                                                        event.getModifierState?.(
+                                                            'CapsLock',
+                                                        ),
+                                                    ),
+                                                )
+                                            }
+                                        />
+                                        <button
+                                            className="vlogin__eye"
+                                            type="button"
+                                            onClick={() => setShowPassword((value) => !value)}
+                                            aria-label={
+                                                showPassword
+                                                    ? c.hidePassword
+                                                    : c.showPassword
+                                            }
+                                            aria-pressed={showPassword}
+                                        >
+                                            {showPassword ? (
+                                                <EyeOff size={19} />
+                                            ) : (
+                                                <Eye size={19} />
+                                            )}
+                                        </button>
+                                    </div>
+                                    {errors.password && (
+                                        <p
+                                            className="vlogin__field-error"
+                                            id="staff-password-error"
+                                            role="alert"
+                                        >
+                                            <AlertCircle size={14} aria-hidden="true" />
+                                            <span>{errors.password.message}</span>
+                                        </p>
+                                    )}
+                                    {capsLockActive && (
+                                        <p
+                                            className="vlogin__caps"
+                                            id="staff-caps-warning"
+                                            role="status"
+                                        >
+                                            <AlertCircle size={13} aria-hidden="true" />
+                                            <span>{c.caps}</span>
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Helpers Row */}
+                                <div className="vlogin__helpers">
+                                    <label className="vlogin__remember">
+                                        <input
+                                            type="checkbox"
+                                            disabled={busy}
+                                            {...register('rememberMe')}
+                                        />
+                                        <span>{c.remember}</span>
+                                    </label>
+                                    <div className="vlogin__recovery-actions">
+                                        <button
+                                            type="button"
+                                            className="vlogin__help-btn"
+                                            onClick={handleForgotOpen}
+                                            style={{ fontWeight: 700 }}
+                                        >
+                                            {c.forgotPassword}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Server Error Banner */}
+                                {serverError && (
+                                    <div className="vlogin__server-error" role="alert">
+                                        <AlertCircle size={18} aria-hidden="true" />
+                                        <span>{serverError}</span>
+                                    </div>
+                                )}
+
+                                {/* Primary Submit Button */}
+                                <button
+                                    type="submit"
+                                    className="vlogin__submit"
+                                    disabled={busy}
+                                >
+                                    {isSubmitting || isApiSubmitting ? (
+                                        <>
+                                            <Loader2
+                                                size={20}
+                                                className="vlogin__spinner"
+                                                aria-hidden="true"
+                                            />
+                                            <span>{c.authenticating}</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span>{c.signIn}</span>
+                                            <DirectionArrow
+                                                size={19}
+                                                className="vlogin__submit-arrow"
+                                                aria-hidden="true"
+                                            />
+                                        </>
+                                    )}
+                                </button>
+                            </form>
+
+                            {/* Divider */}
+                            <div className="vlogin__divider" aria-hidden="true">
+                                <span>{c.or}</span>
+                            </div>
+
+                            {/* Passkey Biometric Button */}
+                            <button
+                                type="button"
+                                className="vlogin__passkey"
+                                onClick={handlePasskeySignIn}
+                                disabled={busy || !passkeySupport.supported}
+                                aria-describedby="viara-passkey-note"
+                            >
+                                {isPasskeyLoading ? (
+                                    <Loader2
+                                        className="vlogin__spinner"
+                                        size={21}
+                                        aria-hidden="true"
+                                    />
+                                ) : (
+                                    <Fingerprint size={22} aria-hidden="true" />
+                                )}
+                                <span>
+                                    {isPasskeyLoading ? c.verifying : c.passkey}
+                                </span>
+                            </button>
+                            <p id="viara-passkey-note" className="vlogin__passkey-note">
+                                {passkeyNote}
+                            </p>
+                            <div className="vlogin__security-note"><span><ShieldCheck size={30} strokeWidth={1.7} aria-hidden="true" /></span><div><strong>{isRtl ? 'وصول آمن إلى مساحة عملك' : 'Secure access to your workspace'}</strong><small>{isRtl ? 'صلاحيات حسب الدور لحماية بيانات المرضى' : 'Role-based access to protect patient information'}</small></div></div>
+                        </div>
+                    </section>
+                    {import.meta.env.DEV && (
+                        <section className="vlogin__developer-panel" dir={isRtl ? 'rtl' : 'ltr'} aria-labelledby="viara-demo-panel-title">
+                            <div className="vlogin__developer-head">
+                                <span className="vlogin__developer-icon"><Sparkles size={20} aria-hidden="true" /></span>
+                                <div>
+                                    <h2 id="viara-demo-panel-title">{c.demoAccounts}</h2>
+                                    <p>{isRtl ? 'اختر الدور لتعبئة بيانات الدخول.' : 'Choose a role to fill the sign-in form.'}</p>
+                                </div>
+                                <span className="vlogin__developer-badge">DEV</span>
+                            </div>
+                            <div className="vlogin__developer-controls">
+                                <label className="vlogin__developer-select">
+                                    <span className="vlogin__sr-only">{isRtl ? 'الحساب التجريبي' : 'Demo account'}</span>
+                                    <select value={selectedRole} onChange={event => setSelectedRole(event.target.value)} disabled={busy}>
+                                        {DEMO_ACCOUNTS.map(account => <option key={account.id} value={account.role}>{isRtl ? account.titleAr : account.titleEn}</option>)}
+                                    </select>
+                                </label>
+                                <button type="button" className="vlogin__developer-fill" disabled={busy} onClick={event => {
+                                    const account = DEMO_ACCOUNTS.find(account => account.role === selectedRole);
+                                    if (account) fillOnlyDemo(account, event);
+                                }}><UserCheck size={16} aria-hidden="true" />{isRtl ? 'تعبئة النموذج' : 'Fill form'}</button>
+                            </div>
+                            <button type="button" className="vlogin__developer-browse" disabled={busy} aria-haspopup="dialog" aria-controls="viara-demo-dialog" onClick={event => {
+                                demoTriggerRef.current = event.currentTarget;
+                                setDemoOpen(true);
+                            }}>{isRtl ? `عرض كل الحسابات (${DEMO_ACCOUNTS.length})` : `Browse all accounts (${DEMO_ACCOUNTS.length})`}<DirectionArrow size={14} aria-hidden="true" /></button>
+                        </section>
                     )}
-                    {!trailing && !hasValue && <span className="w-4" aria-hidden="true" />}
                 </div>
             </div>
-            {error && (
-                <p id={`${id}-error`} className="auth-field-error mt-1.5 flex items-center gap-1.5 text-xs font-medium text-rose-400" role="alert">
-                    <AlertCircle size={12} className="shrink-0" aria-hidden="true" />
-                    {error}
-                </p>
+
+            {/* ════════════════════════════════════════════════
+                SERVICE HEALTH MODAL (Same as Landing Page)
+                ════════════════════════════════════════════════ */}
+            <footer className="vlogin__page-footer">
+                <span dir="ltr">© {new Date().getFullYear()} {brandName}</span>
+                <span>{isRtl ? 'جميع الحقوق محفوظة' : 'All rights reserved'}</span>
+                <span className="vlogin__footer-line" aria-hidden="true" />
+                <button type="button" onClick={openSupport}>{c.help}</button>
+                <button type="button" onClick={openServices}>{c.serviceHealth}</button>
+                {import.meta.env.DEV && <button type="button" onClick={(event) => { demoTriggerRef.current = event.currentTarget; setDemoOpen(true); }}>{isRtl ? 'معاينة التطوير' : 'Developer preview'}</button>}
+            </footer>
+
+            {serviceModalOpen && (
+                <LandingServiceHealthModal
+                    onClose={() => setServiceModalOpen(false)}
+                    onSupport={() => { setServiceModalOpen(false); openSupport(); }}
+                    isRtl={isRtl}
+                />
             )}
-            {!error && hint && (
-                <p
-                    id={`${id}-hint`}
-                    className={`mt-1.5 flex items-center gap-1.5 text-xs font-medium ${hintTone === 'warning' ? 'text-amber-600' : 'text-slate-500'
-                        }`}
+
+            {/* ════════════════════════════════════════════════
+                DEV MODE: MODERN DEMO ACCOUNTS DRAWER
+                ════════════════════════════════════════════════ */}
+            {import.meta.env.DEV && (
+                <dialog
+                    id="viara-demo-dialog"
+                    ref={demoDialogRef}
+                    className="vlogin__dialog"
+                    aria-labelledby="viara-login-demo-title"
+                    onCancel={() => setDemoOpen(false)}
+                    onClose={() => setDemoOpen(false)}
+                    onClick={(event) => {
+                        if (event.target === event.currentTarget) setDemoOpen(false);
+                    }}
                 >
-                    <AlertCircle size={12} className="shrink-0" aria-hidden="true" />
-                    {hint}
-                </p>
+                    <div className="vlogin__dialog-card vlogin__dialog-card--demo">
+                        <div className="vlogin__sheet-handle" aria-hidden="true" />
+                        <div className="vlogin__dialog-head">
+                            <div className="vlogin__dialog-head-title">
+                                <div className="vlogin__dialog-head-icon">
+                                    <Sparkles size={20} />
+                                </div>
+                                <div>
+                                    <h2 id="viara-login-demo-title">{c.demoAccounts}</h2>
+                                    <p>{c.demoSubtitle}</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className="vlogin__dialog-close"
+                                onClick={() => setDemoOpen(false)}
+                                aria-label={c.close}
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="vlogin__dialog-body">
+                            {/* Shared Password Box */}
+                            <div className="vlogin__demo-pwd-box">
+                                <div className="vlogin__demo-pwd-info">
+                                    <KeyRound size={15} color="var(--vlp-green)" />
+                                    <span>{c.demoPasswordLabel}</span>
+                                    <code dir="ltr">{DEMO_PASSWORD}</code>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="vlogin__demo-copy-btn"
+                                    aria-label={c.demoCopyPassword}
+                                    title={c.demoCopyPassword}
+                                    onClick={() =>
+                                        copyToClipboard(
+                                            DEMO_PASSWORD,
+                                            'password',
+                                            c.demoPasswordCopied,
+                                        )
+                                    }
+                                >
+                                    {copiedField === 'password' ? (
+                                        <Check size={14} color="#10b981" />
+                                    ) : (
+                                        <Copy size={14} />
+                                    )}
+                                    <span>
+                                        {copiedField === 'password'
+                                            ? c.demoPasswordCopied
+                                            : c.demoCopyPassword}
+                                    </span>
+                                </button>
+                            </div>
+
+                            {/* Search & Category Filter */}
+                            <div className="vlogin__demo-controls">
+                                <div className="vlogin__demo-search">
+                                    <Search size={16} />
+                                    <input
+                                        type="text"
+                                        value={demoSearch}
+                                        onChange={(e) => setDemoSearch(e.target.value)}
+                                        placeholder={c.demoSearchPlaceholder}
+                                        dir={isRtl ? 'rtl' : 'ltr'}
+                                    />
+                                    {demoSearch && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setDemoSearch('')}
+                                            style={{ border: 0, background: 'none' }}
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="vlogin__demo-tabs">
+                                    <button
+                                        type="button"
+                                        className={`vlogin__demo-tab ${demoCategory === 'all' ? 'vlogin__demo-tab--active' : ''}`}
+                                        onClick={() => setDemoCategory('all')}
+                                    >
+                                        {c.allCategories} ({DEMO_ACCOUNTS.length})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`vlogin__demo-tab ${demoCategory === 'clinical' ? 'vlogin__demo-tab--active' : ''}`}
+                                        onClick={() => setDemoCategory('clinical')}
+                                    >
+                                        {c.clinicalCat}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`vlogin__demo-tab ${demoCategory === 'operations' ? 'vlogin__demo-tab--active' : ''}`}
+                                        onClick={() => setDemoCategory('operations')}
+                                    >
+                                        {c.operationsCat}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`vlogin__demo-tab ${demoCategory === 'admin' ? 'vlogin__demo-tab--active' : ''}`}
+                                        onClick={() => setDemoCategory('admin')}
+                                    >
+                                        {c.adminCat}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Accounts List */}
+                            <ul className="vlogin__demo-list">
+                                {filteredAccounts.map((account) => {
+                                    const Icon = account.icon;
+                                    return (
+                                        <li key={account.id}>
+                                            <div className="vlogin__demo-item">
+                                                <button
+                                                    type="button"
+                                                    className="vlogin__demo-main-btn"
+                                                    onClick={() => fillAndLoginDemo(account)}
+                                                    disabled={busy}
+                                                    aria-label={
+                                                        isRtl
+                                                            ? `${account.nameAr}، ${account.titleAr}`
+                                                            : `${account.nameEn}, ${account.titleEn}`
+                                                    }
+                                                >
+                                                    <span
+                                                        className={`vlogin__demo-avatar vlogin__demo-avatar--${account.badgeColor}`}
+                                                        aria-hidden="true"
+                                                    >
+                                                        <Icon size={19} />
+                                                    </span>
+                                                    <span className="vlogin__demo-info">
+                                                        <strong>
+                                                            {isRtl ? account.nameAr : account.nameEn}
+                                                        </strong>
+                                                        <span>
+                                                            {isRtl ? account.titleAr : account.titleEn}
+                                                        </span>
+                                                        <code dir="ltr">{account.email}</code>
+                                                    </span>
+                                                    <span className="vlogin__demo-login-chip">
+                                                        <LogIn size={13} />
+                                                        <span>{c.signInShort}</span>
+                                                    </span>
+                                                </button>
+                                                <div className="vlogin__demo-actions">
+                                                    <button
+                                                        type="button"
+                                                        className="vlogin__demo-copy-btn"
+                                                        onClick={(e) => fillOnlyDemo(account, e)}
+                                                        title={c.useAccount}
+                                                        aria-label={`${c.useAccount}: ${isRtl ? account.nameAr : account.nameEn}`}
+                                                    >
+                                                        <UserCheck size={15} aria-hidden="true" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </li>
+                                    );
+                                })}
+                                {filteredAccounts.length === 0 && (
+                                    <li style={{ padding: '24px', textAlign: 'center', color: 'var(--vlp-muted)' }}>
+                                        {c.demoNoResults}
+                                    </li>
+                                )}
+                            </ul>
+                        </div>
+                    </div>
+                </dialog>
             )}
-        </div>
+
+            {forgotOpen && (
+                <PublicDialog title={forgotSent ? c.forgotSentTitle : c.forgotPasswordTitle} titleId="viara-forgot-title" closeLabel={c.close} initialFocusRef={forgotEmailRef} onClose={() => setForgotOpen(false)}>
+                    {forgotSent ? (
+                        <div className="vlogin__recovery-success">
+                            <Check size={28} aria-hidden="true" />
+                            <p role="status">{c.forgotSentDesc}</p>
+                            <button type="button" className="vlogin__submit" onClick={() => setForgotOpen(false)}>{c.forgotBackToLogin}</button>
+                        </div>
+                    ) : (
+                        <form onSubmit={handleForgotSubmit} noValidate className="vlogin__recovery-form" aria-busy={isSendingResetLink}>
+                            <p>{c.forgotPasswordDesc}</p>
+                            <label htmlFor="forgot-email">{c.forgotEmailLabel}</label>
+                            <input ref={forgotEmailRef} id="forgot-email" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" spellCheck={false} dir="ltr" value={forgotEmail} readOnly={isSendingResetLink} aria-invalid={Boolean(forgotError)} aria-describedby={forgotError ? 'forgot-email-error' : undefined} onChange={(event) => { setForgotEmail(event.target.value); setForgotError(''); }} placeholder="name@center.com" />
+                            {forgotError && <p id="forgot-email-error" className="public-dialog__error" role="alert">{forgotError}</p>}
+                            <button type="submit" className="vlogin__submit" disabled={isSendingResetLink}>
+                                {isSendingResetLink && <Loader2 size={18} className="vlogin__spinner" aria-hidden="true" />}
+                                {isSendingResetLink ? c.forgotSending : c.forgotSendLink}
+                            </button>
+                            <button type="button" className="public-dialog__secondary" onClick={() => setForgotOpen(false)}>{c.forgotBackToLogin}</button>
+                        </form>
+                    )}
+                </PublicDialog>
+            )}
+
+            {urlResetToken && !resetSuccess && (
+                <PublicDialog title={c.resetPasswordTitle} titleId="viara-reset-title" closeLabel={c.close} initialFocusRef={resetPasswordRef} onClose={() => navigate('/login', { replace: true })}>
+                    <form onSubmit={handleResetPasswordSubmit} noValidate className="vlogin__recovery-form" aria-busy={isResettingPassword}>
+                        <p id="reset-password-rules">{c.passwordRules}</p>
+                        <label htmlFor="reset-new-pw">{c.newPasswordLabel}</label>
+                        <div className="vlogin__recovery-password">
+                            <input ref={resetPasswordRef} id="reset-new-pw" type={showResetPw ? 'text' : 'password'} dir="ltr" autoComplete="new-password" value={resetNewPw} readOnly={isResettingPassword} aria-invalid={Boolean(resetError)} aria-describedby={`reset-password-rules${resetError ? ' reset-password-error' : ''}`} onChange={(event) => { setResetNewPw(event.target.value); setResetError(''); }} />
+                            <button type="button" className="vlogin__eye" onClick={() => setShowResetPw(value => !value)} aria-pressed={showResetPw} aria-label={showResetPw ? c.hidePassword : c.showPassword}>{showResetPw ? <EyeOff size={20} /> : <Eye size={20} />}</button>
+                        </div>
+                        <label htmlFor="reset-confirm-pw">{c.confirmPasswordLabel}</label>
+                        <input id="reset-confirm-pw" type={showResetPw ? 'text' : 'password'} dir="ltr" autoComplete="new-password" value={resetConfirmPw} readOnly={isResettingPassword} aria-invalid={Boolean(resetError)} aria-describedby={resetError ? 'reset-password-error' : undefined} onChange={(event) => { setResetConfirmPw(event.target.value); setResetError(''); }} />
+                        {resetError && <p id="reset-password-error" className="public-dialog__error" role="alert">{resetError}</p>}
+                        <button type="submit" className="vlogin__submit" disabled={isResettingPassword}>
+                            {isResettingPassword && <Loader2 size={18} className="vlogin__spinner" aria-hidden="true" />}
+                            {isResettingPassword ? c.resetPasswordSaving : c.resetPasswordBtn}
+                        </button>
+                        <button type="button" className="public-dialog__secondary" onClick={() => navigate('/login', { replace: true })}>{c.forgotBackToLogin}</button>
+                    </form>
+                </PublicDialog>
+            )}
+            {helpOpen && <PublicSupportDialog onClose={() => setHelpOpen(false)} returnFocusRef={supportTriggerRef} />}
+        </main>
     );
-};
-
-const TrustChip = ({ icon: Icon, label }) => (
-    <div className="auth-trust-chip flex min-h-8 min-w-0 items-center justify-center gap-1.5 border border-slate-200 bg-white px-2 text-[10px] font-semibold text-slate-500 shadow-sm transition hover:border-cyan-200 hover:bg-cyan-50 hover:text-cyan-700">
-        <Icon size={12} className="shrink-0 text-cyan-500" strokeWidth={2.25} />
-        <span className="truncate">{label}</span>
-    </div>
-);
-
-const AuthStyles = () => (
-    <style>{`
-        @keyframes auth-rise {
-            from { opacity: 0; transform: translateY(14px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes auth-shake {
-            0%, 100% { transform: translateX(0); }
-            20% { transform: translateX(-5px); }
-            40% { transform: translateX(4px); }
-            60% { transform: translateX(-3px); }
-            80% { transform: translateX(2px); }
-        }
-        @keyframes auth-sheen {
-            from { transform: translateX(-160%) skewX(-12deg); }
-            to { transform: translateX(160%) skewX(-12deg); }
-        }
-        @keyframes auth-scan {
-            0% { transform: translateY(-100%); opacity: 0; }
-            8% { opacity: .55; }
-            85% { opacity: .15; }
-            100% { transform: translateY(100svh); opacity: 0; }
-        }
-        @keyframes auth-live-dot {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(52,211,153,.45); }
-            55% { box-shadow: 0 0 0 5px rgba(52,211,153,0); }
-        }
-        @keyframes auth-glow-pulse {
-            0%, 100% { opacity: .45; }
-            50% { opacity: .7; }
-        }
-        .auth-page,
-        .auth-page *,
-        .auth-page *::before,
-        .auth-page *::after {
-            border-radius: 0 !important;
-        }
-        .auth-page {
-            background:
-                linear-gradient(90deg, #f8fafc 0%, #ffffff 48%, #f8fafc 100%);
-        }
-        .auth-login-shell {
-            scrollbar-gutter: stable;
-        }
-        .dark .auth-page {
-            background:
-                linear-gradient(90deg, #050b14 0%, #0a1320 48%, #07111d 100%);
-            color: #e5edf7;
-        }
-        .dark .auth-login-shell {
-            background:
-                radial-gradient(circle at 18% 18%, rgba(34,211,238,.12), transparent 32%),
-                linear-gradient(180deg, #07111d 0%, #0a1422 54%, #050b14 100%);
-        }
-        .auth-toolbar,
-        .auth-panel,
-        .auth-field,
-        .auth-security-grid,
-        .auth-security-signal,
-        .auth-error,
-        .auth-btn,
-        .auth-portal-btn,
-        .auth-chip,
-        .auth-trust-chip,
-        .auth-form-kicker,
-        .auth-kicker {
-            position: relative;
-        }
-        .auth-toolbar {
-            box-shadow: 0 16px 44px -30px rgba(15,23,42,.65), inset 0 -2px 0 rgba(6,182,212,.14);
-        }
-        .dark .auth-toolbar {
-            background: rgba(8,17,30,.9);
-            border-color: rgba(148,163,184,.24);
-            box-shadow: 0 18px 48px -28px rgba(0,0,0,.86), inset 0 -2px 0 rgba(34,211,238,.18);
-        }
-        .dark .auth-toolbar :where(a, button) {
-            color: #cbd5e1;
-        }
-        .dark .auth-toolbar :where(a, button):hover {
-            background: rgba(148,163,184,.12);
-            color: #f8fafc;
-        }
-        .dark .auth-toolbar-divider {
-            background: rgba(148,163,184,.24);
-        }
-        .auth-panel {
-            background:
-                linear-gradient(180deg, rgba(255,255,255,.96), rgba(248,250,252,.9));
-            border-color: rgba(203,213,225,.85);
-            box-shadow:
-                0 30px 86px -44px rgba(15,23,42,.82),
-                inset 3px 0 0 rgba(6,182,212,.22);
-        }
-        .dark .auth-panel {
-            background:
-                linear-gradient(180deg, rgba(14,25,42,.97), rgba(8,17,30,.94));
-            border-color: rgba(148,163,184,.22);
-            color: #e5edf7;
-            box-shadow:
-                0 34px 90px -40px rgba(0,0,0,.95),
-                inset 3px 0 0 rgba(34,211,238,.26),
-                inset 0 1px 0 rgba(255,255,255,.05);
-        }
-        [dir="rtl"] .auth-panel {
-            box-shadow:
-                0 30px 86px -44px rgba(15,23,42,.82),
-                inset -3px 0 0 rgba(6,182,212,.22);
-        }
-        .dark [dir="rtl"] .auth-panel {
-            box-shadow:
-                0 34px 90px -40px rgba(0,0,0,.95),
-                inset -3px 0 0 rgba(34,211,238,.26),
-                inset 0 1px 0 rgba(255,255,255,.05);
-        }
-        .auth-panel::after {
-            content: "";
-            position: absolute;
-            inset-inline-end: 1rem;
-            bottom: 1rem;
-            width: 2.75rem;
-            height: 2.75rem;
-            border-inline-end: 2px solid rgba(6,182,212,.42);
-            border-bottom: 2px solid rgba(6,182,212,.42);
-            pointer-events: none;
-        }
-        .dark .auth-panel::after {
-            border-color: rgba(34,211,238,.34);
-        }
-        .auth-toolbar::before,
-        .auth-error::before,
-        .auth-btn::before,
-        .auth-portal-btn::before,
-        .auth-form-kicker::before,
-        .auth-kicker::before {
-            content: "";
-            position: absolute;
-            inset-inline-start: -1px;
-            top: -1px;
-            width: .75rem;
-            height: .75rem;
-            border-inline-start: 2px solid rgba(6,182,212,.38);
-            border-top: 2px solid rgba(6,182,212,.38);
-            pointer-events: none;
-        }
-        .auth-field {
-            box-shadow: inset 3px 0 0 rgba(6,182,212,.14), inset 0 1px 0 rgba(6,182,212,.06);
-        }
-        .dark .auth-field {
-            border-color: rgba(148,163,184,.2);
-            background: #0d1726;
-            box-shadow: inset 3px 0 0 rgba(34,211,238,.16), inset 0 1px 0 rgba(255,255,255,.035);
-        }
-        [dir="rtl"] .auth-field {
-            box-shadow: inset -3px 0 0 rgba(6,182,212,.14), inset 0 1px 0 rgba(6,182,212,.06);
-        }
-        .dark [dir="rtl"] .auth-field {
-            box-shadow: inset -3px 0 0 rgba(34,211,238,.16), inset 0 1px 0 rgba(255,255,255,.035);
-        }
-        .auth-field:focus-within {
-            box-shadow: inset 3px 0 0 rgba(8,145,178,.42), inset 0 1px 0 rgba(6,182,212,.08);
-        }
-        .dark .auth-field:focus-within {
-            box-shadow: inset 3px 0 0 rgba(34,211,238,.5), inset 0 1px 0 rgba(255,255,255,.05);
-        }
-        [dir="rtl"] .auth-field:focus-within {
-            box-shadow: inset -3px 0 0 rgba(8,145,178,.42), inset 0 1px 0 rgba(6,182,212,.08);
-        }
-        .dark [dir="rtl"] .auth-field:focus-within {
-            box-shadow: inset -3px 0 0 rgba(34,211,238,.5), inset 0 1px 0 rgba(255,255,255,.05);
-        }
-        .auth-field-icon {
-            box-shadow: inset 0 -2px 0 rgba(6,182,212,.08);
-        }
-        .dark .auth-field-icon,
-        .dark .auth-portal-btn,
-        .dark .auth-trust-chip,
-        .dark .auth-security-signal {
-            background: rgba(15,26,43,.92);
-            border-color: rgba(148,163,184,.2);
-        }
-        .dark .auth-field :where(input) {
-            color: #f8fafc;
-        }
-        .dark .auth-field :where(input)::placeholder {
-            color: #64748b;
-        }
-        .dark .auth-page :where(label, h1, .text-slate-950, .text-slate-900) {
-            color: #f8fafc;
-        }
-        .dark .auth-page :where(.text-slate-700, .text-slate-600) {
-            color: #cbd5e1;
-        }
-        .dark .auth-page :where(.text-slate-500, .text-slate-400) {
-            color: #94a3b8;
-        }
-        .auth-security-grid,
-        .auth-security-signal,
-        .auth-portal-btn,
-        .auth-trust-chip {
-            box-shadow: inset 0 1px 0 rgba(6,182,212,.08);
-        }
-        .auth-security-grid {
-            background:
-                linear-gradient(180deg, #f8fafc, #ffffff);
-        }
-        .dark .auth-security-grid {
-            background:
-                linear-gradient(180deg, rgba(15,26,43,.92), rgba(8,17,30,.88));
-            border-color: rgba(148,163,184,.2);
-        }
-        .auth-security-signal {
-            background: #ffffff;
-        }
-        .dark .auth-security-signal {
-            color: #a5f3fc;
-        }
-        .auth-form-header {
-            background: linear-gradient(180deg, rgba(255,255,255,.8), rgba(248,250,252,.42));
-            margin-inline: -1.5rem;
-            padding-inline: 1.5rem;
-        }
-        .dark .auth-form-header {
-            background: linear-gradient(180deg, rgba(15,26,43,.76), rgba(8,17,30,.3));
-            border-color: rgba(148,163,184,.2);
-        }
-        .dark .auth-form-kicker {
-            background: rgba(8,145,178,.14);
-            border-color: rgba(34,211,238,.2);
-            color: #a5f3fc;
-        }
-        @media (min-width: 640px) {
-            .auth-form-header {
-                margin-inline: -2rem;
-                padding-inline: 2rem;
-            }
-        }
-        .auth-brand-story::before,
-        .auth-brand-story::after {
-            content: "";
-            position: absolute;
-            z-index: 12;
-            width: 4rem;
-            height: 4rem;
-            pointer-events: none;
-            border-color: rgba(103,232,249,.52);
-        }
-        .auth-brand-story::before {
-            inset-inline-start: 2rem;
-            top: 2rem;
-            border-inline-start-width: 2px;
-            border-top-width: 2px;
-        }
-        .auth-brand-story::after {
-            inset-inline-end: 2rem;
-            bottom: 2rem;
-            border-inline-end-width: 2px;
-            border-bottom-width: 2px;
-        }
-        .auth-background {
-            filter: saturate(.7) contrast(1.05) brightness(.88);
-            transform: scale(1.008);
-        }
-        .auth-overlay {
-            background:
-                linear-gradient(110deg, rgba(2,6,23,.97) 0%, rgba(4,18,30,.82) 42%, rgba(2,6,23,.58) 100%),
-                linear-gradient(180deg, rgba(2,6,23,.15), rgba(2,6,23,.94));
-        }
-        [dir="rtl"] .auth-overlay {
-            background:
-                linear-gradient(250deg, rgba(2,6,23,.97) 0%, rgba(4,18,30,.82) 42%, rgba(2,6,23,.58) 100%),
-                linear-gradient(180deg, rgba(2,6,23,.15), rgba(2,6,23,.94));
-        }
-        .auth-grid {
-            background-image:
-                linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
-            background-size: 52px 52px;
-            mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, black 20%, transparent 75%);
-        }
-        .auth-panel-glow {
-            background: radial-gradient(ellipse 60% 50% at 50% 50%, rgba(34,211,238,.12), transparent 70%);
-            animation: auth-glow-pulse 6s ease-in-out infinite;
-        }
-        .auth-panel::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            pointer-events: none;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.6);
-        }
-        .auth-rise { animation: auth-rise .6s cubic-bezier(.16,1,.3,1) both; }
-        .auth-shake { animation: auth-shake .48s cubic-bezier(.36,.07,.19,.97) both; }
-        .auth-sheen { animation: auth-sheen 1.5s ease-in-out infinite; }
-        .auth-scan { animation: auth-scan 9s ease-in-out infinite; }
-        .auth-live-dot { animation: auth-live-dot 2s ease-in-out infinite; }
-        .auth-btn::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.18), inset 0 -2px 0 rgba(15,23,42,.16);
-            pointer-events: none;
-        }
-        .auth-field-error {
-            animation: auth-rise .25s ease-out both;
-        }
-        .auth-chip {
-            animation: auth-rise .5s cubic-bezier(.16,1,.3,1) both;
-        }
-        .auth-trust-chip {
-            animation: auth-rise .5s cubic-bezier(.16,1,.3,1) both;
-        }
-        .auth-portal-btn {
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.03);
-        }
-        .dark .auth-divider :where(.bg-slate-200) {
-            background: rgba(148,163,184,.2);
-        }
-        .dark .auth-error::before {
-            border-color: rgba(251,113,133,.45);
-        }
-        .dark .auth-btn {
-            box-shadow: 0 18px 36px -20px rgba(16,185,129,.72);
-        }
-        .dark .auth-portal-btn {
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.04);
-        }
-        .dark .auth-portal-btn:hover {
-            background: rgba(136,19,55,.2);
-        }
-        .dark .auth-page :where(.peer:checked ~ svg) {
-            color: #ffffff;
-        }
-        .auth-footer {
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.02);
-        }
-        @media (min-width: 1024px) and (max-height: 900px) {
-            .auth-login-shell {
-                align-items: flex-start;
-                overflow-y: auto;
-                padding-top: 7.25rem;
-                padding-bottom: 1.5rem;
-            }
-            .auth-form-wrap {
-                max-width: 440px;
-            }
-            .auth-panel {
-                padding: 1.35rem !important;
-            }
-            .auth-form-header {
-                margin-bottom: .9rem;
-                padding-bottom: .9rem;
-            }
-            .auth-form-header h1 {
-                margin-top: .7rem;
-                font-size: 1.55rem;
-            }
-            .auth-form-header p {
-                margin-top: .35rem;
-                line-height: 1.45;
-            }
-            .auth-panel form > :not([hidden]) ~ :not([hidden]) {
-                margin-top: .78rem;
-            }
-            .auth-field {
-                min-height: 46px;
-            }
-            .auth-field input {
-                height: 2.55rem;
-            }
-            .auth-field-icon {
-                height: 2rem;
-                width: 2rem;
-            }
-            .auth-btn {
-                min-height: 42px;
-            }
-            .auth-divider {
-                margin-block: .8rem;
-            }
-            .auth-portal-btn {
-                min-height: 40px;
-            }
-            .auth-brand-content {
-                padding-top: 2rem;
-                padding-bottom: 2rem;
-            }
-            .auth-brand-copy {
-                max-width: 34rem;
-            }
-            .auth-kicker {
-                margin-bottom: 1.25rem;
-            }
-            .auth-brand-title {
-                font-size: clamp(2.4rem, 4vw, 3.25rem);
-            }
-            .auth-brand-subtitle {
-                margin-top: 1rem;
-                font-size: .95rem;
-                line-height: 1.65;
-            }
-        }
-        @media (min-width: 1024px) and (max-height: 760px) {
-            .auth-login-shell {
-                padding-top: 6rem;
-            }
-            .auth-toolbar {
-                transform: scale(.92);
-                transform-origin: top right;
-            }
-            [dir="rtl"] .auth-toolbar {
-                transform-origin: top left;
-            }
-            .auth-brand-title {
-                font-size: clamp(2rem, 3.6vw, 2.75rem);
-            }
-            .auth-brand-subtitle,
-            .auth-chip {
-                font-size: .78rem;
-            }
-        }
-        @media (max-width: 1023px) {
-            .auth-login-shell {
-                overflow-y: auto;
-            }
-            .auth-panel {
-                max-height: none;
-            }
-        }
-        @media (max-width: 480px) {
-            .auth-login-shell {
-                padding-inline: 1rem;
-                padding-top: 5.75rem;
-                padding-bottom: 1rem;
-            }
-            .auth-toolbar {
-                max-width: calc(100vw - 1.5rem);
-            }
-            .auth-toolbar :where(a) {
-                padding-inline: .65rem;
-            }
-            .auth-panel {
-                padding: 1rem !important;
-            }
-            .auth-form-header {
-                margin-inline: -1rem;
-                padding-inline: 1rem;
-            }
-            .auth-form-header h1 {
-                font-size: 1.45rem;
-            }
-            .auth-field {
-                grid-template-columns: auto minmax(0,1fr) auto;
-                gap: .5rem;
-                padding-inline: .65rem;
-            }
-            .auth-divider {
-                gap: .6rem;
-            }
-            .auth-divider span:nth-child(2) {
-                font-size: .56rem;
-            }
-        }
-        @media (prefers-reduced-motion: reduce) {
-            .auth-rise, .auth-shake, .auth-sheen, .auth-scan, .auth-live-dot, .auth-panel-glow, .auth-chip, .auth-trust-chip, .auth-field-error {
-                animation: none !important;
-                opacity: 1 !important;
-            }
-            .auth-background { transform: none; }
-            .auth-btn::after { display: none; }
-        }
-    `}</style>
-);
-
-export default Login;
+}

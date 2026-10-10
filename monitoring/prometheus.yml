@@ -1,0 +1,14 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'viara-backend'
+    static_configs:
+      - targets: ['viara-backend:3000']
+    metrics_path: '/metrics'
+    # Token is written to /run/secrets/metrics_token by the Prometheus container
+    # entrypoint (see docker-compose.yml prometheus command), which echoes
+    # $METRICS_TOKEN into the file before exec-ing the Prometheus binary.
+    authorization:
+      credentials_file: /run/secrets/metrics_token

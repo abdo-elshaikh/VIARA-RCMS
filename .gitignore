@@ -27,8 +27,59 @@ yarn-error.log*
 logs/
 *.log
 
+# Test, coverage, and tooling output
+coverage/
+test-results/
+performance-tests/reports/*
+!performance-tests/reports/.gitkeep
+.playwright-mcp/
+
+.vite/
+.vite-temp/
+.pytest_cache/
+.mypy_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.agents/
+
 # Database backups may contain PHI
 backend/backups/
 *.dump
 
+# Patient documents & chat attachments (PHI) must never be committed
+backend/uploads/
+
 *.playwright-mcp
+*.kilo
+
+# Local archives and editor/OS artifacts
+*.bak
+*.tmp
+*.rar
+*.zip
+*.7z
+desktop.ini
+
+# Scratch, local caches, and test artifacts
+scratch/
+portal/unused-images/
+pacs-worklists/*.wl
+!pacs-worklists/.gitkeep
+/ChatGPT Image*
+/*.png
+
+# License keys — NEVER commit these
+keys/privateKey.pem
+keys/
+.viara-activation
+.viara-license
+client_license_*.txt
+
+# Demo lease ledger — holds customer names and issued trial license keys
+.demo/
+.refact/
+.*-profile/
+.tmp-*
+/pacs-cold-storage/

@@ -1,23 +1,53 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
+    Activity,
+    AlertCircle,
+    AlertOctagon,
     AlertTriangle,
+    Archive,
+    ArrowRight,
+    Award,
     Bell,
     Check,
     CheckCheck,
+    ChevronDown,
+    ChevronUp,
+    Clock,
     Clock3,
     Copy,
+    DollarSign,
+    ExternalLink,
+    FileCheck2,
+    FileSearch,
+    FileText,
     Filter,
     FilterX,
+    HardDrive,
+    Info,
     Mail,
+    MessageCircle,
     MessageSquare,
+    Package,
+    Phone,
+    Radio,
     RefreshCw,
     Search,
     Send,
     Settings,
+    Shield,
+    ShieldAlert,
+    ShieldCheck,
     Smartphone,
-    X,
     Sparkles,
-    Activity
+    Stethoscope,
+    Tag,
+    TrendingUp,
+    User,
+    UserCheck,
+    Users,
+    Wrench,
+    X,
+    Zap
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useTranslation } from 'react-i18next';
@@ -26,18 +56,36 @@ import { useSelector } from 'react-redux';
 import { selectCurrentUser } from '../store/authSlice';
 import {
     useGetNotificationsQuery,
+    useGetMyNotificationsQuery,
     useMarkAllNotificationsReadMutation,
     useMarkNotificationReadMutation,
+    useMarkAllMyNotificationsReadMutation,
+    useMarkMyNotificationReadMutation,
+    useAcknowledgeCriticalResultMutation,
+    useGetCriticalResultFollowupsQuery,
+    useCompleteCriticalResultFollowupMutation,
     useSendManualNotificationMutation
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
+import { getEffectivePermissions } from '../utils/effectivePermissions';
 import PageHeader from '../components/ui/PageHeader';
-import MetricCard from '../components/ui/MetricCard';
+import Pagination from '../components/ui/Pagination';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { getPaginationState } from '../utils/pagination';
 
-const CHANNELS = ['all', 'Email', 'SMS', 'WhatsApp', 'InApp'];
-const STATUSES = ['all', 'Sent', 'Delivered', 'Pending', 'Failed'];
+const CHANNELS = ['all', 'InApp', 'WhatsApp', 'SMS', 'Email'];
+const STATUSES = ['all', 'Delivered', 'Sent', 'Pending', 'Failed'];
+const PRIORITIES = ['all', 'Normal', 'Action', 'Warning', 'Critical'];
 const SEND_CHANNELS = ['Email', 'SMS', 'WhatsApp'];
 const MANUAL_ROLES = new Set(['Developer', 'Admin', 'Receptionist', 'Marketing']);
+const OUTBOUND_LOG_ROLES = new Set(['Developer', 'Admin', 'Receptionist', 'HR', 'Marketing']);
+
+const formatEventType = (eventType) => String(eventType || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, letter => letter.toUpperCase());
 
 const channelIcons = {
     Email: Mail,
@@ -50,21 +98,214 @@ const channelStyles = {
     Email: 'bg-sky-500/10 text-sky-600 dark:bg-sky-500/20 dark:text-sky-400 border-sky-200/80 dark:border-sky-900/50',
     SMS: 'bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 border-emerald-200/80 dark:border-emerald-900/50',
     WhatsApp: 'bg-green-500/10 text-green-600 dark:bg-green-500/20 dark:text-green-400 border-green-200/80 dark:border-green-900/50',
-    InApp: 'bg-cyan-500/10 text-cyan-600 dark:bg-cyan-500/20 dark:text-cyan-400 border-cyan-200/80 dark:border-cyan-900/50'
+    InApp: 'bg-teal-500/10 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400 border-teal-200/80 dark:border-teal-900/50'
 };
 
-const fieldClass = 'h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-800 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-[#0b1426] dark:text-slate-100';
+const priorityStyles = {
+    Critical: 'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-500/30 ring-1 ring-rose-500/20',
+    Warning: 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-500/30',
+    Action: 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-500/30',
+    Normal: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-700',
+};
+
+const categoryDefinitions = [
+    { id: 'all', labelAr: 'جميع الإشعارات', labelEn: 'All Alerts', icon: Bell },
+    { id: 'Security', labelAr: 'الأمان', labelEn: 'Security', icon: Shield, tone: 'rose' },
+    { id: 'Clinical', labelAr: 'سريري', labelEn: 'Clinical', icon: Stethoscope, tone: 'teal' },
+    { id: 'Financial', labelAr: 'مالي', labelEn: 'Financial', icon: DollarSign, tone: 'emerald' },
+    { id: 'Operational', labelAr: 'تشغيلي', labelEn: 'Operational', icon: Activity, tone: 'cyan' },
+    { id: 'Patient', labelAr: 'المريض', labelEn: 'Patient', icon: Users, tone: 'blue' },
+    { id: 'System', labelAr: 'النظام', labelEn: 'System', icon: Settings, tone: 'indigo' }
+];
+
+const fieldClass = 'h-10 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-800 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
+
+function CriticalResultAdminFollowups({ isAr }) {
+    const navigate = useNavigate();
+    const { data, isLoading, isError, refetch } = useGetCriticalResultFollowupsQuery(undefined, {
+        pollingInterval: 30000,
+        refetchOnFocus: true,
+        refetchOnReconnect: true
+    });
+    const [completeFollowup, { isLoading: isCompleting }] = useCompleteCriticalResultFollowupMutation();
+    const [activeTaskId, setActiveTaskId] = useState(null);
+    const [contactedParty, setContactedParty] = useState('');
+    const [followUpNotes, setFollowUpNotes] = useState('');
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const text = isAr
+        ? {
+            title: 'متابعة النتائج الحرجة العاجلة',
+            description: 'هذه مهام متابعة إدارية عند تعذر تحديد مستلم سريري نشط. توثيق المتابعة لا يُعد إقرارًا سريريًا بالنتيجة.',
+            loading: 'جارٍ تحميل مهام المتابعة...',
+            error: 'تعذر تحميل مهام المتابعة.',
+            retry: 'إعادة المحاولة',
+            empty: 'لا توجد مهام متابعة إدارية مفتوحة.',
+            exam: 'فتح الفحص',
+            markedAt: 'وقت التصعيد',
+            document: 'توثيق المتابعة',
+            contactedParty: 'الشخص أو الجهة التي تم التواصل معها',
+            notes: 'ملاحظات المتابعة (10 أحرف على الأقل)',
+            complete: 'حفظ وإكمال المهمة',
+            cancel: 'إلغاء',
+            required: 'يرجى إدخال جهة الاتصال وملاحظات المتابعة المطلوبة.',
+            saved: 'تم توثيق المتابعة الإدارية.',
+            failed: 'تعذر إكمال مهمة المتابعة.'
+        }
+        : {
+            title: 'Urgent critical-result follow-up',
+            description: 'Administrative follow-up tasks created when no active clinical recipient was available. Recording follow-up is not clinical acknowledgement.',
+            loading: 'Loading follow-up tasks...',
+            error: 'Could not load follow-up tasks.',
+            retry: 'Retry',
+            empty: 'There are no open administrative follow-up tasks.',
+            exam: 'Open examination',
+            markedAt: 'Escalated',
+            document: 'Document follow-up',
+            contactedParty: 'Person or organization contacted',
+            notes: 'Follow-up notes (at least 10 characters)',
+            complete: 'Save and complete task',
+            cancel: 'Cancel',
+            required: 'Enter the contacted party and required follow-up notes.',
+            saved: 'Administrative follow-up documented.',
+            failed: 'Could not complete the follow-up task.'
+        };
+
+    const closeForm = () => {
+        setActiveTaskId(null);
+        setContactedParty('');
+        setFollowUpNotes('');
+    };
+
+    const submitFollowup = async (event, taskId) => {
+        event.preventDefault();
+        const party = contactedParty.trim();
+        const notes = followUpNotes.trim();
+        if (party.length < 2 || party.length > 160 || notes.length < 10 || notes.length > 2000) {
+            toast.error(text.required);
+            return;
+        }
+
+        try {
+            await completeFollowup({ taskId, contactedParty: party, followUpNotes: notes }).unwrap();
+            toast.success(text.saved);
+            closeForm();
+        } catch (error) {
+            toast.error(getErrorMessage(error, text.failed));
+        }
+    };
+
+    return (
+        <section className="space-y-3 rounded-2xl border border-rose-300/70 bg-rose-50/60 p-4 dark:border-rose-900/60 dark:bg-rose-950/20" aria-labelledby="critical-followups-title">
+            <div>
+                <h2 id="critical-followups-title" className="text-sm font-black text-rose-900 dark:text-rose-200">{text.title}</h2>
+                <p className="mt-1 text-xs font-semibold leading-relaxed text-rose-800/90 dark:text-rose-300">{text.description}</p>
+            </div>
+
+            {isLoading && <p role="status" className="text-xs font-semibold text-slate-600 dark:text-slate-300">{text.loading}</p>}
+            {isError && (
+                <div className="flex flex-wrap items-center gap-3 text-xs font-bold text-rose-700 dark:text-rose-300" role="alert">
+                    <span>{text.error}</span>
+                    <button type="button" onClick={refetch} className="underline underline-offset-2">{text.retry}</button>
+                </div>
+            )}
+            {!isLoading && !isError && items.length === 0 && (
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">{text.empty}</p>
+            )}
+
+            {items.map((item) => (
+                <article key={item.task_id} className="rounded-xl border border-rose-200 bg-white p-3 dark:border-rose-900/50 dark:bg-slate-900">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="space-y-1">
+                            <p className="text-xs font-black text-slate-900 dark:text-white">
+                                {isAr ? 'رقم الفحص' : 'Examination'}: <span className="font-mono">{item.order_number || item.exam_id}</span>
+                            </p>
+                            <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                                {text.markedAt}: {item.critical_marked_at ? new Date(item.critical_marked_at).toLocaleString(isAr ? 'ar' : undefined) : '—'}
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => navigate(`/cases/${item.exam_id}`)}
+                                className="rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                            >
+                                {text.exam}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTaskId(activeTaskId === item.task_id ? null : item.task_id);
+                                    setContactedParty('');
+                                    setFollowUpNotes('');
+                                }}
+                                className="rounded-lg bg-rose-700 px-3 py-2 text-[11px] font-black text-white hover:bg-rose-800"
+                            >
+                                {text.document}
+                            </button>
+                        </div>
+                    </div>
+
+                    {activeTaskId === item.task_id && (
+                        <form onSubmit={(event) => submitFollowup(event, item.task_id)} className="mt-3 grid gap-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+                            <label className="grid gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                {text.contactedParty}
+                                <input
+                                    required
+                                    minLength={2}
+                                    maxLength={160}
+                                    value={contactedParty}
+                                    onChange={(event) => setContactedParty(event.target.value)}
+                                    className={fieldClass}
+                                />
+                            </label>
+                            <label className="grid gap-1 text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                {text.notes}
+                                <textarea
+                                    required
+                                    minLength={10}
+                                    maxLength={2000}
+                                    rows={3}
+                                    value={followUpNotes}
+                                    onChange={(event) => setFollowUpNotes(event.target.value)}
+                                    className="rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-800 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+                                />
+                            </label>
+                            <div className="flex flex-wrap justify-end gap-2">
+                                <button type="button" onClick={closeForm} disabled={isCompleting} className="rounded-lg border border-slate-200 px-3 py-2 text-[11px] font-bold text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200">
+                                    {text.cancel}
+                                </button>
+                                <button type="submit" disabled={isCompleting} className="rounded-lg bg-teal-700 px-3 py-2 text-[11px] font-black text-white disabled:opacity-50">
+                                    {text.complete}
+                                </button>
+                            </div>
+                        </form>
+                    )}
+                </article>
+            ))}
+        </section>
+    );
+}
 
 export default function Notifications() {
-    const { t, i18n } = useTranslation(['system', 'common']);
+    const { t, i18n } = useTranslation(['common', 'system', 'workspace']);
     const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
-    const canSendManual = MANUAL_ROLES.has(currentUser?.role);
+    const effectivePermissions = getEffectivePermissions(currentUser);
+    const canSendManual = MANUAL_ROLES.has(currentUser?.role)
+        && (currentUser?.role === 'Developer' || effectivePermissions.has('MANAGE_NOTIFICATIONS'));
+    const canViewOutbound = OUTBOUND_LOG_ROLES.has(currentUser?.role);
+    const isAr = i18n.language?.startsWith('ar');
+    const isRtl = i18n.dir() === 'rtl';
+    const language = i18n.language;
 
+    // Scope: 'personal' (My Notifications) vs 'outbound' (Center Logs)
+    const [scope, setScope] = useState('personal');
+    const [category, setCategory] = useState('all');
     const [query, setQuery] = useState('');
     const [channel, setChannel] = useState('all');
     const [status, setStatus] = useState('all');
-    const [activeTab, setActiveTab] = useState('all');
+    const [priority, setPriority] = useState('all');
+    const [readFilter, setReadFilter] = useState('all'); // 'all', 'unread', 'read'
     const [expandedId, setExpandedId] = useState(null);
     const [composerOpen, setComposerOpen] = useState(false);
     const [manualForm, setManualForm] = useState({
@@ -73,86 +314,222 @@ export default function Notifications() {
         subject: '',
         body: ''
     });
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
 
-    const params = useMemo(() => ({
-        limit: 200,
+    const serverPaginationEnabled = true;
+
+    // API queries for Personal vs Outbound
+    const queryParams = useMemo(() => ({
+        limit: pageSize,
+        offset: (currentPage - 1) * pageSize,
         ...(channel !== 'all' ? { channel } : {}),
         ...(status !== 'all' ? { status } : {}),
+        ...(category !== 'all' ? { category } : {}),
+        ...(priority !== 'all' ? { priority } : {}),
+        ...(readFilter !== 'all' ? { readState: readFilter } : {}),
         ...(query.trim() ? { q: query.trim() } : {})
-    }), [channel, query, status]);
+    }), [category, channel, currentPage, pageSize, priority, query, readFilter, status]);
 
-    const {
-        data,
-        isLoading,
-        isFetching,
-        refetch
-    } = useGetNotificationsQuery(params, {
+    const myNotificationsQuery = useGetMyNotificationsQuery(queryParams, {
+        skip: scope !== 'personal',
         pollingInterval: 30000,
         refetchOnFocus: true,
         refetchOnReconnect: true
     });
 
-    const [markAllRead, { isLoading: markingAll }] = useMarkAllNotificationsReadMutation();
-    const [markRead, { isLoading: markingOne }] = useMarkNotificationReadMutation();
+    const outboundNotificationsQuery = useGetNotificationsQuery(queryParams, {
+        skip: scope !== 'outbound' || !canViewOutbound,
+        pollingInterval: 30000,
+        refetchOnFocus: true,
+        refetchOnReconnect: true
+    });
+
+    const [markAllRead, { isLoading: markingAllOutbound }] = useMarkAllNotificationsReadMutation();
+    const [markRead, { isLoading: markingOneOutbound }] = useMarkNotificationReadMutation();
+    const [markAllMyRead, { isLoading: markingAllMy }] = useMarkAllMyNotificationsReadMutation();
+    const [markMyRead, { isLoading: markingOneMy }] = useMarkMyNotificationReadMutation();
+    const [acknowledgeCriticalResult, { isLoading: acknowledgingCritical }] = useAcknowledgeCriticalResultMutation();
     const [sendManual, { isLoading: sendingManual }] = useSendManualNotificationMutation();
 
-    const notifications = useMemo(() => {
-        const items = Array.isArray(data?.items) ? data.items : [];
-        const filtered = items.filter((item) => (
-            activeTab === 'all' ||
-            (activeTab === 'unread' && !item.is_read) ||
-            (activeTab === 'failed' && item.status === 'Failed')
-        ));
+    const activeQuery = scope === 'personal' ? myNotificationsQuery : outboundNotificationsQuery;
+    const rawItems = useMemo(
+        () => Array.isArray(activeQuery.data?.items) ? activeQuery.data.items : [],
+        [activeQuery.data?.items]
+    );
+    const isLoading = activeQuery.isLoading;
+    const isFetching = activeQuery.isFetching;
+    const isError = activeQuery.isError;
+    const error = activeQuery.error;
+    const refetch = activeQuery.refetch;
 
-        return [...filtered].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-    }, [activeTab, data]);
+    const serverTotal = Number.isFinite(Number(activeQuery.data?.total))
+        ? Number(activeQuery.data.total)
+        : null;
+    const searchLimited = Boolean(activeQuery.data?.searchLimited);
 
+    // Filter by category & extra filters
+    const filteredItems = useMemo(() => {
+        return rawItems.filter((item) => {
+            if (channel !== 'all' && item.channel !== channel) return false;
+            if (status !== 'all' && item.status !== status) return false;
+
+            // Read filter
+            if (readFilter === 'unread' && item.is_read) return false;
+            if (readFilter === 'read' && !item.is_read) return false;
+
+            // Priority filter
+            if (priority !== 'all') {
+                const itemPri = normalizePriority(item.priority).toLowerCase();
+                if (itemPri !== priority.toLowerCase()) return false;
+            }
+
+            // Category filter
+            if (category !== 'all') {
+                if (getNotificationCategory(item) !== category) return false;
+            }
+
+            return true;
+        });
+    }, [category, channel, priority, rawItems, readFilter, status]);
+
+    // Aggregate counts
     const counts = useMemo(() => {
-        const fallback = {
-            all: notifications.length,
-            unread: notifications.filter((item) => !item.is_read).length,
-            failed: notifications.filter((item) => item.status === 'Failed').length,
-            pending: notifications.filter((item) => item.status === 'Pending').length,
-            sent: notifications.filter((item) => ['Sent', 'Delivered'].includes(item.status)).length
-        };
-        return { ...fallback, ...(data?.counts || {}) };
-    }, [data, notifications]);
+        const apiCounts = activeQuery.data?.counts || {};
+        const total = serverPaginationEnabled && Number.isFinite(Number(serverTotal)) ? serverTotal : rawItems.length;
+        const unread = serverPaginationEnabled && Number.isFinite(Number(apiCounts.unread))
+            ? Number(apiCounts.unread)
+            : rawItems.filter((i) => !i.is_read).length;
+        const critical = Number.isFinite(Number(apiCounts.critical))
+            ? Number(apiCounts.critical)
+            : rawItems.filter((i) => normalizePriority(i.priority) === 'Critical').length;
+        const delivered = Number.isFinite(Number(apiCounts.delivered))
+            ? Number(apiCounts.delivered)
+            : rawItems.filter((i) => i.status === 'Delivered').length;
+        const failed = Number.isFinite(Number(apiCounts.failed))
+            ? Number(apiCounts.failed)
+            : rawItems.filter((i) => i.status === 'Failed').length;
+        const terminal = delivered + failed;
+        const deliveryRate = scope === 'outbound' && terminal > 0 ? Math.round((delivered / terminal) * 100) : null;
+        return { total, unread, critical, delivered, failed, deliveryRate };
+    }, [activeQuery.data, rawItems, scope, serverPaginationEnabled, serverTotal]);
 
+    // Pagination
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [query, channel, status, priority, readFilter, category, scope, pageSize]);
+
+    const totalCount = serverPaginationEnabled && serverTotal !== null ? serverTotal : filteredItems.length;
+    const { pageCount, startIndex, endIndex } = useMemo(
+        () => getPaginationState(totalCount, currentPage, pageSize),
+        [currentPage, totalCount, pageSize]
+    );
+
+    const pagedItems = useMemo(() => {
+        return serverPaginationEnabled ? filteredItems : filteredItems.slice(startIndex, endIndex);
+    }, [filteredItems, serverPaginationEnabled, startIndex, endIndex]);
+
+    // Grouping by Date
     const grouped = useMemo(() => {
         const buckets = { today: [], yesterday: [], week: [], older: [] };
-        notifications.forEach((item) => buckets[getGroupKey(item.created_at)].push(item));
+        pagedItems.forEach((item) => buckets[getGroupKey(item.created_at)].push(item));
         return Object.entries(buckets).filter(([, items]) => items.length > 0);
-    }, [notifications]);
+    }, [pagedItems]);
 
-    const handleMarkAll = async () => {
+    const [showMarkAllConfirm, setShowMarkAllConfirm] = useState(false);
+
+    // Actions
+    const handleMarkAll = () => {
+        setShowMarkAllConfirm(true);
+    };
+
+    const confirmMarkAll = async () => {
+        setShowMarkAllConfirm(false);
         try {
-            await markAllRead().unwrap();
-            toast.success(t('notifications.allRead', { defaultValue: 'All notifications marked as read' }));
-        } catch (error) {
-            toast.error(getErrorMessage(error, t('notifications.failed', { defaultValue: 'Action failed' })));
+            if (scope === 'personal') {
+                await markAllMyRead().unwrap();
+            } else {
+                await markAllRead().unwrap();
+            }
+            toast.success(t('allNotificationsMarkedAsRead'));
+        } catch (err) {
+            toast.error(getErrorMessage(err, t('actionFailed')));
         }
     };
 
-    const handleMarkRead = async (id) => {
+    const handleMarkSingleRead = async (id) => {
         try {
-            await markRead(id).unwrap();
-            toast.success(t('notifications.read', { defaultValue: 'Notification marked as read' }));
+            if (scope === 'personal') {
+                await markMyRead(id).unwrap();
+            } else {
+                await markRead(id).unwrap();
+            }
+            toast.success(t('notificationMarkedAsRead'));
+        } catch (err) {
+            toast.error(getErrorMessage(err, t('actionFailed')));
+        }
+    };
+
+    const handleNavigate = (actionUrl) => {
+        if (!actionUrl || !String(actionUrl).startsWith('/')) return;
+        navigate(actionUrl);
+    };
+
+    const handleAcknowledge = async (item) => {
+        if (!item?.entity_id) return;
+        try {
+            await acknowledgeCriticalResult({ examId: item.entity_id }).unwrap();
+            toast.success(t('criticalResultAcknowledged'));
         } catch (error) {
-            toast.error(getErrorMessage(error, t('notifications.failed', { defaultValue: 'Action failed' })));
+            toast.error(getErrorMessage(error, t('couldNotAcknowledgeCriticalResult')));
         }
     };
 
     const handleCopy = async (item) => {
         try {
-            await navigator.clipboard.writeText([item.subject, item.recipient, item.content].filter(Boolean).join('\n\n'));
-            toast.success(t('notifications.copied', { defaultValue: 'Copied to clipboard' }));
+            await navigator.clipboard.writeText([item.subject, item.recipient, item.content, item.event_type].filter(Boolean).join('\n\n'));
+            toast.success(t('copiedNotificationToClipboard'));
         } catch {
-            toast.error(t('notifications.copyFailed', { defaultValue: 'Could not copy notification' }));
+            toast.error(t('couldNotCopy'));
         }
     };
 
-    const handleSendManual = async (event) => {
-        event.preventDefault();
+    const applyTemplate = (type) => {
+        if (type === 'reminder') {
+            setManualForm((prev) => ({
+                ...prev,
+                subject: t('radiologyAppointmentReminder'),
+                body: t('friendlyReminderForYourUpcomingDiagnostic')
+            }));
+        } else if (type === 'ready') {
+            setManualForm((prev) => ({
+                ...prev,
+                subject: t('diagnosticReportImagesReady'),
+                body: t('yourDiagnosticRadiologyReportAndCalibrated')
+            }));
+        } else if (type === 'prep') {
+            setManualForm((prev) => ({
+                ...prev,
+                subject: t('examPreparationInstructions'),
+                body: t('pleaseFastFor6HoursPrior')
+            }));
+        } else if (type === 'payment') {
+            setManualForm((prev) => ({
+                ...prev,
+                subject: t('paymentReceiptConfirmation'),
+                body: t('weConfirmTheSuccessfulReceiptOf')
+            }));
+        } else if (type === 'urgent') {
+            setManualForm((prev) => ({
+                ...prev,
+                subject: t('urgentClinicalNotification'),
+                body: t('urgentClinicalCommunicationRequiringPromptReview')
+            }));
+        }
+    };
+
+    const handleSendManual = async (e) => {
+        e.preventDefault();
         const recipient = manualForm.recipient.trim();
         const body = manualForm.body.trim();
         if (!recipient || !body) return;
@@ -164,104 +541,264 @@ export default function Notifications() {
                 subject: manualForm.channel === 'Email' ? manualForm.subject.trim() || undefined : undefined,
                 ...(manualForm.channel === 'Email' ? { recipientEmail: recipient } : { recipientPhone: recipient })
             }).unwrap();
-            toast.success(t('notifications.sent', { defaultValue: 'Notification sent' }));
+            toast.success(t('notificationDispatchedSuccessfully'));
             setManualForm({ recipient: '', channel: 'Email', subject: '', body: '' });
             setComposerOpen(false);
-        } catch (error) {
-            toast.error(getErrorMessage(error, t('notifications.sendFailed', { defaultValue: 'Could not send notification' })));
+        } catch (err) {
+            toast.error(getErrorMessage(err, t('couldNotDispatchNotification')));
         }
     };
 
-    const activeFilterCount = Number(channel !== 'all') + Number(status !== 'all') + Number(Boolean(query.trim()));
-    const language = i18n.language;
+    const activeFilterCount = Number(channel !== 'all') + Number(status !== 'all') + Number(priority !== 'all') + Number(readFilter !== 'all') + Number(Boolean(query.trim()));
+
+    const isMarkingAll = markingAllMy || markingAllOutbound;
+    const isMarkingOne = markingOneMy || markingOneOutbound;
 
     return (
-        <div className="space-y-5">
-            {/* Hero Header */}
+        <main className="mx-auto max-w-[1680px] space-y-4 pb-14" dir={isRtl ? 'rtl' : 'ltr'}>
+            {/* 1. Unified PageHeader */}
             <PageHeader
                 icon={Bell}
                 eyebrowIcon={Activity}
-                eyebrow={t('notifications.managementEyebrow', { defaultValue: 'Operational inbox' })}
-                title={t('notifications.managementTitle', { defaultValue: 'Notifications Center' })}
-                description={t('notifications.managementDescription', { defaultValue: 'Review message delivery, unread alerts, failed sends, and system notification history from one workspace.' })}
+                eyebrow={t('unifiedClinicalOperationalCommunicationsHub')}
+                title={t('notificationsSystemAlertsCommunicationsHub')}
+                description={t('monitorClinicalStatAlertsSystemWarnings')}
+                meta={
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-500/30 bg-teal-500/10 px-3 py-1 text-xs font-bold text-teal-700 dark:text-teal-300">
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-75" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-teal-500" />
+                            </span>
+                            <span>{t('liveRealtimePushActive')}</span>
+                        </span>
+                        {counts.unread > 0 && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-bold text-rose-700 dark:text-rose-300">
+                                <span className="h-1.5 w-1.5 rounded-full bg-rose-500 animate-ping" />
+                                <span className="font-mono">{counts.unread}</span>
+                                <span>{t('unread')}</span>
+                            </span>
+                        )}
+                        <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                            {currentUser?.role || (t('staff'))}
+                        </span>
+                    </div>
+                }
                 actions={
                     <div className="flex flex-wrap items-center gap-2">
+                        {canSendManual && (
+                            <button
+                                type="button"
+                                onClick={() => setComposerOpen((prev) => !prev)}
+                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-xs font-black text-white shadow-md shadow-teal-600/20 transition hover:brightness-110"
+                            >
+                                <Send size={14} />
+                                <span>{t('newDispatch')}</span>
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={() => navigate('/settings?tab=notifications')}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-4 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-800"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                         >
                             <Settings size={15} />
-                            {t('notifications.settings', { defaultValue: 'Settings' })}
+                            <span>{t('preferences')}</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => refetch()}
                             disabled={isFetching}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-4 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-300 dark:hover:bg-slate-800"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
                         >
-                            <RefreshCw size={15} className={isFetching ? 'animate-spin' : ''} />
-                            {t('notifications.refresh', { defaultValue: 'Refresh' })}
+                            <RefreshCw size={14} className={isFetching ? 'animate-spin text-teal-600' : ''} />
+                            <span>{t('refresh')}</span>
                         </button>
-                        {canSendManual && (
-                            <button
-                                type="button"
-                                onClick={() => setComposerOpen((current) => !current)}
-                                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-5 text-xs font-extrabold text-white shadow-md shadow-teal-600/20 transition hover:scale-[1.02] active:scale-95"
-                            >
-                                <Send size={15} />
-                                {t('notifications.manual', { defaultValue: 'Send Notification' })}
-                            </button>
-                        )}
                     </div>
                 }
+                metrics={[
+                    {
+                        key: 'unread',
+                        icon: Bell,
+                        label: t('unreadAlerts'),
+                        value: counts.unread,
+                        detail: counts.unread > 0 ? (t('requiresFollowUp')) : (t('allClear')),
+                        tone: counts.unread > 0 ? 'rose' : 'emerald',
+                        loading: isLoading,
+                        error: isError
+                    },
+                    {
+                        key: 'critical',
+                        icon: AlertOctagon,
+                        label: t('criticalStatAlerts'),
+                        value: counts.critical,
+                        detail: counts.critical > 0 ? (t('statPriorityCases')) : (t('noCriticalAlerts')),
+                        tone: counts.critical > 0 ? 'rose' : 'slate',
+                        loading: isLoading,
+                        error: isError
+                    },
+                    {
+                        key: 'deliveryRate',
+                        icon: CheckCheck,
+                        label: t('deliverySuccessRate'),
+                         value: counts.deliveryRate === null ? '—' : `${counts.deliveryRate}%`,
+                         detail: scope === 'outbound'
+                             ? `${counts.delivered} ${t('deliveredDispatches')}`
+                             : (t('availableForOutboundLogsOnly')),
+                        tone: counts.deliveryRate >= 90 ? 'emerald' : counts.deliveryRate >= 75 ? 'amber' : 'rose',
+                        loading: isLoading,
+                        error: isError
+                    },
+                    {
+                        key: 'total',
+                        icon: Activity,
+                        label: t('totalCommunicationLogs'),
+                        value: counts.total,
+                         detail: scope === 'outbound'
+                             ? `${counts.failed} ${t('failedDispatches')}`
+                             : (t('yourPersonalInboxX')),
+                        tone: 'indigo',
+                        loading: isLoading,
+                        error: isError
+                    }
+                ]}
+                metricsLabel={t('notificationMessagingIndicators')}
             />
 
-            {/* Metric Summary Cards */}
-            <section className="grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-5">
-                <MetricCard tone="slate" label={t('notifications.tabs.all', { defaultValue: 'All Notifications' })} value={formatNumber(counts.all || 0, language)} detail={t('notifications.metrics.total', { defaultValue: 'Total logged notifications' })} />
-                <MetricCard tone="cyan" label={t('notifications.tabs.unread', { defaultValue: 'Unread Alerts' })} value={formatNumber(counts.unread || 0, language)} detail={t('notifications.metrics.unread', { defaultValue: 'Requires team review' })} />
-                <MetricCard tone="rose" label={t('notifications.tabs.failed', { defaultValue: 'Failed Sends' })} value={formatNumber(counts.failed || 0, language)} detail={t('notifications.metrics.failed', { defaultValue: 'Delivery errors' })} />
-                <MetricCard tone="amber" label={t('notifications.status.Pending', { defaultValue: 'Pending Queue' })} value={formatNumber(counts.pending || 0, language)} detail={t('notifications.metrics.pending', { defaultValue: 'Queued for delivery' })} />
-                <MetricCard tone="emerald" label={t('notifications.status.Sent', { defaultValue: 'Sent & Delivered' })} value={formatNumber(counts.sent || 0, language)} detail={t('notifications.metrics.sent', { defaultValue: 'Successfully dispatched' })} />
-            </section>
+            {currentUser?.role === 'Admin' && <CriticalResultAdminFollowups isAr={isAr} />}
 
-            {/* Manual Composer Panel */}
+            {/* 2. Scope Selector Deck: Personal vs Center Outbound Logs */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 p-2 shadow-xs dark:border-slate-800 dark:bg-slate-900/90">
+                <div className="flex items-center gap-1.5 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                    <button
+                        type="button"
+                        onClick={() => setScope('personal')}
+                        className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black transition-all ${
+                            scope === 'personal'
+                                ? 'bg-white text-teal-800 shadow-sm dark:bg-slate-900 dark:text-teal-300'
+                                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                        }`}
+                    >
+                        <UserCheck size={14} />
+                        <span>{t('myPersonalWorkflowAlerts')}</span>
+                    </button>
+                    {canViewOutbound && (
+                        <button
+                            type="button"
+                            onClick={() => setScope('outbound')}
+                            className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black transition-all ${
+                                scope === 'outbound'
+                                    ? 'bg-white text-teal-800 shadow-sm dark:bg-slate-900 dark:text-teal-300'
+                                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
+                            }`}
+                        >
+                            <Send size={14} />
+                            <span>{t('centerOutboundDispatches')}</span>
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                    {counts.unread > 0 && (
+                        <button
+                            type="button"
+                            onClick={handleMarkAll}
+                            disabled={isMarkingAll}
+                            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-3.5 text-xs font-black text-teal-700 transition hover:bg-teal-500/20 disabled:opacity-50 dark:text-teal-300"
+                        >
+                            {isMarkingAll ? <RefreshCw size={13} className="animate-spin" /> : <CheckCheck size={13} />}
+                            <span>{t('markAllAsRead')}</span>
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* 3. Sliding Manual Composer Panel */}
             {composerOpen && canSendManual && (
-                <form onSubmit={handleSendManual} className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 p-5 shadow-xs backdrop-blur-2xl dark:border-slate-800/80 dark:bg-[#070e1a] animate-in slide-in-from-top-2 duration-200">
-                    <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800/80 pb-3">
-                        <div className="flex items-center gap-2">
-                            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-teal-500/10 text-teal-600 dark:bg-teal-500/20 dark:text-teal-400">
+                <form onSubmit={handleSendManual} className="overflow-hidden rounded-2xl border border-teal-500/30 bg-white/95 p-4 sm:p-5 shadow-lg backdrop-blur-xl dark:border-teal-500/30 dark:bg-slate-900/95 animate-in slide-in-from-top-3 duration-200">
+                    <div className="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+                        <div className="flex items-center gap-2.5">
+                            <span className="grid h-9 w-9 place-items-center rounded-xl bg-teal-500/15 text-teal-700 dark:text-teal-300">
                                 <Send size={16} />
                             </span>
                             <div>
-                                <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">{t('notifications.composeTitle', { defaultValue: 'New Notification' })}</h2>
-                                <p className="text-[11px] font-semibold text-slate-400">{t('notifications.composeHint', { defaultValue: 'Send a direct message through the selected channel.' })}</p>
+                                <h2 className="text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                                    {t('directNotificationDispatcher')}
+                                </h2>
+                                <p className="text-[10px] font-semibold text-slate-400">
+                                    {t('dispatchInstantMessagesViaSmsWhatsapp')}
+                                </p>
                             </div>
                         </div>
-                        <button type="button" onClick={() => setComposerOpen(false)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
-                            <X size={16} />
+                         <button type="button" onClick={() => setComposerOpen(false)} aria-label={t('closeDispatcher')} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                             <X size={16} aria-hidden="true" />
                         </button>
                     </div>
 
-                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+                    {/* Quick Clinical Templates */}
+                    <div className="mb-3">
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1.5">
+                            {t('clinicalQuickTemplates')}
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                            <button
+                                type="button"
+                                onClick={() => applyTemplate('reminder')}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+                            >
+                                <Clock size={12} className="text-teal-600" />
+                                <span>{t('appointmentReminder')}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => applyTemplate('ready')}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+                            >
+                                <Sparkles size={12} className="text-teal-600" />
+                                <span>{t('reportReady')}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => applyTemplate('prep')}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+                            >
+                                <AlertCircle size={12} className="text-teal-600" />
+                                <span>{t('prepGuidelines')}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => applyTemplate('payment')}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition"
+                            >
+                                <DollarSign size={12} className="text-teal-600" />
+                                <span>{t('paymentConfirmation')}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => applyTemplate('urgent')}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-bold text-rose-700 hover:bg-rose-100 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 transition"
+                            >
+                                <AlertOctagon size={12} className="text-rose-600" />
+                                <span>{t('urgentAlert')}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px]">
                         <input
                             value={manualForm.recipient}
-                            onChange={(event) => setManualForm((current) => ({ ...current, recipient: event.target.value }))}
+                            onChange={(e) => setManualForm((curr) => ({ ...curr, recipient: e.target.value }))}
                             required
                             type={manualForm.channel === 'Email' ? 'email' : 'tel'}
-                            placeholder={manualForm.channel === 'Email' ? t('notifications.recipientEmail', { defaultValue: 'Recipient email address' }) : t('notifications.recipientPhone', { defaultValue: 'Recipient phone number' })}
+                            placeholder={manualForm.channel === 'Email' ? 'patient@example.com' : '+20 100 000 0000'}
                             className={fieldClass}
                         />
                         <select
                             value={manualForm.channel}
-                            onChange={(event) => setManualForm((current) => ({ ...current, channel: event.target.value, subject: event.target.value === 'Email' ? current.subject : '' }))}
+                            onChange={(e) => setManualForm((curr) => ({ ...curr, channel: e.target.value, subject: e.target.value === 'Email' ? curr.subject : '' }))}
                             className={fieldClass}
                         >
-                            {SEND_CHANNELS.map((item) => (
-                                <option key={item} value={item}>
-                                    {t(`notifications.channels.${item}`, { defaultValue: item })}
-                                </option>
+                            {SEND_CHANNELS.map((ch) => (
+                                <option key={ch} value={ch}>{ch}</option>
                             ))}
                         </select>
                     </div>
@@ -269,145 +806,202 @@ export default function Notifications() {
                     {manualForm.channel === 'Email' && (
                         <input
                             value={manualForm.subject}
-                            onChange={(event) => setManualForm((current) => ({ ...current, subject: event.target.value }))}
-                            placeholder={t('notifications.subject', { defaultValue: 'Subject (optional)' })}
+                            onChange={(e) => setManualForm((curr) => ({ ...curr, subject: e.target.value }))}
+                            placeholder={t('emailSubject')}
                             className={`${fieldClass} mt-3 w-full`}
                         />
                     )}
 
                     <textarea
                         value={manualForm.body}
-                        onChange={(event) => setManualForm((current) => ({ ...current, body: event.target.value }))}
+                        onChange={(e) => setManualForm((curr) => ({ ...curr, body: e.target.value }))}
                         required
                         rows={3}
                         maxLength={2000}
-                        placeholder={t('notifications.message', { defaultValue: 'Message body...' })}
-                        className={`${fieldClass} mt-3 h-auto min-h-24 w-full py-3 leading-6`}
+                        placeholder={t('typeMessageBodyHere')}
+                        className={`${fieldClass} mt-3 h-auto min-h-24 w-full py-2.5 leading-relaxed`}
                     />
 
-                    <div className="mt-4 flex justify-end">
+                    <div className="mt-4 flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-slate-400 font-mono">
+                            {manualForm.body.length} / 2000 {t('chars')}
+                        </span>
                         <button
                             type="submit"
                             disabled={sendingManual || !manualForm.recipient.trim() || !manualForm.body.trim()}
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 px-6 text-xs font-extrabold text-white shadow-md shadow-teal-600/20 transition hover:scale-[1.01] active:scale-95 disabled:opacity-40"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-600 px-6 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 disabled:opacity-40"
                         >
-                            {sendingManual ? <RefreshCw size={15} className="animate-spin" /> : <Send size={15} />}
-                            {sendingManual ? t('notifications.sending', { defaultValue: 'Sending...' }) : t('notifications.send', { defaultValue: 'Send Notification' })}
+                            {sendingManual ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                            <span>{sendingManual ? (t('sending')) : (t('dispatchNotification'))}</span>
                         </button>
                     </div>
                 </form>
             )}
 
-            {/* Filter & Notification List Workbench */}
-            <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-2xl dark:border-slate-800/80 dark:bg-[#070e1a]">
-                {/* Search and Filters Bar */}
-                <div className="border-b border-slate-100 dark:border-slate-800/80 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/40">
-                    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
+            {/* 4. Segmented Category Filter Bar */}
+            <div className="rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-xs dark:border-slate-800 dark:bg-slate-900/90">
+                <nav aria-label={t('notificationCategories')} className="flex flex-wrap gap-1">
+                    {categoryDefinitions.map((cat) => {
+                        const Icon = cat.icon;
+                        const isActive = category === cat.id;
+                        return (
+                            <button
+                                key={cat.id}
+                                type="button"
+                                onClick={() => setCategory(cat.id)}
+                                className={`flex min-h-9 items-center gap-2 rounded-xl px-3.5 py-1.5 text-xs font-bold transition-all ${
+                                    isActive
+                                        ? 'bg-teal-700 text-white shadow-sm font-black'
+                                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <Icon size={14} />
+                                <span>{isAr ? cat.labelAr : cat.labelEn}</span>
+                            </button>
+                        );
+                    })}
+                </nav>
+            </div>
+
+            {searchLimited && (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs font-semibold text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200" role="status">
+                    {t('searchResultsAreLimitedToThe')}
+                </p>
+            )}
+
+            {/* 5. Filter & List Workbench */}
+            <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+                {/* Search and Granular Filters Bar */}
+                <div className="border-b border-slate-100 p-4 space-y-3 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-950/30">
+                    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.5fr)_140px_140px_140px_auto]">
+                        {/* Search Input */}
                         <div className="relative">
                             <Search size={15} className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input
                                 value={query}
-                                onChange={(event) => setQuery(event.target.value)}
-                                placeholder={t('notifications.search', { defaultValue: 'Search notifications...' })}
+                                onChange={(e) => setQuery(e.target.value)}
+                                placeholder={t('searchRecipientSubjectContentOrMrn')}
                                 className={`${fieldClass} w-full ps-10 pe-9`}
                             />
-                            {query && (
-                                <button type="button" onClick={() => setQuery('')} className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 transition">
-                                    <X size={14} />
+                             {query && (
+                                 <button type="button" onClick={() => setQuery('')} aria-label={t('clearSearch')} className="absolute end-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:text-slate-700 transition">
+                                     <X size={14} aria-hidden="true" />
                                 </button>
                             )}
                         </div>
 
-                        <select value={channel} onChange={(event) => setChannel(event.target.value)} className={fieldClass}>
-                            {CHANNELS.map((item) => (
-                                <option key={item} value={item}>
-                                    {item === 'all' ? t('notifications.channels.all', { defaultValue: 'All channels' }) : t(`notifications.channels.${item}`, { defaultValue: item })}
+                        {/* Channel Filter */}
+                        <select value={channel} onChange={(e) => setChannel(e.target.value)} className={fieldClass}>
+                            {CHANNELS.map((ch) => (
+                                <option key={ch} value={ch}>
+                                    {ch === 'all' ? (t('allChannels')) : ch}
                                 </option>
                             ))}
                         </select>
 
-                        <select value={status} onChange={(event) => setStatus(event.target.value)} className={fieldClass}>
-                            {STATUSES.map((item) => (
-                                <option key={item} value={item}>
-                                    {item === 'all' ? t('notifications.status.all', { defaultValue: 'All statuses' }) : t(`notifications.status.${item}`, { defaultValue: item })}
+                        {/* Priority Filter */}
+                        <select value={priority} onChange={(e) => setPriority(e.target.value)} className={fieldClass}>
+                            {PRIORITIES.map((pri) => (
+                                <option key={pri} value={pri}>
+                                    {pri === 'all' ? (t('allPriorities')) : (isAr ? translatePriority(pri) : pri)}
                                 </option>
                             ))}
                         </select>
 
-                        <div className="flex items-center gap-2">
+                        {/* Status Filter */}
+                        <select value={status} onChange={(e) => setStatus(e.target.value)} className={fieldClass}>
+                            {STATUSES.map((st) => (
+                                <option key={st} value={st}>
+                                    {st === 'all' ? (t('allStatuses')) : (isAr ? translateStatus(st) : st)}
+                                </option>
+                            ))}
+                        </select>
+
+                        {/* Quick Actions / Reset */}
+                        <div className="flex items-center gap-1.5">
                             {activeFilterCount > 0 && (
                                 <button
                                     type="button"
-                                    onClick={() => { setQuery(''); setChannel('all'); setStatus('all'); }}
-                                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 text-xs font-bold text-rose-600 transition hover:bg-rose-50 dark:border-slate-800 dark:bg-[#0b1426] dark:hover:bg-rose-950/30"
+                                    onClick={() => { setQuery(''); setChannel('all'); setStatus('all'); setPriority('all'); setReadFilter('all'); setCategory('all'); }}
+                                    className="inline-flex h-10 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-rose-600 transition hover:bg-rose-50 dark:border-slate-800 dark:bg-slate-900 dark:hover:bg-rose-950/30"
+                                    title={t('resetFilters')}
                                 >
                                     <FilterX size={14} />
-                                    {t('notifications.filters.reset', { defaultValue: 'Reset filters' })}
-                                </button>
-                            )}
-                            {(counts.unread || 0) > 0 && (
-                                <button
-                                    type="button"
-                                    onClick={handleMarkAll}
-                                    disabled={markingAll}
-                                    className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-teal-500/10 border border-teal-200/80 px-4 text-xs font-extrabold text-teal-700 transition hover:bg-teal-600 hover:text-white disabled:opacity-50 dark:border-teal-900/50 dark:bg-teal-950/30 dark:text-teal-300 dark:hover:bg-teal-600"
-                                >
-                                    {markingAll ? <RefreshCw size={14} className="animate-spin" /> : <CheckCheck size={14} />}
-                                    {t('notifications.markRead', { defaultValue: 'Mark all as read' })}
+                                    <span>{t('reset')}</span>
                                 </button>
                             )}
                         </div>
                     </div>
 
-                    {/* Quick Category Filter Pills */}
-                    <div className="flex rounded-xl border border-slate-200/80 bg-slate-100/70 p-1 dark:border-slate-800 dark:bg-slate-900">
-                        {['all', 'unread', 'failed'].map((tab) => (
-                            <button
-                                key={tab}
-                                type="button"
-                                onClick={() => setActiveTab(tab)}
-                                className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-extrabold transition-all ${
-                                    activeTab === tab
-                                        ? 'bg-white text-teal-800 shadow-2xs dark:bg-[#0b1426] dark:text-teal-300'
-                                        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
-                                }`}
-                            >
-                                {t(`notifications.tabs.${tab}`, { defaultValue: tab.charAt(0).toUpperCase() + tab.slice(1) })}
-                                {Number(counts[tab]) > 0 && (
-                                    <span className="ms-1.5 rounded-full bg-slate-200/80 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-black tabular-nums">
-                                        {formatNumber(counts[tab], language)}
-                                    </span>
-                                )}
-                            </button>
-                        ))}
+                    {/* Secondary Status Pills (All, Unread Only, Read Only) */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800 pt-2.5">
+                         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                            <span>{t('readState')}</span>
+                             <div className="inline-flex rounded-lg bg-slate-200/80 p-0.5 dark:bg-slate-800" role="group" aria-label={t('readStateX')}>
+                                {[
+                                    { id: 'all', labelAr: 'الكل', labelEn: 'All' },
+                                    { id: 'unread', labelAr: 'غير مقروء', labelEn: 'Unread' },
+                                    { id: 'read', labelAr: 'مقروء', labelEn: 'Read' }
+                                ].map((tab) => (
+                                    <button
+                                        key={tab.id}
+                                        type="button"
+                                        onClick={() => setReadFilter(tab.id)}
+                                        className={`rounded-md px-2.5 py-0.5 text-xs font-bold transition ${
+                                            readFilter === tab.id
+                                                ? 'bg-white text-teal-800 shadow-2xs dark:bg-slate-900 dark:text-teal-300 font-black'
+                                                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400'
+                                        }`}
+                                    >
+                                        {isAr ? tab.labelAr : tab.labelEn}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <span className="text-[11px] font-bold text-slate-400 font-mono">
+                            {filteredItems.length} {t('matchingRecords')}
+                        </span>
                     </div>
                 </div>
 
-                {data?.searchLimited && (
-                    <div className="mx-4 mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                        <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-                        <span>
-                            {t('notifications.searchLimited', {
-                                defaultValue: `Search scanned the latest ${data.searchScanLimit || 1000} visible notifications. Narrow the filters or date range for older matches.`
-                            })}
-                        </span>
-                    </div>
-                )}
-
-                {/* Notifications Log List */}
-                <div className="min-h-[440px] bg-slate-50/40 p-4 dark:bg-[#070e1a]">
+                {/* Notifications Feed */}
+                <div className="min-h-[440px] p-4">
                     {isLoading ? (
                         <div className="flex min-h-[360px] flex-col items-center justify-center text-slate-400">
                             <RefreshCw size={24} className="animate-spin text-teal-600" />
-                            <p className="mt-3 text-xs font-extrabold text-slate-500">{t('notifications.loading', { defaultValue: 'Loading notifications...' })}</p>
+                            <p className="mt-3 text-xs font-black text-slate-500">
+                                {t('loadingNotificationStream')}
+                            </p>
                         </div>
-                    ) : notifications.length === 0 ? (
+                    ) : isError ? (
+                        <div className="flex min-h-[360px] flex-col items-center justify-center p-8 text-center">
+                            <AlertCircle size={28} className="text-rose-500" />
+                            <p className="mt-3 text-sm font-black text-slate-800 dark:text-white">
+                                {t('unableToLoadNotifications')}
+                            </p>
+                            <p className="mt-1 max-w-sm text-xs font-semibold text-slate-400">
+                                {getErrorMessage(error, t('theNotificationServiceCouldNotBe'))}
+                            </p>
+                            <button
+                                type="button"
+                                onClick={() => refetch()}
+                                className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white dark:bg-white dark:text-slate-900"
+                            >
+                                {t('retry')}
+                            </button>
+                        </div>
+                    ) : filteredItems.length === 0 ? (
                         <div className="flex min-h-[360px] flex-col items-center justify-center text-center p-8">
                             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 mb-3">
                                 <Bell size={24} />
                             </div>
-                            <p className="text-sm font-extrabold text-slate-800 dark:text-white">{t('notifications.emptyTitle', { defaultValue: 'No notifications found' })}</p>
-                            <p className="mt-1 text-xs font-semibold text-slate-400 max-w-sm">{t('notifications.empty.filtered', { defaultValue: 'No notifications match the current search or filters.' })}</p>
+                            <p className="text-sm font-black text-slate-800 dark:text-white">
+                                {t('noNotificationsFound')}
+                            </p>
+                            <p className="mt-1 text-xs font-semibold text-slate-400 max-w-sm">
+                                {t('noNotificationRecordsMatchTheSelected')}
+                            </p>
                         </div>
                     ) : (
                         <div className="space-y-6">
@@ -415,23 +1009,26 @@ export default function Notifications() {
                                 <section key={groupKey} className="space-y-2.5">
                                     <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
                                         <Clock3 size={12} className="text-teal-600 dark:text-teal-400" />
-                                        <span>{t(`notifications.groups.${groupKey}`, { defaultValue: groupKey })}</span>
-                                        <span className="ms-auto rounded-full bg-slate-200/80 dark:bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-400 tabular-nums">
-                                            {formatNumber(items.length, language)}
+                                        <span>{translateGroupKey(groupKey, isAr)}</span>
+                                        <span className="ms-auto rounded-full bg-slate-200/80 dark:bg-slate-800 px-2.5 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-400 font-mono">
+                                            {items.length}
                                         </span>
                                     </div>
-                                    <div className="space-y-2">
+                                    <div className="space-y-2.5">
                                         {items.map((item) => (
-                                            <NotificationRow
+                                            <NotificationCard
                                                 key={item.notification_id}
                                                 item={item}
                                                 expanded={expandedId === item.notification_id}
-                                                onToggle={() => setExpandedId((current) => current === item.notification_id ? null : item.notification_id)}
-                                                onMarkRead={handleMarkRead}
+                                                onToggle={() => setExpandedId((curr) => curr === item.notification_id ? null : item.notification_id)}
+                                                onMarkRead={handleMarkSingleRead}
                                                 onCopy={handleCopy}
-                                                marking={markingOne}
+                                                onNavigate={handleNavigate}
+                                                onAcknowledge={handleAcknowledge}
+                                                marking={isMarkingOne}
+                                                acknowledging={acknowledgingCritical}
                                                 language={language}
-                                                t={t}
+                                                isAr={isAr}
                                             />
                                         ))}
                                     </div>
@@ -440,105 +1037,299 @@ export default function Notifications() {
                         </div>
                     )}
                 </div>
+
+                {/* 6. Numbered Pagination Footer */}
+                {!isError && totalCount > 0 && (
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 p-3.5 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/30">
+                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 font-mono">
+                            <span>
+                                {isAr
+                                     ? `عرض ${serverPaginationEnabled ? (currentPage - 1) * pageSize + 1 : startIndex + 1} - ${Math.min(serverPaginationEnabled ? (currentPage - 1) * pageSize + pagedItems.length : endIndex, totalCount)} من إجمالي ${totalCount} إشعار`
+                                     : `Showing ${serverPaginationEnabled ? (currentPage - 1) * pageSize + 1 : startIndex + 1} - ${Math.min(serverPaginationEnabled ? (currentPage - 1) * pageSize + pagedItems.length : endIndex, totalCount)} of ${totalCount} notifications`}
+                            </span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-400">{t('perPage')}</span>
+                            <select
+                                aria-label={t('notificationsPerPage')}
+                                value={pageSize}
+                                onChange={(e) => setPageSize(Number(e.target.value))}
+                                className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none transition focus:border-teal-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                            >
+                                {[10, 25, 50, 100].map((size) => (
+                                    <option key={size} value={size}>{size}</option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <Pagination
+                            currentPage={currentPage}
+                            pageCount={pageCount}
+                            onPageChange={setCurrentPage}
+                            isRtl={isRtl}
+                        />
+                    </div>
+                )}
             </section>
-        </div>
+
+            <ConfirmDialog
+                isOpen={showMarkAllConfirm}
+                title={t('markAllAsRead')}
+                message={isAr
+                    ? `هل تريد تحديد جميع الإشعارات في ${scope === 'personal' ? t('yourPersonalInbox') : t('theCenterOutboundLog')} كمقروءة؟`
+                    : `Mark all notifications in ${scope === 'personal' ? t('yourPersonalInbox') : t('theCenterOutboundLog')} as read?`}
+                confirmLabel={t('markAllAsRead')}
+                cancelLabel={t('cancel')}
+                onConfirm={confirmMarkAll}
+                onCancel={() => setShowMarkAllConfirm(false)}
+                variant="info"
+            />
+        </main>
     );
 }
 
-const NotificationRow = ({ item, expanded, onToggle, onMarkRead, onCopy, marking, language, t }) => {
+// ─── Notification Card Component ──────────────────────────────────────────
+
+export const NotificationCard = ({ item, expanded, onToggle, onMarkRead, onCopy, onNavigate, onAcknowledge, marking, acknowledging, language, isAr }) => {
+    const { t } = useTranslation(['common', 'system', 'workspace']);
     const ChannelIcon = channelIcons[item.channel] || Bell;
-    const title = item.subject || item.event_type || item.channel;
-    const statusClass = getStatusClass(item.status);
+    const title = item.subject || formatEventType(item.event_type) || item.channel || (t('systemAlert'));
+    const priority = normalizePriority(item.priority, item.event_type);
+    const priStyle = priorityStyles[priority] || priorityStyles.Normal;
     const badgeStyle = channelStyles[item.channel] || channelStyles.InApp;
+    const statusClass = getStatusClass(item.status);
+    const CategoryIcon = getCategoryIcon(item.event_type, item.category);
+    const categoryLabel = item.category || getNotificationCategory(item);
 
     return (
-        <article className={`overflow-hidden rounded-xl border bg-white p-3.5 transition-all duration-150 dark:bg-[#0b1426] ${
-            item.is_read
-                ? 'border-slate-200/80 dark:border-slate-800'
-                : 'border-teal-400/80 ring-1 ring-teal-400/30 dark:border-teal-500/60 dark:ring-teal-500/20'
+        <article className={`overflow-hidden rounded-2xl border bg-white/90 p-4 transition-all duration-150 backdrop-blur-xl dark:bg-slate-900/90 ${
+            !item.is_read
+                ? 'border-teal-500/60 ring-2 ring-teal-500/15 dark:border-teal-500/50 shadow-sm'
+                : 'border-slate-200/80 dark:border-slate-800'
         }`}>
             <div className="flex items-start gap-3">
-                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${badgeStyle}`}>
-                    <ChannelIcon size={16} />
+                <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl border ${badgeStyle}`}>
+                    <ChannelIcon size={18} />
                 </span>
-                <button type="button" onClick={onToggle} className="min-w-0 flex-1 text-start outline-none">
-                    <span className="flex flex-wrap items-start justify-between gap-2">
-                        <span className="flex items-center gap-2 min-w-0">
-                            {!item.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-teal-500" />}
-                            <span className="truncate text-xs font-black text-slate-900 dark:text-white">{title}</span>
+
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                            {!item.is_read && <span className="h-2 w-2 shrink-0 rounded-full bg-teal-500 animate-pulse" />}
+                            <h3 className="truncate text-xs font-black text-slate-900 dark:text-white" title={title}>
+                                {title}
+                            </h3>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${priStyle}`}>
+                                {isAr ? translatePriority(priority) : priority}
+                            </span>
+                            <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${statusClass}`}>
+                                {isAr ? translateStatus(item.status) : item.status}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-400">
+                            <span className="inline-flex items-center gap-1 text-teal-700 dark:text-teal-400 font-bold">
+                    <CategoryIcon size={12} aria-hidden="true" />
+                            <span>{isAr ? translateCategory(categoryLabel) : categoryLabel}</span>
                         </span>
-                        <span className={`rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${statusClass}`}>
-                            {t(`notifications.status.${item.status}`, { defaultValue: item.status })}
-                        </span>
-                    </span>
-                    <span className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-400">
-                        <span className="text-teal-700 dark:text-teal-400 font-bold">{t(`notifications.channels.${item.channel}`, { defaultValue: item.channel })}</span>
                         <span>•</span>
-                        <span>{formatDate(item.created_at, language)}</span>
+                        <span>{item.channel}</span>
+                        <span>•</span>
+                        <span className="font-mono">{formatDate(item.created_at, language)}</span>
                         {item.recipient && (
                             <>
                                 <span>•</span>
-                                <span className="max-w-[240px] truncate text-slate-600 dark:text-slate-300 font-mono">{item.recipient}</span>
+                                <span className="max-w-[220px] truncate text-slate-600 dark:text-slate-300 font-mono" title={item.recipient}>
+                                    {item.recipient}
+                                </span>
                             </>
                         )}
                         {item.patient_mrn && (
                             <>
                                 <span>•</span>
-                                <span dir="ltr" className="font-mono text-teal-600 dark:text-teal-400 font-bold">MRN {item.patient_mrn}</span>
+                                <span dir="ltr" className="font-mono text-teal-600 dark:text-teal-400 font-bold">
+                                    MRN {item.patient_mrn}
+                                </span>
                             </>
                         )}
-                    </span>
-                    {item.content && !expanded && (
-                        <p className="mt-2 line-clamp-2 text-xs font-semibold leading-relaxed text-slate-500 dark:text-slate-400">{item.content}</p>
-                    )}
-                </button>
-            </div>
+                    </div>
 
-            <div className="mt-3 flex flex-wrap items-center justify-between border-t border-slate-100 dark:border-slate-800/80 pt-2.5 ps-12">
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={() => onCopy(item)}
-                        className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                    >
-                        <Copy size={12} />
-                        {t('notifications.copy', { defaultValue: 'Copy' })}
-                    </button>
-                    {!item.is_read && (
-                        <button
-                            type="button"
-                            onClick={() => onMarkRead(item.notification_id)}
-                            disabled={marking}
-                            className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-teal-500/10 border border-teal-200/80 px-2.5 text-[10px] font-extrabold text-teal-700 transition hover:bg-teal-600 hover:text-white disabled:opacity-50 dark:border-teal-900/50 dark:bg-teal-950/30 dark:text-teal-300"
-                        >
-                            <Check size={12} />
-                            {t('notifications.markSingle', { defaultValue: 'Mark read' })}
-                        </button>
+                    {item.content && (
+                        <p className={`mt-2 text-xs font-medium leading-relaxed text-slate-600 dark:text-slate-300 ${expanded ? 'whitespace-pre-wrap' : 'line-clamp-2'}`}>
+                            {item.content}
+                        </p>
                     )}
-                </div>
-            </div>
 
-            {expanded && (
-                <div className="mt-3 space-y-3 rounded-xl border border-slate-200/80 bg-slate-50/80 p-3.5 text-xs leading-relaxed text-slate-600 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300 sm:ms-12">
-                    {item.content && <p className="whitespace-pre-wrap font-semibold">{item.content}</p>}
-                    {item.event_type && <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{t('notifications.eventType', { defaultValue: 'Event type' })}: {item.event_type}</p>}
-                    {item.status === 'Failed' && item.error_message && (
-                        <div className="flex items-start gap-2 rounded-xl border border-rose-200/80 bg-rose-50/80 p-3 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+                    {expanded && item.status === 'Failed' && item.error_message && (
+                        <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
                             <AlertTriangle size={15} className="mt-0.5 shrink-0 text-rose-500" />
                             <span>{item.error_message}</span>
                         </div>
                     )}
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-2.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                            {item.action_url && (
+                                <button
+                                    type="button"
+                                    onClick={() => onNavigate(item.action_url)}
+                                    className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-[10px] font-black text-teal-700 hover:bg-teal-500/20 transition dark:text-teal-300"
+                                >
+                                    <ExternalLink size={11} aria-hidden="true" />
+                                    <span>{t('openTargetRecord')}</span>
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => onCopy(item)}
+                                className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-300"
+                            >
+                                <Copy size={11} />
+                                <span>{t('copy')}</span>
+                            </button>
+                            {!item.is_read && (
+                                <button
+                                    type="button"
+                                    onClick={() => onMarkRead(item.notification_id)}
+                                    disabled={marking}
+                                    className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-teal-500/30 bg-teal-500/10 px-2.5 text-[10px] font-black text-teal-700 transition hover:bg-teal-500 hover:text-white disabled:opacity-50 dark:text-teal-300"
+                                >
+                                    <Check size={11} />
+                                    <span>{t('markRead')}</span>
+                                </button>
+                            )}
+                            {item.acknowledgement_status === 'Pending' && item.entity_id && (
+                                <button
+                                    type="button"
+                                    onClick={() => onAcknowledge(item)}
+                                    disabled={acknowledging}
+                                    className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 text-[10px] font-black text-rose-700 transition hover:bg-rose-600 hover:text-white disabled:opacity-50 dark:text-rose-300"
+                                >
+                                    <ShieldCheck size={11} />
+                                    <span>{t('acknowledgeCriticalResult')}</span>
+                                </button>
+                            )}
+                        </div>
+
+                            <button
+                                type="button"
+                                onClick={onToggle}
+                                aria-expanded={expanded}
+                                aria-label={expanded ? (t('collapseDetails')) : (t('showDetails'))}
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition"
+                        >
+                            <span>{expanded ? (t('collapse')) : (t('details'))}</span>
+                            {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                        </button>
+                    </div>
                 </div>
-            )}
+            </div>
         </article>
     );
 };
 
+// ─── Helpers & Utilities ──────────────────────────────────────────────────
+
+function OUTBOUND_ROLES_CHECK(role) {
+    return OUTBOUND_LOG_ROLES.has(role);
+}
+
+const normalizePriority = (priority, eventType = '') => {
+    const value = String(priority || '').trim().toLowerCase();
+    if (value === 'critical') return 'Critical';
+    if (value === 'warning') return 'Warning';
+    if (value === 'action' || value === 'high') return 'Action';
+    if (value === 'normal' || value === 'low') return 'Normal';
+    const event = String(eventType).toUpperCase();
+    return event.includes('STAT') || event.includes('CRITICAL') ? 'Critical' : 'Normal';
+};
+
+const getNotificationCategory = (item = {}) => {
+    const metadata = item.category || item.event_category || item.category_metadata?.key || item.category_metadata?.name;
+    const knownCategories = ['Security', 'Clinical', 'Financial', 'Operational', 'Patient', 'System'];
+    const fromMetadata = knownCategories.find((category) => String(metadata || '').toLowerCase() === category.toLowerCase());
+    if (fromMetadata) return fromMetadata;
+
+    const ev = `${item.event_type || ''} ${item.subject || ''} ${item.content || ''}`.toUpperCase();
+    if (ev.includes('SECURITY') || ev.includes('LOGIN') || ev.includes('AUTH') || ev.includes('TOKEN') || ev.includes('PERMISSION')) return 'Security';
+    if (ev.includes('PAYMENT') || ev.includes('INVOICE') || ev.includes('BILLING') || ev.includes('CLAIM') || ev.includes('REFUND') || ev.includes('PAYROLL')) return 'Financial';
+    if (ev.includes('PATIENT') || ev.includes('APPOINTMENTREQUEST') || ev.includes('PROFILEUPDATE') || ev.includes('DOCUMENTDOWNLOADED')) return 'Patient';
+    if (ev.includes('EXAM') || ev.includes('REPORT') || ev.includes('PACS') || ev.includes('STUDY') || ev.includes('DIAGNOSTIC')) return 'Clinical';
+    if (ev.includes('SYSTEM') || ev.includes('BACKUP') || ev.includes('STAFF_')) return 'System';
+    return 'Operational';
+};
+
+const getCategoryIcon = (eventType = '', category) => {
+    switch (getNotificationCategory({ event_type: eventType, category })) {
+        case 'Security': return Shield;
+        case 'Financial': return DollarSign;
+        case 'Patient': return Users;
+        case 'Clinical': return Stethoscope;
+        case 'System': return Settings;
+        case 'Operational': return Activity;
+        default: return AlertOctagon;
+    }
+};
+
+const translateCategory = (category) => ({
+    Security: 'الأمان',
+    Clinical: 'سريري',
+    Financial: 'مالي',
+    Operational: 'تشغيلي',
+    Patient: 'المريض',
+    System: 'النظام'
+}[category] || category);
+
 const getStatusClass = (status) => {
-    if (status === 'Failed') return 'border-rose-200/80 bg-rose-50 text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300';
-    if (status === 'Pending') return 'border-amber-200/80 bg-amber-50 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300';
-    if (status === 'Sent' || status === 'Delivered') return 'border-emerald-200/80 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300';
+    if (status === 'Failed') return 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300';
+    if (status === 'Pending') return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300';
+    if (status === 'Sent' || status === 'Delivered') return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
     return 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300';
+};
+
+const translatePriority = (priority) => {
+    switch (priority) {
+        case 'Critical': return 'عاجل جداً';
+        case 'Warning': return 'تحذير';
+        case 'Action': return 'إجراء';
+        case 'Normal': return 'عادي';
+        // Keep legacy values readable if an older record is returned.
+        case 'High': return 'إجراء';
+        case 'Low': return 'عادي';
+        default: return priority;
+    }
+};
+
+const translateStatus = (status) => {
+    switch (status) {
+        case 'Delivered': return 'تم التسليم';
+        case 'Sent': return 'تم الإرسال';
+        case 'Pending': return 'قيد الانتظار';
+        case 'Failed': return 'فشل التسليم';
+        default: return status || '—';
+    }
+};
+
+const translateGroupKey = (key, isAr) => {
+    if (!isAr) {
+        switch (key) {
+            case 'today': return 'Today';
+            case 'yesterday': return 'Yesterday';
+            case 'week': return 'This Week';
+            default: return 'Older';
+        }
+    }
+    switch (key) {
+        case 'today': return 'اليوم';
+        case 'yesterday': return 'أمس';
+        case 'week': return 'هذا الأسبوع';
+        default: return 'أقدم من ذلك';
+    }
 };
 
 const getGroupKey = (value) => {
@@ -563,8 +1354,4 @@ const formatDate = (value, language) => {
         hour: '2-digit',
         minute: '2-digit'
     }).format(date);
-};
-
-const formatNumber = (value, language) => {
-    return new Intl.NumberFormat(language?.startsWith('ar') ? 'ar-EG' : 'en-US').format(Number(value) || 0);
 };

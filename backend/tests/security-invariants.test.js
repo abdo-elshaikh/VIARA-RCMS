@@ -11,7 +11,7 @@ describe('security and financial invariants', () => {
         process.env.ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
     });
 
-    test('PII encryption authenticates new values and reads legacy CBC values', () => {
+    test('PII encryption uses AES-GCM and rejects legacy CBC values', () => {
         const { encrypt, decrypt } = require('../src/utils/crypto');
         const encrypted = encrypt('Sensitive value');
         expect(encrypted).toMatch(/^v2:/);
@@ -24,7 +24,61 @@ describe('security and financial invariants', () => {
         const iv = crypto.randomBytes(16);
         const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
         const legacy = Buffer.concat([cipher.update('Legacy value'), cipher.final()]);
-        expect(decrypt(`${iv.toString('hex')}:${legacy.toString('hex')}`)).toBe('Legacy value');
+        expect(() => decrypt(`${iv.toString('hex')}:${legacy.toString('hex')}`)).toThrow('legacy AES-CBC format is no longer supported');
+    });
+
+    test('decrypt succeeds for values encrypted with an alternate or rotated key', () => {
+        const oldKey = 'd70863ca9ae765b863f9396382374bbb83596c94a222e81644923f823cbcdd5b';
+        const currentKey = '0694707566e23e72bd27bd79daf2ef76751c8f70c35045f3da3c4fe5262c5aee';
+        jest.resetModules();
+        process.env.ENCRYPTION_KEY = currentKey;
+        process.env.ENCRYPTION_KEYS = JSON.stringify({ default: oldKey, rotated: currentKey });
+        process.env.ENCRYPTION_KEY_ID = 'rotated';
+
+        const { encrypt, decrypt } = require('../src/utils/crypto');
+        const key = Buffer.from(oldKey, 'hex');
+        const iv = crypto.randomBytes(12);
+        const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+        const value = 'Rotated-state patient name';
+        const payload = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+        const tag = cipher.getAuthTag();
+        const oldEncrypted = `v2:default:${iv.toString('hex')}:${tag.toString('hex')}:${payload.toString('hex')}`;
+
+        expect(decrypt(oldEncrypted)).toBe(value);
+        expect(encrypt('Fresh value')).toMatch(/^v2:/);
+    });
+
+    test('decrypt continues to the next candidate when crypto raises a generic auth error', () => {
+        const oldKey = 'd70863ca9ae765b863f9396382374bbb83596c94a222e81644923f823cbcdd5b';
+        const currentKey = '0694707566e23e72bd27bd79daf2ef76751c8f70c35045f3da3c4fe5262c5aee';
+        jest.resetModules();
+        process.env.ENCRYPTION_KEY = currentKey;
+        process.env.ENCRYPTION_KEYS = JSON.stringify({ default: currentKey, rotated: oldKey });
+        process.env.ENCRYPTION_KEY_ID = 'default';
+
+        const actualCreateDecipheriv = crypto.createDecipheriv;
+        const original = crypto.createDecipheriv;
+        const { decrypt } = require('../src/utils/crypto');
+        const key = Buffer.from(oldKey, 'hex');
+        const iv = crypto.randomBytes(12);
+        const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+        const payload = Buffer.concat([cipher.update('Fallback patient name', 'utf8'), cipher.final()]);
+        const tag = cipher.getAuthTag();
+        const encrypted = `v2:default:${iv.toString('hex')}:${tag.toString('hex')}:${payload.toString('hex')}`;
+
+        crypto.createDecipheriv = jest.fn((algorithm, keyBuffer, ivBuffer) => {
+            if (String(keyBuffer.toString('hex')) === currentKey) {
+                return {
+                    setAuthTag: () => {},
+                    update: () => Buffer.alloc(0),
+                    final: () => { throw new Error('Unsupported state or unable to authenticate data'); }
+                };
+            }
+            return actualCreateDecipheriv.call(crypto, algorithm, keyBuffer, ivBuffer);
+        });
+
+        expect(decrypt(encrypted)).toBe('Fallback patient name');
+        crypto.createDecipheriv = original;
     });
 
     test('unknown roles cannot inherit admin dashboard data', async () => {
@@ -42,26 +96,32 @@ describe('security and financial invariants', () => {
             activeStaff: 4
         });
         const activitySpy = jest.spyOn(DashboardService.prototype, 'getRecentActivity').mockResolvedValue([]);
+        const snapshotSpy = jest.spyOn(DashboardService.prototype, 'getOperationalSnapshot').mockResolvedValue({
+            liveModalities: [],
+            turnaroundStages: []
+        });
         const res = createResponse();
         const next = jest.fn();
 
         await getDashboardStats({})({
-            user: { role: 'Developer', user_id: 'dev-1', email: 'developer@rcms.com' }
+            user: { role: 'Developer', user_id: 'dev-1', email: 'developer@VIARA.com' }
         }, res, next);
 
         expect(adminSpy).toHaveBeenCalled();
-        expect(activitySpy).toHaveBeenCalledWith(5);
+        expect(activitySpy).toHaveBeenCalledWith(5, { role: 'Developer', userId: 'dev-1' });
+        expect(snapshotSpy).toHaveBeenCalled();
         expect(next).not.toHaveBeenCalled();
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
             role: 'Developer',
             totalScans: 12,
             activeStaff: 4,
             recentActivity: [],
-            userName: 'developer@rcms.com'
+            userName: 'developer@VIARA.com'
         }));
 
         adminSpy.mockRestore();
         activitySpy.mockRestore();
+        snapshotSpy.mockRestore();
     });
 
     test('technicians cannot write diagnostic report content', async () => {
@@ -96,12 +156,69 @@ describe('security and financial invariants', () => {
         expect(client.release).toHaveBeenCalled();
     });
 
+    test('claims cannot be submitted before approval', async () => {
+        const { updateClaimStatus } = require('../src/controllers/claimsController');
+        const client = {
+            query: jest.fn()
+                .mockResolvedValueOnce({ rows: [] })
+                .mockResolvedValueOnce({ rows: [{ claim_id: 'claim-1', status: 'Draft', expected_amount: 100, received_amount: 0 }] })
+                .mockResolvedValueOnce({ rows: [] }),
+            release: jest.fn()
+        };
+        const next = jest.fn();
+
+        await updateClaimStatus({ connect: jest.fn().mockResolvedValue(client) })({
+            params: { id: 'claim-1' },
+            body: { status: 'Submitted', claimReferenceNumber: 'PAYER-1' },
+            user: { user_id: 'admin-1' }
+        }, createResponse(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 409 }));
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE insurance_claims'))).toBe(false);
+        expect(client.release).toHaveBeenCalled();
+    });
+
+    test('claim creators cannot approve their own request', async () => {
+        const { updateClaimStatus } = require('../src/controllers/claimsController');
+        const client = {
+            query: jest.fn()
+                .mockResolvedValueOnce({ rows: [] })
+                .mockResolvedValueOnce({
+                    rows: [{
+                        claim_id: 'claim-1',
+                        status: 'Pending Approval',
+                        expected_amount: 100,
+                        received_amount: 0,
+                        created_by: 'user-1'
+                    }]
+                })
+                .mockResolvedValueOnce({ rows: [] }),
+            release: jest.fn()
+        };
+        const next = jest.fn();
+
+        await updateClaimStatus({ connect: jest.fn().mockResolvedValue(client) })({
+            params: { id: 'claim-1' },
+            body: { status: 'Approved' },
+            user: { user_id: 'user-1', role: 'Insurance_Staff' }
+        }, createResponse(), next);
+
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403 }));
+        expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+        expect(client.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE insurance_claims'))).toBe(false);
+        expect(client.release).toHaveBeenCalled();
+    });
+
     test('patient deletion preserves history and restricts the account', async () => {
         const { deletePatient } = require('../src/controllers/patientController');
         const client = {
             query: jest.fn(async sql => {
                 if (String(sql).includes('SELECT patient_id')) {
                     return { rows: [{ patient_id: 'patient-1', patient_status: 'Active' }] };
+                }
+                if (String(sql).includes('INSERT INTO system_logs')) {
+                    return { rows: [{ log_id: 'audit-patient-restricted' }] };
                 }
                 return { rows: [] };
             }),

@@ -1,0 +1,43 @@
+{
+  "passed": true,
+  "project": "viara-release-test-6349a374",
+  "commandResults": [
+    {
+      "id": "cmd-tools",
+      "command": "docker compose version && python3 --version && openssl version && docker info --format '{{.OSType}}'",
+      "passed": true,
+      "settingsFileFixture": false
+    },
+    {
+      "id": "cmd-setup",
+      "command": "bash setup.sh",
+      "passed": true,
+      "settingsFileFixture": true
+    },
+    {
+      "id": "cmd-status",
+      "command": "docker compose ps",
+      "passed": true,
+      "settingsFileFixture": false
+    },
+    {
+      "id": "cmd-config",
+      "command": "docker compose config --quiet",
+      "passed": true,
+      "settingsFileFixture": false
+    },
+    {
+      "id": "cmd-logs",
+      "command": "docker compose logs --tail 80 backend",
+      "passed": true,
+      "settingsFileFixture": false
+    },
+    {
+      "command": "bash setup.sh",
+      "passed": true,
+      "repeatExistingSite": true
+    }
+  ],
+  "host": "Windows Git Bash with real Linux Docker Engine; Python3 adapter",
+  "syntheticSettings": true
+}

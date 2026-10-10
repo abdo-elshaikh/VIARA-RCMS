@@ -10,7 +10,7 @@
     "patient": "Patient",
     "stage": "Stage",
     "modality": "Modality",
-    "wait": "Wait time",
+    "wait": "Active stage time",
     "stages": {
       "Checked In": "Checked in",
       "Prep Pending": "Prep pending",
@@ -43,10 +43,56 @@
     "released": "Study released.",
     "moved": "Moved to {{stage}}."
   },
+  "taskScope": {
+    "label": "Task visibility",
+    "all": "All visible tasks",
+    "mine": "My tasks",
+    "available": "Available tasks",
+    "accept": "Accept task",
+    "return": "Return to pool",
+    "claimed": "Task accepted and moved to your private queue.",
+    "released": "Task returned to the available pool.",
+    "claimConflict": "Another user accepted this task first.",
+    "releaseTitle": "Return task to the pool",
+    "releaseDescription": "Your access to this case ends immediately and it becomes available to eligible users.",
+    "releaseReason": "Reason",
+    "releasePlaceholder": "Explain why this task is being returned...",
+    "releaseConfirm": "Return task",
+    "releaseRequired": "Enter at least 3 characters.",
+    "allEmpty": "No assigned or unassigned tasks are currently visible for your role.",
+    "myEmpty": "No tasks are currently assigned to you.",
+    "availableEmpty": "No unassigned tasks are available for your role.",
+    "totalAssigned": "Total assigned",
+    "pending": "Pending",
+    "inProgress": "In progress",
+    "availableCount": "Available",
+    "status": {
+      "Unassigned": "Unassigned",
+      "Assigned": "Assigned to you",
+      "In Progress": "In progress",
+      "On Hold": "On hold"
+    }
+  },
+  "safetyEditor": {
+    "title": "Edit Safety Checklist",
+    "close": "Close safety checklist",
+    "fields": {
+      "pregnancy": "Pregnancy Safety Status",
+      "implant": "Implant Safety Status (e.g. pacemakers/metallic)",
+      "renal": "Renal Clearance Status"
+    },
+    "status": {
+      "Unknown": "Unknown",
+      "Cleared": "Cleared",
+      "At Risk": "At risk",
+      "Not Applicable": "Not applicable"
+    },
+    "save": "Save Checklist"
+  },
   "nurse": {
     "eyebrow": "Nursing department",
     "title": "Nursing preparation queue",
-    "description": "Prepare arrived patients, track waiting time, and release safe studies to modality.",
+    "description": "Prepare assigned patients, track active stage time, and release safe studies to modality.",
     "active": "Active",
     "overdue": "Overdue",
     "patientDetails": "Patient details",
@@ -81,10 +127,13 @@
       "At Risk": "At risk",
       "Unknown": "Unknown",
       "Not Applicable": "Not applicable"
-    }
+    },
+    "recordIndicators": "Nursing queue record indicators",
+    "awaitingPrepStage": "Awaiting patient transfer to nursing"
   },
   "modality": {
     "title": "Modality queue",
+    "eyebrow": "Tech department",
     "description": "Start scans, track active studies, and release completed exams for reporting.",
     "ready": "Ready for exam",
     "inExam": "In exam",
@@ -92,10 +141,54 @@
     "assigned": "Assigned studies",
     "loading": "Loading modality queue...",
     "emptyTitle": "No scans waiting",
-    "emptyDescription": "Ready studies appear here when nursing clears preparation.",
+    "emptyDescription": "Ready studies assigned to your technician account appear here after nursing clears preparation.",
     "indication": "Indication",
     "start": "Start scan",
     "complete": "Complete exam",
-    "templateError": "Safety requirements could not be loaded."
+    "templateError": "Safety requirements could not be loaded.",
+    "safetyClearanceRequired": "Clear or mark every safety check as not applicable before starting the exam.",
+    "safetyUpdated": "Safety checks updated.",
+    "modalityMissing": "This exam is not linked to a modality. Refresh the queue or correct the appointment before starting.",
+    "completionTitle": "Complete examination",
+    "completionDescription": "Choose how this examination should finish. A report can still be requested later after images-only delivery.",
+    "sendToReporting": "Send to reporting",
+    "sendToReportingDescription": "Complete image acquisition and create a reporting task.",
+    "imagesOnly": "Images only — no report",
+    "imagesOnlyDescription": "Complete the examination and prepare the images for delivery without waiting for a report.",
+    "imagesOnlyCompleted": "Examination completed. Images are ready for delivery without a report.",
+    "reportingRequested": "Examination completed and sent to reporting.",
+    "completionFailed": "Could not complete the examination.",
+    "metricsLabel": "Modality queue record indicators"
+  },
+  "filters": {
+    "todayCases": "Today's Cases",
+    "allCases": "All Active Cases",
+    "selectedDate": "Selected Date",
+    "customDate": "Custom Date",
+    "previousDay": "Previous Day",
+    "nextDay": "Next Day",
+    "searchPlaceholder": "Search by patient, MRN, order #, exam...",
+    "stageAll": "All Stages",
+    "priorityAll": "All Priorities",
+    "modalityAll": "All Modalities",
+    "safetyAll": "All Safety Clearances",
+    "safetyNeedsReview": "Safety Review Needed",
+    "safetyCleared": "Safety Cleared",
+    "overdueOnly": "Overdue Only",
+    "onHoldOnly": "On Hold Only",
+    "sortBy": "Sort by",
+    "sortLongestWait": "Longest wait time",
+    "sortShortestWait": "Shortest wait time",
+    "sortPriority": "Highest priority first",
+    "sortAppointmentTime": "Appointment time",
+    "showingCount": "Showing {{count}} of {{total}} cases",
+    "resetFilters": "Reset filters",
+    "noMatchTitle": "No matching cases",
+    "noMatchDescription": "No cases in the queue match your current filter criteria.",
+    "clearAll": "Clear filters",
+    "refreshQueue": "Refresh queue",
+    "appointmentTime": "Appt Time",
+    "kpiToday": "Today's Queue",
+    "kpiAllActive": "Active Pool"
   }
 }

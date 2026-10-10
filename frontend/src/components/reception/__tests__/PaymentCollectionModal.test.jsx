@@ -1,10 +1,23 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import PaymentCollectionModal from '../PaymentCollectionModal';
 
+let language = 'en';
+
+vi.mock('react-i18next', () => ({
+    useTranslation: () => ({ i18n: { language, resolvedLanguage: language } })
+}));
+
 vi.mock('../../ui/Modal', () => ({
-    default: ({ children, footer, isOpen, title }) => isOpen ? <section aria-label={title}>{children}{footer}</section> : null
+    default: ({ children, footer, isOpen, onClose, title }) => isOpen ? (
+        <section aria-label={title} onKeyDown={(event) => { if (event.key === 'Escape') onClose?.(); }}>
+            <button type="button" aria-label="Close dialog" onClick={onClose} />
+            <div data-testid="modal-backdrop" onMouseDown={onClose} />
+            {children}
+            {footer}
+        </section>
+    ) : null
 }));
 
 vi.mock('../../ui/StatusPill', () => ({
@@ -45,6 +58,10 @@ const baseProps = {
 };
 
 describe('PaymentCollectionModal', () => {
+    beforeEach(() => {
+        language = 'en';
+    });
+
     it('renders invoice context, payment controls, and submit action', () => {
         render(<PaymentCollectionModal {...baseProps} />);
 
@@ -52,6 +69,36 @@ describe('PaymentCollectionModal', () => {
         expect(screen.getByText('Test Patient')).toBeInTheDocument();
         expect(screen.getByLabelText('Amount to pay')).toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Confirm Payment' })).toBeEnabled();
+        expect(screen.getAllByText(/EGP\s+120\.00/).length).toBeGreaterThan(0);
+        expect(screen.getByLabelText('Amount to pay')).toHaveValue(120);
+    });
+
+    it('formats visible amounts and input currency for the invoice currency', () => {
+        render(<PaymentCollectionModal
+            {...baseProps}
+            adjustedBalance={1234.5}
+            invoice={{ ...baseProps.invoice, currency_code: 'USD' }}
+            paymentAmount="1234.5"
+            remainingBalance={34.5}
+        />);
+
+        expect(screen.getAllByText('$1,234.50').length).toBeGreaterThan(0);
+        expect(screen.getByText('Remaining: $34.50')).toBeInTheDocument();
+        expect(screen.getByText('USD')).toBeInTheDocument();
+        expect(screen.getByLabelText('Amount to pay')).toHaveValue(1234.5);
+    });
+
+    it('uses Arabic currency formatting for balances and payment history', () => {
+        language = 'ar';
+        render(<PaymentCollectionModal
+            {...baseProps}
+            invoiceDetail={{ payments: [{ payment_id: 'payment-1', amount: 20, method: 'Cash', created_at: '2026-08-04T10:00:00Z' }] }}
+        />);
+
+        fireEvent.click(screen.getByRole('button', { name: 'Previous Payments' }));
+
+        expect(screen.getAllByText(/١٢٠٫٠٠/).length).toBeGreaterThan(0);
+        expect(screen.getByText((content, element) => element?.tagName === 'P' && /٢٠٫٠٠/.test(content))).toBeInTheDocument();
     });
 
     it('routes quick amount and method changes through callbacks', () => {
@@ -62,8 +109,24 @@ describe('PaymentCollectionModal', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Half' }));
         expect(onAmountChange).toHaveBeenCalledWith('60.00');
 
-        fireEvent.change(screen.getByRole('combobox'), { target: { value: 'Card' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Card' }));
         expect(onMethodChange).toHaveBeenCalledWith('Card');
+    });
+
+    it('does not auto-attest insurance verification requirements', () => {
+        const { container } = render(<PaymentCollectionModal
+            {...baseProps}
+            invoice={{
+                ...baseProps.invoice,
+                insurance_covered_amount: 80,
+                patient_payable_amount: 40,
+                provider_name: 'Health Plan',
+                policy_number: 'POL-1',
+                member_number: 'MEM-1'
+            }}
+        />);
+
+        expect(JSON.parse(container.querySelector('input[name="verificationChecklist"]').value)).toEqual({});
     });
 
     it('closes when cancel is clicked', () => {
@@ -73,5 +136,31 @@ describe('PaymentCollectionModal', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
         expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays open when Escape, the close button, or the backdrop is used during payment submission', () => {
+        const onClose = vi.fn();
+        render(<PaymentCollectionModal {...baseProps} isLoading onClose={onClose} />);
+
+        fireEvent.keyDown(screen.getByText('INV-1').closest('section'), { key: 'Escape' });
+        fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+        fireEvent.mouseDown(screen.getByTestId('modal-backdrop'));
+
+        expect(onClose).not.toHaveBeenCalled();
+        expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    });
+
+    it('does not render when isOpen is false', () => {
+        render(<PaymentCollectionModal {...baseProps} isOpen={false} />);
+
+        expect(screen.queryByText('INV-1')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Confirm Payment' })).not.toBeInTheDocument();
+    });
+
+    it('does not render when invoice is null', () => {
+        render(<PaymentCollectionModal {...baseProps} invoice={null} isOpen={false} />);
+
+        expect(screen.queryByText('INV-1')).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Confirm Payment' })).not.toBeInTheDocument();
     });
 });

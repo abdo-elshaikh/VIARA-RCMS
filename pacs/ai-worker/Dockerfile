@@ -15,21 +15,21 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system rcms-ai \
-    && useradd --system --gid rcms-ai --create-home rcms-ai \
+    && groupadd --system VIARA-ai \
+    && useradd --system --gid VIARA-ai --create-home VIARA-ai \
     && mkdir -p /models/huggingface \
-    && chown -R rcms-ai:rcms-ai /app /models
+    && chown -R VIARA-ai:VIARA-ai /app /models
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir \
-        torch==2.6.0 torchvision==0.21.0 \
+        torch==2.14.1 torchvision==0.29.1 \
         --index-url https://download.pytorch.org/whl/cpu \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
-RUN chown -R rcms-ai:rcms-ai /app
+RUN chown -R VIARA-ai:VIARA-ai /app
 
-USER rcms-ai
+USER VIARA-ai
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

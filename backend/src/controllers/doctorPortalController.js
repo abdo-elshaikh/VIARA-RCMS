@@ -1,11 +1,17 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const bcrypt = require('bcrypt');
 const { AppError } = require('../middleware/errorHandler');
 const { generateTokens } = require('./authController');
 const { decrypt } = require('../utils/crypto');
 const { generateSecurePassword } = require('../utils/passwordGenerator');
 const { logAction } = require('../services/auditService');
+const { triggerEventForRole } = require('../services/notificationJobService');
+const {
+    buildPortalNotificationEnvelope,
+    getPortalNotificationPage
+} = require('../utils/portalNotificationInbox');
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 const INVALID_LOGIN_ERROR = 'Invalid credentials';
 const UNKNOWN_ACCOUNT_HASH = '$2b$10$j58V.FjnUf.jiJK9F4/LEe0HeU5NIOS0/mQVANGNvtCJBVor2cUV6';
 
@@ -62,6 +68,7 @@ const setPortalPassword = (db) => async (req, res, next) => {
         await db.query(`
             UPDATE referring_doctors
              SET portal_password_hash = $1,
+                 current_session_id = NULL,
                  portal_is_active = TRUE,
                  portal_failed_login_attempts = 0,
                  portal_locked_until = NULL,
@@ -97,7 +104,8 @@ const doctorLogin = (db) => async (req, res, next) => {
     try {
         const { email, password } = req.body;
 
-        if (!email || !password) {
+        if (typeof email !== 'string' || !email.trim() || email.length > 254
+            || typeof password !== 'string' || !password || Buffer.byteLength(password, 'utf8') > 72) {
             return next(new AppError('Email and password are required', 400));
         }
 
@@ -112,6 +120,7 @@ const doctorLogin = (db) => async (req, res, next) => {
             && new Date(doctor.portal_locked_until) > new Date();
         const canAuthenticate = doctor
             && doctor.portal_password_hash
+            && doctor.is_active === true
             && doctor.portal_is_active
             && !isLocked;
 
@@ -131,11 +140,11 @@ const doctorLogin = (db) => async (req, res, next) => {
 
         const { token, refreshToken } = await generateTokens(db, payload, doctor.doctor_id, 'doctor');
 
-        res.cookie('refreshToken', refreshToken, {
+        res.cookie('portalRefreshToken', refreshToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'strict',
-            path: '/api/auth',
+            path: '/api/portal',
             maxAge: 7 * 24 * 60 * 60 * 1000
         });
 
@@ -167,8 +176,8 @@ const doctorLogin = (db) => async (req, res, next) => {
 const getDoctorCases = (db) => async (req, res, next) => {
     try {
         const doctorId = req.user.doctorId;
-        const { status, limit = 50, offset = 0 } = req.query;
-        const search = req.query.search || req.query.q;
+        const { status, limit = 50, offset = 0 } = getRequestQuery(req);
+        const search = getRequestQuery(req).search || getRequestQuery(req).q;
 
         const values = [doctorId];
         let param = 2;
@@ -204,6 +213,7 @@ const getDoctorCases = (db) => async (req, res, next) => {
                 e.exam_id,
                 e.status           AS exam_status,
                 e.report_status,
+                e.report_locked,
                 e.report_finalized_at AS finalized_at
             FROM appointments a
             JOIN patients p ON a.patient_id = p.patient_id
@@ -271,7 +281,9 @@ const getDoctorReport = (db) => async (req, res, next) => {
             LEFT JOIN modalities m ON a.modality_id = m.modality_id
             WHERE e.exam_id = $1
               AND a.referring_doctor_id = $2
-              AND e.report_status = 'Finalized'
+              AND e.report_status IN ('Finalized', 'Amended')
+              AND e.report_locked = TRUE
+              AND e.report_finalized_at IS NOT NULL
         `, [examId, doctorId]);
 
         if (result.rows.length === 0) {
@@ -309,12 +321,14 @@ const getDoctorReportPdf = (db) => async (req, res, next) => {
 
         // Verify ownership
         const examResult = await db.query(`
-            SELECT e.exam_id, e.report_status, a.referring_doctor_id
+            SELECT e.exam_id, e.report_status, e.report_locked, e.report_finalized_at, a.referring_doctor_id
             FROM examinations e
             JOIN appointments a ON e.appointment_id = a.appointment_id
             WHERE e.exam_id = $1
               AND a.referring_doctor_id = $2
-              AND e.report_status = 'Finalized'
+              AND e.report_status IN ('Finalized', 'Amended')
+              AND e.report_locked = TRUE
+              AND e.report_finalized_at IS NOT NULL
         `, [examId, doctorId]);
 
         if (examResult.rows.length === 0) {
@@ -466,6 +480,19 @@ const sendMessage = (db) => async (req, res, next) => {
             resourceId: result.rows[0].message_id
         });
 
+        const notificationPayload = {
+            entityType: 'Message',
+            entityId: result.rows[0].message_id,
+            priority: 'Normal',
+            variables: {
+                sender_name: req.user?.name || 'Referring doctor',
+                message_preview: data.body.length > 100 ? `${data.body.slice(0, 97)}...` : data.body
+            }
+        };
+        for (const role of ['Admin', 'Receptionist', 'Marketing', 'Developer']) {
+            triggerEventForRole(db, 'ChatMessageReceived', role, notificationPayload).catch(() => {});
+        }
+
         res.status(201).json(result.rows[0]);
     } catch (error) {
         next(error);
@@ -506,23 +533,40 @@ const decryptStored = (value) => {
 const getMyNotifications = (db) => async (req, res, next) => {
     try {
         const doctorId = req.user.doctorId;
-        const result = await db.query(`
-            SELECT notification_id, channel, event_type, subject, content,
-                   status, is_read, read_at, created_at
-            FROM notifications
-            WHERE referring_doctor_id = $1
-              AND channel = 'InApp'
-            ORDER BY created_at DESC
-            LIMIT 100
-        `, [doctorId]);
+        const page = getPortalNotificationPage(getRequestQuery(req));
+        const [itemsResult, countsResult] = await Promise.all([
+            db.query(`
+                SELECT n.notification_id, n.channel, n.event_type, n.entity_id,
+                       n.subject, n.content, n.status, n.priority,
+                       n.is_read, n.read_at, n.created_at, ec.category,
+                       cra.status AS acknowledgement_status,
+                       cra.acknowledgement_due_at, cra.escalated_at
+                FROM notifications n
+                LEFT JOIN notification_event_catalog ec ON ec.event_type = n.event_type
+                LEFT JOIN critical_result_acknowledgements cra
+                  ON cra.exam_id = n.entity_id
+                 AND cra.referring_doctor_id = $1
+                WHERE n.referring_doctor_id = $1
+                  AND n.channel = 'InApp'
+                ORDER BY n.created_at DESC, n.notification_id DESC
+                LIMIT $2 OFFSET $3
+            `, [doctorId, page.limit, page.offset]),
+            db.query(`
+                SELECT COUNT(*)::int AS total,
+                       COUNT(*) FILTER (WHERE is_read = FALSE)::int AS unread_count
+                FROM notifications
+                WHERE referring_doctor_id = $1
+                  AND channel = 'InApp'
+            `, [doctorId])
+        ]);
 
-        const items = result.rows.map((row) => ({
-            ...row,
-            subject: decryptStored(row.subject),
-            content: decryptStored(row.content)
+        res.json(buildPortalNotificationEnvelope({
+            rows: itemsResult.rows,
+            counts: countsResult.rows[0],
+            persona: 'doctor',
+            page,
+            decryptStored
         }));
-
-        res.json(items);
     } catch (error) {
         next(error);
     }
@@ -578,6 +622,67 @@ const markAllMyNotificationsRead = (db) => async (req, res, next) => {
     }
 };
 
+const acknowledgeCriticalResult = (db) => async (req, res, next) => {
+    try {
+        const doctorId = req.user?.doctorId;
+        const notes = typeof req.body?.notes === 'string' ? req.body.notes.trim() : null;
+        if (notes && notes.length > 2000) {
+            return next(new AppError('Acknowledgement notes must be 2000 characters or fewer', 422));
+        }
+
+        const result = await db.query(`
+            UPDATE critical_result_acknowledgements cra
+            SET status = 'Acknowledged',
+                acknowledged_at = COALESCE(cra.acknowledged_at, CURRENT_TIMESTAMP),
+                acknowledged_by_doctor_id = COALESCE(cra.acknowledged_by_doctor_id, $2),
+                notes = CASE WHEN cra.status = 'Pending' THEN NULLIF($3, '') ELSE cra.notes END,
+                updated_at = CURRENT_TIMESTAMP
+            FROM examinations e
+            WHERE cra.exam_id = $1
+              AND cra.exam_id = e.exam_id
+              AND e.critical_result = TRUE
+              AND cra.referring_doctor_id = $2
+            RETURNING cra.acknowledgement_id, cra.exam_id, cra.recipient_role,
+                      cra.status, cra.acknowledged_at, cra.notes
+        `, [req.params.id, doctorId, notes || null]);
+
+        if (result.rows.length === 0) {
+            return next(new AppError('Critical-result acknowledgement is not assigned to this doctor', 404));
+        }
+
+        await db.query(`
+            UPDATE critical_result_acknowledgements
+            SET status = 'Superseded', updated_at = NOW()
+            WHERE exam_id = $1
+              AND acknowledgement_id <> $2
+              AND status = 'Pending'
+        `, [req.params.id, result.rows[0].acknowledgement_id]);
+        await db.query(`
+            UPDATE notification_jobs
+            SET status = 'Cancelled', processed_at = NOW(), next_retry_at = NULL,
+                locked_at = NULL, locked_by = NULL,
+                error_message = 'Critical result was acknowledged'
+            WHERE entity_type = 'Exam' AND entity_id = $1
+                            AND event_type IN ('CriticalResultFinalized', 'CriticalResultEscalated')
+              AND status IN ('Pending', 'Processing')
+        `, [req.params.id]);
+
+        await logAction(db, {
+            userId: null,
+            action: 'CRITICAL_RESULT_ACKNOWLEDGED',
+            resourceId: req.params.id,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: { acknowledgementId: result.rows[0].acknowledgement_id, doctorId },
+            required: true
+        });
+
+        res.json({ success: true, acknowledgement: result.rows[0] });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     doctorLogin,
     setPortalPassword,
@@ -591,5 +696,6 @@ module.exports = {
     getMyNotifications,
     getMyNotificationUnreadCount,
     markMyNotificationRead,
-    markAllMyNotificationsRead
+    markAllMyNotificationsRead,
+    acknowledgeCriticalResult
 };

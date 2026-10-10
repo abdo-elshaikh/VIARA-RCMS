@@ -7,6 +7,10 @@ if (!process.env.DATABASE_URL || !/validation/i.test(process.env.DATABASE_URL)) 
     throw new Error('Refusing to run: DATABASE_URL must identify a disposable validation database');
 }
 
+if (!process.env.TEST_USER_PASSWORD) {
+    throw new Error('Refusing to run: TEST_USER_PASSWORD must be set for deployment validation');
+}
+
 process.env.NODE_ENV = 'test';
 const app = require('../src/server');
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -16,7 +20,12 @@ const check = (name, condition, details = '') => {
     assert.ok(condition, `${name}${details ? `: ${details}` : ''}`);
     checks.push(name);
 };
-const bearer = token => ({ Authorization: `Bearer ${token}` });
+let csrfToken;
+const bearer = token => ({
+    Authorization: `Bearer ${token}`,
+    Cookie: `csrf_token=${csrfToken}`,
+    'x-csrf-token': csrfToken
+});
 
 const createPatient = async (token, suffix) => {
     const response = await request(app)
@@ -40,15 +49,19 @@ const createPatient = async (token, suffix) => {
 
 const main = async () => {
     const ready = await request(app).get('/health/ready');
-    check('database readiness', ready.status === 200 && ready.body.database === 'connected');
+    check('database readiness', ready.status === 200 && ready.body.status === 'OK');
+    const csrfResponse = await request(app).get('/api/csrf-token');
+    csrfToken = csrfResponse.body.csrfToken || csrfResponse.body.token
+        || (csrfResponse.headers['set-cookie'] || []).join(';').match(/csrf_token=([^;]+)/)?.[1];
+    check('CSRF bootstrap', Boolean(csrfToken));
 
     const adminLogin = await request(app)
         .post('/api/auth/login')
-        .set('User-Agent', 'RCMS-Validation-Primary/1.0')
-        .send({ email: 'admin@rcms.com', password: 'password123' });
+        .set('User-Agent', 'VIARA-Validation-Primary/1.0')
+        .send({ email: 'admin@VIARA.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(adminLogin.status, 200, JSON.stringify(adminLogin.body));
-    const adminToken = adminLogin.body.token;
-    const adminCookie = adminLogin.headers['set-cookie'][0].split(';')[0];
+    let adminToken = adminLogin.body.token;
+    let adminCookie = `csrf_token=${csrfToken}; ${(adminLogin.headers['set-cookie'] || []).find(cookie => cookie.startsWith('refreshToken='))?.split(';')[0] || ''}`;
     check('administrator login', Boolean(adminToken));
 
     const dashboard = await request(app).get('/api/dashboard/stats').set(bearer(adminToken));
@@ -56,24 +69,21 @@ const main = async () => {
 
     const secondaryAdminLogin = await request(app)
         .post('/api/auth/login')
-        .set('User-Agent', 'RCMS-Validation-Secondary/1.0')
-        .send({ email: 'admin@rcms.com', password: 'password123' });
+        .set('User-Agent', 'VIARA-Validation-Secondary/1.0')
+        .send({ email: 'admin@VIARA.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(secondaryAdminLogin.status, 200, JSON.stringify(secondaryAdminLogin.body));
+    const replacedSession = await request(app).get('/api/dashboard/stats').set(bearer(adminToken));
+    check('single-session access-token revocation', replacedSession.status === 401);
+    adminToken = secondaryAdminLogin.body.token;
+    adminCookie = `csrf_token=${csrfToken}; ${(secondaryAdminLogin.headers['set-cookie'] || []).find(cookie => cookie.startsWith('refreshToken='))?.split(';')[0] || ''}`;
     const sessions = await request(app)
         .get('/api/auth/sessions')
         .set(bearer(adminToken))
         .set('Cookie', adminCookie);
     const currentSessions = sessions.body.sessions?.filter(session => session.isCurrent) || [];
-    const secondarySession = sessions.body.sessions?.find(session => session.userAgent === 'RCMS-Validation-Secondary/1.0');
-    check('real session inventory', sessions.status === 200 && currentSessions.length === 1 && Boolean(secondarySession));
-    const revokedSession = await request(app)
-        .delete(`/api/auth/sessions/${secondarySession.id}`)
-        .set(bearer(adminToken))
-        .set('Cookie', adminCookie);
-    const revokedSessionRow = await db.query('SELECT revoked, revoked_reason FROM refresh_tokens WHERE token_id = $1', [secondarySession.id]);
-    check('user-controlled session revocation', revokedSession.status === 204
-        && revokedSessionRow.rows[0].revoked === true
-        && revokedSessionRow.rows[0].revoked_reason === 'user_revoked_session');
+    check('real session inventory', sessions.status === 200 && currentSessions.length === 1
+        && sessions.body.sessions.length === 1
+        && currentSessions[0].userAgent === 'VIARA-Validation-Secondary/1.0');
     const currentSessionRevoke = await request(app)
         .delete(`/api/auth/sessions/${currentSessions[0].id}`)
         .set(bearer(adminToken))
@@ -131,7 +141,7 @@ const main = async () => {
 
     const technicianLogin = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'tech@rcms.com', password: 'password123' });
+        .send({ email: 'tech@VIARA.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(technicianLogin.status, 200, JSON.stringify(technicianLogin.body));
     const reportWrite = await request(app)
         .put('/api/exams/report')
@@ -187,12 +197,12 @@ const main = async () => {
 
     const accountantLogin = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'accountant@rcms.com', password: 'password123' });
+        .send({ email: 'accountant@VIARA.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(accountantLogin.status, 200, JSON.stringify(accountantLogin.body));
     const accountantToken = accountantLogin.body.token;
     const receptionLogin = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'reception@rcms.com', password: 'password123' });
+        .send({ email: 'reception@VIARA.com', password: process.env.TEST_USER_PASSWORD });
     assert.equal(receptionLogin.status, 200, JSON.stringify(receptionLogin.body));
 
     const cashierTemporaryPassword = 'CashierTemporary123!';
@@ -319,8 +329,8 @@ const main = async () => {
     check(
         'concurrency-safe refund cap',
         concurrentStatuses[0] === 201
-            && concurrentStatuses[1] === 409
-            && Number(refundTotal.rows[0].total) === 45
+        && concurrentStatuses[1] === 409
+        && Number(refundTotal.rows[0].total) === 45
     );
     const concurrentRefund = concurrentRefunds.find(response => response.status === 201).body.refund;
     const concurrentApproval = await request(app)
@@ -445,10 +455,10 @@ const main = async () => {
         .send({ notes: 'Should be blocked after close' });
     check('finalized-period lock', closedInvoiceEdit.status === 409);
 
-    const originalCookie = accountantLogin.headers['set-cookie'][0].split(';')[0];
-    const rotated = await request(app).post('/api/auth/refresh').set('Cookie', originalCookie);
+    const originalCookie = `csrf_token=${csrfToken}; ${(accountantLogin.headers['set-cookie'] || []).find(cookie => cookie.startsWith('refreshToken='))?.split(';')[0] || ''}`;
+    const rotated = await request(app).post('/api/auth/refresh').set('Cookie', originalCookie).set('x-csrf-token', csrfToken);
     assert.equal(rotated.status, 200, JSON.stringify(rotated.body));
-    const replay = await request(app).post('/api/auth/refresh').set('Cookie', originalCookie);
+    const replay = await request(app).post('/api/auth/refresh').set('Cookie', originalCookie).set('x-csrf-token', csrfToken);
     check('refresh-token replay detection', replay.status === 401);
 
     const history = await db.query('SELECT COUNT(*)::int AS count FROM claim_status_history WHERE claim_id = $1', [claimId]);
@@ -468,6 +478,6 @@ main()
     })
     .catch(async error => {
         console.error(`Deployment validation failed: ${error.stack || error.message}`);
-        await db.end().catch(() => {});
+        await db.end().catch(() => { });
         process.exit(1);
     });

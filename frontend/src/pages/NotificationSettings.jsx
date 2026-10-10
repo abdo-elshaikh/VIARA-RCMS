@@ -13,6 +13,7 @@ import {
     useProcessNotificationJobsMutation
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
+import Pagination from '../components/ui/Pagination';
 
 const NOTIFICATION_EVENT_IDS = [
     'notifyAppointmentCreated',
@@ -27,9 +28,9 @@ const NOTIFICATION_EVENT_IDS = [
     'notifyMarketing'
 ];
 
-const inputClass = 'h-10 rounded-lg border border-slate-200/60 bg-white/80 px-3 text-sm font-medium text-slate-850 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-405 dark:border-slate-800/60 dark:bg-slate-900/50 dark:text-white dark:focus:border-slate-500 dark:focus:ring-slate-800';
-const primaryButton = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-slate-900 to-slate-955 px-4 text-sm font-semibold text-white transition hover:bg-slate-850 disabled:cursor-not-allowed disabled:opacity-50 dark:from-slate-100 dark:to-white dark:text-slate-950 dark:hover:brightness-110 shadow-sm';
-const secondaryButton = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200/60 bg-white/80 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800/60 dark:bg-slate-900/50 dark:text-slate-200 dark:hover:bg-slate-800/80';
+const inputClass = 'h-10 rounded-xl border border-slate-200/80 bg-white/90 px-3.5 text-xs font-bold text-slate-800 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-800 dark:bg-slate-900/80 dark:text-white dark:focus:border-teal-500 dark:focus:ring-teal-500/20';
+const primaryButton = 'inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-600 px-4 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50';
+const secondaryButton = 'inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-white/90 px-3.5 text-xs font-bold text-slate-700 shadow-xs backdrop-blur-md transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-800 dark:bg-slate-900/90 dark:text-slate-200 dark:hover:bg-slate-800';
 
 const CHANNELS = [
     { id: 'emailEnabled', label: 'Email alerts', icon: Mail },
@@ -94,15 +95,15 @@ export const NotificationPreferences = ({ patientId, doctorId }) => {
     const isDirty = JSON.stringify(form) !== JSON.stringify(savedForm);
 
     return (
-        <section className="mt-6 rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50">
-            <div className="flex flex-col gap-3 border-b border-slate-200/60 p-4 dark:border-slate-800/60 sm:flex-row sm:items-center sm:justify-between">
+        <section className="mt-6 rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
+            <div className="flex flex-col gap-3 border-b border-slate-200/80 p-5 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-start gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-teal-500/20 bg-teal-500/10 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300">
                         <Bell size={18} aria-hidden="true" />
                     </span>
                     <div>
-                        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">{t('settings.notificationPrefs', 'Notification preferences')}</h2>
-                        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{t('settings.notificationPrefsDesc', 'Manage approved channels and event reminders.')}</p>
+                        <h2 className="text-sm font-black text-slate-950 dark:text-white">{t('settings.notificationPrefs', 'Notification preferences')}</h2>
+                        <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-slate-400">{t('settings.notificationPrefsDesc', 'Manage approved channels and event reminders.')}</p>
                     </div>
                 </div>
                 <button type="button" onClick={handleSave} disabled={!isDirty || isUpdating} className={primaryButton}>
@@ -153,6 +154,7 @@ export const NotificationTemplates = () => {
     const [query, setQuery] = useState('');
     const [channelFilter, setChannelFilter] = useState('all');
     const [editor, setEditor] = useState(null);
+    const [validationError, setValidationError] = useState('');
 
     const filteredTemplates = useMemo(() => {
         const term = query.trim().toLowerCase();
@@ -192,6 +194,7 @@ export const NotificationTemplates = () => {
 
     const saveTemplate = async event => {
         event.preventDefault();
+        setValidationError('');
         try {
             if (editor.mode === 'create') {
                 await createTpl({
@@ -214,7 +217,12 @@ export const NotificationTemplates = () => {
             }
             setEditor(null);
         } catch (error) {
-            toast.error(getErrorMessage(error, t('settings.templatesSaveFailed', 'Template could not be saved.')));
+            const message = getErrorMessage(error, t('settings.templatesSaveFailed', 'Template could not be saved.'));
+            if (message.includes('missing required placeholders')) {
+                setValidationError(message);
+            } else {
+                toast.error(message);
+            }
         }
     };
 
@@ -275,16 +283,22 @@ export const NotificationTemplates = () => {
 
             {editor && (
                 <form onSubmit={saveTemplate} className="rounded-xl border border-slate-200/60 bg-slate-50/30 p-4 dark:border-slate-800/60 dark:bg-slate-900/30">
+                    {validationError && (
+                        <div className="mb-3 flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300">
+                            <AlertTriangle size={14} />
+                            {validationError}
+                        </div>
+                    )}
                     <div className="grid gap-3 lg:grid-cols-3">
-                        <input value={editor.eventType} onChange={event => setEditor(current => ({ ...current, eventType: event.target.value }))} disabled={editor.mode === 'edit'} required placeholder={t('settings.eventType', 'Event type')} className={inputClass} />
-                        <select value={editor.channel} onChange={event => setEditor(current => ({ ...current, channel: event.target.value, subject: event.target.value === 'Email' ? current.subject : '' }))} disabled={editor.mode === 'edit'} className={inputClass}>
+                        <input value={editor.eventType} onChange={event => { setValidationError(''); setEditor(current => ({ ...current, eventType: event.target.value })); }} disabled={editor.mode === 'edit'} required placeholder={t('settings.eventType', 'Event type')} className={inputClass} />
+                        <select value={editor.channel} onChange={event => { setValidationError(''); setEditor(current => ({ ...current, channel: event.target.value, subject: event.target.value === 'Email' ? current.subject : '' })); }} disabled={editor.mode === 'edit'} className={inputClass}>
                             {TEMPLATE_CHANNELS.map(channel => <option key={channel}>{channel}</option>)}
                         </select>
-                        <input value={editor.language} onChange={event => setEditor(current => ({ ...current, language: event.target.value }))} disabled={editor.mode === 'edit'} placeholder="en" className={inputClass} />
+                        <input value={editor.language} onChange={event => { setValidationError(''); setEditor(current => ({ ...current, language: event.target.value })); }} disabled={editor.mode === 'edit'} placeholder="en" className={inputClass} />
                     </div>
                     <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
                         {editor.channel === 'Email' ? (
-                            <input value={editor.subject} onChange={event => setEditor(current => ({ ...current, subject: event.target.value }))} placeholder={t('settings.subjectPreview', 'Subject')} className={inputClass} />
+                            <input value={editor.subject} onChange={event => { setValidationError(''); setEditor(current => ({ ...current, subject: event.target.value })); }} placeholder={t('settings.subjectPreview', 'Subject')} className={inputClass} />
                         ) : (
                             <div />
                         )}
@@ -293,7 +307,7 @@ export const NotificationTemplates = () => {
                             {t('settings.active', 'Active')}
                         </label>
                     </div>
-                    <textarea value={editor.body} onChange={event => setEditor(current => ({ ...current, body: event.target.value }))} required rows={5} placeholder={t('settings.bodyTemplate', 'Message body. Use {{patient_name}} style variables.')} className={`${inputClass} mt-3 h-auto min-h-32 w-full py-2 leading-6`} />
+                    <textarea value={editor.body} onChange={event => { setValidationError(''); setEditor(current => ({ ...current, body: event.target.value })); }} required rows={5} placeholder={t('settings.bodyTemplate', 'Message body. Use {{patient_name}} style variables.')} className={`${inputClass} mt-3 h-auto min-h-32 w-full py-2 leading-6`} />
                     <div className="mt-4 flex justify-end gap-2">
                         <button type="button" onClick={() => setEditor(null)} className={secondaryButton}>{t('common.cancel', 'Cancel')}</button>
                         <button type="submit" disabled={isCreating || isUpdating} className={primaryButton}>
@@ -304,7 +318,7 @@ export const NotificationTemplates = () => {
                 </form>
             )}
 
-            <div className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50">
+            <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                 <div className="overflow-x-auto">
                     <table className="w-full min-w-[820px] text-start text-sm text-slate-600 dark:text-slate-300">
                         <thead className="border-b border-slate-200/60 bg-slate-50/45 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800/60 dark:bg-slate-900/30 dark:text-slate-400">
@@ -358,17 +372,22 @@ export const NotificationTemplates = () => {
 };
 
 export const NotificationJobs = () => {
-    const { t } = useTranslation(['settings', 'common']);
-    const [statusFilter, setStatusFilter] = useState('Failed');
-    const { data: jobs = [], isLoading, isFetching, refetch } = useGetNotificationJobsQuery(
-        { status: statusFilter || undefined, limit: 100 },
+    const { t, i18n } = useTranslation(['settings', 'common']);
+    const [statusFilter, setStatusFilter] = useState('DeadLetter');
+    const [page, setPage] = useState(1);
+    const pageSize = 25;
+    const { data: jobsData, isLoading, isFetching, refetch } = useGetNotificationJobsQuery(
+        { status: statusFilter || undefined, limit: pageSize, offset: (page - 1) * pageSize },
         { pollingInterval: 60000 }
     );
+    const jobs = jobsData?.items || [];
+    const totalJobs = Number(jobsData?.total || 0);
+    const pageCount = Math.max(1, Math.ceil(totalJobs / pageSize));
     const [retryJob] = useRetryNotificationJobMutation();
     const [processJobs, { isLoading: isProcessing }] = useProcessNotificationJobsMutation();
 
     const deadLetterIds = new Set(
-        jobs.filter(j => j.status === 'Failed' && j.retry_count >= j.max_retries).map(j => j.job_id)
+        jobs.filter(j => ['Failed', 'DeadLetter'].includes(j.status) && j.retry_count >= j.max_retries).map(j => j.job_id)
     );
 
     const handleRetry = async (id) => {
@@ -389,7 +408,7 @@ export const NotificationJobs = () => {
         }
     };
 
-    const STATUS_FILTERS = ['', 'Pending', 'Processing', 'Sent', 'Failed', 'Skipped'];
+    const STATUS_FILTERS = ['', 'Pending', 'Processing', 'Sent', 'Failed', 'DeadLetter', 'Cancelled', 'Skipped'];
 
     return (
         <div className="space-y-4 p-4 sm:p-5">
@@ -404,7 +423,7 @@ export const NotificationJobs = () => {
                     </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={inputClass}>
+                    <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }} className={inputClass}>
                         {STATUS_FILTERS.map(s => <option key={s} value={s}>{s || t('settings.allStatuses', 'All statuses')}</option>)}
                     </select>
                     <button type="button" onClick={refetch} className={secondaryButton}>
@@ -430,7 +449,7 @@ export const NotificationJobs = () => {
             {isLoading ? (
                 <div className="py-10 text-center text-sm font-semibold text-slate-400">{t('common.loading', 'Loading...')}</div>
             ) : (
-                <div className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50">
+                <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                     <div className="overflow-x-auto">
                         <table className="w-full min-w-[760px] text-start text-sm text-slate-600 dark:text-slate-300">
                             <thead className="border-b border-slate-200/60 bg-slate-50/45 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:border-slate-800/60 dark:bg-slate-900/30 dark:text-slate-400">
@@ -467,7 +486,7 @@ export const NotificationJobs = () => {
                                             <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{job.retry_count}/{job.max_retries}</td>
                                             <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">{new Date(job.scheduled_for).toLocaleString()}</td>
                                             <td className="px-4 py-3 text-end">
-                                                {job.status === 'Failed' && (
+                                                {['Failed', 'DeadLetter'].includes(job.status) && (
                                                     <button type="button" onClick={() => handleRetry(job.job_id)} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
                                                         <RotateCcw size={13} />
                                                         {t('common.retry', 'Retry')}
@@ -487,6 +506,12 @@ export const NotificationJobs = () => {
                             </tbody>
                         </table>
                     </div>
+                    {totalJobs > 0 ? (
+                        <div className="flex items-center justify-between gap-3 border-t border-slate-200/60 px-4 py-3 text-xs font-semibold text-slate-500 dark:border-slate-800/60 dark:text-slate-400">
+                            <span>Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalJobs)} of {totalJobs}</span>
+                            <Pagination currentPage={page} pageCount={pageCount} onPageChange={setPage} isRtl={i18n.language?.startsWith('ar')} compact />
+                        </div>
+                    ) : null}
                 </div>
             )}
         </div>

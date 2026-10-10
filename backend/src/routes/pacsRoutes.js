@@ -2,12 +2,13 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { Transform } = require('stream');
+const { pipeline } = require('stream/promises');
 const multer = require('multer');
 const { AppError } = require('../middleware/errorHandler');
 const { hasAnyPermission } = require('../middleware/rbacMiddleware');
 const { authenticateDicomWeb } = require('../middleware/authMiddleware');
-const {
-    verifyPacsWebhook,
+const { verifyPacsWebhook,
     handleWebhook,
     getExamImagingStatus,
     getExamAiAnalysisJobs,
@@ -42,6 +43,7 @@ const {
     retryAllPacsAiJobs,
     cancelAllPacsAiJobs
 } = require('../controllers/pacsController');
+const { pacsWebhookLimiter, pacsAiLimiter } = require('../middleware/rateLimiters');
 
 const PACS_QUARANTINE_DIR = path.resolve(
     process.env.PACS_UPLOAD_QUARANTINE_DIR || path.join(__dirname, '../../uploads/.quarantine/pacs')
@@ -55,15 +57,25 @@ const PACS_MAX_FILES = positiveInteger(process.env.PACS_UPLOAD_MAX_FILES, 20);
 const PACS_MAX_REQUEST_BYTES = positiveInteger(process.env.PACS_UPLOAD_MAX_REQUEST_BYTES, 200 * 1024 * 1024);
 
 const upload = multer({
-    storage: multer.diskStorage({
-        destination: (_req, _file, cb) => {
-            fs.mkdir(PACS_QUARANTINE_DIR, { recursive: true }, (error) => cb(error, PACS_QUARANTINE_DIR));
-        },
-        filename: (_req, file, cb) => {
+    storage: {
+        _handleFile: (req, file, cb) => {
             const extension = path.extname(file.originalname || '').toLowerCase().slice(0, 12);
-            cb(null, `${Date.now()}-${crypto.randomBytes(12).toString('hex')}${extension}`);
-        }
-    }),
+            const filename = `${Date.now()}-${crypto.randomBytes(12).toString('hex')}${extension}`;
+            const target = path.join(PACS_QUARANTINE_DIR, filename);
+            let size = 0;
+            const budget = new Transform({ transform(chunk, encoding, done) {
+                size += chunk.length;
+                req.pacsReceivedFileBytes = (req.pacsReceivedFileBytes || 0) + chunk.length;
+                if (req.pacsReceivedFileBytes > PACS_MAX_REQUEST_BYTES) return done(new AppError('PACS upload request is too large', 413));
+                done(null, chunk);
+            } });
+            fs.promises.mkdir(PACS_QUARANTINE_DIR, { recursive: true })
+                .then(() => pipeline(file.stream, budget, fs.createWriteStream(target, { flags: 'wx', mode: 0o600 })))
+                .then(() => cb(null, { destination: PACS_QUARANTINE_DIR, filename, path: target, size }))
+                .catch(async error => { await fs.promises.unlink(target).catch(() => {}); cb(error); });
+        },
+        _removeFile: (_req, file, cb) => fs.unlink(file.path, cb)
+    },
     limits: {
         fileSize: PACS_MAX_FILE_BYTES,
         files: PACS_MAX_FILES,
@@ -75,7 +87,7 @@ const upload = multer({
 
 const cleanupPacsFiles = (files = []) => files.forEach((file) => {
     if (!file?.path) return;
-    fs.unlink(file.path, () => {});
+    fs.unlink(file.path, () => { });
 });
 
 const uploadPacsFiles = (req, res, next) => {
@@ -103,15 +115,15 @@ const uploadPacsFiles = (req, res, next) => {
 /**
  * PACS/imaging routes.
  *
- * The webhook is machine-to-machine (Orthanc -> RCMS) and authenticates with a
+ * The webhook is machine-to-machine (Orthanc -> VIARA) and authenticates with a
  * shared secret, so it is mounted BEFORE the JWT guard. Everything else is a
- * normal authenticated RCMS API guarded by PACS permissions.
+ * normal authenticated VIARA API guarded by PACS permissions.
  */
 module.exports = (pool, authenticateToken, authorizeRole) => {
     const router = express.Router();
 
     // --- Machine-to-machine (no JWT) ---
-    router.post('/webhook', verifyPacsWebhook, handleWebhook(pool));
+    router.post('/webhook', pacsWebhookLimiter, verifyPacsWebhook, handleWebhook(pool));
 
     // DICOMweb proxy — QIDO/WADO/STOW forwarded to Orthanc with server-side
     // basic auth. Write verbs are rejected in the controller; local imports use
@@ -127,8 +139,15 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
         dicomWebProxy(pool)
     );
 
-    // --- Authenticated RCMS API ---
+    const { getBookmarks, saveBookmarks } = require('../controllers/pacsBookmarksController');
+    const { readMeasurements, saveMeasurements, renewViewerSession } = require('../controllers/pacsMeasurementsController');
+    router.get('/viewer-state/:studyInstanceUid/measurements', authenticateDicomWeb, hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), readMeasurements(pool));
+    router.put('/viewer-state/:studyInstanceUid/measurements', authenticateDicomWeb, hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), saveMeasurements(pool));
+    router.post('/viewer-renew', authenticateDicomWeb, hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), renewViewerSession());
+    // --- Authenticated VIARA API ---
     router.use(authenticateToken);
+    router.get('/studies/:studyInstanceUid/bookmarks', hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), getBookmarks(pool));
+    router.put('/studies/:studyInstanceUid/bookmarks', hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), saveBookmarks(pool));
 
     // Mint the short-lived viewer cookie for the OHIF iframe. Guarded like the
     // DICOMweb proxy so only users who may view images can obtain one.
@@ -140,7 +159,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
 
     router.get(
         '/studies/:studyInstanceUid/export',
-        hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']),
+        hasAnyPermission(pool, ['DOWNLOAD_PACS_DICOM', 'MANAGE_PACS']),
         exportPacsStudy(pool)
     );
 
@@ -165,19 +184,21 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
 
     router.post(
         '/exams/:examId/ai-analysis',
-        hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']),
+        hasAnyPermission(pool, ['RECONCILE_STUDIES', 'MANAGE_PACS']),
+        pacsAiLimiter,
         requestExamAiAnalysis(pool)
     );
 
     router.post(
         '/ai-analysis/jobs/:jobId/retry',
-        hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']),
+        hasAnyPermission(pool, ['RECONCILE_STUDIES', 'MANAGE_PACS']),
+        pacsAiLimiter,
         retryPacsAiJob(pool)
     );
 
     router.post(
         '/ai-analysis/jobs/:jobId/cancel',
-        hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']),
+        hasAnyPermission(pool, ['RECONCILE_STUDIES', 'MANAGE_PACS']),
         cancelPacsAiJob(pool)
     );
 
@@ -190,6 +211,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.post(
         '/ai-analysis/queue/retry-all',
         hasAnyPermission(pool, ['MANAGE_PACS']),
+        pacsAiLimiter,
         retryAllPacsAiJobs(pool)
     );
 
@@ -319,6 +341,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.post(
         '/ai-analysis/process',
         hasAnyPermission(pool, ['MANAGE_PACS']),
+        pacsAiLimiter,
         runPacsAiAnalysisQueue(pool)
     );
 

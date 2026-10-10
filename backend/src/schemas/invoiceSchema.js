@@ -1,6 +1,10 @@
 const { z } = require('zod');
 
 const paymentMethodSchema = z.enum(['Cash', 'Card', 'Credit Card', 'Wallet', 'Bank Transfer', 'Installment', 'Insurance', 'Corporate']);
+// Insurance and corporate coverage are payer/claim categories, not patient payment tenders.
+// Keep paymentMethodSchema for historical refunds; new collections must use an actual tender.
+// Installment plans defer payment and are not receipts for funds received now.
+const collectionMethodSchema = z.enum(['Cash', 'Card', 'Credit Card', 'Wallet', 'Bank Transfer']);
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const validateDateRange = (schema) => schema.superRefine((data, context) => {
     if (data.startDate && data.endDate && data.startDate > data.endDate) {
@@ -28,6 +32,7 @@ const createInvoiceSchema = z.object({
     patientId: z.string().uuid().optional(),
     items: z.array(invoiceItemSchema).optional(),
     insuranceCoveredAmount: z.coerce.number().min(0).optional(),
+    insurancePolicyId: z.string().uuid().optional(),
     discountAmount: z.coerce.number().min(0).optional(),
     discountPercentage: z.coerce.number().min(0).max(100).optional(),
     discountReason: z.string().trim().max(1000).optional(),
@@ -48,6 +53,7 @@ const createInvoiceSchema = z.object({
 const updateInvoiceSchema = z.object({
     invoiceStatus: z.literal('Voided').optional(),
     insuranceCoveredAmount: z.coerce.number().min(0).optional(),
+    insurancePolicyId: z.string().uuid().nullable().optional(),
     discountAmount: z.coerce.number().min(0).optional(),
     discountPercentage: z.coerce.number().min(0).max(100).optional(),
     discountReason: z.string().trim().max(1000).optional(),
@@ -73,18 +79,31 @@ const getInvoicesQuerySchema = validateDateRange(z.object({
     status: z.enum(['Draft', 'Pending', 'Partial', 'Paid', 'Refunded', 'Voided']).optional(),
     patientId: z.string().uuid().optional(),
     q: z.string().trim().max(100).optional(),
+    date: dateString.optional(),
     startDate: dateString.optional(),
     endDate: dateString.optional(),
+    appointmentDate: dateString.optional(),
+    openOnly: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
+    includeMeta: z.enum(['true', 'false']).transform((value) => value === 'true').optional(),
+    sortBy: z.enum(['number', 'date', 'total', 'paid', 'balance', 'status']).optional(),
+    sortDirection: z.enum(['asc', 'desc']).optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
     offset: z.string().regex(/^\d+$/).transform(Number).optional()
 }));
 
+const getInvoiceSummaryQuerySchema = validateDateRange(z.object({
+    date: dateString.optional(),
+    startDate: dateString.optional(),
+    endDate: dateString.optional()
+}));
+
 const collectPaymentSchema = z.object({
     amount: z.coerce.number().min(0),
-    method: paymentMethodSchema.optional(),
+    method: collectionMethodSchema.optional(),
     paymentReference: z.string().trim().max(150).optional(),
     discountAmount: z.coerce.number().min(0).optional().default(0),
-    discountReason: z.string().trim().max(1000).optional()
+    discountReason: z.string().trim().max(1000).optional(),
+    verificationChecklist: z.record(z.boolean()).optional()
 }).superRefine((data, context) => {
     if (data.amount <= 0 && data.discountAmount <= 0) {
         context.addIssue({ code: z.ZodIssueCode.custom, path: ['amount'], message: 'A payment or discount amount is required' });
@@ -100,15 +119,26 @@ const collectPaymentSchema = z.object({
     }
 });
 
+const REFUND_REASON_CODES = [
+    'PatientCancelled',
+    'DuplicatePayment',
+    'ServiceNotProvided',
+    'Overcharge',
+    'InsuranceAdjustment',
+    'SystemError',
+    'Other'
+];
+
 const refundSchema = z.object({
-    paymentId: z.string().uuid().optional(),
+    paymentId: z.string().uuid({ message: 'A specific completed payment must be selected for the refund' }),
     amount: z.coerce.number().positive(),
     method: paymentMethodSchema.optional(),
+    reasonCode: z.enum(REFUND_REASON_CODES).optional(),
     reason: z.string().trim().min(3).max(1000)
 });
 
 const getRefundsQuerySchema = validateDateRange(z.object({
-    status: z.enum(['Pending', 'Approved', 'Rejected', 'Processed']).optional(),
+    status: z.enum(['Pending', 'Approved', 'Rejected', 'Processed', 'Failed']).optional(),
     startDate: dateString.optional(),
     endDate: dateString.optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
@@ -116,16 +146,20 @@ const getRefundsQuerySchema = validateDateRange(z.object({
 }));
 
 const reviewRefundSchema = z.object({
-    status: z.enum(['Approved', 'Processed', 'Rejected']),
+    status: z.enum(['Approved', 'Processed', 'Rejected', 'Failed']),
     reason: z.string().trim().min(3).max(1000)
 });
+
+const refundReasonCodes = REFUND_REASON_CODES;
 
 module.exports = {
     createInvoiceSchema,
     updateInvoiceSchema,
     getInvoicesQuerySchema,
+    getInvoiceSummaryQuerySchema,
     collectPaymentSchema,
     refundSchema,
     getRefundsQuerySchema,
-    reviewRefundSchema
+    reviewRefundSchema,
+    refundReasonCodes
 };

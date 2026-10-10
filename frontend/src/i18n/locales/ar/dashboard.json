@@ -3,8 +3,11 @@
     "teamMember": "عضو الفريق",
     "welcome": "مرحباً بعودتك، {{name}}",
     "liveData": "بيانات تشغيلية مباشرة",
+    "dashboardMetrics": "مؤشرات سجل لوحة التحكم",
     "refresh": "تحديث",
     "refreshing": "جارٍ التحديث...",
+    "patientSearchLabel": "البحث عن المرضى بالاسم أو رقم الملف",
+    "patientSearchPlaceholder": "بحث سريع عن مريض / رقم الملف...",
     "awaitingSync": "بانتظار المزامنة",
     "vsPreviousDay": "مقارنة باليوم السابق",
     "vsPreviousWeek": "مقارنة بالأسبوع السابق",
@@ -16,7 +19,20 @@
     "imagingStudy": "فحص تصوير",
     "noDistribution": "لا يوجد عبء حسب الأجهزة بعد",
     "noChartData": "لا توجد بيانات تشغيلية بعد",
-    "noChartDataDescription": "ستظهر البيانات تلقائياً عند تسجيل العمل داخل RCMS."
+    "noChartDataDescription": "ستظهر البيانات تلقائياً عند تسجيل العمل داخل VIARA."
+  },
+  "priorities": {
+    "title": "أولويات التشغيل",
+    "waitingRoom": "غرفة الانتظار",
+    "averageWait": "متوسط الانتظار {{duration}}",
+    "readyAppointments": "المواعيد الجاهزة",
+    "totalAppointments": "{{count}} موعداً اليوم",
+    "completedToday": "المكتمل اليوم",
+    "urgentWork": "عمل متأخر",
+    "oldestOpen": "الأقدم المفتوح",
+    "openWork": "عمل مفتوح",
+    "collections": "التحصيل",
+    "staffing": "التوظيف"
   },
   "roles": {
     "Developer": "مطوّر النظام",
@@ -48,6 +64,20 @@
     "eyebrow": "التشغيل السريري",
     "title": "مساحة العمليات التشخيصية",
     "workloadDistribution": "العمل المفتوح حسب الجهاز",
+    "taskMetrics": {
+      "totalAssigned": "إجمالي المسند",
+      "available": "{{count}} متاح في المجموعة المشتركة",
+      "pending": "بانتظار البدء",
+      "inProgress": "قيد التنفيذ",
+      "onHold": "{{count}} معلّق",
+      "overdueDetail": "مهام مسندة تجاوزت زمن الخدمة المحدد للدور",
+      "slaCompliance": "الالتزام بزمن الخدمة",
+      "startDelay": "متوسط تأخر البدء {{minutes}} دقيقة",
+      "completionRate": "معدل الإنجاز الأسبوعي",
+      "weeklyProgress": "{{completed}} مكتمل · {{reassigned}} معاد أو محول",
+      "stageDistribution": "مراحل مهامي الحالية",
+      "stageDistributionDescription": "المهام النشطة المسندة إلى حسابك فقط."
+    },
     "metrics": {
       "report": {
         "subtitle": "رتّب أولوية التقارير وراقب زمن الإنجاز وحافظ على تقدم حالات التصوير العاجلة.",
@@ -87,6 +117,77 @@
       }
     }
   },
+  "operations": {
+    "modalitiesTitle": "حالة أجهزة وغرف الفحص",
+    "measuredStatus": "مقاسة من سير العمل الفعلي",
+    "noModalities": "لا تتوفر حالة للأجهزة من النظام حالياً.",
+    "noActiveExam": "لا يوجد فحص نشط",
+    "elapsed": "نشط منذ {{duration}}",
+    "modalityStatus": {
+      "in_use": "قيد الاستخدام",
+      "ready": "متاح",
+      "maintenance": "صيانة",
+      "out_of_service": "خارج الخدمة"
+    },
+    "turnaroundTitle": "مراحل زمن الإنجاز السريري المقاسة",
+    "withinTargets": "ضمن الأهداف المرجعية",
+    "targetAttention": "إحدى المراحل تحتاج متابعة",
+    "target": "المستهدف {{duration}}",
+    "samples": "{{count}} حالات مقاسة",
+    "noTurnaround": "لا توجد قياسات مكتملة لمراحل العمل خلال الأسبوع الحالي.",
+    "stages": {
+      "checkin": "من الوصول إلى الفحص",
+      "preparation": "التحضير السريري",
+      "acquisition": "التصوير واكتساب الصور",
+      "reporting": "كتابة التقرير واعتماده"
+    }
+  },
+  "finance": {
+    "cashierEyebrow": "عمليات التحصيل النقدي",
+    "cashierTitle": "لوحة عمليات الكاشير",
+    "cashierSubtitle": "تابع ورديتك والتحصيلات والعمليات والفواتير المنتظرة للسداد.",
+    "accountingEyebrow": "الرقابة المالية",
+    "accountingTitle": "لوحة المحاسبة",
+    "accountingSubtitle": "راجع التحصيلات والمديونيات والفواتير والمبالغ المستردة المعلقة دون بيانات سريرية.",
+    "collectedToday": "المحصل اليوم",
+    "collectedWeek": "المحصل هذا الأسبوع",
+    "transactionsToday": "عمليات اليوم",
+    "transactionsDetail": "عمليات دفع مكتملة",
+    "openInvoices": "الفواتير المفتوحة",
+    "openInvoicesDetail": "{{count}} فاتورة برصيد مستحق",
+    "outstanding": "المديونيات المستحقة",
+    "pendingRefunds": "مبالغ مستردة معلقة",
+    "requiresReview": "تحتاج مراجعة مالية",
+    "shiftStatus": "وردية الكاشير",
+    "shiftOpen": "مفتوحة",
+    "shiftClosed": "مغلقة",
+    "shiftStatusDetail": "للكاشير المسجل حالياً"
+  },
+  "hr": {
+    "eyebrow": "عمليات القوى العاملة",
+    "title": "لوحة الموارد البشرية",
+    "subtitle": "تابع توفر الموظفين والحضور والإجازات المعتمدة والطلبات التي تحتاج مراجعة.",
+    "activeStaff": "الموظفون النشطون",
+    "activeStaffDetail": "حسابات القوى العاملة المفعلة",
+    "presentToday": "الحاضرون اليوم",
+    "onLeaveToday": "في إجازة اليوم",
+    "pendingLeave": "طلبات إجازة معلقة",
+    "pendingLeaveDetail": "بانتظار قرار الموارد البشرية"
+  },
+  "insurance": {
+    "eyebrow": "عمليات جهات الدفع",
+    "title": "لوحة عمليات التأمين",
+    "subtitle": "تابع الموافقات والمطالبات المرفوضة والتحصيل من شركات التأمين دون كشف سجلات المرضى.",
+    "pendingApprovals": "موافقات معلقة",
+    "requiresDecision": "تحتاج قراراً من التأمين",
+    "openClaims": "مطالبات مفتوحة",
+    "openClaimsDetail": "{{count}} مطالبة قيد المعالجة",
+    "inProgress": "سير مطالبات نشط",
+    "rejectedClaims": "مطالبات مرفوضة",
+    "requiresFollowUp": "تحتاج متابعة أو إعادة تقديم",
+    "outstandingClaims": "قيمة المطالبات المستحقة",
+    "receivedWeek": "المحصل هذا الأسبوع"
+  },
   "executive": {
     "eyebrow": "أداء المركز",
     "title": "لوحة العمليات التنفيذية",
@@ -94,11 +195,11 @@
     "weeklyScans": "فحوصات هذا الأسبوع",
     "weeklyRevenue": "المحصل هذا الأسبوع",
     "openWork": "العمل السريري المفتوح",
-    "scansToday": "تم إنشاء {{count}} فحوصات اليوم",
+    "scansToday": "اكتمل {{count}} فحصاً اليوم",
     "activeStaff": "الموظفون النشطون",
     "staffOnLeave": "{{count}} في إجازة معتمدة اليوم",
     "weeklyPerformance": "الإنتاج والتحصيل الأسبوعي",
-    "performanceDescription": "الفحوصات المنشأة وقيمة المدفوعات المكتملة حسب اليوم.",
+    "performanceDescription": "الفحوصات المكتملة وقيمة المدفوعات المحصلة حسب اليوم.",
     "scans": "الفحوصات",
     "revenue": "الإيرادات",
     "modalityMix": "توزيع الأجهزة",
@@ -130,19 +231,40 @@
     "financials": "الشؤون المالية",
     "financialsDescription": "تابع الفوترة والتحصيل.",
     "inventory": "المخزون",
-    "inventoryDescription": "تابع المخزون ومخاطر النقص."
+    "inventoryDescription": "تابع المخزون ومخاطر النقص.",
+    "openCashierWorkspace": "فتح مساحة الكاشير",
+    "openCashierWorkspaceDescription": "حصّل المدفوعات وطابق الوردية الحالية.",
+    "insurance": "التأمين",
+    "insuranceDescription": "راجع موافقات ومطالبات جهات الدفع.",
+    "openHR": "فتح مساحة الموارد البشرية",
+    "openHRDescription": "راجع الحضور والإجازات وعمليات القوى العاملة.",
+    "openInsurance": "فتح مساحة التأمين",
+    "openInsuranceDescription": "راجع الموافقات والعقود والمطالبات.",
+    "openApprovals": "فتح الموافقات",
+    "openApprovalsDescription": "راجع قرارات التأمين المنتظرة.",
+    "noneAvailable": "لا توجد اختصارات معتمدة متاحة",
+    "noneAvailableDescription": "اطلب من مسؤول النظام الصلاحية المطلوبة قبل اتخاذ أي إجراء."
   },
   "activity": {
     "title": "أحدث الأنشطة السريرية",
     "description": "آخر الفحوصات المعتمدة من سير العمل المباشر.",
     "scanFinalized": "تم اعتماد {{modality}} للمريض {{mrn}}",
+    "patientArrived": "وصل المريض {{mrn}} لإجراء {{modality}}",
+    "scanCompleted": "اكتمل فحص {{modality}} للمريض {{mrn}}",
+    "preparationCompleted": "اكتمل تحضير المريض {{mrn}} · {{modality}}",
+    "receptionTitle": "أحدث حالات الوصول",
+    "receptionDescription": "آخر حالات وصول المرضى المسجلة من سير عمل الاستقبال الفعلي.",
+    "receptionEmpty": "لا توجد حالات وصول مسجلة بعد",
+    "receptionEmptyDescription": "ستظهر حالات وصول المرضى هنا بعد تسجيل الحضور.",
     "empty": "لا توجد أنشطة معتمدة بعد",
     "emptyDescription": "ستظهر أحداث سير العمل الحديثة هنا عند اعتماد التقارير."
   },
   "error": {
     "title": "بيانات لوحة التحكم غير متاحة",
-    "description": "تعذر على RCMS تحميل أحدث الإحصاءات التشغيلية.",
-    "retry": "المحاولة مرة أخرى"
+    "description": "تعذر على VIARA تحميل أحدث الإحصاءات التشغيلية.",
+    "staleData": "تعذر آخر تحديث. ما زالت آخر بيانات تمت مزامنتها بنجاح ظاهرة.",
+    "retry": "المحاولة مرة أخرى",
+    "updating": "جارٍ التحديث…"
   },
   "clinicalWorklist": {
     "eyebrow": "التقارير السريرية",

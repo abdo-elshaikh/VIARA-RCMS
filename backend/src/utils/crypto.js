@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const logger = require('../config/logger');
 
 // ENCRYPTION_KEY is validated at startup by validateEnv.js
 const GCM_IV_LENGTH = 12;
@@ -6,9 +7,17 @@ const GCM_IV_LENGTH = 12;
 const getKeyring = () => {
     let configured = {};
     if (process.env.ENCRYPTION_KEYS) {
-        configured = JSON.parse(process.env.ENCRYPTION_KEYS);
+        try {
+            configured = JSON.parse(process.env.ENCRYPTION_KEYS);
+        } catch (error) {
+            logger.warn?.('Invalid ENCRYPTION_KEYS config; ignoring it for decryption fallback.', { error: error.message });
+        }
     }
-    return { default: process.env.ENCRYPTION_KEY, ...configured };
+    return {
+        default: process.env.ENCRYPTION_KEY,
+        backup: process.env.BACKUP_ENCRYPTION_KEY,
+        ...configured
+    };
 };
 
 const getEncryptionKey = (keyId = process.env.ENCRYPTION_KEY_ID || 'default') => {
@@ -17,6 +26,31 @@ const getEncryptionKey = (keyId = process.env.ENCRYPTION_KEY_ID || 'default') =>
         throw new Error(`Encryption key '${keyId}' is unavailable or invalid`);
     }
     return { keyId, key: Buffer.from(keyHex, 'hex') };
+};
+
+const getDecryptKeyCandidates = (preferredKeyId) => {
+    const keyring = getKeyring();
+    const orderedIds = [];
+    if (preferredKeyId) orderedIds.push(preferredKeyId);
+    if (process.env.ENCRYPTION_KEY_ID && process.env.ENCRYPTION_KEY_ID !== preferredKeyId) {
+        orderedIds.push(process.env.ENCRYPTION_KEY_ID);
+    }
+    if ('default' !== preferredKeyId) orderedIds.push('default');
+    if ('backup' !== preferredKeyId && process.env.BACKUP_ENCRYPTION_KEY) orderedIds.push('backup');
+    for (const [keyId, keyHex] of Object.entries(keyring)) {
+        if (keyHex && !orderedIds.includes(keyId)) orderedIds.push(keyId);
+    }
+
+    const uniqueCandidates = [];
+    for (const keyId of orderedIds) {
+        const keyHex = keyring[keyId];
+        if (!/^[0-9a-fA-F]{64}$/.test(keyHex || '')) continue;
+        if (!uniqueCandidates.find(candidate => candidate.keyId === keyId)) {
+            uniqueCandidates.push({ keyId, key: Buffer.from(keyHex, 'hex') });
+        }
+    }
+
+    return uniqueCandidates;
 };
 
 function encrypt(text) {
@@ -35,30 +69,51 @@ function decrypt(text) {
     if (!text) return null;
 
     const textParts = String(text).split(':');
-    let decipher;
-    let encryptedText;
-
-    if (textParts[0] === 'v2') {
-        if (![4, 5].includes(textParts.length)) throw new Error('Invalid encrypted value');
-        const keyId = textParts.length === 5 ? textParts[1] : 'default';
-        const { key } = getEncryptionKey(keyId);
-        const [ivHex, tagHex, ciphertextHex] = textParts.slice(-3);
-        decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
-        decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
-        encryptedText = Buffer.from(ciphertextHex, 'hex');
-    } else {
-        // Read legacy AES-CBC values during the rolling data migration. All new
-        // writes use authenticated AES-GCM above.
-        if (textParts.length !== 2) throw new Error('Invalid encrypted value');
-        const { key } = getEncryptionKey('default');
-        decipher = crypto.createDecipheriv('aes-256-cbc', key, Buffer.from(textParts[0], 'hex'));
-        encryptedText = Buffer.from(textParts[1], 'hex');
+    if (textParts[0] !== 'v2') {
+        throw new Error('Invalid encrypted value: legacy AES-CBC format is no longer supported. Run backend/scripts/reencryptPii.js migration.');
     }
 
-    let decrypted = decipher.update(encryptedText);
-    decrypted = Buffer.concat([decrypted, decipher.final()]);
+    if (![4, 5].includes(textParts.length)) {
+        throw new Error('Invalid encrypted value');
+    }
 
-    return decrypted.toString();
+    const preferredKeyId = textParts.length === 5 ? textParts[1] : 'default';
+    const [ivHex, tagHex, ciphertextHex] = textParts.slice(-3);
+    const encryptedText = Buffer.from(ciphertextHex, 'hex');
+    const authTag = Buffer.from(tagHex, 'hex');
+    const candidateKeys = getDecryptKeyCandidates(preferredKeyId);
+    let lastError;
+
+    for (const { keyId, key } of candidateKeys) {
+        try {
+            const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
+            decipher.setAuthTag(authTag);
+            const decrypted = Buffer.concat([
+                decipher.update(encryptedText),
+                decipher.final()
+            ]);
+            return decrypted.toString();
+        } catch (error) {
+            lastError = error;
+            const isKnownAuthFailure = !error || [
+                'ERR_CRYPTO_INVALID_IV',
+                'ERR_CRYPTO_INVALID_TAG',
+                'ERR_CRYPTO_UNKNOWN',
+                'ERR_INVALID_ARG_TYPE',
+                'ERR_INVALID_STATE',
+                'ERR_INVALID_ARG_VALUE'
+            ].includes(error.code) || /Unsupported state or unable to authenticate data|Invalid authentication tag/i.test(String(error.message || ''));
+            if (!isKnownAuthFailure) {
+                throw error;
+            }
+        }
+    }
+
+    if (lastError) {
+        throw lastError;
+    }
+
+    throw new Error(`Unable to decrypt value for key '${preferredKeyId}'`);
 }
 
 /**
@@ -66,7 +121,10 @@ function decrypt(text) {
  */
 function hash(text) {
     if (!text) return null;
-    const blindIndexKey = process.env.BLIND_INDEX_KEY || process.env.ENCRYPTION_KEY;
+    if (!process.env.BLIND_INDEX_KEY) {
+        throw new Error('BLIND_INDEX_KEY is required for blind indexing');
+    }
+    const blindIndexKey = process.env.BLIND_INDEX_KEY;
     const key = /^[0-9a-fA-F]{64}$/.test(blindIndexKey)
         ? Buffer.from(blindIndexKey, 'hex')
         : Buffer.from(blindIndexKey, 'utf8');

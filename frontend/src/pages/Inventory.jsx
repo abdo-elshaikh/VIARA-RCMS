@@ -1,95 +1,93 @@
-import { useState } from 'react';
-import { BadgeCheck, LayoutDashboard, Package, ShieldCheck, Truck, Users, Zap } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { LayoutDashboard, Package, Truck, Users, AlertTriangle, Layers3, Clock, RefreshCw, TrendingUp } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import InventoryDashboard from '../components/inventory/InventoryDashboard';
 import InventoryCatalog from '../components/inventory/InventoryCatalog';
 import SupplierManager from '../components/inventory/SupplierManager';
 import PurchaseOrderManager from '../components/inventory/PurchaseOrderManager';
+import { selectCurrentUser } from '../store/authSlice';
 import PageHeader from '../components/ui/PageHeader';
+import { useGetExpiryAlertsQuery, useGetInventoryQuery, useGetStockMovementsQuery } from '../store/api';
 
 const Inventory = () => {
-    const [activeTab, setActiveTab] = useState('dashboard');
-    const { t } = useTranslation('workspace');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const { t, i18n } = useTranslation('workspace');
+    const user = useSelector(selectCurrentUser);
+    const isArabic = i18n.language === 'ar';
+    const inventoryQuery = useGetInventoryQuery();
+    const alertsQuery = useGetExpiryAlertsQuery();
+    const movementsQuery = useGetStockMovementsQuery({ limit: 100 });
+    const inventory = Array.isArray(inventoryQuery.data) ? inventoryQuery.data : [];
+    const alerts = Array.isArray(alertsQuery.data) ? alertsQuery.data : [];
+    const movements = Array.isArray(movementsQuery.data) ? movementsQuery.data : [];
+    const lowStock = inventory.filter(item => Number(item.quantity) <= Number(item.min_level)).length;
+    const expired = alerts.filter(alert => new Date(alert.expiry_date) < new Date()).length;
+    const movementsToday = movements.filter(item => new Date(item.created_at).toDateString() === new Date().toDateString()).length;
+    const headerLoading = inventoryQuery.isLoading || alertsQuery.isLoading || movementsQuery.isLoading;
+    const headerFetching = inventoryQuery.isFetching || alertsQuery.isFetching || movementsQuery.isFetching;
+    const refreshHeader = () => { inventoryQuery.refetch(); alertsQuery.refetch(); movementsQuery.refetch(); };
 
     const tabs = [
-        { id: 'dashboard', icon: LayoutDashboard, label: t('inventory.tabs.dashboard', { defaultValue: 'Dashboard' }), tone: 'cyan' },
-        { id: 'catalog', icon: Package, label: t('inventory.tabs.catalog', { defaultValue: 'Stock Catalog' }), tone: 'emerald' },
-        { id: 'pos', icon: Truck, label: t('inventory.tabs.pos', { defaultValue: 'Purchase Orders' }), tone: 'indigo' },
-        { id: 'suppliers', icon: Users, label: t('inventory.tabs.suppliers', { defaultValue: 'Suppliers' }), tone: 'amber' },
-    ];
+        { id: 'dashboard', icon: LayoutDashboard, label: t('inventory.tabs.dashboard', { defaultValue: 'Dashboard' }) },
+        { id: 'catalog', icon: Package, label: t('inventory.tabs.catalog', { defaultValue: 'Stock Catalog' }) },
+        { id: 'pos', icon: Truck, label: t('inventory.tabs.pos', { defaultValue: 'Purchase Orders' }) },
+        { id: 'suppliers', icon: Users, label: t('inventory.tabs.suppliers', { defaultValue: 'Suppliers' }) },
+    ].filter(tab => tab.id !== 'suppliers' || ['Admin', 'Developer'].includes(user?.role));
+    const requestedTab = searchParams.get('tab');
+    const activeTab = tabs.some((tab) => tab.id === requestedTab) ? requestedTab : 'dashboard';
+    const setActiveTab = (tab) => setSearchParams((current) => { const next = new URLSearchParams(current); next.set('tab', tab); return next; }, { replace: true });
 
     return (
-        <main className="app-page">
-            <div className="mx-auto max-w-screen-2xl space-y-6 pb-12">
-                {/* Modernized Page Header */}
-                <PageHeader
-                    icon={Package}
-                    eyebrow={t('inventory.eyebrow', { defaultValue: 'Inventory & Consumables' })}
-                    title={t('inventory.title', { defaultValue: 'Inventory Management' })}
-                    description={t('inventory.description', { defaultValue: 'Track clinic stock levels, batches, expiry alerts, purchase orders, and supplier relationships.' })}
-                    className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-slate-50/50 to-cyan-50/40 p-6 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:from-slate-950 dark:via-slate-900/90 dark:to-cyan-950/20 dark:shadow-none"
-                    meta={
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-teal-200/80 bg-teal-50/90 px-3 py-1 text-xs font-bold text-teal-800 shadow-sm dark:border-teal-500/20 dark:bg-teal-500/10 dark:text-teal-300">
-                                <ShieldCheck size={13} className="text-teal-600 dark:text-teal-400" />
-                                FEFO Batch Tracking
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-200/80 bg-cyan-50/90 px-3 py-1 text-xs font-bold text-cyan-800 shadow-sm dark:border-cyan-500/20 dark:bg-cyan-500/10 dark:text-cyan-300">
-                                <BadgeCheck size={13} className="text-cyan-600 dark:text-cyan-400" />
-                                Automated Alerts
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/80 bg-emerald-50/90 px-3 py-1 text-xs font-bold text-emerald-800 shadow-sm dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                                <Zap size={13} className="text-emerald-600 dark:text-emerald-400" />
-                                Real-time Ledger
-                            </span>
-                        </div>
-                    }
-                />
+        <main className="mx-auto max-w-[1600px] space-y-6 pb-12">
+            <PageHeader
+                icon={Package}
+                eyebrowIcon={Layers3}
+                eyebrow={isArabic ? 'المخزون والمستهلكات الطبية' : 'Inventory & Consumables'}
+                title={t('inventory.title', { defaultValue: 'Inventory Management' })}
+                description={t('inventory.description', { defaultValue: 'Track clinic stock levels, batches, expiry alerts, purchase orders, and supplier relationships.' })}
+                actions={<button type="button" onClick={refreshHeader} disabled={headerFetching} className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"><RefreshCw size={15} className={headerFetching ? 'animate-spin' : ''} />{isArabic ? 'تحديث المخزون' : 'Refresh inventory'}</button>}
+                metrics={[
+                    { key: 'items', icon: Package, label: isArabic ? 'أصناف المخزون' : 'Catalog items', value: inventory.length, tone: 'teal', loading: headerLoading, error: inventoryQuery.isError },
+                    { key: 'low', icon: AlertTriangle, label: isArabic ? 'مخزون منخفض' : 'Low stock', value: lowStock, tone: lowStock ? 'rose' : 'emerald', loading: headerLoading, error: inventoryQuery.isError },
+                    { key: 'expiry', icon: Clock, label: isArabic ? 'تنبيهات الصلاحية' : 'Expiry alerts', value: alerts.length, detail: expired ? `${expired} ${isArabic ? 'منتهي' : 'expired'}` : undefined, tone: alerts.length ? 'amber' : 'emerald', loading: headerLoading, error: alertsQuery.isError },
+                    { key: 'movement', icon: TrendingUp, label: isArabic ? 'حركات اليوم' : 'Movements today', value: movementsToday, tone: 'blue', loading: headerLoading, error: movementsQuery.isError },
+                ]}
+                metricsLabel={isArabic ? 'مؤشرات سجل المخزون' : 'Inventory record indicators'}
+            />
 
-                {/* Segmented Tab Strip */}
-                <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 p-3 shadow-lg shadow-slate-200/40 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
-                    <nav className="flex space-x-2 overflow-x-auto p-1 scrollbar-none" aria-label="Inventory Sections">
-                        {tabs.map((tab) => {
-                            const Icon = tab.icon;
-                            const active = activeTab === tab.id;
-                            return (
-                                <button
-                                    key={tab.id}
-                                    type="button"
-                                    onClick={() => setActiveTab(tab.id)}
-                                    aria-current={active ? 'page' : undefined}
-                                    className={`group relative flex shrink-0 items-center gap-2.5 rounded-2xl border px-4 py-3 text-xs font-bold transition-all duration-300 ${
-                                        active
-                                            ? 'border-cyan-400/80 bg-cyan-50/90 text-cyan-950 shadow-md ring-4 ring-cyan-500/15 dark:border-cyan-500/80 dark:bg-cyan-950/40 dark:text-cyan-200 dark:ring-cyan-500/20'
-                                            : 'border-slate-200/80 bg-white/70 text-slate-600 hover:border-slate-300 hover:bg-slate-100/80 dark:border-white/5 dark:bg-white/[0.02] dark:text-slate-300 dark:hover:border-white/10 dark:hover:bg-white/5'
-                                    }`}
-                                >
-                                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-110 ${
-                                        active
-                                            ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/20 dark:text-cyan-300'
-                                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
-                                    }`}>
-                                        <Icon size={16} />
-                                    </span>
-                                    <span className="block text-xs font-black tracking-tight text-slate-900 dark:text-white">
-                                        {tab.label}
-                                    </span>
-                                    {active && (
-                                        <span className="ms-1 flex h-2 w-2 rounded-full bg-cyan-500 shadow-sm shadow-cyan-500/50" />
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </nav>
-                </div>
+            {/* Segmented Tab Strip */}
+<div data-workspace-tabs className="rounded-3xl border border-slate-200/80 bg-white/90 p-2 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:hidden">
+                <nav className="flex gap-2 overflow-x-auto p-1 scrollbar-none" aria-label="Inventory Sections">
+                    {tabs.map((tab) => {
+                        const Icon = tab.icon;
+                        const active = activeTab === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setActiveTab(tab.id)}
+                                aria-current={active ? 'page' : undefined}
+                                className={`flex shrink-0 items-center gap-2.5 rounded-2xl border px-4 py-2.5 text-xs font-black transition-all ${
+                                    active
+                                        ? 'border-teal-500/40 bg-teal-600 text-white shadow-sm shadow-teal-600/20'
+                                        : 'border-transparent bg-slate-50 text-slate-600 hover:bg-slate-100 dark:bg-slate-950/40 dark:text-slate-400 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <Icon size={16} />
+                                <span>{tab.label}</span>
+                            </button>
+                        );
+                    })}
+                </nav>
+            </div>
 
-                {/* Tab Views Container */}
-                <div className="transition-all duration-300">
-                    {activeTab === 'dashboard' && <InventoryDashboard />}
-                    {activeTab === 'catalog' && <InventoryCatalog />}
-                    {activeTab === 'pos' && <PurchaseOrderManager />}
-                    {activeTab === 'suppliers' && <SupplierManager />}
-                </div>
+            {/* Tab Views Container */}
+            <div className="transition-all duration-300">
+                {activeTab === 'dashboard' && <InventoryDashboard />}
+                {activeTab === 'catalog' && <InventoryCatalog />}
+                {activeTab === 'pos' && <PurchaseOrderManager />}
+                {activeTab === 'suppliers' && <SupplierManager />}
             </div>
         </main>
     );

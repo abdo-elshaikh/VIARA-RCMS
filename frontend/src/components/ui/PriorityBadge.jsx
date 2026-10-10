@@ -2,9 +2,9 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 
 const priorityConfig = {
-    Emergency: { dot: 'bg-rose-500', badge: 'bg-rose-50 border-rose-200 text-rose-700' },
-    Urgent: { dot: 'bg-amber-500', badge: 'bg-amber-50 border-amber-200 text-amber-700' },
-    Routine: { dot: 'bg-slate-300', badge: 'bg-slate-50 border-slate-200 text-slate-500' },
+    Emergency: { dot: 'bg-[var(--VIARA-danger)]', badge: 'bg-[var(--VIARA-danger-soft)] border-[var(--VIARA-danger-border)] text-[var(--VIARA-danger)]' },
+    Urgent: { dot: 'bg-[var(--VIARA-warning)]', badge: 'bg-[var(--VIARA-warning-soft)] border-[var(--VIARA-warning-border)] text-[var(--VIARA-warning)]' },
+    Routine: { dot: 'bg-[var(--VIARA-muted)]', badge: 'bg-[var(--VIARA-surface-muted)] border-[var(--VIARA-line)] text-[var(--VIARA-muted)]' },
 };
 
 const PriorityBadge = ({ priority = 'Routine' }) => {

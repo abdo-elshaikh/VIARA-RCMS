@@ -1,14 +1,15 @@
 // Appointments.jsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Activity, AlertCircle, ArrowRight, Bell, Calendar, CalendarCheck2,
     CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, ChevronUp, Clock,
     FilterX, Gauge, ListChecks, Plus, RotateCw, Search,
     SlidersHorizontal, Sparkles, UserPlus, UserX, X, Zap, XCircle,
     Grid3X3, Table2, Eye, EyeOff, FileSpreadsheet, Printer,
-    Clock4, Users, Building2
+    Clock4, Users, Building2, BarChart3, Copy, Check
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -23,7 +24,8 @@ import {
     useRescheduleAppointmentMutation,
     useSendReminderMutation,
     useUpdateWaitingListEntryMutation,
-    useUpdateAppointmentMutation
+    useDeleteAppointmentMutation,
+    useGetEquipmentDowntimeQuery
 } from '../store/api';
 import { getErrorMessage } from '../utils/getErrorMessage';
 import { getRange, shiftAnchorDate, toDateInput } from '../utils/appointmentDates';
@@ -31,14 +33,18 @@ import { formatLocalizedDate } from '../utils/localizedDate';
 import { buildCsv, getWaitingListValidation } from '../utils/appointmentOperations';
 import { getPaginationState } from '../utils/pagination';
 import useDebounce from '../hooks/useDebounce';
+import usePageTitle from '../hooks/usePageTitle';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
 import Scheduler from '../components/ui/Scheduler';
+import PageHeader from '../components/ui/PageHeader';
+import Pagination from '../components/ui/Pagination';
 import MetricCard from '../components/ui/MetricCard';
 import Modal from '../components/ui/Modal';
 import Button from '../components/ui/Button';
 import EmptyState from '../components/ui/EmptyState';
 import CancelReasonDialog from '../components/clinical/CancelReasonDialog';
 import { inputClass } from '../utils/designTokens';
+import { selectPreferences } from '../store/preferencesSlice';
 
 // ============================================================================
 // DESIGN SYSTEM CONSTANTS
@@ -139,7 +145,7 @@ const priorityConfig = {
 
 const statusConfig = {
     Confirmed: {
-        rail: '#0d9488',
+        rail: '#087F5B',
         dot: 'bg-teal-500',
         bg: 'bg-teal-50 dark:bg-teal-950/30',
         border: 'border-teal-200 dark:border-teal-900/50',
@@ -193,6 +199,22 @@ const statusConfig = {
         border: 'border-cyan-200 dark:border-cyan-900/50',
         text: 'text-cyan-700 dark:text-cyan-400',
         icon: Clock4
+    },
+    'Checked-in': {
+        rail: '#06b6d4',
+        dot: 'bg-cyan-500',
+        bg: 'bg-cyan-50 dark:bg-cyan-950/30',
+        border: 'border-cyan-200 dark:border-cyan-900/50',
+        text: 'text-cyan-700 dark:text-cyan-400',
+        icon: Clock4
+    },
+    Arrived: {
+        rail: '#0d9488',
+        dot: 'bg-teal-500',
+        bg: 'bg-teal-50 dark:bg-teal-950/30',
+        border: 'border-teal-200 dark:border-teal-900/50',
+        text: 'text-teal-700 dark:text-teal-400',
+        icon: Clock4
     }
 };
 
@@ -205,6 +227,43 @@ const AVATAR_SHADES = [
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
+
+const STATUS_LABELS_AR = {
+    all: 'كل الحالات',
+    Scheduled: 'مجدول',
+    Confirmed: 'مؤكد',
+    Arrived: 'حاضر بالمركز',
+    'Checked-In': 'تم الوصول',
+    'Checked-in': 'تم الوصول',
+    'In-Progress': 'قيد التنفيذ',
+    'In Progress': 'قيد التنفيذ',
+    Completed: 'مكتمل',
+    Cancelled: 'ملغي',
+    'No-Show': 'لم يحضر'
+};
+
+const getStatusDisplayLabel = (status, t, lng = 'ar') => {
+    if (status === 'all') return lng?.startsWith('ar') ? 'كل الحالات' : t('filters.allStatuses', 'All');
+    if (lng?.startsWith('ar') && STATUS_LABELS_AR[status]) {
+        return STATUS_LABELS_AR[status];
+    }
+    return t(`status.${status}`, status);
+};
+
+const PRIORITY_LABELS_AR = {
+    all: 'كل الأولويات',
+    Routine: 'روتيني',
+    Urgent: 'عاجل',
+    Emergency: 'طارئ'
+};
+
+const getPriorityDisplayLabel = (priority, t, lng = 'ar') => {
+    if (priority === 'all') return lng?.startsWith('ar') ? 'كل الأولويات' : t('filters.allPriorities', 'All Priorities');
+    if (lng?.startsWith('ar') && PRIORITY_LABELS_AR[priority]) {
+        return PRIORITY_LABELS_AR[priority];
+    }
+    return t(`priority.${priority}`, priority);
+};
 
 const getAvatarShade = (name = '') => {
     const index = name ? name.charCodeAt(0) % AVATAR_SHADES.length : 0;
@@ -267,13 +326,51 @@ const getPresetRange = (preset) => {
 };
 
 // ============================================================================
-// STYLE CONSTANTS
+// STYLE CONSTANTS & MODALITY HELPERS
 // ============================================================================
 
-const cardBase = 'rounded-none border border-slate-200/80 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)] dark:border-white/10 dark:bg-[#0b1220] dark:shadow-none transition-all duration-200';
+const cardBase = 'rounded-2xl border border-slate-200/80 bg-white/90 shadow-xs backdrop-blur-md dark:border-white/10 dark:bg-[var(--VIARA-surface-raised)] transition-all duration-200';
 
 const sectionHeadingClass = 'text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400';
-const subHeadingClass = 'text-[11px] font-medium text-slate-400 dark:text-slate-500';
+const subHeadingClass = 'text-[11px] font-medium text-slate-400 dark:text-slate-400';
+
+const getModalityBadgeStyle = (machineName = '', examTypeName = '') => {
+    const text = `${machineName || ''} ${examTypeName || ''}`.toUpperCase();
+    if (text.includes('MR') || text.includes('رنين') || text.includes('MAGNET')) {
+        return {
+            badge: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800/40',
+            code: 'MR'
+        };
+    }
+    if (text.includes('CT') || text.includes('مقطعية') || text.includes('TOMO')) {
+        return {
+            badge: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800/40',
+            code: 'CT'
+        };
+    }
+    if (text.includes('US') || text.includes('سيلسون') || text.includes('صوتية') || text.includes('SONO') || text.includes('ECHO')) {
+        return {
+            badge: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40',
+            code: 'US'
+        };
+    }
+    if (text.includes('MG') || text.includes('ثدي') || text.includes('MAMMO')) {
+        return {
+            badge: 'bg-pink-50 text-pink-700 border-pink-200 dark:bg-pink-950/40 dark:text-pink-300 dark:border-pink-800/40',
+            code: 'MG'
+        };
+    }
+    if (text.includes('XR') || text.includes('سيني') || text.includes('X-RAY') || text.includes('DX')) {
+        return {
+            badge: 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700',
+            code: 'XR'
+        };
+    }
+    return {
+        badge: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800/40',
+        code: 'RAD'
+    };
+};
 
 // ============================================================================
 // MAIN COMPONENT
@@ -281,7 +378,10 @@ const subHeadingClass = 'text-[11px] font-medium text-slate-400 dark:text-slate-
 
 const Appointments = () => {
     const { t, i18n } = useTranslation('appointments');
-    const [viewMode, setViewMode] = useState('day');
+    const isRtl = i18n?.language?.startsWith('ar');
+    usePageTitle(t('title', 'منصة الجدولة'));
+    const preferences = useSelector(selectPreferences);
+    const [viewMode, setViewMode] = useState(() => ['day', 'week', 'month'].includes(preferences.calendarView) ? preferences.calendarView : 'day');
     const [layoutMode, setLayoutMode] = useState('list');
     const [date, setDate] = useState(toDateInput());
     const [selectedMachineId, setSelectedMachineId] = useState('all');
@@ -304,17 +404,27 @@ const Appointments = () => {
     const [showWaitlistForm, setShowWaitlistForm] = useState(false);
     const [showFilters, setShowFilters] = useState(true);
     const [showMetrics, setShowMetrics] = useState(true);
+    const [showOperationalInsights, setShowOperationalInsights] = useState(false);
+    const [showSidePanel, setShowSidePanel] = useState(false);
     const [focusedAppointment, setFocusedAppointment] = useState(null);
 
-    const range = useMemo(() => getRange(date, viewMode), [date, viewMode]);
+    useEffect(() => {
+        if (['day', 'week', 'month'].includes(preferences.calendarView)) setViewMode(preferences.calendarView);
+    }, [preferences.calendarView]);
+
+    const range = useMemo(() => getRange(date, viewMode, preferences.firstDayOfWeek), [date, viewMode, preferences.firstDayOfWeek]);
     const appointmentParams = viewMode === 'day'
         ? { date, modalityId: selectedMachineId === 'all' ? undefined : selectedMachineId }
         : { startDate: range.startDate, endDate: range.endDate, modalityId: selectedMachineId === 'all' ? undefined : selectedMachineId };
 
     const { data: appointments = [], isLoading, isError: appointmentsError, error: appointmentsErrorData, refetch: refetchAppointments, isFetching: isFetchingAppointments } = useGetAppointmentsQuery(appointmentParams);
     const { data: availability, isError: availabilityError, refetch: refetchAvailability } = useGetScheduleAvailabilityQuery(viewMode === 'day' ? { date } : range);
-    const { data: waitingList = [], isError: waitingListError, refetch: refetchWaitingList } = useGetWaitingListQuery({ status: 'Waiting', limit: 100 });
+    const { data: waitingList = [], isError: waitingListError, refetch: refetchWaitingList } = useGetWaitingListQuery({ active: 'true', limit: 100 });
     const { data: machines = [], isError: machinesError, refetch: refetchMachines } = useGetMachinesQuery();
+    const { data: downtimeRecords = [] } = useGetEquipmentDowntimeQuery(undefined, { pollingInterval: 30000 });
+    const activeDowntimes = useMemo(() => {
+        return (Array.isArray(downtimeRecords) ? downtimeRecords : []).filter(r => r.status !== 'Resolved');
+    }, [downtimeRecords]);
     const { data: patientsResponse, isError: patientsError } = useGetPatientsQuery({ limit: 100 });
     const { data: examTypes = [], isError: examTypesError } = useGetExamTypesQuery(waitlistForm.modalityId, { skip: !waitlistForm.modalityId });
     const [sendReminder, { isLoading: isSendingReminder }] = useSendReminderMutation();
@@ -322,7 +432,7 @@ const Appointments = () => {
     const [rescheduleAppointment, { isLoading: isRescheduling }] = useRescheduleAppointmentMutation();
     const [createWaitingListEntry, { isLoading: isCreatingWaitlist }] = useCreateWaitingListEntryMutation();
     const [updateWaitingListEntry] = useUpdateWaitingListEntryMutation();
-    const [updateAppointment, { isLoading: isCancelingAppt }] = useUpdateAppointmentMutation();
+    const [deleteAppointment, { isLoading: isCancelingAppt }] = useDeleteAppointmentMutation();
 
     const patients = patientsResponse?.data || [];
     const hasAnyError = appointmentsError || availabilityError || waitingListError || machinesError || patientsError || examTypesError;
@@ -380,10 +490,24 @@ const Appointments = () => {
             ? Math.max(1, Math.round((new Date(range.endDate) - new Date(range.startDate)) / 86400000) + 1)
             : viewMode === 'week' ? 7 : 1;
         const utilization = Math.min(100, Math.round(bookedMinutes / (activeMachines * workdayHours * 60 * periodDays) * 100) || 0);
-        return { total, completed, confirmed, noShow, urgent, utilization, cancelled };
+        return {
+            total,
+            completed,
+            confirmed,
+            noShow,
+            urgent,
+            utilization,
+            cancelled,
+            active: bookedAppointments.length,
+            activeMachines,
+            bookedMinutes,
+            capacityMinutes: activeMachines * workdayHours * 60 * periodDays,
+            periodDays
+        };
     }, [availability, machineAppointments, machines.length, range.endDate, range.startDate, selectedMachineId, viewMode]);
 
-    const hasActiveFilters = Boolean(searchTerm || statusFilter !== 'all' || priorityFilter !== 'all');
+    const activeFilterCount = (searchTerm ? 1 : 0) + (statusFilter !== 'all' ? 1 : 0) + (priorityFilter !== 'all' ? 1 : 0) + (selectedMachineId !== 'all' ? 1 : 0);
+    const hasActiveFilters = Boolean(activeFilterCount > 0);
     const isToday = date === toDateInput();
     const language = i18n.language;
     const rangeLabel = {
@@ -415,8 +539,50 @@ const Appointments = () => {
             && new Date(appt.start_time).getTime() >= now
         ) || visibleAppointments.find(appt => !['Completed', 'Cancelled', 'No-Show'].includes(appt.status));
     }, [visibleAppointments]);
+    const flowStages = useMemo(() => ([
+        { key: 'Scheduled', icon: Calendar, count: statusCounts.Scheduled || 0, tone: 'slate' },
+        { key: 'Confirmed', icon: CheckCircle2, count: statusCounts.Confirmed || 0, tone: 'teal' },
+        { key: 'Checked-In', icon: Clock4, count: statusCounts['Checked-In'] || statusCounts['Checked-in'] || 0, tone: 'cyan' },
+        { key: 'In-Progress', icon: Activity, count: statusCounts['In-Progress'] || 0, tone: 'violet' },
+        { key: 'Completed', icon: CalendarCheck2, count: statusCounts.Completed || 0, tone: 'emerald' },
+    ]), [statusCounts]);
+    const roomLoadRows = useMemo(() => {
+        const rows = (availability?.machines || machines || []).map(machine => {
+            const appointmentsForMachine = machine.appointments || machineAppointments.filter(appt => appt.modality_id === machine.modality_id);
+            const booked = appointmentsForMachine.filter(appt => appt.status !== 'Cancelled').length;
+            return {
+                id: machine.modality_id,
+                name: machine.name || machine.modality_name || t('availability.room', 'Room'),
+                booked,
+                isSchedulable: machine.is_schedulable ?? machine.status === 'Active',
+            };
+        });
+        const maxBooked = Math.max(1, ...rows.map(row => row.booked));
+        return rows
+            .map(row => ({ ...row, load: Math.round((row.booked / maxBooked) * 100) }))
+            .sort((a, b) => b.booked - a.booked);
+    }, [availability?.machines, machineAppointments, machines, t]);
+    const busiestRoom = roomLoadRows[0];
+    const filteredShare = machineAppointments.length > 0 ? Math.round((visibleAppointments.length / machineAppointments.length) * 100) : 0;
+    const completionRate = scheduleStats.active > 0 ? Math.round((scheduleStats.completed / scheduleStats.active) * 100) : 0;
+    const disruptionRate = scheduleStats.total > 0 ? Math.round(((scheduleStats.cancelled + scheduleStats.noShow) / scheduleStats.total) * 100) : 0;
+    const uniqueStaffCount = useMemo(() => {
+        const staff = new Set();
+        machineAppointments.forEach(appt => {
+            [appt.radiologist_name, appt.technician_name, appt.nurse_name].filter(Boolean).forEach(name => staff.add(name));
+        });
+        return staff.size;
+    }, [machineAppointments]);
+    const unassignedAppointments = useMemo(() => machineAppointments.filter(appt =>
+        !appt.radiologist_name && !appt.technician_name && !appt.nurse_name
+    ).length, [machineAppointments]);
 
-    const clearFilters = () => { setSearchTerm(''); setStatusFilter('all'); setPriorityFilter('all'); };
+    const clearFilters = () => {
+        setSearchTerm('');
+        setStatusFilter('all');
+        setPriorityFilter('all');
+        setSelectedMachineId('all');
+    };
 
     const exportSchedule = () => {
         const headers = [
@@ -452,7 +618,7 @@ const Appointments = () => {
         if (targets.length === 0) return false;
         try {
             await Promise.all(targets.map(appt =>
-                sendReminder({ appointmentId: appt.appointment_id, recipientEmail, patientName: appt.mrn, time: appt.start_time }).unwrap()
+                sendReminder({ appointmentId: appt.appointment_id, recipientEmail, patientName: `${appt.patient_name} | ${appt.mrn}`, time: appt.start_time }).unwrap()
             ));
             toast.success(targets.length > 1 ? t('toast.reminderSentBulk', { count: targets.length, defaultValue: `Sent ${targets.length} reminders` }) : t('toast.reminderSent'));
             setSelectedIds(new Set());
@@ -525,82 +691,106 @@ const Appointments = () => {
     });
 
     return (
-        <div className="space-y-5 px-3 pb-8 sm:px-5 lg:px-6">
-            <section className="relative overflow-hidden rounded-none border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#08111f]">
-                <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-teal-500 via-cyan-500 to-emerald-500" aria-hidden="true" />
-                <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start lg:p-6">
-                    <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                            <span className="inline-flex h-10 w-10 items-center justify-center rounded-none bg-teal-50 text-teal-700 ring-1 ring-teal-100 dark:bg-teal-500/10 dark:text-teal-300 dark:ring-teal-500/20">
-                                <CalendarRange size={20} />
+        <div className="space-y-3.5 sm:space-y-4">
+            <PageHeader
+                compact={true}
+                icon={CalendarRange}
+                eyebrowIcon={Activity}
+                eyebrow={t('command.eyebrow', 'مركز قيادة الجدولة')}
+                title={t('title', 'منصة الجدولة')}
+                description={t('subtitle', 'أدوات التقويم وتوفر الغرف وحمل الطاقم وقائمة الانتظار وإعادة الجدولة')}
+                metrics={[
+                    {
+                        key: 'booked',
+                        label: t('overview.booked', 'Booked studies'),
+                        value: scheduleStats.active,
+                        icon: CalendarCheck2,
+                        tone: 'teal',
+                        detail: t('overview.bookedDetail', 'Total appointments in range')
+                    },
+                    {
+                        key: 'confirmed',
+                        label: t('overview.confirmed', 'Ready to run'),
+                        value: scheduleStats.confirmed,
+                        icon: ListChecks,
+                        tone: 'emerald',
+                        detail: t('overview.confirmedDetail', 'Confirmed & scheduled')
+                    },
+                    {
+                        key: 'urgent',
+                        label: t('overview.urgent', 'Priority studies'),
+                        value: scheduleStats.urgent,
+                        icon: Zap,
+                        tone: 'amber',
+                        detail: t('overview.urgentDetail', 'Urgent & emergency cases')
+                    },
+                    {
+                        key: 'utilization',
+                        label: t('overview.utilization', 'Room utilization'),
+                        value: `${scheduleStats.utilization}%`,
+                        icon: Gauge,
+                        tone: 'violet',
+                        detail: t('overview.utilizationDetail', 'Booked minutes vs capacity')
+                    },
+                ]}
+                metricsLabel={t('overview.metricsLabel', 'نظرة عامة على أداء الجدول')}
+                meta={
+                    <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-200/80 bg-emerald-50/90 px-2.5 py-1 text-[11px] font-bold text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/40 dark:text-emerald-300">
+                            <span className="relative flex h-2 w-2">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                             </span>
-                            <span className="rounded-none bg-cyan-50 px-3 py-1 text-[10px] font-black uppercase tracking-[.14em] text-cyan-700 dark:bg-cyan-500/10 dark:text-cyan-300">
-                                {t('command.eyebrow', 'Scheduling command center')}
+                            <span>{isRtl ? 'بث مباشر' : 'Live'}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                            <Calendar size={12} className="text-teal-600 dark:text-teal-400" />
+                            <span>{viewMode === 'day' ? formatDateOnly(date, language) : `${rangeLabel.start} - ${rangeLabel.end}`}</span>
+                        </span>
+                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                            <Building2 size={12} className="text-teal-600 dark:text-teal-400" />
+                            <span>{selectedMachineName}</span>
+                        </span>
+                        {nextAppointment && (
+                            <span className="hidden md:inline-flex items-center gap-1.5 rounded-lg border border-slate-200/80 bg-slate-50/90 px-2.5 py-1 text-[11px] font-bold text-slate-600 dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                                <Clock size={12} className="text-teal-600 dark:text-teal-400" />
+                                <span>{t('command.next', 'القادم:')} {formatTime(nextAppointment.start_time, language)} - {nextAppointment.patient_name || nextAppointment.mrn}</span>
                             </span>
-                            {isFetchingAppointments && (
-                                <span className="inline-flex items-center gap-1.5 rounded-none bg-amber-50 px-3 py-1 text-[10px] font-bold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-                                    <RotateCw size={11} className="animate-spin" />
-                                    {t('status.refreshing', 'Refreshing')}
-                                </span>
-                            )}
-                        </div>
-                        <h1 className="mt-4 text-2xl font-black tracking-tight text-slate-950 dark:text-white sm:text-3xl">
-                            {t('title', 'Appointment Management')}
-                        </h1>
-                        <p className="mt-2 max-w-3xl text-sm font-medium leading-6 text-slate-500 dark:text-slate-400">
-                            {t('subtitle', 'Schedule, track, and manage all patient appointments')}
-                        </p>
-                        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                            <CommandFact
-                                icon={Calendar}
-                                label={t('command.period', 'Period')}
-                                value={viewMode === 'day' ? formatDateOnly(date, language) : `${rangeLabel.start} - ${rangeLabel.end}`}
-                            />
-                            <CommandFact
-                                icon={Building2}
-                                label={t('command.roomScope', 'Room scope')}
-                                value={selectedMachineName}
-                            />
-                            <CommandFact
-                                icon={ListChecks}
-                                label={t('command.visible', 'Visible')}
-                                value={t('filters.results', {
-                                    shown: formatNumber(visibleAppointments.length, language),
-                                    total: formatNumber(machineAppointments.length, language)
-                                })}
-                            />
-                            <CommandFact
-                                icon={Clock}
-                                label={t('command.next', 'Next appointment')}
-                                value={nextAppointment
-                                    ? `${formatTime(nextAppointment.start_time, language)} - ${nextAppointment.patient_name || nextAppointment.mrn}`
-                                    : t('command.noNext', 'No upcoming appointment')}
-                            />
-                        </div>
+                        )}
                     </div>
-
-                    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                }
+                actions={
+                    <>
+                        {isFetchingAppointments && (
+                            <span className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
+                                <RotateCw size={14} className="animate-spin" />
+                                <span>{t('status.refreshing', 'تحديث...')}</span>
+                            </span>
+                        )}
                         <button
                             type="button"
-                            onClick={() => setShowMetrics(!showMetrics)}
-                            className="inline-flex h-10 items-center gap-2 rounded-none border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-teal-300 hover:bg-teal-50/60 hover:text-teal-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                            onClick={() => setShowOperationalInsights(!showOperationalInsights)}
+                            className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition duration-200 active:scale-[0.98] ${showOperationalInsights
+                                ? 'border-teal-400 bg-teal-50 text-teal-800 ring-1 ring-teal-400/20 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                            }`}
                         >
-                            {showMetrics ? <EyeOff size={14} /> : <Eye size={14} />}
-                            {showMetrics ? t('metrics.hide', 'Hide Metrics') : t('metrics.show', 'Show Metrics')}
+                            <BarChart3 size={15} />
+                            <span>{showOperationalInsights ? t('analytics.hide', 'إخفاء التحليلات') : t('analytics.show', 'التحليلات والتدفق')}</span>
                         </button>
                         <button
                             type="button"
                             onClick={exportSchedule}
                             disabled={visibleAppointments.length === 0}
-                            className="inline-flex h-10 items-center gap-2 rounded-none border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-teal-300 hover:bg-teal-50/60 hover:text-teal-700 disabled:opacity-40 disabled:hover:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:opacity-40 active:scale-[0.98] dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
                         >
                             <FileSpreadsheet size={15} />
-                            {t('actions.exportSchedule', 'Export CSV')}
+                            <span>{t('actions.exportSchedule', 'تصدير الجدول')}</span>
                         </button>
                         <button
                             type="button"
                             onClick={() => window.print()}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-600 transition hover:border-teal-300 hover:bg-teal-50/60 hover:text-teal-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
                             title={t('actions.print', 'Print')}
                             aria-label={t('actions.print', 'Print')}
                         >
@@ -608,188 +798,374 @@ const Appointments = () => {
                         </button>
                         <Link
                             to="/appointments/new"
-                            className="inline-flex h-10 items-center justify-center gap-2 rounded-none bg-teal-700 px-4 text-xs font-black text-white shadow-lg shadow-teal-700/20 transition hover:bg-teal-800 active:scale-[0.98]"
+                            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-teal-700 via-teal-800 to-cyan-800 px-4 text-xs font-black text-white shadow-md shadow-teal-900/20 transition duration-200 hover:from-teal-800 hover:to-cyan-900 active:scale-[0.98] dark:from-teal-600 dark:to-cyan-700 dark:hover:from-teal-500 dark:hover:to-cyan-600"
                         >
                             <Plus size={16} />
-                            {t('actions.newAppointment', 'New Appointment')}
+                            <span>{t('actions.newAppointment', 'حجز موعد جديد')}</span>
                         </Link>
+                    </>
+                }
+            />
+
+            {/* Equipment Downtime Operational Alert */}
+            {activeDowntimes.length > 0 && (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50/90 p-3 text-xs font-semibold text-amber-950 shadow-2xs dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                    <div className="flex items-center gap-2.5">
+                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-400">
+                            <AlertCircle size={16} />
+                        </div>
+                        <div>
+                            <p className="font-black text-slate-900 dark:text-white">
+                                {isRtl
+                                    ? `تنبيه صيانة الأجهزة: يوجد (${activeDowntimes.length}) جهاز في حالة توقف أو صيانة حالياً.`
+                                    : `Equipment Alert: (${activeDowntimes.length}) machine(s) currently under maintenance.`}
+                            </p>
+                            <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                                {isRtl
+                                    ? 'يرجى مراجعة المواعيد المجدولة على الأجهزة المتوقفة لتجنب تعارض العمليات السريرية.'
+                                    : 'Review scheduled appointments on halted machines to prevent clinical conflicts.'}
+                            </p>
+                        </div>
                     </div>
-                </div>
-            </section>
-
-             {hasAnyError && (
-                 <div className="flex flex-col items-center gap-3 rounded-none border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-950/20">
-                     <div className="flex items-center gap-2 text-sm font-semibold text-red-700 dark:text-red-300">
-                         <AlertCircle size={16} />
-                         {t('error.loadFailed', 'Failed to load appointment data')}
-                     </div>
-                     <button
-                         type="button"
-                         onClick={retryAll}
-                         className="inline-flex items-center gap-1.5 rounded-none bg-red-700 px-4 py-1.5 text-xs font-bold text-white transition hover:bg-red-800"
-                     >
-                         <RotateCw size={12} />
-                         {t('actions.retry', 'Retry')}
-                     </button>
-                 </div>
-             )}
-
-             {/* Metrics Grid */}
-             {showMetrics && (
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-                    <MetricCard
-                        icon={CalendarRange}
-                        tone="cyan"
-                        label={t('overview.booked', 'Total Booked')}
-                        value={formatNumber(scheduleStats.total, language)}
-                        detail={t('overview.bookedDetail', 'Appointments in period')}
-                        className="bg-white dark:bg-[#0b1220] border border-slate-200/60 dark:border-white/10"
-                    />
-                    <MetricCard
-                        icon={CheckCircle2}
-                        tone="emerald"
-                        label={t('overview.confirmed', 'Confirmed')}
-                        value={formatNumber(scheduleStats.confirmed, language)}
-                        detail={t('overview.confirmedDetail', { count: formatNumber(scheduleStats.completed, language) })}
-                        className="bg-white dark:bg-[#0b1220] border border-slate-200/60 dark:border-white/10"
-                    />
-                    <MetricCard
-                        icon={Gauge}
-                        tone="cyan"
-                        label={t('overview.utilization', 'Utilization')}
-                        value={`${formatNumber(scheduleStats.utilization, language)}%`}
-                        detail={t('overview.utilizationDetail', 'Resource usage')}
-                        className="bg-white dark:bg-[#0b1220] border border-slate-200/60 dark:border-white/10"
-                    />
-                    <MetricCard
-                        icon={AlertCircle}
-                        tone="amber"
-                        label={t('overview.urgent', 'Urgent')}
-                        value={formatNumber(scheduleStats.urgent, language)}
-                        detail={t('overview.urgentDetail', 'High-priority cases')}
-                        className="bg-white dark:bg-[#0b1220] border border-slate-200/60 dark:border-white/10"
-                    />
-                    <MetricCard
-                        icon={UserX}
-                        tone="rose"
-                        label={t('overview.noShow', 'No-Shows')}
-                        value={formatNumber(scheduleStats.noShow, language)}
-                        detail={t('overview.noShowDetail', 'Missed appointments')}
-                        className="bg-white dark:bg-[#0b1220] border border-slate-200/60 dark:border-white/10"
-                    />
-                    <MetricCard
-                        icon={XCircle}
-                        tone="slate"
-                        label={t('overview.cancelled', 'Cancelled')}
-                        value={formatNumber(scheduleStats.cancelled, language)}
-                        detail={t('overview.cancelledDetail', 'Cancelled appointments')}
-                        className="bg-white dark:bg-[#0b1220] border border-slate-200/60 dark:border-white/10"
-                    />
+                    <Link
+                        to="/equipment?tab=downtime"
+                        className="inline-flex items-center justify-center shrink-0 rounded-xl bg-amber-600 px-3 py-1.5 text-xs font-black text-white hover:bg-amber-700 transition"
+                    >
+                        {isRtl ? 'عرض سجل الصيانة' : 'View Maintenance'}
+                    </Link>
                 </div>
             )}
 
-            <section className={`${cardBase} overflow-hidden`}>
-                <div className="grid gap-4 border-b border-slate-100 bg-slate-50/60 p-4 dark:border-white/5 dark:bg-white/[0.025] 2xl:grid-cols-[minmax(0,1fr)_auto] 2xl:items-center">
-                    <div className="grid gap-3 xl:grid-cols-[auto_minmax(220px,.6fr)_auto] xl:items-center">
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <button
-                                type="button"
-                                onClick={() => setDate(shiftAnchorDate(date, viewMode, -1))}
-                                className="flex h-10 w-10 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 transition hover:border-teal-300 hover:text-teal-700 dark:border-white/10 dark:bg-[#0b1220] dark:text-slate-400 dark:hover:bg-white/10"
-                                aria-label={t('navigation.previous', 'Previous period')}
-                            >
-                                <ChevronLeft size={16} className="rtl-flip" />
-                            </button>
-                            <input
-                                type="date"
-                                value={date}
-                                onChange={e => setDate(e.target.value)}
-                                className="h-10 rounded-none border border-slate-200 bg-white px-3 text-xs font-bold tabular-nums text-slate-800 outline-none transition focus:border-teal-600 dark:border-white/10 dark:bg-[#0b1220] dark:text-slate-200"
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setDate(shiftAnchorDate(date, viewMode, 1))}
-                                className="flex h-10 w-10 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 transition hover:border-teal-300 hover:text-teal-700 dark:border-white/10 dark:bg-[#0b1220] dark:text-slate-400 dark:hover:bg-white/10"
-                                aria-label={t('navigation.next', 'Next period')}
-                            >
-                                <ChevronRight size={16} className="rtl-flip" />
-                            </button>
+            {/* Compact Interactive KPI Command Strip */}
+            <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white/80 p-2 shadow-2xs backdrop-blur-md dark:border-white/10 dark:bg-[var(--VIARA-surface-raised)]/70">
+                {/* Total Booked */}
+                <button
+                    type="button"
+                    onClick={clearFilters}
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${!hasActiveFilters
+                        ? 'border-teal-500/50 bg-teal-50/80 text-teal-950 ring-1 ring-teal-500/20 dark:border-teal-500/30 dark:bg-teal-950/40 dark:text-teal-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-teal-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    }`}
+                    title={t('overview.bookedTooltip', 'عرض كافة المواعيد')}
+                >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300">
+                        <CalendarRange size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('overview.booked', 'إجمالي المواعيد')}</span>
+                    <span className="font-mono text-xs font-black text-slate-900 dark:text-white">{formatNumber(scheduleStats.total, language)}</span>
+                </button>
+
+                {/* Ready / Confirmed */}
+                <button
+                    type="button"
+                    onClick={() => { setStatusFilter(statusFilter === 'Confirmed' ? 'all' : 'Confirmed'); setPriorityFilter('all'); }}
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${statusFilter === 'Confirmed'
+                        ? 'border-emerald-500 bg-emerald-50 text-emerald-950 ring-1 ring-emerald-500/20 dark:bg-emerald-950/50 dark:text-emerald-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-emerald-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    }`}
+                >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                        <CheckCircle2 size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('overview.confirmed', 'جاهزة ومؤكدة')}</span>
+                    <span className="font-mono text-xs font-black text-emerald-700 dark:text-emerald-400">{formatNumber(scheduleStats.confirmed, language)}</span>
+                </button>
+
+                {/* Arrived */}
+                <button
+                    type="button"
+                    onClick={() => { setStatusFilter(statusFilter === 'Arrived' ? 'all' : 'Arrived'); setPriorityFilter('all'); }}
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${statusFilter === 'Arrived'
+                        ? 'border-teal-500 bg-teal-50 text-teal-950 ring-1 ring-teal-500/20 dark:bg-teal-950/50 dark:text-teal-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-teal-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    }`}
+                >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-teal-500/15 text-teal-700 dark:text-teal-300">
+                        <Clock4 size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('status.Arrived', 'حاضر بالمركز')}</span>
+                    <span className="font-mono text-xs font-black text-teal-700 dark:text-teal-300">{formatNumber(statusCounts.Arrived || 0, language)}</span>
+                </button>
+
+                {/* In-Progress (if any active) */}
+                {((statusCounts['In-Progress'] || 0) > 0 || (statusCounts['Checked-In'] || 0) > 0) && (
+                    <button
+                        type="button"
+                        onClick={() => { setStatusFilter(statusFilter === 'In-Progress' ? 'all' : 'In-Progress'); }}
+                        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${statusFilter === 'In-Progress'
+                            ? 'border-violet-500 bg-violet-50 text-violet-950 ring-1 ring-violet-500/20 dark:bg-violet-950/50 dark:text-violet-200'
+                            : 'border-slate-200/80 bg-white text-slate-700 hover:border-violet-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                        }`}
+                    >
+                        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-violet-500/15 text-violet-700 dark:text-violet-300">
+                            <Activity size={12} className="animate-pulse" />
+                        </span>
+                        <span className="text-slate-500 dark:text-slate-400">{isRtl ? 'قيد الفحص' : 'In Progress'}</span>
+                        <span className="font-mono text-xs font-black text-violet-700 dark:text-violet-300">{formatNumber((statusCounts['In-Progress'] || 0) + (statusCounts['Checked-In'] || 0), language)}</span>
+                    </button>
+                )}
+
+                {/* Urgent / Priority */}
+                <button
+                    type="button"
+                    onClick={() => { setPriorityFilter(priorityFilter === 'Urgent' ? 'all' : 'Urgent'); }}
+                    className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${priorityFilter === 'Urgent'
+                        ? 'border-rose-500 bg-rose-50 text-rose-950 ring-1 ring-rose-500/20 dark:bg-rose-950/50 dark:text-rose-200'
+                        : 'border-slate-200/80 bg-white text-slate-700 hover:border-rose-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                    }`}
+                >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-rose-500/15 text-rose-700 dark:text-rose-300">
+                        <AlertCircle size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('overview.urgent', 'حالات عاجلة')}</span>
+                    <span className="font-mono text-xs font-black text-rose-700 dark:text-rose-400">{formatNumber(scheduleStats.urgent, language)}</span>
+                </button>
+
+                {/* Room Utilization */}
+                <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold dark:border-white/10 dark:bg-[var(--VIARA-surface)]">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-cyan-500/15 text-cyan-700 dark:text-cyan-300">
+                        <Gauge size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('overview.utilization', 'إشغال الغرف')}</span>
+                    <span className="font-mono text-xs font-black text-cyan-700 dark:text-cyan-400">{formatNumber(scheduleStats.utilization, language)}%</span>
+                </div>
+
+                {/* Waitlist */}
+                <button
+                    type="button"
+                    onClick={() => setShowSidePanel(true)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-bold transition duration-200 hover:border-violet-300 hover:shadow-2xs active:scale-[0.98] dark:border-white/10 dark:bg-[var(--VIARA-surface)]"
+                >
+                    <span className="flex h-5 w-5 items-center justify-center rounded-md bg-violet-500/15 text-violet-700 dark:text-violet-300">
+                        <Users size={12} />
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">{t('command.waitingPressure', 'قائمة الانتظار')}</span>
+                    <span className="font-mono text-xs font-black text-violet-700 dark:text-violet-400">{formatNumber(waitingList.length, language)}</span>
+                </button>
+
+                {/* Disruptions (No-show & Cancelled) */}
+                {(scheduleStats.noShow > 0 || scheduleStats.cancelled > 0) && (
+                    <button
+                        type="button"
+                        onClick={() => { setStatusFilter(statusFilter === 'No-Show' ? 'Cancelled' : statusFilter === 'Cancelled' ? 'all' : 'No-Show'); }}
+                        className={`inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-bold transition duration-200 active:scale-[0.98] ${['No-Show', 'Cancelled'].includes(statusFilter)
+                            ? 'border-slate-500 bg-slate-100 text-slate-900 ring-1 ring-slate-500/20 dark:bg-slate-800 dark:text-slate-100'
+                            : 'border-slate-200/80 bg-white text-slate-700 hover:border-slate-300 hover:shadow-2xs dark:border-white/10 dark:bg-[var(--VIARA-surface)] dark:text-slate-300'
+                        }`}
+                    >
+                        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-slate-500/15 text-slate-600 dark:text-slate-300">
+                            <UserX size={12} />
+                        </span>
+                        <span className="text-slate-500 dark:text-slate-400">{t('overview.disruptions', 'غياب / ملغي')}</span>
+                        <span className="font-mono text-xs font-black text-slate-700 dark:text-slate-300">{formatNumber(scheduleStats.noShow + scheduleStats.cancelled, language)}</span>
+                    </button>
+                )}
+
+                {/* Active Filters Clear Button */}
+                {hasActiveFilters && (
+                    <button
+                        type="button"
+                        onClick={clearFilters}
+                        className="ms-auto inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-black text-rose-700 transition duration-200 hover:bg-rose-100 active:scale-[0.98] dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-300"
+                    >
+                        <FilterX size={12} />
+                        <span>{t('filters.reset', 'إلغاء التصفيات')}</span>
+                        <span className="grid h-4 w-4 place-items-center rounded-full bg-rose-600 font-mono text-[9px] text-white">
+                            {activeFilterCount}
+                        </span>
+                    </button>
+                )}
+            </div>
+
+            {/* Optional Collapsible Operational Insights Drawer */}
+            {showOperationalInsights && (
+                <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,.75fr)] transition-all animate-fadeIn">
+                    <div className={`${cardBase} p-4 sm:p-5`}>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                                <p className={sectionHeadingClass}>{t('command.readiness', 'Schedule readiness')}</p>
+                                <h2 className="mt-1 text-base font-black tracking-tight text-slate-950 dark:text-white">
+                                    {t('command.operationalControl', 'التحكم التشغيلي اليومي')}
+                                </h2>
+                            </div>
+                            <span className="inline-flex w-fit items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold text-slate-500 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-400">
+                                <Gauge size={12} />
+                                {formatNumber(scheduleStats.activeMachines, language)} {t('command.activeRooms', 'غرفة نشطة')}
+                            </span>
+                        </div>
+
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                            <OperationSignal icon={CheckCircle2} label={t('command.completionRate', 'معدل الإكمال')} value={`${formatNumber(completionRate, language)}%`} detail={t('command.completedOfActive', { completed: formatNumber(scheduleStats.completed, language), active: formatNumber(scheduleStats.active, language), defaultValue: '{{completed}} من {{active}} مكتمل' })} tone="emerald" />
+                            <OperationSignal icon={AlertCircle} label={t('command.disruptionRate', 'معدل التعطيل')} value={`${formatNumber(disruptionRate, language)}%`} detail={t('command.cancelNoShow', { count: formatNumber(scheduleStats.cancelled + scheduleStats.noShow, language), defaultValue: '{{count}} ملغي أو لم يحضر' })} tone={disruptionRate > 15 ? 'rose' : 'slate'} />
+                            <OperationSignal icon={Users} label={t('command.waitingPressure', 'ضغط قائمة الانتظار')} value={formatNumber(waitingList.length, language)} detail={t('waitlist.activeRequests', { count: formatNumber(waitingList.length, language) })} tone={waitingList.length > 0 ? 'amber' : 'slate'} />
+                            <OperationSignal icon={Building2} label={t('command.busiestRoom', 'أكثر الغرف انشغالاً')} value={busiestRoom?.name || '-'} detail={busiestRoom ? t('availability.bookedSlots', { count: formatNumber(busiestRoom.booked, language) }) : t('availability.noMachines', 'لا توجد أجهزة نشطة')} tone="cyan" />
+                        </div>
+
+                        <div className="mt-4 border-t border-slate-100 pt-3 dark:border-[var(--VIARA-line)]">
+                            <ProgressBar label={t('command.visibleShare', 'نسبة المعروض')} value={`${formatNumber(filteredShare, language)}%`} percent={filteredShare} tone="teal" />
+                        </div>
+                    </div>
+
+                    <div className={`${cardBase} p-4 sm:p-5`}>
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <p className={sectionHeadingClass}>{t('command.patientFlow', 'تدفق المرضى')}</p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                    {t('command.patientFlowDetail', 'الجدول الحالي حسب حالة سير العمل')}
+                                </p>
+                            </div>
+                            <span className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-black text-slate-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
+                                {formatNumber(scheduleStats.total, language)}
+                            </span>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                            {flowStages.map(stage => (
+                                <StageRow key={stage.key} stage={stage} total={Math.max(1, scheduleStats.total)} language={language} t={t} />
+                            ))}
+                        </div>
+                    </div>
+                </section>
+            )}
+
+            <section className={`${cardBase} overflow-hidden shadow-sm`}>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 p-3 sm:p-4 dark:border-white/5 dark:bg-[var(--VIARA-surface)]">
+                    <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-0">
+                        {/* Unified Atomic Date Capsule */}
+                        <div className="flex items-center gap-1.5 shrink-0">
                             <button
                                 type="button"
                                 onClick={() => setDate(toDateInput())}
-                                className={`h-10 shrink-0 rounded-none border px-4 text-xs font-black transition ${isToday
-                                    ? 'border-teal-600 bg-teal-700 text-white'
-                                    : 'border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:text-teal-700 dark:border-white/10 dark:bg-[#0b1220] dark:text-slate-300'
-                                    }`}
+                                className={`h-10 shrink-0 rounded-xl border px-3.5 text-xs font-black transition ${isToday
+                                    ? 'border-teal-600 bg-teal-700 text-white shadow-2xs'
+                                    : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-300'
+                                }`}
                             >
-                                {t('navigation.today', 'Today')}
+                                {t('navigation.today', 'اليوم')}
                             </button>
+                            <div className="flex items-center rounded-xl border border-slate-200 bg-white dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] p-0.5 shadow-2xs">
+                                <button
+                                    type="button"
+                                    onClick={() => setDate(shiftAnchorDate(date, viewMode, -1))}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-teal-700 dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)]"
+                                    aria-label={t('navigation.previous', 'السابق')}
+                                >
+                                    <ChevronLeft size={16} className="rtl:rotate-180" />
+                                </button>
+                                <input
+                                    type="date"
+                                    value={date}
+                                    onChange={e => setDate(e.target.value)}
+                                    className="h-9 border-0 bg-transparent px-2.5 text-xs font-bold tabular-nums text-slate-800 outline-none dark:text-slate-200"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => setDate(shiftAnchorDate(date, viewMode, 1))}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-teal-700 dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)]"
+                                    aria-label={t('navigation.next', 'التالي')}
+                                >
+                                    <ChevronRight size={16} className="rtl:rotate-180" />
+                                </button>
+                            </div>
                         </div>
 
-                        <div className="relative min-w-0">
-                            <Search className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                        {/* Search input */}
+                        <div className="relative min-w-[200px] flex-1 max-w-sm">
+                            <Search className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
                             <input
                                 value={searchTerm}
                                 onChange={e => setSearchTerm(e.target.value)}
-                                placeholder={t('filters.searchPlaceholder', 'Search patients, MRN, rooms...')}
-                                className="h-10 w-full rounded-none border border-slate-200 bg-white ps-10 pe-9 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-600 dark:border-white/10 dark:bg-[#0b1220] dark:text-slate-100"
+                                placeholder={t('filters.searchPlaceholder', 'ابحث بالاسم أو الرقم الطبي أو الغرفة...')}
+                                className="h-10 w-full rounded-xl border border-slate-200 bg-white ps-9 pe-8 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-100"
                             />
                             {searchTerm && (
                                 <button
                                     type="button"
                                     onClick={() => setSearchTerm('')}
-                                    className="absolute end-3 top-1/2 -translate-y-1/2 rounded-none p-0.5 text-slate-400 transition hover:text-slate-700 dark:hover:text-slate-100"
+                                    className="absolute end-2.5 top-1/2 -translate-y-1/2 rounded-lg p-0.5 text-slate-400 transition hover:text-slate-700 dark:hover:text-slate-100"
                                     aria-label={t('filters.clearSearch', 'Clear search')}
                                 >
-                                    <X size={14} />
+                                    <X size={13} />
                                 </button>
                             )}
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                            <select
-                                value={selectedMachineId}
-                                onChange={e => setSelectedMachineId(e.target.value)}
-                                className="h-10 min-w-[170px] rounded-none border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-teal-600 dark:border-white/10 dark:bg-[#0b1220] dark:text-slate-300"
-                            >
-                                <option value="all">{t('allRooms', 'All Rooms')}</option>
-                                {machines.filter(m => m.status === 'Active').map(m => (
-                                    <option key={m.modality_id} value={m.modality_id}>{m.name}</option>
-                                ))}
-                            </select>
-                            <button
-                                type="button"
-                                onClick={() => setShowFilters(v => !v)}
-                                className="inline-flex h-10 items-center gap-2 rounded-none border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-teal-300 hover:text-teal-700 dark:border-white/10 dark:bg-[#0b1220] dark:text-slate-300 dark:hover:bg-white/10"
-                            >
-                                <SlidersHorizontal size={14} />
-                                {showFilters ? t('filters.hide', 'Hide filters') : t('filters.show', 'Show filters')}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={retryAll}
-                                disabled={isFetchingAppointments}
-                                className="flex h-10 w-10 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 transition hover:border-teal-300 hover:text-teal-700 disabled:opacity-40 dark:border-white/10 dark:bg-[#0b1220] dark:text-slate-400 dark:hover:bg-white/10"
-                                title={t('actions.refresh', 'Refresh')}
-                                aria-label={t('actions.refresh', 'Refresh')}
-                            >
-                                <RotateCw size={14} className={isFetchingAppointments ? 'animate-spin' : ''} />
-                            </button>
-                        </div>
+                        {/* Room Scope dropdown */}
+                        <select
+                            value={selectedMachineId}
+                            onChange={e => setSelectedMachineId(e.target.value)}
+                            className="h-10 min-w-[150px] rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-teal-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-300"
+                        >
+                            <option value="all">{t('allRooms', 'كل الغرف/الأجهزة')}</option>
+                            {machines.filter(m => m.status === 'Active').map(m => (
+                                <option key={m.modality_id} value={m.modality_id}>{m.name}{activeDowntimes.some(d => String(d.modality_id) === String(m.modality_id)) ? ` ⚠️ (${isRtl ? 'صيانة' : 'Maintenance'})` : ''}</option>
+                            ))}
+                        </select>
+
+                        {/* Filter Toggle */}
+                        <button
+                            type="button"
+                            onClick={() => setShowFilters(v => !v)}
+                            className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition shadow-2xs ${showFilters || activeFilterCount > 0
+                                ? 'border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-700 dark:bg-teal-950/40 dark:text-teal-300'
+                                : 'border-slate-200 bg-white text-slate-600 hover:border-teal-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-300'
+                            }`}
+                        >
+                            <SlidersHorizontal size={13} />
+                            <span>{showFilters ? t('filters.hide', 'إخفاء الفلاتر') : t('filters.show', 'عرض الفلاتر')}</span>
+                            {activeFilterCount > 0 && (
+                                <span className="grid h-4 w-4 place-items-center rounded-full bg-teal-700 font-mono text-[9px] text-white">
+                                    {activeFilterCount}
+                                </span>
+                            )}
+                        </button>
+
+                        {/* Side Panel Toggle Button */}
+                        <button
+                            type="button"
+                            onClick={() => setShowSidePanel(!showSidePanel)}
+                            className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold transition shadow-2xs ${showSidePanel
+                                ? 'border-teal-500 bg-teal-50 text-teal-800 ring-1 ring-teal-500/20 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300'
+                                : 'border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                            }`}
+                        >
+                            <Users size={14} className="text-teal-600 dark:text-teal-400" />
+                            <span>{showSidePanel ? t('waitlist.hide', 'إخفاء الشريط') : t('waitlist.show', 'الانتظار والغرف')}</span>
+                            {waitingList.length > 0 && (
+                                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-teal-700 px-1 font-mono text-[9px] text-white dark:bg-teal-400 dark:text-slate-950">
+                                    {waitingList.length}
+                                </span>
+                            )}
+                        </button>
+
+                        {/* Refresh button */}
+                        <button
+                            type="button"
+                            onClick={retryAll}
+                            disabled={isFetchingAppointments}
+                            className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-teal-300 hover:text-teal-700 disabled:opacity-40 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-400 shadow-2xs"
+                            title={t('actions.refresh', 'تحديث')}
+                            aria-label={t('actions.refresh', 'تحديث')}
+                        >
+                            <RotateCw size={14} className={isFetchingAppointments ? 'animate-spin' : ''} />
+                        </button>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-2 2xl:justify-end">
+                    {/* View mode & Layout mode segmented controls */}
+                    <div className="flex items-center gap-2 shrink-0">
                         <SegmentedControl
                             ariaLabel={t('viewMode', 'View mode')}
-                            items={['day', 'week', 'month'].map(mode => ({ key: mode, label: t(`view.${mode}`, mode) }))}
+                            items={['day', 'week', 'month'].map(mode => ({
+                                key: mode,
+                                label: t(`view.${mode}`)
+                            }))}
                             value={viewMode}
                             onChange={setViewMode}
                         />
                         <SegmentedControl
                             ariaLabel={t('layoutMode', 'Layout mode')}
                             items={[
-                                { key: 'list', label: t('layout.list', 'List'), icon: Table2 },
-                                { key: 'calendar', label: t('layout.calendar', 'Calendar'), icon: Grid3X3 },
+                                { key: 'list', label: 'قائمة', icon: Table2 },
+                                { key: 'calendar', label: 'تقويم', icon: Grid3X3 },
                             ]}
                             value={layoutMode}
                             onChange={setLayoutMode}
@@ -800,21 +1176,21 @@ const Appointments = () => {
                 {showFilters && (
                     <div className="space-y-3 p-4">
                         <div className="flex flex-wrap items-center gap-2">
-                            <span className={sectionHeadingClass}>{t('filters.status', 'Status')}</span>
-                            {['all', 'Scheduled', 'Confirmed', 'Completed', 'Cancelled', 'No-Show'].map(s => {
+                            <span className={sectionHeadingClass}>{t('filters.status', 'الحالة')}</span>
+                            {['all', 'Scheduled', 'Confirmed', 'Arrived', 'Completed', 'Cancelled', 'No-Show'].map(s => {
                                 const active = statusFilter === s;
                                 return (
                                     <button
                                         key={s}
                                         type="button"
                                         onClick={() => setStatusFilter(s)}
-                                        className={`inline-flex shrink-0 items-center gap-2 rounded-none border px-3 py-2 text-[11px] font-bold transition ${active
+                                        className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-bold transition ${active
                                             ? 'border-teal-700 bg-teal-700 text-white'
-                                            : 'border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:text-teal-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                                            : 'border-slate-200 bg-white text-slate-600 hover:border-teal-300 hover:text-teal-700 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300 dark:hover:bg-[var(--VIARA-surface-hover)]'
                                             }`}
                                     >
-                                        <span>{s === 'all' ? t('filters.allStatuses', 'All') : t(`status.${s}`, s)}</span>
-                                        <span className={`rounded-none bg-black/5 px-1.5 py-0.5 font-mono text-[10px] ${active ? 'bg-white/20 text-white' : 'text-slate-400 dark:bg-white/10 dark:text-slate-400'}`}>
+                                        <span>{getStatusDisplayLabel(s, t, language)}</span>
+                                        <span className={`rounded-lg bg-black/5 px-1.5 py-0.5 font-mono text-[10px] ${active ? 'bg-white/20 text-white' : 'text-slate-400 dark:bg-white/10 dark:text-slate-400'}`}>
                                             {formatNumber(statusCounts[s] || 0, language)}
                                         </span>
                                     </button>
@@ -822,7 +1198,7 @@ const Appointments = () => {
                             })}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                            <span className={sectionHeadingClass}>{t('filters.priority', 'Priority')}</span>
+                            <span className={sectionHeadingClass}>{t('filters.priority', 'الأولوية')}</span>
                             {['all', 'Routine', 'Urgent', 'Emergency'].map(priority => {
                                 const active = priorityFilter === priority;
                                 return (
@@ -830,13 +1206,13 @@ const Appointments = () => {
                                         key={priority}
                                         type="button"
                                         onClick={() => setPriorityFilter(priority)}
-                                        className={`inline-flex shrink-0 items-center gap-2 rounded-none border px-3 py-2 text-[11px] font-bold transition ${active
+                                        className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-bold transition ${active
                                             ? 'border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-950'
-                                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-900 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300 dark:hover:bg-[var(--VIARA-surface-hover)]'
                                             }`}
                                     >
-                                        <span>{priority === 'all' ? t('filters.allPriorities', 'All priorities') : t(`priority.${priority}`, priority)}</span>
-                                        <span className={`rounded-none bg-black/5 px-1.5 py-0.5 font-mono text-[10px] ${active ? 'bg-white/20' : 'text-slate-400 dark:bg-white/10 dark:text-slate-400'}`}>
+                                        <span>{getPriorityDisplayLabel(priority, t, language)}</span>
+                                        <span className={`rounded-lg bg-black/5 px-1.5 py-0.5 font-mono text-[10px] ${active ? 'bg-white/20' : 'text-slate-400 dark:bg-white/10 dark:text-slate-400'}`}>
                                             {formatNumber(priorityCounts[priority] || 0, language)}
                                         </span>
                                     </button>
@@ -846,7 +1222,7 @@ const Appointments = () => {
                                 <button
                                     type="button"
                                     onClick={clearFilters}
-                                    className="inline-flex items-center gap-1.5 rounded-none px-3 py-2 text-[11px] font-black text-rose-600 transition hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                                    className="inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[11px] font-black text-rose-600 transition hover:bg-rose-50 dark:hover:bg-rose-950/30"
                                 >
                                     <FilterX size={13} />
                                     {t('filters.reset', 'Reset')}
@@ -858,13 +1234,13 @@ const Appointments = () => {
             </section>
 
             {/* Main Content Grid */}
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
+            <div className={`grid grid-cols-1 gap-5 transition-all duration-300 ${showSidePanel ? 'xl:grid-cols-[minmax(0,1fr)_340px]' : ''}`}>
                 {/* Appointments List/Calendar */}
                 <section className={`${cardBase} flex flex-col overflow-hidden`}>
-                    <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-4 dark:border-white/5 dark:bg-white/[0.025] sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-4 dark:border-white/5 dark:bg-[var(--VIARA-surface)] sm:flex-row sm:items-center sm:justify-between">
                         <div className="min-w-0">
                             <h2 className="text-base font-black text-slate-900 dark:text-white">
-                                {t('calendar.title', 'Scheduled Appointments')}
+                                {t('calendar.title', 'التقويم والمواعيد المجدولة')}
                             </h2>
                             <p className={`mt-0.5 ${subHeadingClass}`}>
                                 {t('calendar.range', rangeLabel)}
@@ -872,46 +1248,89 @@ const Appointments = () => {
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                             {selectedIds.size > 0 && (
-                                <span className="flex items-center gap-2 rounded-none bg-teal-50 px-3 py-1.5 text-xs font-black text-teal-700 dark:bg-teal-500/10 dark:text-teal-300">
+                                <span className="flex items-center gap-2 rounded-full bg-teal-50 px-3 py-1.5 text-xs font-black text-teal-700 dark:bg-teal-500/10 dark:text-teal-300">
                                     <Sparkles size={13} />
                                     {t('table.selectedCount', { count: formatNumber(selectedIds.size, language) })}
                                 </span>
                             )}
-                            <span className="rounded-none border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 tabular-nums dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                            <span aria-live="polite" aria-atomic="true" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600 tabular-nums dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300">
                                 {t('calendar.count', { count: formatNumber(visibleAppointments.length, language) })}
                             </span>
                         </div>
                     </div>
 
                     {selectedIds.size > 0 && (
-                        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-teal-50/70 px-5 py-3 dark:border-white/5 dark:bg-teal-950/20">
-                            <span className="text-xs font-bold text-teal-700 dark:text-teal-300">
-                                {t('table.selectedCount', { count: formatNumber(selectedIds.size, language) })}
-                            </span>
-                            <button
-                                type="button"
-                                onClick={handleBulkRemind}
-                                disabled={isSendingReminder}
-                                className="inline-flex items-center gap-1.5 rounded-none bg-teal-700 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-teal-800 disabled:opacity-50"
+                        <>
+                            <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 bg-teal-50/70 px-5 py-3 dark:border-white/5 dark:bg-teal-950/20">
+                                <span className="text-xs font-bold text-teal-700 dark:text-teal-300">
+                                    {t('table.selectedCount', { count: formatNumber(selectedIds.size, language) })}
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={handleBulkRemind}
+                                    disabled={isSendingReminder}
+                                    className="inline-flex items-center gap-1.5 rounded-xl bg-teal-700 px-3 py-1.5 text-[10px] font-bold text-white transition hover:bg-teal-800 disabled:opacity-50"
+                                >
+                                    <Bell size={12} />
+                                    {t('actions.bulkRemind', 'Send Reminders')}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedIds(new Set())}
+                                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
+                                >
+                                    {t('actions.clearSelection', 'Clear')}
+                                </button>
+                            </div>
+
+                            {/* Floating Persistent Bulk Action HUD for Long Scrolling Views */}
+                            <div
+                                role="region"
+                                aria-live="polite"
+                                className="fixed bottom-6 left-4 right-4 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 z-40 flex w-auto sm:w-full max-w-lg items-center justify-between gap-4 rounded-2xl border border-teal-500/40 bg-slate-950/95 px-5 py-3.5 text-white shadow-2xl shadow-teal-950/40 backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 ring-1 ring-white/10"
                             >
-                                <Bell size={12} />
-                                {t('actions.bulkRemind', 'Send Reminders')}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setSelectedIds(new Set())}
-                                className="inline-flex items-center gap-1.5 rounded-none border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-                            >
-                                {t('actions.clearSelection', 'Clear')}
-                            </button>
-                        </div>
+                                <div className="flex items-center gap-2.5">
+                                    <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-500/20 text-teal-400 ring-1 ring-teal-500/30">
+                                        <Sparkles size={15} />
+                                    </span>
+                                    <div>
+                                        <span className="text-xs font-black tracking-wide text-white">
+                                            {t('table.selectedCount', { count: formatNumber(selectedIds.size, language) })}
+                                        </span>
+                                        <p className="text-[10px] font-medium text-slate-400">
+                                            {language?.startsWith('ar') ? 'إجراءات جماعية للمواعيد المحددة' : 'Bulk actions available'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={handleBulkRemind}
+                                        disabled={isSendingReminder}
+                                        className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-4 py-2 text-xs font-black text-white shadow-md shadow-teal-900/30 transition hover:from-teal-500 hover:to-emerald-500 disabled:opacity-50"
+                                    >
+                                        <Bell size={13} />
+                                        <span>{t('actions.bulkRemind', 'Send Reminders')}</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedIds(new Set())}
+                                        className="inline-flex items-center gap-1 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-bold text-white transition hover:bg-white/20"
+                                        aria-label={t('actions.clearSelection', 'Clear')}
+                                    >
+                                        <X size={13} />
+                                        <span>{t('actions.clearSelection', 'Clear')}</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </>
                     )}
 
                     {layoutMode === 'calendar' ? (
                         <div className="p-0">
                             {isLoading ? (
                                 <div className="flex flex-col items-center gap-3 p-20 text-center">
-                                    <div className="h-8 w-8 animate-spin rounded-none border-2 border-teal-600 border-t-transparent" />
+                                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-teal-600 border-t-transparent" />
                                     <p className="text-sm text-slate-500">{t('calendar.loading', 'Loading schedule...')}</p>
                                 </div>
                             ) : (
@@ -923,9 +1342,11 @@ const Appointments = () => {
                                     onPrevDate={() => setDate(shiftAnchorDate(date, viewMode, -1))}
                                     onNextDate={() => setDate(shiftAnchorDate(date, viewMode, 1))}
                                     onToday={() => setDate(toDateInput())}
-                                    onSelectEvent={setFocusedAppointment}
+                                    onSelectEvent={appt => { setFocusedAppointment(appt); setShowSidePanel(true); }}
                                     t={t}
                                     locale={i18n.language}
+                                    firstDayOfWeek={preferences.firstDayOfWeek}
+                                    integrated={true}
                                 />
                             )}
                         </div>
@@ -941,7 +1362,7 @@ const Appointments = () => {
                             onReschedule={openReschedule}
                             onNoShow={handleNoShow}
                             onCancel={setCancelAppt}
-                            onSelect={setFocusedAppointment}
+                            onSelect={appt => { setFocusedAppointment(appt); setShowSidePanel(true); }}
                             isMarkingNoShow={isMarkingNoShow}
                             language={language}
                             t={t}
@@ -951,7 +1372,7 @@ const Appointments = () => {
                     )}
 
                     {layoutMode === 'list' && visibleAppointments.length > 0 && (
-                        <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/70 px-5 py-3 dark:border-white/5 dark:bg-white/[0.025] sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/70 px-5 py-3 dark:border-white/5 dark:bg-[var(--VIARA-surface)] sm:flex-row sm:items-center sm:justify-between">
                             <p className={`text-xs font-semibold text-slate-400 tabular-nums`}>
                                 {t('calendar.pagination.range', {
                                     start: formatNumber(pagination.startIndex + 1, language),
@@ -961,50 +1382,43 @@ const Appointments = () => {
                             </p>
                             <div className="flex flex-wrap items-center gap-2">
                                 <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-                                    {t('calendar.pagination.rowsPerPage', 'Rows')}
+                                    {t('calendar.pagination.rowsPerPage', 'الصفوف')}
                                     <select
                                         value={pageSize}
                                         onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-                                        className="rounded-none border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none focus:border-teal-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
+                                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700 outline-none focus:border-teal-600 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
                                     >
                                         {[20, 50, 100].map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </label>
-                                <span className={`min-w-16 text-center text-xs font-semibold text-slate-500 tabular-nums`}>
-                                    {t('calendar.pagination.page', { page: formatNumber(pagination.currentPage, language), pages: formatNumber(pagination.pageCount, language) })}
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setPage(c => Math.max(1, c - 1))}
-                                    disabled={pagination.currentPage === 1}
-                                    className="flex h-7 w-7 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 disabled:opacity-40 dark:border-white/10 dark:bg-white/5"
-                                >
-                                    <ChevronLeft size={14} className="rtl-flip" />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setPage(c => Math.min(pagination.pageCount, c + 1))}
-                                    disabled={pagination.currentPage === pagination.pageCount}
-                                    className="flex h-7 w-7 items-center justify-center rounded-none border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 disabled:opacity-40 dark:border-white/10 dark:bg-white/5"
-                                >
-                                    <ChevronRight size={14} className="rtl-flip" />
-                                </button>
+                                <Pagination
+                                    compact
+                                    currentPage={pagination.currentPage}
+                                    pageCount={pagination.pageCount}
+                                    onPageChange={setPage}
+                                    isRtl={language?.startsWith('ar')}
+                                    ariaLabel={t('calendar.pagination.aria', 'ترقيم صفحات المواعيد')}
+                                    previousLabel={t('calendar.pagination.previous')}
+                                    nextLabel={t('calendar.pagination.next')}
+                                />
                             </div>
                         </div>
                     )}
                 </section>
 
-                {/* Side Panel */}
-                <aside className="space-y-5">
+                {/* Side Panel (Responsive drawer on mobile/tablet, expandable column on desktop) */}
+                <aside className={`space-y-5 transition-all duration-200 ${showSidePanel ? 'block' : 'hidden'}`}>
                     {focusedAppointment && (
-                        <FocusedAppointmentCard
-                            appointment={focusedAppointment}
-                            language={language}
-                            onClose={() => setFocusedAppointment(null)}
-                            onRemind={() => handleRemind(focusedAppointment)}
-                            onReschedule={() => openReschedule(focusedAppointment)}
-                            t={t}
-                        />
+                        <div className="hidden xl:block">
+                            <FocusedAppointmentCard
+                                appointment={focusedAppointment}
+                                language={language}
+                                onClose={() => setFocusedAppointment(null)}
+                                onRemind={() => handleRemind(focusedAppointment)}
+                                onReschedule={() => openReschedule(focusedAppointment)}
+                                t={t}
+                            />
+                        </div>
                     )}
                     <AvailabilityPanel availability={availability} t={t} />
                     <WaitingListPanel
@@ -1025,6 +1439,27 @@ const Appointments = () => {
                 </aside>
             </div>
 
+            {/* Mobile Focused Appointment Modal */}
+            {focusedAppointment && (
+                <div className="xl:hidden">
+                    <Modal
+                        isOpen={Boolean(focusedAppointment)}
+                        onClose={() => setFocusedAppointment(null)}
+                        title={t('focused.title', 'Selected appointment')}
+                        size="md"
+                    >
+                        <FocusedAppointmentCard
+                            appointment={focusedAppointment}
+                            language={language}
+                            onClose={() => setFocusedAppointment(null)}
+                            onRemind={() => handleRemind(focusedAppointment)}
+                            onReschedule={() => openReschedule(focusedAppointment)}
+                            t={t}
+                        />
+                    </Modal>
+                </div>
+            )}
+
             {/* Modals */}
             <RescheduleModal
                 draft={rescheduleDraft}
@@ -1044,7 +1479,7 @@ const Appointments = () => {
                 onClose={() => setCancelAppt(null)}
                 onConfirm={async (reason) => {
                     try {
-                        await updateAppointment({ id: cancelAppt.appointment_id, status: 'Cancelled', cancellationReason: reason }).unwrap();
+                        await deleteAppointment({ id: cancelAppt.appointment_id, reason }).unwrap();
                         toast.success(t('toast.cancelled', 'Appointment cancelled successfully'));
                         setCancelAppt(null);
                     } catch (err) {
@@ -1073,18 +1508,18 @@ const Appointments = () => {
     );
 };
 
-            // ============================================================================
-            // SUB-COMPONENTS
-            // ============================================================================
+// ============================================================================
+// SUB-COMPONENTS
+// ============================================================================
 
 const CommandFact = ({ icon: Icon, label, value }) => (
-    <div className="min-w-0 rounded-none border border-slate-200 bg-slate-50/80 p-3 dark:border-white/10 dark:bg-white/[0.035]">
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/80 p-3 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]">
         <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-none bg-white text-teal-700 ring-1 ring-slate-200 dark:bg-[#0b1220] dark:text-teal-300 dark:ring-white/10">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-teal-700 ring-1 ring-slate-200 dark:bg-[var(--VIARA-surface-raised)] dark:text-teal-300 dark:ring-white/10">
                 <Icon size={14} />
             </span>
             <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[.12em] text-slate-400 dark:text-slate-500">
+                <p className="text-[10px] font-black uppercase tracking-[.12em] text-slate-400 dark:text-slate-400">
                     {label}
                 </p>
                 <p className="mt-0.5 truncate text-xs font-bold text-slate-800 dark:text-slate-100">
@@ -1095,9 +1530,74 @@ const CommandFact = ({ icon: Icon, label, value }) => (
     </div>
 );
 
+const OperationSignal = ({ icon: Icon, label, value, detail, tone = 'slate' }) => {
+    const tones = {
+        emerald: 'text-emerald-600 dark:text-emerald-300',
+        amber: 'text-amber-600 dark:text-amber-300',
+        rose: 'text-rose-600 dark:text-rose-300',
+        cyan: 'text-cyan-600 dark:text-cyan-300',
+        slate: 'text-slate-500 dark:text-slate-300',
+    };
+    return (
+        <article className="min-w-0 rounded-xl border border-slate-200/70 bg-slate-50/60 p-3 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)]">
+            <div className="flex items-center justify-between gap-3">
+                <p className="truncate text-xs font-bold text-slate-500 dark:text-slate-400">{label}</p>
+                <Icon size={14} className={`shrink-0 ${tones[tone] || tones.slate}`} />
+            </div>
+            <p className="mt-2 truncate text-lg font-black tracking-tight text-slate-950 dark:text-white">{value}</p>
+            <p className="mt-1 truncate text-[11px] font-semibold text-slate-500 dark:text-slate-400">{detail}</p>
+        </article>
+    );
+};
+
+const ProgressBar = ({ label, value, percent, tone = 'teal' }) => {
+    const tones = {
+        teal: 'bg-teal-600',
+        amber: 'bg-amber-500',
+        rose: 'bg-rose-500',
+    };
+    return (
+        <div>
+            <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="font-black text-slate-700 dark:text-slate-200">{label}</span>
+                <span className="font-bold tabular-nums text-slate-500 dark:text-slate-400">{value}</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white ring-1 ring-slate-100 dark:bg-[var(--VIARA-surface-raised)] dark:ring-white/10">
+                <span className={`block h-full rounded-full ${tones[tone] || tones.teal}`} style={{ width: `${Math.max(0, Math.min(100, percent || 0))}%` }} />
+            </div>
+        </div>
+    );
+};
+
+const StageRow = ({ stage, total, language, t }) => {
+    const percent = Math.round((stage.count / total) * 100);
+    const toneClass = {
+        slate: 'bg-slate-500',
+        teal: 'bg-teal-500',
+        cyan: 'bg-cyan-500',
+        violet: 'bg-violet-500',
+        emerald: 'bg-emerald-500',
+    }[stage.tone] || 'bg-slate-500';
+    return (
+        <div>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+                <span className="truncate text-xs font-bold text-slate-700 dark:text-slate-200">
+                    {t(`status.${stage.key}`, stage.key)}
+                </span>
+                <span className="font-mono text-xs font-black tabular-nums text-slate-500 dark:text-slate-400">
+                    {formatNumber(stage.count, language)}
+                </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-[var(--VIARA-surface)]">
+                <span className={`block h-full rounded-full ${toneClass}`} style={{ width: `${percent}%` }} />
+            </div>
+        </div>
+    );
+};
+
 const SegmentedControl = ({ ariaLabel, items, value, onChange }) => (
     <div
-        className="flex rounded-none border border-slate-200 bg-white p-1 dark:border-white/10 dark:bg-[#0b1220]"
+        className="flex rounded-xl border border-slate-200 bg-white p-1 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)]"
         role="tablist"
         aria-label={ariaLabel}
     >
@@ -1108,9 +1608,9 @@ const SegmentedControl = ({ ariaLabel, items, value, onChange }) => (
                 role="tab"
                 aria-selected={value === key}
                 onClick={() => onChange(key)}
-                className={`inline-flex items-center gap-1.5 rounded-none px-3 py-1.5 text-xs font-black capitalize transition ${value === key
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-black capitalize transition ${value === key
                     ? 'bg-teal-700 text-white shadow-sm'
-                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-100'
+                    : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-slate-100'
                     }`}
             >
                 {Icon && <Icon size={13} />}
@@ -1121,58 +1621,105 @@ const SegmentedControl = ({ ariaLabel, items, value, onChange }) => (
 );
 
 const FocusedAppointmentCard = ({ appointment, language, onClose, onRemind, onReschedule, t }) => {
+    const [copiedMrn, setCopiedMrn] = useState(false);
     const sc = statusConfig[appointment.status] || statusConfig.Scheduled;
     const StatusIcon = sc.icon || Activity;
     const priority = priorityConfig[appointment.priority || 'Routine'] || priorityConfig.Routine;
     const PriorityIcon = priority.icon || Activity;
+    const modality = getModalityBadgeStyle(appointment.machine_name, appointment.exam_type_name);
     const appointmentDate = appointment.start_time ? formatDateOnly(appointment.start_time.slice(0, 10), language) : '-';
     const appointmentTime = appointment.start_time && appointment.end_time
-        ? `${appointmentDate} · ${formatTime(appointment.start_time, language)} - ${formatTime(appointment.end_time, language)}`
+        ? `${appointmentDate} - ${formatTime(appointment.start_time, language)} - ${formatTime(appointment.end_time, language)}`
         : appointmentDate;
 
+    const handleCopyMrn = async () => {
+        if (!appointment.mrn) return;
+        try {
+            await navigator.clipboard.writeText(appointment.mrn);
+            setCopiedMrn(true);
+            toast.success(language?.startsWith('ar') ? 'تم نسخ الرقم الطبي (MRN)' : 'MRN copied to clipboard');
+            setTimeout(() => setCopiedMrn(false), 2000);
+        } catch {
+            toast.error(language?.startsWith('ar') ? 'تعذر نسخ الرقم الطبي' : 'Failed to copy MRN');
+        }
+    };
+
     return (
-        <section className="overflow-hidden rounded-none border border-teal-200 bg-teal-50/70 shadow-sm dark:border-teal-500/20 dark:bg-teal-500/10">
-            <div className="flex items-start justify-between gap-3 border-b border-teal-200/70 px-4 py-3 dark:border-teal-500/20">
+        <section className="overflow-hidden rounded-2xl border border-teal-200/80 bg-gradient-to-b from-teal-50/60 to-white/95 shadow-sm dark:border-teal-500/25 dark:from-teal-950/20 dark:to-[var(--VIARA-surface-raised)] backdrop-blur-sm">
+            <div className="flex items-start justify-between gap-3 border-b border-teal-200/70 px-4 py-3.5 dark:border-teal-500/20 bg-teal-50/50 dark:bg-teal-950/30">
                 <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-[.12em] text-teal-700 dark:text-teal-300">
-                        {t('focused.title', 'Selected appointment')}
-                    </p>
-                    <h2 className="mt-1 truncate text-sm font-black text-slate-950 dark:text-white">
+                    <div className="flex items-center gap-2">
+                        <span className="flex h-2 w-2 rounded-full bg-teal-500 ring-4 ring-teal-500/20 animate-pulse" />
+                        <p className="text-[10px] font-black uppercase tracking-[.12em] text-teal-700 dark:text-teal-300">
+                            {t('focused.title', 'Selected appointment')}
+                        </p>
+                    </div>
+                    <h2 className="mt-1 truncate text-base font-black text-slate-950 dark:text-white">
                         {appointment.patient_name || t('waitlist.unnamedPatient', 'Unnamed Patient')}
                     </h2>
                 </div>
                 <button
                     type="button"
                     onClick={onClose}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-none text-slate-500 transition hover:bg-white/70 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-white"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white/80 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-[var(--VIARA-surface-hover)] dark:hover:text-white"
                     aria-label={t('actions.close', 'Close')}
                 >
-                    <X size={14} />
+                    <X size={15} />
                 </button>
             </div>
-            <div className="space-y-3 p-4">
+            <div className="space-y-3.5 p-4">
                 <div className="grid gap-2 text-xs">
-                    <InfoLine label={t('table.mrn', 'MRN')} value={appointment.mrn || '-'} />
+                    <div className="flex items-center justify-between gap-3 rounded-xl bg-white/80 p-2.5 shadow-2xs dark:bg-white/[0.04]">
+                        <span className="shrink-0 text-[10px] font-black uppercase tracking-[.1em] text-slate-400">
+                            {t('table.mrn', 'MRN')}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-xs font-bold text-slate-800 dark:text-slate-200">{appointment.mrn || '-'}</span>
+                            {appointment.mrn && (
+                                <button
+                                    type="button"
+                                    onClick={handleCopyMrn}
+                                    className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-white/10 dark:hover:text-teal-300"
+                                    title={copiedMrn ? (language?.startsWith('ar') ? 'تم النسخ' : 'Copied') : (language?.startsWith('ar') ? 'نسخ MRN' : 'Copy MRN')}
+                                    aria-label={t('table.copyMrn', 'Copy MRN')}
+                                >
+                                    {copiedMrn ? <Check size={13} className="text-teal-600 dark:text-teal-400" /> : <Copy size={13} />}
+                                </button>
+                            )}
+                        </div>
+                    </div>
                     <InfoLine label={t('table.time', 'Time')} value={appointmentTime} />
-                    <InfoLine label={t('table.room', 'Room')} value={appointment.machine_name || '-'} />
+                    <div className="flex items-start justify-between gap-3 rounded-xl bg-white/80 p-2.5 shadow-2xs dark:bg-white/[0.04]">
+                        <span className="shrink-0 text-[10px] font-black uppercase tracking-[.1em] text-slate-400">
+                            {t('table.room', 'Room')}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${modality.badge}`}>
+                                {modality.code}
+                            </span>
+                            <span className="min-w-0 text-end font-bold text-slate-700 dark:text-slate-200">
+                                {appointment.machine_name || '-'}
+                            </span>
+                        </div>
+                    </div>
                     <InfoLine label={t('table.exam', 'Exam')} value={appointment.exam_type_name || t('table.noExamType', 'General Exam')} />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <span className={`inline-flex items-center gap-1.5 rounded-none px-2.5 py-1.5 text-[10px] font-black uppercase ${sc.bg} ${sc.text}`}>
+                    <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase border ${sc.border} ${sc.bg} ${sc.text}`}>
                         <StatusIcon size={12} />
                         {t(`status.${appointment.status}`, appointment.status)}
                     </span>
-                    <span className={`inline-flex items-center gap-1.5 rounded-none px-2.5 py-1.5 text-[10px] font-black uppercase ${priority.bg} ${priority.text}`}>
+                    <span className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] font-black uppercase border ${priority.border} ${priority.bg} ${priority.text}`}>
                         <PriorityIcon size={12} />
                         {t(`priority.${appointment.priority || 'Routine'}`, appointment.priority || 'Routine')}
                     </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                     <button
                         type="button"
                         onClick={onRemind}
                         disabled={['Completed', 'Cancelled', 'No-Show'].includes(appointment.status)}
-                        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-none bg-white px-3 text-xs font-black text-teal-700 ring-1 ring-teal-200 transition hover:bg-teal-700 hover:text-white disabled:opacity-40 dark:bg-[#0b1220] dark:text-teal-300 dark:ring-teal-500/20"
+                        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-white px-3 text-xs font-black text-teal-700 ring-1 ring-teal-200 shadow-2xs transition hover:bg-teal-700 hover:text-white disabled:opacity-40 dark:bg-[var(--VIARA-surface-raised)] dark:text-teal-300 dark:ring-teal-500/20"
                     >
                         <Bell size={13} />
                         {t('table.sendReminder', 'Send Reminder')}
@@ -1181,7 +1728,7 @@ const FocusedAppointmentCard = ({ appointment, language, onClose, onRemind, onRe
                         type="button"
                         onClick={onReschedule}
                         disabled={appointment.status === 'Completed'}
-                        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-none bg-white px-3 text-xs font-black text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-900 hover:text-white disabled:opacity-40 dark:bg-[#0b1220] dark:text-slate-200 dark:ring-white/10"
+                        className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-white px-3 text-xs font-black text-slate-700 ring-1 ring-slate-200 shadow-2xs transition hover:bg-slate-900 hover:text-white disabled:opacity-40 dark:bg-[var(--VIARA-surface-raised)] dark:text-slate-200 dark:ring-white/10"
                     >
                         <RotateCw size={13} />
                         {t('table.reschedule', 'Reschedule')}
@@ -1193,7 +1740,7 @@ const FocusedAppointmentCard = ({ appointment, language, onClose, onRemind, onRe
 };
 
 const InfoLine = ({ label, value }) => (
-    <div className="flex items-start justify-between gap-3 rounded-none bg-white/75 px-3 py-2 dark:bg-white/[0.04]">
+    <div className="flex items-start justify-between gap-3 rounded-xl bg-white/75 px-3 py-2 dark:bg-white/[0.04]">
         <span className="shrink-0 text-[10px] font-black uppercase tracking-[.1em] text-slate-400">
             {label}
         </span>
@@ -1203,45 +1750,45 @@ const InfoLine = ({ label, value }) => (
     </div>
 );
 
-            const AppointmentTable = ({
-                appointments,
-                isLoading,
-                selectedIds,
-                allPageSelected,
-                onToggleSelect,
-                onToggleSelectAll,
-                onRemind,
-                onReschedule,
-                onNoShow,
-                onCancel,
-                onSelect,
-                isMarkingNoShow,
-                language,
-                t,
-                hasActiveFilters,
-                clearFilters
-            }) => {
+const AppointmentTable = ({
+    appointments,
+    isLoading,
+    selectedIds,
+    allPageSelected,
+    onToggleSelect,
+    onToggleSelectAll,
+    onRemind,
+    onReschedule,
+    onNoShow,
+    onCancel,
+    onSelect,
+    isMarkingNoShow,
+    language,
+    t,
+    hasActiveFilters,
+    clearFilters
+}) => {
     if (isLoading) {
         return (
             <div className="p-8 space-y-4">
                 {Array.from({ length: 5 }).map((_, i) => (
                     <div key={i} className="flex items-center gap-4 animate-pulse">
-                        <div className="h-4 w-4 rounded-none bg-slate-200 dark:bg-white/10" />
-                        <div className="h-8 w-8 rounded-none bg-slate-200 dark:bg-white/10" />
+                        <div className="h-4 w-4 rounded bg-slate-200 dark:bg-white/10" />
+                        <div className="h-8 w-8 rounded-full bg-slate-200 dark:bg-white/10" />
                         <div className="flex-1 space-y-2">
-                            <div className="h-3 w-32 rounded-none bg-slate-200 dark:bg-white/10" />
-                            <div className="h-2 w-20 rounded-none bg-slate-100 dark:bg-white/5" />
+                            <div className="h-3 w-32 rounded bg-slate-200 dark:bg-white/10" />
+                            <div className="h-2 w-20 rounded bg-slate-100 dark:bg-[var(--VIARA-surface)]" />
                         </div>
-                        <div className="h-3 w-24 rounded-none bg-slate-200 dark:bg-white/10" />
-                        <div className="h-3 w-28 rounded-none bg-slate-200 dark:bg-white/10" />
-                        <div className="h-3 w-16 rounded-none bg-slate-200 dark:bg-white/10" />
+                        <div className="h-3 w-24 rounded bg-slate-200 dark:bg-white/10" />
+                        <div className="h-3 w-28 rounded bg-slate-200 dark:bg-white/10" />
+                        <div className="h-3 w-16 rounded bg-slate-200 dark:bg-white/10" />
                     </div>
                 ))}
             </div>
-            );
+        );
     }
 
-            if (appointments.length === 0) {
+    if (appointments.length === 0) {
         return (
             <EmptyState.NoAppointments
                 action={hasActiveFilters ? 'reset' : undefined}
@@ -1251,446 +1798,601 @@ const InfoLine = ({ label, value }) => (
         );
     }
 
-            return (
-            <div className="overflow-x-auto" role="region" aria-label={t('table.appointmentList', 'Appointment list')}>
-                <table className="min-w-[1120px] w-full table-fixed border-collapse text-start text-sm" role="grid" aria-label={t('table.appointmentTable', 'Appointments')}>
-                    <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 backdrop-blur dark:border-white/10 dark:bg-[#0b1220]/95">
-                        <tr>
-                            <th className="w-12 px-4 py-3">
-                                <input
-                                    type="checkbox"
-                                    checked={allPageSelected}
-                                    onChange={onToggleSelectAll}
-                                    className="h-4 w-4 rounded-none border-slate-300 text-teal-700 transition focus:ring-teal-600"
-                                    aria-label={t('table.selectAll', 'Select all appointments on this page')}
-                                />
-                            </th>
-                            <th className="w-[30%] px-4 py-3 text-start text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                {t('table.patient', 'Patient')}
-                            </th>
-                            <th className="hidden w-[22%] px-4 py-3 text-start text-[10px] font-bold uppercase tracking-widest text-slate-400 md:table-cell">
-                                {t('table.details', 'Details')}
-                            </th>
-                            <th className="hidden w-[170px] px-4 py-3 text-start text-[10px] font-bold uppercase tracking-widest text-slate-400 lg:table-cell">
-                                {t('table.time', 'Time')}
-                            </th>
-                            <th className="hidden w-[185px] px-4 py-3 text-start text-[10px] font-bold uppercase tracking-widest text-slate-400 sm:table-cell">
-                                {t('table.status', 'Status')}
-                            </th>
-                            <th className="w-[170px] px-4 py-3 text-end text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                {t('table.actions', 'Actions')}
-                            </th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white dark:divide-white/5 dark:bg-[#0b1220]">
-                        {appointments.map((appt) => (
-                            <AppointmentRow
-                                key={appt.appointment_id}
-                                appt={appt}
-                                language={language}
-                                isSelected={selectedIds.has(appt.appointment_id)}
-                                onToggleSelect={() => onToggleSelect(appt.appointment_id)}
-                                onRemind={() => onRemind(appt)}
-                                onReschedule={() => onReschedule(appt)}
-                                onNoShow={() => onNoShow(appt)}
-                                onCancel={() => onCancel(appt)}
-                                onSelect={() => onSelect(appt)}
-                                isMarkingNoShow={isMarkingNoShow}
-                                t={t}
+    return (
+        <div className="overflow-x-auto" role="region" aria-label={t('table.appointmentList', 'قائمة المواعيد')}>
+            <table className="w-full border-collapse text-start text-sm" role="grid" aria-label={t('table.appointmentTable', 'Appointments')}>
+                <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 backdrop-blur dark:border-[var(--VIARA-line)] dark:bg-[#0b1426]/95">
+                    <tr>
+                        <th className="w-12 px-4 py-3.5">
+                            <input
+                                type="checkbox"
+                                checked={allPageSelected}
+                                onChange={onToggleSelectAll}
+                                className="h-4 w-4 rounded border-slate-300 text-teal-700 transition focus:ring-teal-600 focus:ring-offset-0 dark:border-white/20 dark:bg-slate-800"
+                                aria-label={t('table.selectAll', 'تحديد كافة المواعيد في هذه الصفحة')}
                             />
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-            );
+                        </th>
+                        <th className="px-4 py-3.5 text-start text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            {t('table.patient', 'المريض')}
+                        </th>
+                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 md:table-cell">
+                            {t('table.details', 'الغرفة والفحص')}
+                        </th>
+                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 lg:table-cell">
+                            {t('table.time', 'الوقت')}
+                        </th>
+                        <th className="hidden px-4 py-3.5 text-start text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 sm:table-cell">
+                            {t('table.status', 'الحالة')}
+                        </th>
+                        <th className="w-36 px-4 py-3.5 text-end text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                            {t('table.actions', 'إجراءات')}
+                        </th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white dark:divide-white/5 dark:bg-[var(--VIARA-surface-raised)]">
+                    {appointments.map((appt) => (
+                        <AppointmentRow
+                            key={appt.appointment_id}
+                            appt={appt}
+                            language={language}
+                            isSelected={selectedIds.has(appt.appointment_id)}
+                            onToggleSelect={() => onToggleSelect(appt.appointment_id)}
+                            onRemind={() => onRemind(appt)}
+                            onReschedule={() => onReschedule(appt)}
+                            onNoShow={() => onNoShow(appt)}
+                            onCancel={() => onCancel(appt)}
+                            onSelect={() => onSelect(appt)}
+                            isMarkingNoShow={isMarkingNoShow}
+                            t={t}
+                        />
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
 };
 
 const AppointmentRow = React.memo(({
-                appt,
-                language,
-                isSelected,
-                onToggleSelect,
-                onRemind,
-                onReschedule,
-                onNoShow,
-                onCancel,
-                onSelect,
-                isMarkingNoShow,
-                t
-            }) => {
+    appt,
+    language,
+    isSelected,
+    onToggleSelect,
+    onRemind,
+    onReschedule,
+    onNoShow,
+    onCancel,
+    onSelect,
+    isMarkingNoShow,
+    t
+}) => {
     const sc = statusConfig[appt.status] || statusConfig.Scheduled;
-            const shade = getAvatarShade(appt.patient_name || appt.mrn);
-            const initials = (appt.patient_name || appt.mrn || 'P')[0]?.toUpperCase();
-            const isCancelled = appt.status === 'Cancelled';
-            const priority = priorityConfig[appt.priority] || priorityConfig.Routine;
-            const StatusIcon = sc.icon || Activity;
-            const dateLabel = appt.start_time ? formatDateOnly(appt.start_time.slice(0, 10), language) : '-';
-            const timeLabel = appt.start_time && appt.end_time
-                ? `${formatTime(appt.start_time, language)} - ${formatTime(appt.end_time, language)}`
-                : '-';
+    const shade = getAvatarShade(appt.patient_name || appt.mrn);
+    const initials = (appt.patient_name || appt.mrn || 'P')[0]?.toUpperCase();
+    const isCancelled = appt.status === 'Cancelled';
+    const isEmergency = appt.priority === 'Emergency';
+    const isUrgent = appt.priority === 'Urgent';
+    const priority = priorityConfig[appt.priority] || priorityConfig.Routine;
+    const StatusIcon = sc.icon || Activity;
+    const modality = getModalityBadgeStyle(appt.machine_name, appt.exam_type_name);
+    const dateLabel = appt.start_time ? formatDateOnly(appt.start_time.slice(0, 10), language) : '-';
+    const timeLabel = appt.start_time && appt.end_time
+        ? `${formatTime(appt.start_time, language)} - ${formatTime(appt.end_time, language)}`
+        : '-';
 
-            return (
-            <tr
-                role="row"
-                aria-selected={isSelected}
-                className={`group cursor-pointer border-b border-transparent transition-all duration-200 hover:border-teal-100 dark:hover:border-teal-500/10 ${isSelected ? 'bg-teal-50/70 dark:bg-teal-950/25' : 'hover:bg-teal-50/35 dark:hover:bg-white/[0.035]'
-                    } ${isCancelled ? 'opacity-60 hover:opacity-100' : ''}`}
-                onClick={onSelect}
-            >
-                <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
-                    <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={onToggleSelect}
-                        className="h-4 w-4 rounded-none border-slate-300 text-teal-700 transition focus:ring-teal-600"
-                        aria-label={t('table.selectAppointment', 'Select appointment')}
-                    />
-                </td>
-                <td className="px-4 py-4">
-                    <div className="flex items-center gap-3.5">
-                        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-none ${shade} text-sm font-bold text-white shadow-sm ring-2 ring-white dark:ring-[#0b1220]`}>
+    let priorityBorder = 'border-s-4 border-s-transparent';
+    let priorityBg = '';
+    if (isEmergency) {
+        priorityBorder = 'border-s-4 border-s-rose-500';
+        priorityBg = 'bg-rose-50/25 dark:bg-rose-950/15';
+    } else if (isUrgent) {
+        priorityBorder = 'border-s-4 border-s-amber-500';
+        priorityBg = 'bg-amber-50/20 dark:bg-amber-950/10';
+    }
+
+    return (
+        <tr
+            role="row"
+            aria-selected={isSelected}
+            className={`group cursor-pointer border-b border-transparent transition-all duration-200 hover:border-teal-100 dark:hover:border-teal-500/10 ${priorityBorder} ${
+                isSelected
+                    ? 'bg-teal-50/80 dark:bg-teal-950/30'
+                    : priorityBg || 'hover:bg-slate-50/70 dark:hover:bg-white/[0.03]'
+            } ${isCancelled ? 'opacity-60 hover:opacity-100' : ''}`}
+            onClick={onSelect}
+        >
+            <td className="px-4 py-4" onClick={e => e.stopPropagation()}>
+                <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={onToggleSelect}
+                    className="h-4 w-4 rounded border-slate-300 text-teal-700 transition focus:ring-teal-600 focus:ring-offset-0 dark:border-white/20 dark:bg-slate-800"
+                    aria-label={t('table.selectAppointment', 'Select appointment')}
+                />
+            </td>
+            <td className="px-4 py-4">
+                <div className="flex items-center gap-3.5">
+                    <div className="relative shrink-0">
+                        <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${shade} text-sm font-black text-white shadow-xs ring-2 ring-white dark:ring-[var(--VIARA-surface-raised)]`}>
                             {initials}
                         </span>
-                        <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                                <span className="truncate text-sm font-bold text-slate-900 dark:text-white">
-                                    {appt.patient_name || t('waitlist.unnamedPatient', 'Unnamed Patient')}
-                                </span>
-                                {appt.priority && appt.priority !== 'Routine' && (
-                                    <span className={`inline-flex items-center gap-1 rounded-none px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider ${priority.bg} ${priority.border} ${priority.text}`}>
-                                        {priority.label}
-                                    </span>
-                                )}
-                            </div>
-                            <div className={`font-mono text-[10px] font-semibold text-teal-700 dark:text-teal-400 tabular-nums`}>
-                                {appt.mrn}
-                            </div>
-                        </div>
-                    </div>
-                </td>
-                <td className="hidden px-4 py-4 md:table-cell">
-                    <div className="min-w-0">
-                        <div className="truncate text-xs font-bold text-slate-900 dark:text-white">
-                            {appt.machine_name}
-                        </div>
-                        <div className="truncate text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-                            {appt.exam_type_name || t('table.noExamType', 'General Exam')}
-                        </div>
-                    </div>
-                </td>
-                <td className="hidden whitespace-nowrap px-4 py-4 lg:table-cell">
-                    <div className="text-xs font-bold text-slate-700 dark:text-slate-300 tabular-nums">
-                        {dateLabel}
-                    </div>
-                    <div className="mt-0.5 text-[11px] font-medium text-slate-500 dark:text-slate-400 tabular-nums">
-                        {timeLabel}
-                    </div>
-                </td>
-                <td className="hidden px-4 py-4 sm:table-cell">
-                    <div className="flex flex-col items-start gap-1.5">
-                        <span className={`inline-flex items-center gap-1.5 rounded-none px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${sc.bg} ${sc.border} ${sc.text}`}>
-                            <StatusIcon size={12} />
-                            {t(`status.${appt.status}`, appt.status)}
-                        </span>
-                        {appt.radiologist_name && (
-                            <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                                {t('table.radiologist', 'Rad')}: {appt.radiologist_name}
+                        {isEmergency && (
+                            <span className="absolute -top-1 -end-1 flex h-3 w-3">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75"></span>
+                                <span className="relative inline-flex h-3 w-3 rounded-full bg-rose-600 ring-2 ring-white dark:ring-slate-900"></span>
                             </span>
                         )}
-                    </div>
-                </td>
-                <td className="whitespace-nowrap px-4 py-4" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-1">
-                        {appt.exam_id && (
-                            <Link
-                                to={`/cases/${appt.exam_id}`}
-                                className="rounded-none p-1.5 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 dark:hover:bg-white/10"
-                                title={t('table.viewCase', 'View Case')}
-                                aria-label={t('table.viewCase', 'View Case')}
-                            >
-                                <Activity size={14} />
-                            </Link>
+                        {isUrgent && (
+                            <span className="absolute -top-0.5 -end-0.5 flex h-2.5 w-2.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-900" />
                         )}
-                        <button
-                            type="button"
-                            onClick={onRemind}
-                            disabled={['Completed', 'Cancelled', 'No-Show'].includes(appt.status)}
-                            className="rounded-none p-1.5 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 disabled:opacity-30 dark:hover:bg-white/10"
-                            title={t('table.sendReminder', 'Send Reminder')}
-                            aria-label={t('table.sendReminder', 'Send Reminder')}
-                        >
-                            <Bell size={14} />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={onReschedule}
-                            disabled={appt.status === 'Completed'}
-                            className="rounded-none p-1.5 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 disabled:opacity-30 dark:hover:bg-white/10"
-                            title={t('table.reschedule', 'Reschedule')}
-                            aria-label={t('table.reschedule', 'Reschedule')}
-                        >
-                            <RotateCw size={14} />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={onNoShow}
-                            disabled={isMarkingNoShow || ['Completed', 'Cancelled', 'No-Show'].includes(appt.status)}
-                            className="rounded-none p-1.5 text-slate-400 transition hover:bg-amber-50 hover:text-amber-600 disabled:opacity-30 dark:hover:bg-amber-500/10"
-                            title={t('table.noShow', 'Mark No-Show')}
-                            aria-label={t('table.noShow', 'Mark No-Show')}
-                        >
-                            <UserX size={14} />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={onCancel}
-                            disabled={['Completed', 'Cancelled', 'No-Show'].includes(appt.status)}
-                            className="rounded-none p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30 dark:hover:bg-rose-500/10"
-                            title={t('table.cancelAppt', 'Cancel Appointment')}
-                            aria-label={t('table.cancelAppt', 'Cancel Appointment')}
-                        >
-                            <XCircle size={14} />
-                        </button>
                     </div>
-                </td>
-            </tr>
-            );
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-black text-slate-900 dark:text-white group-hover:text-teal-700 dark:group-hover:text-teal-400 transition-colors">
+                                {appt.patient_name || t('waitlist.unnamedPatient', 'Unnamed Patient')}
+                            </span>
+                            {appt.priority && appt.priority !== 'Routine' && (
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${priority.bg} ${priority.border} ${priority.text}`}>
+                                    <priority.icon size={10} />
+                                    {priority.label}
+                                </span>
+                            )}
+                        </div>
+                        <div className="mt-1 flex items-center gap-1.5">
+                            <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-teal-800 tabular-nums dark:bg-white/10 dark:text-teal-300">
+                                {appt.mrn}
+                            </span>
+                            {appt.gender && (
+                                <span className="text-[10px] font-medium text-slate-400">
+                                    • {appt.gender}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </td>
+            <td className="hidden px-4 py-3.5 md:table-cell">
+                <div className="min-w-0 max-w-sm">
+                    <div className="flex items-center gap-1.5">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border ${modality.badge}`}>
+                            {modality.code}
+                        </span>
+                        <span className="truncate text-xs font-bold text-slate-900 dark:text-white">
+                            {appt.machine_name}
+                        </span>
+                    </div>
+                    <div className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-1 line-clamp-1">
+                        {appt.exam_type_name || t('table.noExamType', 'فحص عام')}
+                    </div>
+                </div>
+            </td>
+            <td className="hidden whitespace-nowrap px-4 py-3.5 lg:table-cell">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 tabular-nums">
+                    <Calendar size={13} className="text-slate-400 shrink-0" />
+                    <span>{dateLabel}</span>
+                </div>
+                <div className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400 tabular-nums">
+                    <Clock size={12} className="text-slate-400 shrink-0" />
+                    <span>{timeLabel}</span>
+                </div>
+            </td>
+            <td className="hidden px-4 py-3.5 sm:table-cell">
+                <div className="flex flex-col items-start gap-1">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold border ${sc.border} ${sc.bg} ${sc.text}`}>
+                        <StatusIcon size={12} />
+                        <span>{getStatusDisplayLabel(appt.status, t, language)}</span>
+                    </span>
+                    {appt.radiologist_name && (
+                        <span className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate max-w-[160px]">
+                            {appt.radiologist_name}
+                        </span>
+                    )}
+                </div>
+            </td>
+            <td className="whitespace-nowrap px-4 py-4" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-end gap-1">
+                    {appt.exam_id && (
+                        <Link
+                            to={`/cases/${appt.exam_id}`}
+                            className="rounded-lg p-1.5 text-slate-400 transition hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-sky-950/40 dark:hover:text-sky-400"
+                            title={t('table.viewCase', 'View Case')}
+                            aria-label={t('table.viewCase', 'View Case')}
+                        >
+                            <Activity size={14} />
+                        </Link>
+                    )}
+                    <button
+                        type="button"
+                        onClick={onRemind}
+                        disabled={['Completed', 'Cancelled', 'No-Show'].includes(appt.status)}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-teal-50 hover:text-teal-700 disabled:opacity-30 dark:hover:bg-teal-950/40 dark:hover:text-teal-300"
+                        title={t('table.sendReminder', 'Send Reminder')}
+                        aria-label={t('table.sendReminder', 'Send Reminder')}
+                    >
+                        <Bell size={14} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onReschedule}
+                        disabled={appt.status === 'Completed'}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-violet-50 hover:text-violet-700 disabled:opacity-30 dark:hover:bg-violet-950/40 dark:hover:text-violet-300"
+                        title={t('table.reschedule', 'Reschedule')}
+                        aria-label={t('table.reschedule', 'Reschedule')}
+                    >
+                        <RotateCw size={14} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onNoShow}
+                        disabled={isMarkingNoShow || ['Completed', 'Cancelled', 'No-Show'].includes(appt.status)}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-amber-50 hover:text-amber-600 disabled:opacity-30 dark:hover:bg-amber-500/15 dark:hover:text-amber-400"
+                        title={t('table.noShow', 'Mark No-Show')}
+                        aria-label={t('table.noShow', 'Mark No-Show')}
+                    >
+                        <UserX size={14} />
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        disabled={['Completed', 'Cancelled', 'No-Show'].includes(appt.status)}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30 dark:hover:bg-rose-500/15 dark:hover:text-rose-400"
+                        title={t('table.cancelAppt', 'Cancel Appointment')}
+                        aria-label={t('table.cancelAppt', 'Cancel Appointment')}
+                    >
+                        <XCircle size={14} />
+                    </button>
+                </div>
+            </td>
+        </tr>
+    );
 });
 
-            const AvailabilityPanel = ({availability, t}) => {
-    const [isCollapsed, setIsCollapsed] = useState(false);
-    const maxBookings = Math.max(1, ...(availability?.machines || []).map(m => m.appointments?.length || 0));
+const AvailabilityPanel = ({ availability, t }) => {
+    const [isCollapsed, setIsCollapsed] = useState(true);
+    const workdayHours = Math.max(1, (availability?.workingHours?.end ?? 22) - (availability?.workingHours?.start ?? 6));
+    const standardDailySlots = workdayHours * 2;
 
-            return (
-            <section className={`${cardBase} flex flex-col overflow-hidden`}>
-                <button
-                    type="button"
-                    className="flex items-center justify-between w-full px-4 py-3.5 text-start transition hover:bg-slate-50/60 dark:hover:bg-white/[0.03]"
-                    onClick={() => setIsCollapsed(!isCollapsed)}
-                >
-                    <div className="flex items-center gap-2.5">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-none bg-gradient-to-br from-teal-50 to-cyan-50 text-teal-700 dark:from-teal-500/10 dark:to-cyan-500/10 dark:text-teal-400">
-                            <Gauge size={15} />
-                        </div>
-                        <div>
-                            <h2 className={sectionHeadingClass}>{t('availability.title', 'Modality Room Load')}</h2>
-                            <p className={subHeadingClass}>
-                                {t('availability.workingHours', {
-                                    start: availability?.workingHours?.start ?? 6,
-                                    end: availability?.workingHours?.end ?? 22
-                                })}
-                            </p>
-                        </div>
+    return (
+        <section className={`${cardBase} flex flex-col overflow-hidden`}>
+            <button
+                type="button"
+                className="flex items-center justify-between w-full px-4 py-3.5 text-start transition hover:bg-slate-50/60 dark:hover:bg-[var(--VIARA-surface-hover)]"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+            >
+                <div className="flex items-center gap-2.5">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-teal-50 text-teal-700 ring-1 ring-teal-100 dark:bg-teal-500/10 dark:text-teal-300 dark:ring-teal-500/20">
+                        <Gauge size={15} />
                     </div>
-                    <ChevronUp size={15} className={`text-slate-400 transition-transform duration-200 ${isCollapsed ? 'rotate-180' : ''}`} />
-                </button>
+                    <div>
+                        <h2 className={sectionHeadingClass}>{t('availability.title', 'حمل غرف الفحص والأجهزة')}</h2>
+                        <p className={subHeadingClass}>
+                            {t('availability.workingHours', {
+                                start: availability?.workingHours?.start ?? 8,
+                                end: availability?.workingHours?.end ?? 22
+                            })}
+                        </p>
+                    </div>
+                </div>
+                <ChevronUp size={15} className={`text-slate-400 transition-transform duration-200 ${isCollapsed ? 'rotate-180' : ''}`} />
+            </button>
 
-                {!isCollapsed && (
-                    <div className="space-y-3 p-4">
-                        {(availability?.machines || []).length === 0 ? (
-                            <p className="py-3 text-center text-xs text-slate-400">{t('availability.noMachines', 'No active modalities found')}</p>
-                        ) : (
-                            (availability?.machines || []).map((machine) => {
-                                const count = machine.appointments?.length || 0;
-                                const pct = Math.round((count / maxBookings) * 100);
-                                const barColor = pct >= 80 ? 'bg-rose-500' : pct >= 50 ? 'bg-amber-500' : 'bg-emerald-500';
-                                return (
-                                    <div key={machine.modality_id} className="space-y-1.5">
-                                        <div className="flex items-center justify-between text-xs font-semibold">
-                                            <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200">
-                                                <span className={`h-1.5 w-1.5 rounded-none ${machine.is_schedulable ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                                                {machine.name}
-                                            </span>
-                                            <span className={`font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums`}>
-                                                {pct}%
-                                            </span>
-                                        </div>
-                                        <div className="h-1.5 w-full overflow-hidden rounded-none bg-slate-100 dark:bg-white/10">
-                                            <div
-                                                className={`h-full ${barColor} rounded-none transition-all duration-700 ease-out`}
-                                                style={{ width: `${pct}%` }}
-                                            />
-                                        </div>
+            {!isCollapsed && (
+                <div className="space-y-3 p-4">
+                    {(availability?.machines || []).length === 0 ? (
+                        <p className="py-3 text-center text-xs text-slate-400">{t('availability.noMachines', 'لا توجد أجهزة نشطة')}</p>
+                    ) : (
+                        (availability?.machines || []).map((machine) => {
+                            const count = machine.appointments?.length || 0;
+                            const capacity = machine.daily_capacity || standardDailySlots || 20;
+                            const pct = Math.min(100, Math.round((count / capacity) * 100));
+                            const barColor = pct >= 85 ? 'bg-rose-500' : pct >= 60 ? 'bg-amber-500' : 'bg-emerald-500';
+                            return (
+                                <div key={machine.modality_id} className="space-y-1.5">
+                                    <div className="flex items-center justify-between text-xs font-semibold">
+                                        <span className="flex items-center gap-1.5 text-slate-700 dark:text-slate-200 truncate">
+                                            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${machine.is_schedulable ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                                            <span className="truncate">{machine.name}</span>
+                                        </span>
+                                        <span className="font-mono text-[11px] font-bold text-slate-500 dark:text-slate-400 tabular-nums shrink-0 ms-2">
+                                            {count} حجز ({pct}%)
+                                        </span>
                                     </div>
-                                );
-                            })
-                        )}
-                    </div>
-                )}
-            </section>
-            );
+                                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+                                        <div
+                                            className={`h-full ${barColor} rounded-full transition-all duration-700 ease-out`}
+                                            style={{ width: `${pct}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            )}
+        </section>
+    );
 };
 
-            const WaitingListPanel = ({
-                waitingList,
-                patients,
-                machines,
-                examTypes,
-                form,
-                setForm,
-                onAdd,
-                isAdding,
-                onUpdateStatus,
-                showForm,
-                setShowForm,
-                language,
-                t
-            }) => {
+// ── Patient Autocomplete ────────────────────────────────────────────────────
+// Replaces the plain <select> with a searchable combobox so staff can type a
+// patient name or MRN instead of scrolling through hundreds of IDs.
+const PatientAutocomplete = ({ patients, value, onChange, t, isRtl }) => {
+    const [query, setQuery] = useState('');
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef(null);
+
+    // Derive display label from selected ID
+    const selectedPatient = useMemo(
+        () => patients.find(p => p.patient_id === value) || null,
+        [patients, value]
+    );
+
+    const filtered = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return patients.slice(0, 40); // cap dropdown to 40 when empty
+        return patients.filter(p => {
+            const name = `${p.first_name || ''} ${p.last_name || ''}`.toLowerCase();
+            const mrn  = (p.mrn || '').toLowerCase();
+            return name.includes(q) || mrn.includes(q);
+        }).slice(0, 40);
+    }, [patients, query]);
+
+    // Close on outside click
+    useEffect(() => {
+        const handler = (e) => {
+            if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, []);
+
+    const handleSelect = (patient) => {
+        onChange(patient.patient_id);
+        setQuery('');
+        setOpen(false);
+    };
+
+    const handleClear = () => {
+        onChange('');
+        setQuery('');
+        setOpen(false);
+    };
+
+    const displayValue = selectedPatient
+        ? `${selectedPatient.mrn} — ${selectedPatient.first_name} ${selectedPatient.last_name}`
+        : '';
+
+    return (
+        <div ref={wrapRef} className="relative">
+            <div className={`flex h-10 items-center rounded-xl border bg-white transition dark:bg-slate-900 ${open ? 'border-teal-500 ring-2 ring-teal-500/20' : 'border-slate-200 dark:border-slate-700'}`}>
+                <Search size={14} className="ms-3 shrink-0 text-slate-400" aria-hidden="true" />
+                <input
+                    type="text"
+                    dir={isRtl ? 'rtl' : 'ltr'}
+                    className="flex-1 bg-transparent px-2 text-xs font-bold text-slate-900 placeholder:text-slate-400 outline-none dark:text-white"
+                    placeholder={selectedPatient ? displayValue : t('waitlist.searchPatient', 'Search patient name or MRN...')}
+                    value={selectedPatient && !open ? displayValue : query}
+                    onFocus={() => { setOpen(true); if (selectedPatient) setQuery(''); }}
+                    onChange={(e) => { setQuery(e.target.value); onChange(''); setOpen(true); }}
+                    aria-autocomplete="list"
+                    aria-expanded={open}
+                    aria-haspopup="listbox"
+                    autoComplete="off"
+                />
+                {(value || query) && (
+                    <button
+                        type="button"
+                        onClick={handleClear}
+                        className="me-2 grid h-5 w-5 shrink-0 place-items-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-700 transition"
+                        aria-label={t('waitlist.clearPatient', 'Clear patient')}
+                    >
+                        <X size={12} />
+                    </button>
+                )}
+            </div>
+
+            {open && (
+                <ul
+                    role="listbox"
+                    className="absolute z-50 mt-1 max-h-52 w-full overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-700 dark:bg-slate-900"
+                >
+                    {filtered.length === 0 ? (
+                        <li className="px-4 py-3 text-xs font-semibold text-slate-400">
+                            {t('waitlist.noPatientResults', 'No patients found')}
+                        </li>
+                    ) : filtered.map(p => (
+                        <li key={p.patient_id}>
+                            <button
+                                type="button"
+                                role="option"
+                                aria-selected={p.patient_id === value}
+                                onClick={() => handleSelect(p)}
+                                className={`flex w-full items-center gap-3 px-4 py-2.5 text-start text-xs transition hover:bg-teal-50 dark:hover:bg-teal-950/30 ${p.patient_id === value ? 'bg-teal-50 dark:bg-teal-950/20' : ''}`}
+                            >
+                                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 text-[10px] font-black">
+                                    {(p.first_name?.[0] || '?').toUpperCase()}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block truncate font-bold text-slate-900 dark:text-white">
+                                        {p.first_name} {p.last_name}
+                                    </span>
+                                    <span className="block font-mono text-[10px] text-slate-400" dir="ltr">{p.mrn}</span>
+                                </span>
+                                {p.patient_id === value && <CheckCircle2 size={14} className="shrink-0 text-teal-600" />}
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </div>
+    );
+};
+
+const WaitingListPanel = ({
+    waitingList,
+    patients,
+    machines,
+    examTypes,
+    form,
+    setForm,
+    onAdd,
+    isAdding,
+    onUpdateStatus,
+    showForm,
+    setShowForm,
+    language,
+    t
+}) => {
+    const isRtl = (language || '').startsWith('ar');
     const [searchWaitlist, setSearchWaitlist] = useState('');
 
     const filteredWaitingList = useMemo(() => {
         const search = searchWaitlist.trim().toLowerCase();
-            if (!search) return waitingList;
+        if (!search) return waitingList;
         return waitingList.filter(entry =>
             (entry.patient_name || '').toLowerCase().includes(search) ||
             (entry.mrn || '').toLowerCase().includes(search)
-            );
+        );
     }, [waitingList, searchWaitlist]);
 
-            return (
-            <section className={`${cardBase} flex flex-col overflow-hidden`}>
-                <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-100 dark:border-white/5">
-                    <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-none bg-gradient-to-br from-amber-50 to-orange-50 text-amber-700 dark:from-amber-500/10 dark:to-orange-500/10 dark:text-amber-400">
-                            <Users size={15} />
-                        </div>
-                        <h2 className={sectionHeadingClass}>{t('waitlist.title', 'Waiting List')}</h2>
-                        {waitingList.length > 0 && (
-                            <span className={`rounded-none bg-amber-600/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300 tabular-nums`}>
-                                {formatNumber(waitingList.length, language)}
-                            </span>
-                        )}
+    return (
+        <section className={`${cardBase} flex flex-col overflow-hidden`}>
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-slate-100 dark:border-white/5">
+                <div className="flex items-center gap-2">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-50 text-amber-700 ring-1 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20">
+                        <Users size={15} />
+                    </div>
+                    <h2 className={sectionHeadingClass}>{t('waitlist.title', 'Waiting List')}</h2>
+                    {waitingList.length > 0 && (
+                        <span className={`rounded-full bg-amber-600/10 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300 tabular-nums`}>
+                            {formatNumber(waitingList.length, language)}
+                        </span>
+                    )}
+                </div>
+                <button
+                    type="button"
+                    onClick={() => setShowForm(v => !v)}
+                    className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-300"
+                    title={showForm ? t('waitlist.collapseForm', 'Collapse form') : t('waitlist.add', 'Add to Waitlist')}
+                >
+                    {showForm ? <X size={14} /> : <Plus size={14} />}
+                </button>
+            </div>
+
+            {showForm && (
+                <div className="animate-in slide-in-from-top-1 space-y-3 border-b border-slate-100 bg-slate-50/60 p-4 duration-150 dark:border-white/5 dark:bg-white/[0.02]">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                        {t('waitlist.formTitle', 'Add Patient to Waitlist')}
+                    </p>
+                    <PatientAutocomplete
+                        patients={patients}
+                        value={form.patientId}
+                        onChange={(id) => setForm(prev => ({ ...prev, patientId: id }))}
+                        t={t}
+                        isRtl={isRtl}
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                        <select
+                            value={form.priority}
+                            onChange={e => setForm(prev => ({ ...prev, priority: e.target.value }))}
+                            className={inputClass}
+                        >
+                            <option value="Routine">{t('waitlist.priority.Routine', 'Routine')}</option>
+                            <option value="Urgent">{t('waitlist.priority.Urgent', 'Urgent')}</option>
+                            <option value="Emergency">{t('waitlist.priority.Emergency', 'Emergency')}</option>
+                        </select>
+                        <input
+                            type="date"
+                            min={toDateInput()}
+                            value={form.preferredDate}
+                            onChange={e => setForm(prev => ({ ...prev, preferredDate: e.target.value }))}
+                            className={inputClass}
+                        />
                     </div>
                     <button
                         type="button"
-                        onClick={() => setShowForm(v => !v)}
-                        className="flex h-8 w-8 items-center justify-center rounded-none border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 dark:border-white/10 dark:bg-white/5 dark:text-slate-300"
-                        title={showForm ? t('waitlist.collapseForm', 'Collapse form') : t('waitlist.add', 'Add to Waitlist')}
+                        onClick={onAdd}
+                        disabled={isAdding || !form.patientId}
+                        className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-teal-700 py-2.5 text-xs font-bold text-white transition hover:bg-teal-800 disabled:opacity-50"
                     >
-                        {showForm ? <X size={14} /> : <Plus size={14} />}
+                        <UserPlus size={13} />
+                        {isAdding ? t('waitlist.adding', 'Adding...') : t('waitlist.add', 'Add to Waitlist')}
                     </button>
                 </div>
+            )}
 
-                {showForm && (
-                    <div className="animate-in slide-in-from-top-1 space-y-3 border-b border-slate-100 bg-slate-50/60 p-4 duration-150 dark:border-white/5 dark:bg-white/[0.02]">
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                            {t('waitlist.formTitle', 'Add Patient to Waitlist')}
-                        </p>
-                        <select
-                            value={form.patientId}
-                            onChange={e => setForm(prev => ({ ...prev, patientId: e.target.value }))}
-                            className={inputClass}
-                        >
-                            <option value="">{t('waitlist.selectPatient', 'Select patient...')}</option>
-                            {patients.map(p => (
-                                <option key={p.patient_id} value={p.patient_id}>
-                                    {p.mrn} - {p.first_name} {p.last_name}
-                                </option>
-                            ))}
-                        </select>
-                        <div className="grid grid-cols-2 gap-2">
-                            <select
-                                value={form.priority}
-                                onChange={e => setForm(prev => ({ ...prev, priority: e.target.value }))}
-                                className={inputClass}
-                            >
-                                <option value="Routine">{t('waitlist.priority.Routine', 'Routine')}</option>
-                                <option value="Urgent">{t('waitlist.priority.Urgent', 'Urgent')}</option>
-                                <option value="Emergency">{t('waitlist.priority.Emergency', 'Emergency')}</option>
-                            </select>
+            <div className="p-3">
+                {waitingList.length === 0 ? (
+                    <div className="py-8 text-center text-xs font-semibold text-slate-400">
+                        {t('waitlist.empty', 'No patients on waiting list')}
+                    </div>
+                ) : (
+                    <>
+                        {/* Search */}
+                        <div className="relative mb-3">
+                            <Search className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
                             <input
-                                type="date"
-                                min={toDateInput()}
-                                value={form.preferredDate}
-                                onChange={e => setForm(prev => ({ ...prev, preferredDate: e.target.value }))}
-                                className={inputClass}
+                                value={searchWaitlist}
+                                onChange={e => setSearchWaitlist(e.target.value)}
+                                placeholder={t('waitlist.search', 'Search waiting list...')}
+                                className="h-8 w-full rounded-xl border border-slate-200 bg-slate-50/60 ps-8 pe-3 text-xs font-medium text-slate-900 outline-none transition focus:border-teal-600 focus:bg-white dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface)] dark:text-slate-100"
                             />
                         </div>
-                        <button
-                            type="button"
-                            onClick={onAdd}
-                            disabled={isAdding || !form.patientId}
-                            className="flex w-full items-center justify-center gap-1.5 rounded-none bg-gradient-to-r from-teal-600 to-emerald-600 py-2.5 text-xs font-bold text-white shadow-lg shadow-teal-600/25 transition hover:shadow-teal-600/40 disabled:opacity-50 disabled:hover:shadow-teal-600/25"
-                        >
-                            <UserPlus size={13} />
-                            {isAdding ? t('waitlist.adding', 'Adding...') : t('waitlist.add', 'Add to Waitlist')}
-                        </button>
-                    </div>
-                )}
 
-                <div className="p-3">
-                    {waitingList.length === 0 ? (
-                        <div className="py-8 text-center text-xs font-semibold text-slate-400">
-                            {t('waitlist.empty', 'No patients on waiting list')}
-                        </div>
-                    ) : (
-                        <>
-                            {/* Search */}
-                            <div className="relative mb-3">
-                                <Search className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
-                                <input
-                                    value={searchWaitlist}
-                                    onChange={e => setSearchWaitlist(e.target.value)}
-                                    placeholder={t('waitlist.search', 'Search waiting list...')}
-                                    className="h-8 w-full rounded-none border border-slate-200 bg-slate-50/60 ps-8 pe-3 text-xs font-medium text-slate-900 outline-none transition focus:border-teal-600 focus:bg-white dark:border-white/10 dark:bg-white/5 dark:text-slate-100"
-                                />
-                            </div>
+                        <div className="scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-white/10 max-h-80 space-y-2 overflow-y-auto">
+                            {filteredWaitingList.map((entry) => {
+                                const isEmergency = entry.priority === 'Emergency';
+                                const isUrgent = entry.priority === 'Urgent';
+                                const dotColor = isEmergency ? 'bg-rose-500' : isUrgent ? 'bg-amber-500' : 'bg-emerald-500';
+                                const shade = getAvatarShade(entry.patient_name || entry.mrn);
 
-                            <div className="scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-white/10 max-h-80 space-y-2 overflow-y-auto">
-                                {filteredWaitingList.map((entry) => {
-                                    const isEmergency = entry.priority === 'Emergency';
-                                    const isUrgent = entry.priority === 'Urgent';
-                                    const dotColor = isEmergency ? 'bg-rose-500' : isUrgent ? 'bg-amber-500' : 'bg-emerald-500';
-                                    const shade = getAvatarShade(entry.patient_name || entry.mrn);
-
-                                    return (
-                                        <div
-                                            key={entry.waitlist_id}
-                                            className="group flex items-center justify-between rounded-none border border-slate-200 bg-white p-3 shadow-sm transition hover:border-teal-300 dark:border-white/10 dark:bg-[#0b1220] dark:hover:border-teal-800"
-                                        >
-                                            <div className="min-w-0 flex-1 pe-2">
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-none ${shade} text-[10px] font-bold text-white`}>
-                                                        {(entry.patient_name || entry.mrn || 'P')[0]?.toUpperCase()}
-                                                    </span>
-                                                    <div className="min-w-0">
-                                                        <p className="truncate text-xs font-bold text-slate-900 dark:text-white">
-                                                            {entry.patient_name || entry.mrn}
-                                                        </p>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className={`font-mono text-[10px] font-semibold text-teal-700 dark:text-teal-400 tabular-nums`}>
-                                                                {entry.mrn}
-                                                            </span>
-                                                            <span className="text-slate-300 dark:text-slate-600">-</span>
-                                                            <span className="text-[10px] font-medium text-slate-400 truncate">
-                                                                {entry.exam_type_name || t('table.noExamType', 'General Exam')}
-                                                            </span>
-                                                        </div>
+                                return (
+                                    <div
+                                        key={entry.waitlist_id}
+                                        className="group flex items-center justify-between rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-teal-300 dark:border-[var(--VIARA-line)] dark:bg-[var(--VIARA-surface-raised)] dark:hover:border-teal-800"
+                                    >
+                                        <div className="min-w-0 flex-1 pe-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${shade} text-[10px] font-bold text-white`}>
+                                                    {(entry.patient_name || entry.mrn || 'P')[0]?.toUpperCase()}
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <p className="truncate text-xs font-bold text-slate-900 dark:text-white">
+                                                        {entry.patient_name || entry.mrn}
+                                                    </p>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className={`font-mono text-[10px] font-semibold text-teal-700 dark:text-teal-400 tabular-nums`}>
+                                                            {entry.mrn}
+                                                        </span>
+                                                        <span className="text-slate-300 dark:text-slate-600">-</span>
+                                                        <span className="text-[10px] font-medium text-slate-400 truncate">
+                                                            {entry.exam_type_name || t('table.noExamType', 'General Exam')}
+                                                        </span>
                                                     </div>
                                                 </div>
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className={`h-2 w-2 shrink-0 rounded-none ${dotColor}`} />
-                                                <Link
-                                                    to={`/appointments/new?patientId=${entry.patient_id}&date=${entry.preferred_date || toDateInput()}`}
-                                                    className="inline-flex shrink-0 items-center gap-1 rounded-none bg-teal-600/10 px-3 py-1.5 text-[10px] font-bold text-teal-700 transition hover:bg-teal-700 hover:text-white dark:bg-teal-500/15 dark:text-teal-300"
-                                                >
-                                                    <span>{t('waitlist.bookNow', 'Book')}</span>
-                                                    <ArrowRight size={11} className="rtl-flip" />
-                                                </Link>
-                                            </div>
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        </>
-                    )}
-                </div>
-            </section>
-            );
+                                        <div className="flex items-center gap-2">
+                                            <span className={`h-2 w-2 shrink-0 rounded-full ${dotColor}`} />
+                                            <Link
+                                                to={`/appointments/new?patientId=${entry.patient_id}&date=${entry.preferred_date || toDateInput()}&modalityId=${entry.modality_id || ''}&examTypeId=${entry.exam_type_id || ''}&priority=${entry.priority || 'Routine'}&source=${encodeURIComponent(entry.source || 'Walk-in')}&waitlistId=${entry.waitlist_id}&notes=${encodeURIComponent(entry.notes || '')}`}
+                                                className="inline-flex shrink-0 items-center gap-1 rounded-xl bg-teal-600/10 px-3 py-1.5 text-[10px] font-bold text-teal-700 transition hover:bg-teal-700 hover:text-white dark:bg-teal-500/15 dark:text-teal-300"
+                                            >
+                                                <span>{t('waitlist.bookNow', 'Book')}</span>
+                                                <ArrowRight size={11} className="rtl-flip" />
+                                            </Link>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </>
+                )}
+            </div>
+        </section>
+    );
 };
 
-            const RescheduleModal = ({draft, form, setForm, onCancel, onConfirm, isSaving, language, t}) => {
+const RescheduleModal = ({ draft, form, setForm, onCancel, onConfirm, isSaving, language, t }) => {
     if (!draft) return null;
     const duration = Math.max(15, Math.round((new Date(draft.end_time) - new Date(draft.start_time)) / 60000));
 
@@ -1708,7 +2410,11 @@ const AppointmentRow = React.memo(({
                         loading={isSaving}
                         onClick={onConfirm}
                     >
-                        {isSaving ? t('reschedule.saving', 'Saving...') : t('reschedule.confirm', 'Confirm Reschedule')}
+                        {isSaving
+                            ? t('reschedule.saving', 'Saving...')
+                            : draft.status === 'Cancelled'
+                                ? t('reschedule.reactivateConfirm', 'Reactivate & reschedule')
+                                : t('reschedule.confirm', 'Reschedule')}
                     </Button>
                 </div>
             }
@@ -1717,6 +2423,12 @@ const AppointmentRow = React.memo(({
                 <p className="mb-4 text-xs font-medium text-slate-400">
                     {draft.patient_name} - {draft.mrn}
                 </p>
+            )}
+            {draft.status === 'Cancelled' && (
+                <div className="mb-4 flex items-start gap-2 rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-800 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:ring-amber-900">
+                    <RotateCw size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+                    <span>{t('reschedule.reactivateNotice', 'This appointment is cancelled. Rescheduling will reactivate it as a confirmed order.')}</span>
+                </div>
             )}
             <form onSubmit={e => { e.preventDefault(); onConfirm(); }} className="space-y-4">
                 <div>
@@ -1760,4 +2472,4 @@ const AppointmentRow = React.memo(({
     );
 };
 
-            export default Appointments;
+export default Appointments;

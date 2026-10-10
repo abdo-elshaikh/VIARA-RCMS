@@ -1,10 +1,11 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { decrypt } = require('../utils/crypto');
 const financialReportService = require('../services/financialReportService');
 const { DEFAULT_COMMISSION_PERCENTAGE } = require('../services/financialPostingService');
 
 const getRevenueReport = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getRevenue(db, req.query));
+        res.json(await financialReportService.getRevenue(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -12,7 +13,7 @@ const getRevenueReport = (db) => async (req, res, next) => {
 
 const getOutstandingClaims = (db) => async (req, res, next) => {
     try {
-        const range = financialReportService.normalizeRange(req.query);
+        const range = financialReportService.normalizeRange(getRequestQuery(req));
         const query = `
             SELECT i.invoice_id, p.mrn, p.first_name_enc, p.last_name_enc,
                    i.branch_id,
@@ -68,7 +69,7 @@ const getOutstandingClaims = (db) => async (req, res, next) => {
 // Phase 15: Receivables Aging Report
 const getReceivablesAging = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getReceivablesAging(db, req.query));
+        res.json(await financialReportService.getReceivablesAging(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -77,10 +78,10 @@ const getReceivablesAging = (db) => async (req, res, next) => {
 // Phase 15: Doctor Commissions with Payables Integration
 const getDoctorCommissions = (db) => async (req, res, next) => {
     try {
-        const range = financialReportService.normalizeRange(req.query);
+        const range = financialReportService.normalizeRange(getRequestQuery(req));
 
         const query = `
-            WITH activity AS (
+            WITH period_activity AS (
                 SELECT
                     rd.doctor_id,
                     COALESCE(rd.full_name, 'Unassigned') as doctor_name,
@@ -106,15 +107,15 @@ const getDoctorCommissions = (db) => async (req, res, next) => {
                 WHERE c.reversed_at IS NULL
                   AND c.business_date BETWEEN $1::date AND $2::date
                   AND c.branch_id = $3
-            ), earned AS (
+            ), period_earned AS (
                 SELECT doctor_id, doctor_name,
                        SUM(exam_count)::int AS total_exams,
                        COALESCE(SUM(exam_value), 0) AS total_exam_value,
                        COALESCE(SUM(commission_amount), 0) AS commission_est
-                FROM activity
+                FROM period_activity
                 GROUP BY doctor_id, doctor_name
             ),
-            paid AS (
+            period_paid AS (
                 SELECT
                     doctor_id,
                     SUM(amount) as total_paid
@@ -123,17 +124,39 @@ const getDoctorCommissions = (db) => async (req, res, next) => {
                   AND business_date BETWEEN $1::date AND $2::date
                   AND branch_id = $3
                 GROUP BY doctor_id
+            ), lifetime_earned AS (
+                SELECT rd.doctor_id, MAX(COALESCE(rd.full_name, 'Unassigned')) AS doctor_name,
+                       COALESCE(SUM(GREATEST(0,
+                           i.subtotal_amount - i.discount_amount
+                           - COALESCE((SELECT SUM(c.net_amount)
+                                       FROM credit_notes c
+                                       WHERE c.invoice_id = i.invoice_id
+                                         AND c.reversed_at IS NULL), 0)
+                       ) * (COALESCE(rd.commission_percentage, $4) / 100.0)), 0) AS commission_est
+                FROM invoices i
+                JOIN examinations e ON e.exam_id = i.exam_id
+                JOIN appointments a ON a.appointment_id = e.appointment_id
+                JOIN referring_doctors rd ON rd.doctor_id = a.referring_doctor_id
+                WHERE i.invoice_status <> 'Voided' AND i.branch_id = $3
+                GROUP BY rd.doctor_id
+            ), lifetime_paid AS (
+                SELECT doctor_id, COALESCE(SUM(amount), 0) AS total_paid
+                FROM commission_payables
+                WHERE status = 'Paid' AND branch_id = $3
+                GROUP BY doctor_id
             )
             SELECT
-                e.doctor_id,
-                e.doctor_name,
-                e.total_exams,
-                e.total_exam_value,
-                e.commission_est,
-                COALESCE(p.total_paid, 0) as commission_paid,
-                (e.commission_est - COALESCE(p.total_paid, 0)) as commission_pending
-            FROM earned e
-            LEFT JOIN paid p ON e.doctor_id = p.doctor_id
+                le.doctor_id,
+                le.doctor_name,
+                COALESCE(pe.total_exams, 0) AS total_exams,
+                COALESCE(pe.total_exam_value, 0) AS total_exam_value,
+                COALESCE(pe.commission_est, 0) AS commission_est,
+                COALESCE(pp.total_paid, 0) AS commission_paid,
+                GREATEST(0, le.commission_est - COALESCE(lp.total_paid, 0)) AS commission_pending
+            FROM lifetime_earned le
+            LEFT JOIN period_earned pe ON le.doctor_id = pe.doctor_id
+            LEFT JOIN period_paid pp ON le.doctor_id = pp.doctor_id
+            LEFT JOIN lifetime_paid lp ON le.doctor_id = lp.doctor_id
             ORDER BY commission_pending DESC, commission_est DESC
         `;
         const result = await db.query(query, [range.start, range.end, range.branchId, DEFAULT_COMMISSION_PERCENTAGE]);
@@ -146,7 +169,7 @@ const getDoctorCommissions = (db) => async (req, res, next) => {
 // Phase 15: Tax Summary
 const getTaxSummary = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getTaxSummary(db, req.query));
+        res.json(await financialReportService.getTaxSummary(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -155,7 +178,7 @@ const getTaxSummary = (db) => async (req, res, next) => {
 // Phase 15: Profit & Loss
 const getProfitAndLoss = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getProfitAndLoss(db, req.query));
+        res.json(await financialReportService.getProfitAndLoss(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -164,7 +187,7 @@ const getProfitAndLoss = (db) => async (req, res, next) => {
 // Advanced: Profit & Loss as a day/month/year time series
 const getProfitAndLossSeries = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getProfitAndLossSeries(db, req.query));
+        res.json(await financialReportService.getProfitAndLossSeries(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -173,7 +196,7 @@ const getProfitAndLossSeries = (db) => async (req, res, next) => {
 // Advanced: cash flow as a day/month/year time series
 const getCashFlowSeries = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getCashFlowSeries(db, req.query));
+        res.json(await financialReportService.getCashFlowSeries(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -182,7 +205,7 @@ const getCashFlowSeries = (db) => async (req, res, next) => {
 // Advanced: discount detection report with governance anomaly flags
 const getDiscountReport = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getDiscountReport(db, req.query));
+        res.json(await financialReportService.getDiscountReport(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -190,7 +213,7 @@ const getDiscountReport = (db) => async (req, res, next) => {
 
 const getTrialBalance = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getTrialBalance(db, req.query));
+        res.json(await financialReportService.getTrialBalance(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -198,7 +221,7 @@ const getTrialBalance = (db) => async (req, res, next) => {
 
 const getJournalLedger = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getJournalLedger(db, req.query));
+        res.json(await financialReportService.getJournalLedger(db, getRequestQuery(req)));
     } catch (error) {
         next(error);
     }

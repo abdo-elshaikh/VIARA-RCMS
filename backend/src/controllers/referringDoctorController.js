@@ -1,14 +1,28 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
+const { logAction } = require('../services/auditService');
+
+const sanitizeReferringDoctor = (doc) => {
+    if (!doc) return doc;
+    const sanitized = { ...doc };
+    delete sanitized.portal_password_hash;
+    return sanitized;
+};
 
 const getReferringDoctors = (db) => async (req, res, next) => {
     try {
-        const { active, limit = 200, offset = 0 } = req.query;
-        const search = req.query.search || req.query.q;
+        const { active, limit = 200, offset = 0 } = getRequestQuery(req);
+        const search = getRequestQuery(req).search || getRequestQuery(req).q;
         const values = [];
         let param = 1;
 
         let query = `
-            SELECT rd.*,
+            SELECT rd.doctor_id, rd.full_name, rd.specialty, rd.clinic_hospital,
+                   rd.phone, rd.email, rd.address, rd.tax_id, rd.contract_id,
+                   rd.referral_source_category, rd.commission_percentage,
+                   rd.preferred_contact_method, rd.is_active, rd.notes,
+                   rd.created_by, rd.created_at, rd.updated_at,
+                   rd.portal_is_active, rd.portal_last_login,
                    COUNT(DISTINCT a.appointment_id) as appointment_count,
                    COUNT(DISTINCT e.exam_id) as exam_count,
                    COALESCE(SUM(i.subtotal_amount - i.discount_amount), 0)
@@ -53,7 +67,7 @@ const getReferringDoctors = (db) => async (req, res, next) => {
         values.push(limit, offset);
 
         const result = await db.query(query, values);
-        res.json(result.rows);
+        res.json(result.rows.map(sanitizeReferringDoctor));
     } catch (error) {
         next(error);
     }
@@ -86,7 +100,7 @@ const createReferringDoctor = (db) => async (req, res, next) => {
             req.user.user_id
         ]);
 
-        res.status(201).json(result.rows[0]);
+        res.status(201).json(sanitizeReferringDoctor(result.rows[0]));
     } catch (error) {
         next(error);
     }
@@ -133,6 +147,7 @@ const updateReferringDoctor = (db) => async (req, res, next) => {
                 commission_percentage = $10,
                 preferred_contact_method = $11,
                 is_active = $12,
+                current_session_id = CASE WHEN $12 THEN current_session_id ELSE NULL END,
                 notes = $13,
                 updated_at = NOW()
             WHERE doctor_id = $14
@@ -154,7 +169,7 @@ const updateReferringDoctor = (db) => async (req, res, next) => {
             id
         ]);
 
-        res.json(result.rows[0]);
+        res.json(sanitizeReferringDoctor(result.rows[0]));
     } catch (error) {
         next(error);
     }
@@ -166,6 +181,7 @@ const deleteReferringDoctor = (db) => async (req, res, next) => {
         const result = await db.query(`
             UPDATE referring_doctors
             SET is_active = false,
+                current_session_id = NULL,
                 updated_at = NOW()
             WHERE doctor_id = $1
             RETURNING doctor_id
@@ -174,6 +190,15 @@ const deleteReferringDoctor = (db) => async (req, res, next) => {
         if (result.rows.length === 0) {
             return next(new AppError('Referring doctor not found', 404));
         }
+
+        await logAction(db, {
+            userId: req.user.user_id,
+            action: 'REFERRING_DOCTOR_DEACTIVATED',
+            resourceId: id,
+            resourceTable: 'referring_doctors',
+            ipAddress: req.ip,
+            details: { reason: 'Doctor deactivated' }
+        });
 
         res.status(204).send();
     } catch (error) {
@@ -230,10 +255,88 @@ const getReferringDoctorStats = (db) => async (req, res, next) => {
         `, [id]);
 
         res.json({
-            doctor: doctorResult.rows[0],
+            doctor: sanitizeReferringDoctor(doctorResult.rows[0]),
             stats: statsResult.rows[0] || {},
             recentReferrals: recentResult.rows
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+let interactionsTableInitialized = false;
+
+const ensureDoctorInteractionsTable = async (db) => {
+    if (interactionsTableInitialized) return;
+    try {
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS referring_doctor_interactions (
+                interaction_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                doctor_id UUID NOT NULL REFERENCES referring_doctors(doctor_id) ON DELETE CASCADE,
+                user_id UUID REFERENCES users(user_id) ON DELETE SET NULL,
+                interaction_type VARCHAR(50) NOT NULL DEFAULT 'Visit',
+                purpose VARCHAR(100),
+                interaction_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                materials_delivered TEXT,
+                notes TEXT,
+                next_follow_up_date DATE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_doctor_interactions_doc ON referring_doctor_interactions(doctor_id);
+            CREATE INDEX IF NOT EXISTS idx_doctor_interactions_date ON referring_doctor_interactions(interaction_date DESC);
+        `);
+        interactionsTableInitialized = true;
+    } catch (err) {
+        console.error('Failed to ensure referring_doctor_interactions table:', err);
+    }
+};
+
+const getDoctorInteractions = (db) => async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        await ensureDoctorInteractionsTable(db);
+        const result = await db.query(`
+            SELECT rdi.*, u.full_name AS user_name
+            FROM referring_doctor_interactions rdi
+            LEFT JOIN users u ON rdi.user_id = u.user_id
+            WHERE rdi.doctor_id = $1
+            ORDER BY rdi.interaction_date DESC
+        `, [id]);
+        res.json(result.rows);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const createDoctorInteraction = (db) => async (req, res, next) => {
+    try {
+        const { id } = req.params;
+        const data = req.body;
+        await ensureDoctorInteractionsTable(db);
+
+        const result = await db.query(`
+            INSERT INTO referring_doctor_interactions (
+                doctor_id, user_id, interaction_type, purpose,
+                interaction_date, materials_delivered, notes, next_follow_up_date
+            )
+            VALUES ($1, $2, $3, $4, COALESCE($5, CURRENT_TIMESTAMP), $6, $7, $8)
+            RETURNING *
+        `, [
+            id,
+            req.user.user_id,
+            data.interactionType || 'Visit',
+            data.purpose || 'Routine Liaison',
+            data.interactionDate ? new Date(data.interactionDate) : null,
+            data.materialsDelivered || null,
+            data.notes || null,
+            data.nextFollowUpDate || null
+        ]);
+
+        const inserted = result.rows[0];
+        const userRes = await db.query('SELECT full_name FROM users WHERE user_id = $1', [req.user.user_id]);
+        inserted.user_name = userRes.rows[0]?.full_name || 'Staff';
+
+        res.status(201).json(inserted);
     } catch (error) {
         next(error);
     }
@@ -244,5 +347,7 @@ module.exports = {
     createReferringDoctor,
     updateReferringDoctor,
     deleteReferringDoctor,
-    getReferringDoctorStats
+    getReferringDoctorStats,
+    getDoctorInteractions,
+    createDoctorInteraction
 };

@@ -1,4 +1,4 @@
-# RCMS Portal Design System
+# VIARA Portal Design System
 
 ## Visual direction
 Professional diagnostic-care interface inspired by the clarity of CairoScan and TechnoScan, without cloning either site. The UI uses clinical navy for trust, teal for primary actions and active states, restrained coral for attention, and neutral blue-gray surfaces for readability.
@@ -12,8 +12,8 @@ Professional diagnostic-care interface inspired by the clarity of CairoScan and 
 - Semantic states: success `#138A63`, warning `#B87314`, danger `#C8424F`, info `#2B70B7`
 
 ## Typography
-- English: DM Sans
-- Arabic / RTL: Cairo
+- English: Manrope
+- Arabic / RTL: Noto Sans Arabic
 - Display headings use tight tracking; body copy uses comfortable 1.5–1.75 line height.
 
 ## Component rules

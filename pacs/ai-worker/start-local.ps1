@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 $rootEnvPath = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) ".env"
 
 if (-not (Test-Path -LiteralPath $rootEnvPath)) {
-    throw "RCMS root .env was not found at $rootEnvPath"
+    throw "VIARA root .env was not found at $rootEnvPath"
 }
 
 foreach ($line in Get-Content -LiteralPath $rootEnvPath) {

@@ -9,6 +9,7 @@ const {
 } = require('../controllers/documentController');
 const { validateRequest } = require('../middleware/validateRequest');
 const { updateDocumentSchema } = require('../schemas/documentSchema');
+const { hasAnyPermission, hasPermission } = require('../middleware/rbacMiddleware');
 
 module.exports = (pool, authenticateToken, authorizeRole) => {
     const router = express.Router();
@@ -17,7 +18,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.use(authenticateToken);
 
     // Upload Document — Admin, Technician, Radiologist can upload
-    router.post('/', authorizeRole(['Admin', 'Technician', 'Radiologist']), upload.single('file'), uploadDocument(pool));
+    router.post('/', authorizeRole(['Admin', 'Technician', 'Radiologist']), hasAnyPermission(pool, ['WRITE_REPORTS', 'PERFORM_EXAMS']), upload.single('file'), uploadDocument(pool));
 
     // Get Patient Documents — any authenticated staff can view
     const documentReaders = ['Admin', 'Receptionist', 'Radiologist', 'Technician', 'Nurse'];
@@ -27,10 +28,10 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     router.get('/:id/download', authorizeRole(documentReaders), downloadDocument(pool));
 
     // Update Metadata — Admin, Technician, Radiologist
-    router.put('/:id', authorizeRole(['Admin', 'Technician', 'Radiologist']), validateRequest(updateDocumentSchema), updateDocument(pool));
+    router.put('/:id', authorizeRole(['Admin', 'Technician', 'Radiologist']), hasAnyPermission(pool, ['WRITE_REPORTS', 'PERFORM_EXAMS']), validateRequest(updateDocumentSchema), updateDocument(pool));
 
     // Delete Document — Admin only
-    router.delete('/:id', authorizeRole(['Admin']), deleteDocument(pool));
+    router.delete('/:id', authorizeRole(['Admin']), hasPermission(pool, 'DELETE_PATIENTS'), deleteDocument(pool));
 
     return router;
 };

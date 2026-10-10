@@ -2,13 +2,15 @@ export interface SectionHeadingProps {
   eyebrow?: string;
   title: string;
   sub?: string;
-  align?: 'start' | 'center';
+  align?: "start" | "center";
 }
 
-export const SectionHeading = ({ eyebrow, title, sub, align = 'start' }: SectionHeadingProps) => (
-  <div className={align === 'center' ? 'mx-auto max-w-3xl text-center' : 'max-w-3xl text-start'}>
+export const SectionHeading = ({ eyebrow, title, sub, align = "start" }: SectionHeadingProps) => (
+  <div className={align === "center" ? "mx-auto max-w-3xl text-center" : "max-w-3xl text-start"}>
     {eyebrow && (
-      <p className={`inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-accent ${align === 'center' ? 'justify-center' : ''}`}>
+      <p
+        className={`inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-accent ${align === "center" ? "justify-center" : ""}`}
+      >
         <span className="h-1 w-6 rounded-full bg-accent" />
         {eyebrow}
       </p>

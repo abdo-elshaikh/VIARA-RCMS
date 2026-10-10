@@ -1,0 +1,209 @@
+/* Portal layout system: template compositions + admin layout options.
+   Class names are generated in portal-templates/layout.ts and applied on both
+   the page wrapper (PortalLanding) and the template wrapper. */
+
+/* ---------- container width ---------- */
+
+.portal-width-wide {
+  --portal-content-max: 80rem;
+}
+
+.portal-width-boxed {
+  --portal-content-max: 72rem;
+}
+
+.portal-width-narrow {
+  --portal-content-max: 60rem;
+}
+
+[data-portal-section] {
+  min-width: 0;
+}
+
+/* ---------- vertical rhythm ---------- */
+
+.portal-spacing-compact section {
+  padding-top: 2.25rem;
+  padding-bottom: 2.25rem;
+}
+
+.portal-spacing-comfortable section {
+  padding-top: 3rem;
+  padding-bottom: 3rem;
+}
+
+.portal-spacing-spacious section {
+  padding-top: 4.5rem;
+  padding-bottom: 4.5rem;
+}
+
+/* ---------- hero height ---------- */
+
+.portal-hero-compact [data-portal-section="hero"] > section,
+.portal-hero-compact .portal-hero-scene {
+  padding-top: 1.5rem;
+  padding-bottom: 1.5rem;
+}
+
+.portal-hero-compact [data-portal-section="hero"] > section > div {
+  min-height: 360px !important;
+}
+
+.portal-hero-tall [data-portal-section="hero"] > section > div {
+  min-height: min(760px, 78vh) !important;
+}
+
+/* ---------- card treatment ---------- */
+
+.portal-cards-outlined [data-portal-section] > section {
+  --portal-card-border: 1px solid rgba(11, 35, 72, 0.12);
+}
+
+.portal-cards-elevated [data-portal-section] > section {
+  --portal-card-shadow: 0 18px 45px rgba(11, 35, 72, 0.1);
+}
+
+/* ---------- clinical: reference single-column stack ---------- */
+
+.portal-stack--clinical {
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-stack--clinical > [data-portal-section] + [data-portal-section] {
+  border-top: 1px solid rgba(11, 35, 72, 0.06);
+}
+
+.dark .portal-stack--clinical > [data-portal-section] + [data-portal-section] {
+  border-top-color: rgba(255, 255, 255, 0.07);
+}
+
+/* ---------- modern: editorial two-column canvas ---------- */
+
+.portal-modern {
+  display: flex;
+  flex-direction: column;
+}
+
+.portal-modern__grid {
+  display: grid;
+  gap: 1.5rem;
+  margin-inline: auto;
+  width: 100%;
+  max-width: var(--portal-content-max, 80rem);
+  padding-inline: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .portal-modern__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem;
+    padding-inline: 2rem;
+  }
+
+  /* Hero, journey and locations carry the primary action or real data. */
+  .portal-modern__cell--full {
+    grid-column: 1 / -1;
+  }
+
+  /* A lone trailing cell should not stretch across the whole row. */
+  .portal-modern__cell:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
+.portal-modern__cell {
+  min-width: 0;
+}
+
+/* ---------- professional: doctor-first, information dense ---------- */
+
+.portal-professional {
+  background: linear-gradient(180deg, rgba(14, 124, 123, 0.06), transparent 40%);
+}
+
+.portal-professional__entry {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 75rem;
+  padding: 2.5rem 1rem 0;
+}
+
+.portal-professional__entry-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+@media (min-width: 768px) {
+  .portal-professional__entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1.5rem;
+  }
+}
+
+.portal-professional__card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid rgba(11, 35, 72, 0.12);
+  border-radius: 1.25rem;
+  background: var(--VIARA-surface, #fff);
+  padding: 1.75rem;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.portal-professional__card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(14, 124, 123, 0.45);
+}
+
+.portal-professional__card--featured {
+  border-color: var(--VIARA-primary, #0e7c7b);
+  background: color-mix(in srgb, var(--VIARA-primary, #0e7c7b) 8%, transparent);
+}
+
+.portal-professional__card h2 {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.portal-professional__card p {
+  font-size: 0.875rem;
+  line-height: 1.7;
+  color: var(--VIARA-muted, #5f7187);
+}
+
+.portal-professional__cta {
+  margin-top: auto;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--VIARA-primary, #0e7c7b);
+}
+
+/* ---------- minimal: narrow, typography first ---------- */
+
+.portal-minimal__column {
+  display: flex;
+  flex-direction: column;
+  margin-inline: auto;
+  width: 100%;
+  max-width: min(54rem, 100% - 2.5rem);
+}
+
+.portal-minimal__column > [data-portal-section] {
+  border-block: 1px solid rgba(11, 35, 72, 0.07);
+}
+
+.dark .portal-minimal__column > [data-portal-section] {
+  border-block-color: rgba(255, 255, 255, 0.08);
+}
+
+.portal-minimal__column > [data-portal-section]:first-child {
+  border-top: 0;
+}
+
+.portal-minimal__column > [data-portal-section]:last-child {
+  border-bottom: 0;
+}

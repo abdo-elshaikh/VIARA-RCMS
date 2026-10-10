@@ -35,7 +35,7 @@ describe('profile password changes', () => {
                         rows: [{
                             user_id: 'user-1',
                             full_name: 'New User',
-                            email: 'new.user@rcms.test',
+                            email: 'new.user@VIARA.test',
                             role: 'Nurse',
                             must_change_password: false
                         }]

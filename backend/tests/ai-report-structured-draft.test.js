@@ -1,4 +1,9 @@
-const { buildStructuredImageAnalysisDraft, parseJsonObject } = require('../src/services/aiReportService');
+const {
+    buildStructuredImageAnalysisDraft,
+    buildPreliminaryDraftPayload,
+    isImageAnalysisUsable,
+    parseJsonObject
+} = require('../src/services/aiReportService');
 
 const imageAnalysis = {
     summary: 'CXR screening signals above threshold: Effusion (0.82).',
@@ -12,6 +17,7 @@ const imageAnalysis = {
             location: null,
             description: 'TorchXRayVision screening score 0.82 for Effusion.'
         }],
+        evidence: [{ seriesInstanceUid: 'series-1', sopInstanceUid: 'instance-1' }],
         limitations: ['Model scores are uncalibrated screening signals.'],
         quality: { supported: true, imageCountAnalyzed: 1 },
         model: { provider: 'mlmed', name: 'densenet121-res224-all', revision: 'validated-v1' }
@@ -52,6 +58,53 @@ describe('structured PACS AI preliminary draft', () => {
         expect(draft).toBeNull();
     });
 
+    test('does not accept a metadata-only result as image-backed analysis', () => {
+            const metadataOnly = {
+                summary: 'Invented finding from metadata.',
+                findings: [{ label: 'Effusion', present: true }],
+                quality: { supported: true, imageCountAnalyzed: 1 },
+                evidence: [{ seriesInstanceUid: 'series-1', sopInstanceUid: 'instance-1' }],
+                provenance: { mode: 'metadata-only-analysis' }
+            };
+
+            expect(isImageAnalysisUsable(metadataOnly)).toBe(false);
+            expect(buildStructuredImageAnalysisDraft({
+                imageAnalysis: { payload: metadataOnly }
+            })).toBeNull();
+        });
+
+    test('minimizes report-provider payload and omits ineligible image analysis', () => {
+            const payload = buildPreliminaryDraftPayload({
+                exam: {
+                    order_number: 'ORDER-SENSITIVE',
+                    patient_name: 'SYNTHETIC-PATIENT',
+                    date_of_birth: '1900-01-01',
+                    clinical_indication: 'Cough',
+                    provisional_diagnosis: 'Pneumonia',
+                    is_follow_up: true,
+                    prior_exam_id: 'PRIOR-ORDER-SENSITIVE',
+                    prior_report_content: 'SENSITIVE PRIOR REPORT'
+                },
+                imaging: { instance_count: 2, series_count: 1 },
+                imageAnalysis: {
+                    payload: {
+                        findings: [{ label: 'Invented', present: true }],
+                        quality: { supported: true, imageCountAnalyzed: 1 },
+                        provenance: { mode: 'metadata-only-analysis' }
+                    }
+                }
+            });
+
+            const serialized = JSON.stringify(payload);
+            expect(serialized).not.toMatch(/ORDER-SENSITIVE|SYNTHETIC-PATIENT|1900-01-01|SENSITIVE PRIOR REPORT|Invented/);
+            expect(payload.imageAnalysis).toBeNull();
+            expect(payload.exam).toEqual(expect.objectContaining({
+                clinicalIndication: 'Cough',
+                provisionalDiagnosis: 'Pneumonia'
+            }));
+            expect(payload.priorStudy).toEqual(expect.objectContaining({ comparisonAvailable: true }));
+    });
+
     test('does not describe a below-threshold result as normal', () => {
         const draft = buildStructuredImageAnalysisDraft({
             imageAnalysis: {
@@ -60,6 +113,7 @@ describe('structured PACS AI preliminary draft', () => {
                     summary: 'No score exceeded threshold.',
                     findings: [],
                     quality: { supported: true, imageCountAnalyzed: 1 },
+                    evidence: [{ seriesInstanceUid: 'series-1', sopInstanceUid: 'instance-1' }],
                     model: { provider: 'mlmed', name: 'densenet121-res224-all' }
                 }
             }
@@ -75,7 +129,8 @@ describe('structured PACS AI preliminary draft', () => {
                 payload: {
                     summary: 'نتيجة أولية',
                     findings: [{ label: 'ارتشاح', present: true, description: 'اشتباه ارتشاح' }],
-                    quality: { supported: true },
+                    quality: { supported: true, imageCountAnalyzed: 1 },
+                    evidence: [{ seriesInstanceUid: 'series-1', sopInstanceUid: 'instance-1' }],
                     model: { provider: 'test', name: 'test-model' }
                 }
             }

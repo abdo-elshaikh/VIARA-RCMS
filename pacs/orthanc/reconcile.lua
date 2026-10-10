@@ -1,6 +1,6 @@
--- Orthanc -> RCMS reconciliation bridge.
+-- Orthanc -> VIARA reconciliation bridge.
 --
--- On every stored instance we notify the RCMS backend so it can link the study
+-- On every stored instance we notify the VIARA backend so it can link the study
 -- to the scheduled examination (by AccessionNumber / StudyInstanceUID) and
 -- advance the RIS workflow. Heavy work happens in the backend; this stays thin.
 --
@@ -9,7 +9,7 @@
 -- high-entropy shared secret over the compose-internal network is the pragmatic
 -- equivalent of the guide's HMAC. Rotate PACS_WEBHOOK_SECRET to revoke.
 
-local WEBHOOK_URL = os.getenv('RCMS_WEBHOOK_URL') or 'http://backend:3000/api/pacs/webhook'
+local WEBHOOK_URL = os.getenv('VIARA_WEBHOOK_URL') or 'http://backend:3000/api/pacs/webhook'
 local WEBHOOK_SECRET = os.getenv('PACS_WEBHOOK_SECRET') or ''
 
 function OnStoredInstance(instanceId, tags, metadata, origin)
@@ -59,6 +59,45 @@ function OnStoredInstance(instanceId, tags, metadata, origin)
     HttpPost(WEBHOOK_URL, body, headers)
   end)
   if not ok then
-    print('RCMS reconcile webhook failed for instance ' .. instanceId .. ': ' .. tostring(err))
+    print('VIARA reconcile webhook failed for instance ' .. instanceId .. ': ' .. tostring(err))
+  end
+end
+
+function OnStableStudy(studyId, tags, metadata)
+  -- Called by Orthanc once an entire study is stable (all slices received).
+  -- This provides high-throughput reconciliation for multi-slice CT/MRI studies.
+  local orthancStudy = nil
+  local okStudy, studyData = pcall(function()
+    return ParseJson(RestApiGet('/studies/' .. studyId))
+  end)
+  if okStudy and studyData ~= nil then
+    orthancStudy = studyData
+  end
+
+  local mainTags = (orthancStudy and orthancStudy['MainDicomTags']) or tags or {}
+  local patientMainTags = (orthancStudy and orthancStudy['PatientMainDicomTags']) or {}
+
+  local payload = {
+    EventType = 'StableStudy',
+    OrthancStudyId = studyId,
+    PatientID = patientMainTags['PatientID'] or (tags and tags['PatientID']),
+    PatientName = patientMainTags['PatientName'] or (tags and tags['PatientName']),
+    AccessionNumber = mainTags['AccessionNumber'] or (tags and tags['AccessionNumber']),
+    StudyInstanceUID = mainTags['StudyInstanceUID'] or (tags and tags['StudyInstanceUID']),
+    StudyDescription = mainTags['StudyDescription'] or (tags and tags['StudyDescription']),
+    Modality = tags and tags['Modality'] or nil
+  }
+
+  local body = DumpJson(payload, false)
+  local headers = {
+    ['Content-Type'] = 'application/json',
+    ['X-Pacs-Signature'] = WEBHOOK_SECRET
+  }
+
+  local ok, err = pcall(function()
+    HttpPost(WEBHOOK_URL, body, headers)
+  end)
+  if not ok then
+    print('VIARA reconcile webhook failed for stable study ' .. studyId .. ': ' .. tostring(err))
   end
 end

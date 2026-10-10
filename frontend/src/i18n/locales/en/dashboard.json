@@ -3,8 +3,11 @@
     "teamMember": "Team member",
     "welcome": "Welcome back, {{name}}",
     "liveData": "Live operational data",
+    "dashboardMetrics": "Dashboard record indicators",
     "refresh": "Refresh",
     "refreshing": "Refreshing...",
+    "patientSearchLabel": "Search patients by name or MRN",
+    "patientSearchPlaceholder": "Quick patient / MRN lookup...",
     "awaitingSync": "Awaiting sync",
     "vsPreviousDay": "vs previous day",
     "vsPreviousWeek": "vs previous week",
@@ -16,7 +19,20 @@
     "imagingStudy": "Imaging study",
     "noDistribution": "No modality workload yet",
     "noChartData": "No operational data yet",
-    "noChartDataDescription": "This panel will populate automatically as work is recorded in RCMS."
+    "noChartDataDescription": "This panel will populate automatically as work is recorded in VIARA."
+  },
+  "priorities": {
+    "title": "Operational priorities",
+    "waitingRoom": "Waiting room",
+    "averageWait": "Average wait {{duration}}",
+    "readyAppointments": "Ready appointments",
+    "totalAppointments": "{{count}} scheduled today",
+    "completedToday": "Completed today",
+    "urgentWork": "Aged work",
+    "oldestOpen": "Oldest open",
+    "openWork": "Open work",
+    "collections": "Collections",
+    "staffing": "Staffing"
   },
   "roles": {
     "Developer": "System Developer",
@@ -48,6 +64,20 @@
     "eyebrow": "Clinical delivery",
     "title": "Diagnostic Operations Workspace",
     "workloadDistribution": "Open work by modality",
+    "taskMetrics": {
+      "totalAssigned": "Total assigned",
+      "available": "{{count}} available in the shared pool",
+      "pending": "Pending start",
+      "inProgress": "In progress",
+      "onHold": "{{count}} on hold",
+      "overdueDetail": "Assigned tasks beyond their role SLA",
+      "slaCompliance": "SLA compliance",
+      "startDelay": "Average start delay {{minutes}} min",
+      "completionRate": "Weekly completion rate",
+      "weeklyProgress": "{{completed}} completed · {{reassigned}} returned or transferred",
+      "stageDistribution": "My current task stages",
+      "stageDistributionDescription": "Only active tasks currently assigned to your account."
+    },
     "metrics": {
       "report": {
         "subtitle": "Prioritize reporting work, monitor turnaround, and keep urgent imaging cases moving.",
@@ -87,6 +117,77 @@
       }
     }
   },
+  "operations": {
+    "modalitiesTitle": "Scanner and modality status",
+    "measuredStatus": "Measured from the active workflow",
+    "noModalities": "No modality status is available from the system.",
+    "noActiveExam": "No active exam",
+    "elapsed": "Active for {{duration}}",
+    "modalityStatus": {
+      "in_use": "In use",
+      "ready": "Available",
+      "maintenance": "Maintenance",
+      "out_of_service": "Out of service"
+    },
+    "turnaroundTitle": "Measured clinical turnaround stages",
+    "withinTargets": "Within reference targets",
+    "targetAttention": "A stage needs attention",
+    "target": "Target {{duration}}",
+    "samples": "{{count}} measured cases",
+    "noTurnaround": "No completed stage measurements are available for the current week.",
+    "stages": {
+      "checkin": "Arrival to scan",
+      "preparation": "Clinical preparation",
+      "acquisition": "Image acquisition",
+      "reporting": "Reporting and finalization"
+    }
+  },
+  "finance": {
+    "cashierEyebrow": "Cash collection operations",
+    "cashierTitle": "Cashier Operations Dashboard",
+    "cashierSubtitle": "Monitor your shift, collections, transactions, and invoices awaiting payment.",
+    "accountingEyebrow": "Financial control",
+    "accountingTitle": "Accounting Dashboard",
+    "accountingSubtitle": "Review collections, open receivables, invoice volume, and pending refunds without clinical data.",
+    "collectedToday": "Collected today",
+    "collectedWeek": "Collected this week",
+    "transactionsToday": "Transactions today",
+    "transactionsDetail": "Completed payment transactions",
+    "openInvoices": "Open invoices",
+    "openInvoicesDetail": "{{count}} invoices with balance",
+    "outstanding": "Outstanding receivables",
+    "pendingRefunds": "Pending refunds",
+    "requiresReview": "Requires financial review",
+    "shiftStatus": "Cashier shift",
+    "shiftOpen": "Open",
+    "shiftClosed": "Closed",
+    "shiftStatusDetail": "Current authenticated cashier"
+  },
+  "hr": {
+    "eyebrow": "Workforce operations",
+    "title": "Human Resources Dashboard",
+    "subtitle": "Track workforce availability, attendance, approved leave, and requests requiring review.",
+    "activeStaff": "Active staff",
+    "activeStaffDetail": "Enabled workforce accounts",
+    "presentToday": "Present today",
+    "onLeaveToday": "On leave today",
+    "pendingLeave": "Pending leave requests",
+    "pendingLeaveDetail": "Awaiting an HR decision"
+  },
+  "insurance": {
+    "eyebrow": "Payer operations",
+    "title": "Insurance Operations Dashboard",
+    "subtitle": "Track approvals, claim progress, rejected claims, and payer receipts without exposing patient records.",
+    "pendingApprovals": "Pending approvals",
+    "requiresDecision": "Requires an insurance decision",
+    "openClaims": "Open claims",
+    "openClaimsDetail": "{{count}} claims in progress",
+    "inProgress": "Active claim workflow",
+    "rejectedClaims": "Rejected claims",
+    "requiresFollowUp": "Requires follow-up or resubmission",
+    "outstandingClaims": "Outstanding claim value",
+    "receivedWeek": "Received this week"
+  },
   "executive": {
     "eyebrow": "Center performance",
     "title": "Executive Operations Dashboard",
@@ -94,11 +195,11 @@
     "weeklyScans": "Scans this week",
     "weeklyRevenue": "Collected this week",
     "openWork": "Open clinical work",
-    "scansToday": "{{count}} examinations created today",
+    "scansToday": "{{count}} scans completed today",
     "activeStaff": "Active staff",
     "staffOnLeave": "{{count}} on approved leave today",
     "weeklyPerformance": "Weekly throughput and collections",
-    "performanceDescription": "Examinations created and completed payment value by day.",
+    "performanceDescription": "Completed scans and collected payment value by day.",
     "scans": "Scans",
     "revenue": "Revenue",
     "modalityMix": "Modality mix",
@@ -130,19 +231,40 @@
     "financials": "Financials",
     "financialsDescription": "Monitor billing and collections.",
     "inventory": "Inventory",
-    "inventoryDescription": "Track stock and supply risk."
+    "inventoryDescription": "Track stock and supply risk.",
+    "openCashierWorkspace": "Open cashier workspace",
+    "openCashierWorkspaceDescription": "Collect payments and reconcile the current shift.",
+    "insurance": "Insurance",
+    "insuranceDescription": "Review payer approvals and claims.",
+    "openHR": "Open HR workspace",
+    "openHRDescription": "Review attendance, leave, and workforce operations.",
+    "openInsurance": "Open insurance workspace",
+    "openInsuranceDescription": "Review approvals, contracts, and claims.",
+    "openApprovals": "Open approvals",
+    "openApprovalsDescription": "Review insurance decisions awaiting action.",
+    "noneAvailable": "No approved shortcuts available",
+    "noneAvailableDescription": "Ask an administrator for the permission needed before taking action."
   },
   "activity": {
     "title": "Recent clinical activity",
     "description": "Latest finalized examinations from the live workflow.",
     "scanFinalized": "{{modality}} finalized for {{mrn}}",
+    "patientArrived": "Patient {{mrn}} arrived for {{modality}}",
+    "scanCompleted": "{{modality}} scan completed for {{mrn}}",
+    "preparationCompleted": "Preparation completed for {{mrn}} · {{modality}}",
+    "receptionTitle": "Recent arrivals",
+    "receptionDescription": "Latest patient arrivals recorded by the live intake workflow.",
+    "receptionEmpty": "No arrivals recorded yet",
+    "receptionEmptyDescription": "Patient arrivals will appear here after check-in.",
     "empty": "No finalized activity yet",
     "emptyDescription": "Recent workflow events will appear here as reports are finalized."
   },
   "error": {
     "title": "Dashboard data is unavailable",
-    "description": "RCMS could not load the latest operational statistics.",
-    "retry": "Try again"
+    "description": "VIARA could not load the latest operational statistics.",
+    "staleData": "The latest refresh failed. The last successfully synchronized data remains visible.",
+    "retry": "Try again",
+    "updating": "Updating…"
   },
   "clinicalWorklist": {
     "eyebrow": "Clinical reporting",

@@ -1,10 +1,13 @@
 import { createSlice } from '@reduxjs/toolkit';
+import { normalizePaletteOverrides } from '../utils/themePalette';
 
 export const DEFAULT_PREFERENCES = {
     // Appearance
     theme: 'system', // 'light', 'dark', 'system'
-    primaryColor: 'cyan', // 'cyan', 'indigo', 'rose', 'emerald', 'amber', 'slate', 'custom'
-    customColor: '#0ea5e9', // Used when primaryColor is 'custom'
+    primaryColor: 'emerald', // 'cyan', 'indigo', 'rose', 'emerald', 'amber', 'slate', 'custom'
+    customColor: '#087F5B', // Used when primaryColor is 'custom'
+    // Optional per-mode semantic overrides. Empty values inherit the audited VIARA palette.
+    colorOverrides: { light: {}, dark: {} },
     density: 'comfortable', // 'compact', 'comfortable', 'spacious'
     fontScale: 'normal', // 'small', 'normal', 'large', 'xlarge'
     fontFamily: 'inter', // 'inter', 'system', 'mono', 'dyslexic'
@@ -20,6 +23,7 @@ export const DEFAULT_PREFERENCES = {
     firstDayOfWeek: 0, // 0: Sunday, 1: Monday
     startPage: '/dashboard',
     sessionTimeout: 15, // in minutes
+    organizationSessionTimeout: 30, // maximum inactivity policy set by administration
     calendarView: 'week',
     compactSidebar: false,
 
@@ -45,7 +49,7 @@ export const DEFAULT_PREFERENCES = {
 const persistState = (state) => {
     try {
         if (typeof localStorage !== 'undefined') {
-            localStorage.setItem('rcms_preferences', JSON.stringify(state));
+            localStorage.setItem('VIARA_preferences', JSON.stringify(state));
         }
     } catch (e) {
         console.warn('Could not save preferences to localStorage', e);
@@ -73,6 +77,7 @@ export const normalizePreferences = (value = {}) => {
         theme: pick(raw.theme, ['light', 'dark', 'system'], DEFAULT_PREFERENCES.theme),
         primaryColor: pick(raw.primaryColor, ['cyan', 'indigo', 'rose', 'emerald', 'amber', 'slate', 'custom'], DEFAULT_PREFERENCES.primaryColor),
         customColor: toHex(raw.customColor, DEFAULT_PREFERENCES.customColor),
+        colorOverrides: normalizePaletteOverrides(raw.colorOverrides),
         density: pick(raw.density, ['compact', 'comfortable', 'spacious'], DEFAULT_PREFERENCES.density),
         fontScale: pick(raw.fontScale, ['small', 'normal', 'large', 'xlarge'], DEFAULT_PREFERENCES.fontScale),
         fontFamily: pick(raw.fontFamily, ['inter', 'system', 'roboto', 'mono', 'dyslexic'], DEFAULT_PREFERENCES.fontFamily),
@@ -86,6 +91,7 @@ export const normalizePreferences = (value = {}) => {
         firstDayOfWeek: pick(Number(raw.firstDayOfWeek), [0, 1, 6], DEFAULT_PREFERENCES.firstDayOfWeek),
         startPage: toSafePath(raw.startPage, DEFAULT_PREFERENCES.startPage),
         sessionTimeout: pick(Number(raw.sessionTimeout), [0, 5, 15, 30], DEFAULT_PREFERENCES.sessionTimeout),
+        organizationSessionTimeout: toNumber(raw.organizationSessionTimeout, DEFAULT_PREFERENCES.organizationSessionTimeout, { min: 1, max: 1440 }),
         calendarView: pick(raw.calendarView, ['day', 'week', 'month'], DEFAULT_PREFERENCES.calendarView),
         compactSidebar: toBool(raw.compactSidebar, DEFAULT_PREFERENCES.compactSidebar),
         showNotificationBadge: toBool(raw.showNotificationBadge, DEFAULT_PREFERENCES.showNotificationBadge),
@@ -107,11 +113,19 @@ export const normalizePreferences = (value = {}) => {
     };
 };
 
+// Organization-wide policy is merged into client state for effective behavior,
+// but it is owned by system settings and must never be stored as a user choice.
+export const getPersistablePreferences = (value = {}) => {
+    const personalPreferences = normalizePreferences(value);
+    delete personalPreferences.organizationSessionTimeout;
+    return personalPreferences;
+};
+
 // Load initial state from localStorage if available
 const loadInitialState = () => {
     try {
         if (typeof localStorage === 'undefined') return DEFAULT_PREFERENCES;
-        const saved = localStorage.getItem('rcms_preferences');
+        const saved = localStorage.getItem('VIARA_preferences');
         if (saved) return normalizePreferences(JSON.parse(saved));
     } catch (e) {
         console.warn('Could not load preferences from localStorage', e);

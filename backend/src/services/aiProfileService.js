@@ -30,12 +30,12 @@ const normalizeBaseUrl = (target, provider, value) => (
         ? ''
         : String(value || '').trim()
 );
-const validateBaseUrl = (target, provider, value) => {
+const validateBaseUrl = async (target, provider, value) => {
     const baseUrl = normalizeBaseUrl(target, provider, value);
     if ((target === 'report' && provider === 'custom') || (target === 'pacs' && provider === 'cloud-custom')) {
         if (!baseUrl) throw new AppError('Custom AI endpoint Base URL is required', 400);
         try {
-            return validateCustomAiEndpointUrl(baseUrl);
+            return await validateCustomAiEndpointUrl(baseUrl);
         } catch (error) {
             throw new AppError(error.message, 400);
         }
@@ -151,12 +151,13 @@ const hydrate = (profile, settings, activeId) => {
 
 const listProfiles = async () => {
     const { settings, profiles } = await ensureProfiles();
-    return ['report', 'pacs'].reduce((result, target) => {
+    const result = {};
+    for (const target of ['report', 'pacs']) {
         const targetProfiles = profiles.filter((item) => item.target === target);
         const activeId = settings[ACTIVE_KEYS[target]] || targetProfiles[0]?.id || null;
-        result[target] = { activeProfileId: activeId, profiles: targetProfiles.map((item) => hydrate(item, settings, activeId)) };
-        return result;
-    }, {});
+        result[target] = { activeProfileId: activeId, profiles: await Promise.all(targetProfiles.map((item) => hydrate(item, settings, activeId))) };
+    }
+    return result;
 };
 
 const getActiveConfig = async (target) => {
@@ -166,7 +167,7 @@ const getActiveConfig = async (target) => {
     const settings = await settingsService.getAll();
     return {
         ...profile,
-        baseUrl: validateBaseUrl(profile.target, profile.provider, profile.baseUrl),
+        baseUrl: await validateBaseUrl(profile.target, profile.provider, profile.baseUrl),
         apiKey: safeDecrypt(settings[secretKey(profile.id)]) || envSecret(target, profile.provider)
     };
 };
@@ -193,13 +194,18 @@ const createProfile = async (input) => {
             input.model,
             DEFAULT_MODELS[input.target][provider] || ''
         ),
-        baseUrl: validateBaseUrl(input.target, provider, input.baseUrl),
+        baseUrl: await validateBaseUrl(input.target, provider, input.baseUrl),
         workerUrl: input.workerUrl || '',
         modelVersion: input.modelVersion || '',
         createdAt: now, updatedAt: now
     };
-    await saveProfiles([...profiles, profile]);
-    if (input.apiKey) await settingsService.set(secretKey(profile.id), encrypt(input.apiKey));
+    const updates = {
+        [PROFILES_KEY]: JSON.stringify([...profiles, profile])
+    };
+    if (input.apiKey) {
+        updates[secretKey(profile.id)] = encrypt(input.apiKey);
+    }
+    await settingsService.updateAll(updates);
     return profile;
 };
 
@@ -230,16 +236,35 @@ const updateProfile = async (id, input) => {
             requestedModel,
             DEFAULT_MODELS[current.target][provider] || ''
         ),
-        baseUrl: validateBaseUrl(current.target, provider, input.baseUrl !== undefined ? input.baseUrl : current.baseUrl),
+        baseUrl: await validateBaseUrl(current.target, provider, input.baseUrl !== undefined ? input.baseUrl : current.baseUrl),
         updatedAt: new Date().toISOString()
     };
     delete updated.apiKey; delete updated.clearApiKey;
     profiles[index] = updated;
-    await saveProfiles(profiles);
-    if (provider !== current.provider && !input.apiKey) await settingsService.set(secretKey(id), '');
-    if (input.clearApiKey) await settingsService.set(secretKey(id), '');
-    if (input.apiKey) await settingsService.set(secretKey(id), encrypt(input.apiKey));
-    if ((await settingsService.get(ACTIVE_KEYS[current.target])) === id) await mirrorActive(updated);
+
+    const updates = {
+        [PROFILES_KEY]: JSON.stringify(profiles)
+    };
+    if (provider !== current.provider && !input.apiKey) updates[secretKey(id)] = '';
+    if (input.clearApiKey) updates[secretKey(id)] = '';
+    if (input.apiKey) updates[secretKey(id)] = encrypt(input.apiKey);
+
+    const activeId = await settingsService.get(ACTIVE_KEYS[current.target]);
+    if (activeId === id) {
+        const prefix = `ai.${updated.target}`;
+        const baseUrl = normalizeBaseUrl(updated.target, updated.provider, updated.baseUrl);
+        updates[ACTIVE_KEYS[updated.target]] = updated.id;
+        updates[`${prefix}.enabled`] = String(updated.enabled);
+        updates[`${prefix}.provider`] = updated.provider;
+        updates[`${prefix}.model`] = updated.model || '';
+        updates[`${prefix}.base_url`] = baseUrl;
+        if (updated.target === 'pacs') {
+            updates['ai.pacs.worker_url'] = updated.workerUrl || '';
+            updates['ai.pacs.model_version'] = updated.modelVersion || '';
+        }
+    }
+
+    await settingsService.updateAll(updates);
     return updated;
 };
 
@@ -262,7 +287,7 @@ const activateProfile = async (id) => {
     const { profiles } = await ensureProfiles();
     const profile = profiles.find((item) => item.id === id);
     if (!profile) throw new AppError('AI profile not found', 404);
-    profile.baseUrl = validateBaseUrl(profile.target, profile.provider, profile.baseUrl);
+    profile.baseUrl = await validateBaseUrl(profile.target, profile.provider, profile.baseUrl);
     await mirrorActive(profile);
     return profile;
 };

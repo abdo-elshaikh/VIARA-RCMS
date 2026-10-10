@@ -1,8 +1,10 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useState } from 'react';
 import {
     Activity,
     AlertTriangle,
     ClipboardCheck,
+    Eye,
+    EyeOff,
     MapPin,
     Network,
     Pencil,
@@ -12,6 +14,7 @@ import {
     Server,
     ShieldAlert,
     ShieldCheck,
+    Trash2,
     Wrench,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -22,27 +25,30 @@ import {
     useGetEquipmentDowntimeQuery,
     useGetEquipmentMaintenanceQuery,
     useGetMachinesQuery,
+    useGetRoomsQuery,
     useGetServiceContractsQuery,
+    useDeleteMachineMutation,
     useUpdateMachineMutation,
 } from '../../store/api';
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import { hasDeveloperOrAdminRole } from '../../utils/roles';
 import { selectCurrentUser } from '../../store/authSlice';
 import Modal from '../ui/Modal';
+import ConfirmDialog from '../ui/ConfirmDialog';
+import { MACHINE_TYPES, emptyMachine as emptyForm } from '../../types/equipment';
 
-const machineTypes = ['MRI', 'CT', 'X-Ray', 'Ultrasound', 'Mammography', 'Cath Lab', 'Panoramic X-Ray', 'PET-CT', 'Fluoroscopy', 'DEXA'];
-const emptyForm = { name: '', type: 'MRI', roomNumber: '', serialNumber: '', manufacturer: '', model: '', installationDate: '', location: '', status: 'Active' };
 const inputClass = 'min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100';
 
 const EquipmentRegistry = () => {
     const { t, i18n } = useTranslation('workspace');
+    const isArabic = i18n.language?.startsWith('ar');
     const user = useSelector(selectCurrentUser);
     const copy = useCallback((key, options) => t(`equipment.registry.${key}`, options), [t]);
-    const locale = i18n.language.startsWith('ar') ? 'ar-EG' : 'en-EG';
+    const locale = isArabic ? 'ar-EG' : 'en-EG';
     const permissions = useMemo(() => new Set(user?.permissions || []), [user?.permissions]);
     const hasSystemRole = hasDeveloperOrAdminRole(user?.role);
-    const canViewMaintenance = hasSystemRole || user?.role === 'Technician';
-    const canViewContracts = hasSystemRole;
+    const canViewMaintenance = user?.role === 'Admin' || user?.role === 'Technician';
+    const canViewContracts = user?.role === 'Admin';
     const canManageEquipment = hasSystemRole || permissions.has('MANAGE_EQUIPMENT');
     const today = new Date().toISOString().substring(0, 10);
     const now = Date.now();
@@ -53,17 +59,22 @@ const EquipmentRegistry = () => {
     }, []);
 
     const { data: machines = [], isLoading, isError, isFetching, refetch } = useGetMachinesQuery();
+    const { data: rooms = [] } = useGetRoomsQuery();
     const { data: maintenance = [] } = useGetEquipmentMaintenanceQuery(undefined, { skip: !canViewMaintenance });
     const { data: downtime = [] } = useGetEquipmentDowntimeQuery();
     const { data: contracts = [] } = useGetServiceContractsQuery(undefined, { skip: !canViewContracts });
     const [createMachine, { isLoading: isCreating }] = useCreateMachineMutation();
+    const [deleteMachine] = useDeleteMachineMutation();
     const [updateMachine, { isLoading: isUpdating }] = useUpdateMachineMutation();
 
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('all');
     const [riskFilter, setRiskFilter] = useState('all');
     const [machineEditor, setMachineEditor] = useState(null);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [showSummary, setShowSummary] = useState(true);
     const [form, setForm] = useState(emptyForm);
+    const summaryId = useId();
 
     const insightByMachine = useMemo(() => {
         const map = new Map();
@@ -180,6 +191,35 @@ const EquipmentRegistry = () => {
     const handleSave = async event => {
         event.preventDefault();
         if (!canManageEquipment) return;
+
+        const currentMachineId = machineEditor !== 'new' ? machineEditor?.modality_id : null;
+
+        // Anti-duplication check: Machine name
+        const duplicateName = machines.some(m =>
+            m.name?.trim().toLowerCase() === form.name.trim().toLowerCase() &&
+            m.modality_id !== currentMachineId
+        );
+        if (duplicateName) {
+            toast.error(i18n.language.startsWith('ar')
+                ? 'يوجد جهاز آخر مسجل بالفعل بنفس الاسم'
+                : 'Another machine with this name is already registered.');
+            return;
+        }
+
+        // Anti-duplication check: Serial number (if provided)
+        if (form.serialNumber?.trim()) {
+            const duplicateSerial = machines.some(m =>
+                m.serial_number?.trim().toLowerCase() === form.serialNumber.trim().toLowerCase() &&
+                m.modality_id !== currentMachineId
+            );
+            if (duplicateSerial) {
+                toast.error(i18n.language.startsWith('ar')
+                    ? 'الرقم التسلسلي مستخدم بالفعل لجهاز آخر'
+                    : 'This serial number is already registered for another machine.');
+                return;
+            }
+        }
+
         const payload = {
             ...form,
             name: form.name.trim(),
@@ -207,17 +247,53 @@ const EquipmentRegistry = () => {
         }
     };
 
+    const handleDelete = machine => {
+        if (!canManageEquipment) return;
+        setDeleteTarget(machine);
+    };
+
+    const handleConfirmDelete = async () => {
+        if (!deleteTarget) return;
+        try {
+            await deleteMachine(deleteTarget.modality_id).unwrap();
+            toast.success(copy('deleteSuccess'));
+            setDeleteTarget(null);
+        } catch (error) {
+            toast.error(getErrorMessage(error, copy('deleteError')));
+        }
+    };
+
     const refresh = () => refetch();
     const saving = isCreating || isUpdating;
 
     return (
-        <div className="space-y-5">
-            <section className="grid grid-cols-2 gap-3 xl:grid-cols-5" aria-label={copy('summaryLabel')}>
-                <Metric icon={Server} label={copy('total')} value={summary.total} tone="blue" />
-                <Metric icon={Activity} label={copy('active')} value={summary.active} tone="emerald" />
-                <Metric icon={Wrench} label={copy('maintenance')} value={summary.maintenance} tone="amber" />
-                <Metric icon={Network} label={copy('pacsSynced', { defaultValue: 'PACS synced' })} value={machines.filter(machine => machine.dicom_synced).length} tone="blue" />
-                <Metric icon={AlertTriangle} label={copy('attention')} value={summary.attention} tone="rose" />
+        <div className="space-y-4">
+            <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950" aria-label={copy('summaryLabel')}>
+                <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
+                    <div className="inline-flex min-w-0 items-center gap-2 text-xs font-black text-slate-700 dark:text-slate-200">
+                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-teal-500/10 text-teal-700 dark:text-teal-300">
+                            <Activity size={14} aria-hidden="true" />
+                        </span>
+                        <span className="truncate">{copy('summaryLabel')}</span>
+                    </div>
+                    <button
+                        type="button"
+                        aria-expanded={showSummary}
+                        aria-controls={summaryId}
+                        onClick={() => setShowSummary(visible => !visible)}
+                        className="inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-600 transition hover:border-teal-500/40 hover:bg-teal-500/5 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:text-teal-300"
+                    >
+                        {showSummary ? <EyeOff size={14} aria-hidden="true" /> : <Eye size={14} aria-hidden="true" />}
+                        <span>{copy(showSummary ? 'hideStats' : 'showStats', { defaultValue: isArabic ? (showSummary ? 'إخفاء الإحصائيات' : 'إظهار الإحصائيات') : (showSummary ? 'Hide statistics' : 'Show statistics') })}</span>
+                    </button>
+                </div>
+                <div id={summaryId} hidden={!showSummary} className="grid grid-cols-2 gap-2 p-2 sm:grid-cols-3 xl:grid-cols-5">
+                    <Metric icon={Server} label={copy('total')} value={summary.total} tone="blue" />
+                    <Metric icon={Activity} label={copy('active')} value={summary.active} tone="emerald" />
+                    <Metric icon={Wrench} label={copy('maintenance')} value={summary.maintenance} tone="amber" />
+                    <Metric icon={Network} label={copy('pacsSynced', { defaultValue: 'PACS synced' })} value={machines.filter(machine => machine.dicom_synced).length} tone="blue" />
+                    <Metric icon={AlertTriangle} label={copy('attention')} value={summary.attention} tone="rose" />
+                </div>
             </section>
 
             {worklist.length > 0 && (
@@ -272,14 +348,14 @@ const EquipmentRegistry = () => {
                 </header>
 
                 {isLoading ? <Loading label={copy('loading')} /> : isError ? <ErrorState label={copy('loadError')} retry={copy('retry')} onRetry={refetch} /> : visibleMachines.length === 0 ? <Empty filtered={Boolean(search || statusFilter !== 'all' || riskFilter !== 'all')} copy={copy} /> : <>
-                    <div className="grid gap-3 p-4 lg:hidden">{visibleMachines.map(machine => <MachineCard key={machine.modality_id} machine={machine} insight={insightByMachine.get(machine.modality_id)} copy={copy} locale={locale} onEdit={openEdit} canManage={canManageEquipment} />)}</div>
+                    <div className="divide-y divide-slate-100 lg:hidden dark:divide-slate-800">{visibleMachines.map(machine => <MachineCard key={machine.modality_id} machine={machine} insight={insightByMachine.get(machine.modality_id)} copy={copy} locale={locale} onEdit={openEdit} onDelete={handleDelete} canManage={canManageEquipment} />)}</div>
                     <div className="hidden overflow-x-auto lg:block">
                         <table className="w-full min-w-[1140px] text-sm">
                             <thead className="border-b border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
                                 <tr>{['machine', 'identity', 'location', 'availability', 'pacs', 'nextService', 'contract', 'risk'].map(key => <th key={key} className="px-4 py-3 text-start text-xs font-black uppercase tracking-wider">{copy(key, { defaultValue: key === 'pacs' ? 'PACS' : undefined })}</th>)}{canManageEquipment && <th className="px-4 py-3 text-end text-xs font-black uppercase tracking-wider">{copy('actions')}</th>}</tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {visibleMachines.map(machine => <MachineRow key={machine.modality_id} machine={machine} insight={insightByMachine.get(machine.modality_id)} copy={copy} locale={locale} onEdit={openEdit} canManage={canManageEquipment} />)}
+                                {visibleMachines.map(machine => <MachineRow key={machine.modality_id} machine={machine} insight={insightByMachine.get(machine.modality_id)} copy={copy} locale={locale} onEdit={openEdit} onDelete={handleDelete} canManage={canManageEquipment} />)}
                             </tbody>
                         </table>
                     </div>
@@ -290,8 +366,30 @@ const EquipmentRegistry = () => {
                 <form onSubmit={handleSave} className="space-y-5">
                     <div className="grid gap-4 sm:grid-cols-2">
                         <Field label={copy('name')}><input required maxLength={50} value={form.name} onChange={event => setField('name', event.target.value)} className={inputClass} /></Field>
-                        <Field label={copy('type')}><select required value={form.type} onChange={event => setField('type', event.target.value)} className={inputClass}>{machineTypes.map(type => <option key={type} value={type}>{type}</option>)}</select></Field>
-                        <Field label={copy('roomNumber')}><input maxLength={20} value={form.roomNumber} onChange={event => setField('roomNumber', event.target.value)} className={inputClass} /></Field>
+                        <Field label={copy('type')}><select required value={form.type} onChange={event => setField('type', event.target.value)} className={inputClass}>{MACHINE_TYPES.map(type => <option key={type} value={type}>{type}</option>)}</select></Field>
+                        <Field label={copy('roomNumber')}>
+                            <select
+                                value={form.roomId || (rooms.find(r => r.room_number === form.roomNumber)?.room_id || '')}
+                                onChange={event => {
+                                    const selectedId = event.target.value;
+                                    const foundRoom = rooms.find(r => r.room_id === selectedId);
+                                    setForm(prev => ({
+                                        ...prev,
+                                        roomId: selectedId,
+                                        roomNumber: foundRoom ? foundRoom.room_number : prev.roomNumber,
+                                        location: foundRoom?.floor ? (i18n.language.startsWith('ar') ? `الطابق ${foundRoom.floor}` : `Floor ${foundRoom.floor}`) : prev.location
+                                    }));
+                                }}
+                                className={inputClass}
+                            >
+                                <option value="">{i18n.language.startsWith('ar') ? '— غير محدد / غرفة مخصصة —' : '— Unassigned / Custom Room —'}</option>
+                                {rooms.map(r => (
+                                    <option key={r.room_id} value={r.room_id}>
+                                        {r.name} ({r.room_number}) [{r.type}]
+                                    </option>
+                                ))}
+                            </select>
+                        </Field>
                         <Field label={copy('location')}><input maxLength={255} value={form.location} onChange={event => setField('location', event.target.value)} className={inputClass} /></Field>
                         <Field label={copy('manufacturer')}><input maxLength={100} value={form.manufacturer} onChange={event => setField('manufacturer', event.target.value)} className={inputClass} /></Field>
                         <Field label={copy('model')}><input maxLength={100} value={form.model} onChange={event => setField('model', event.target.value)} className={inputClass} /></Field>
@@ -306,6 +404,17 @@ const EquipmentRegistry = () => {
                     </div>
                 </form>
             </Modal>
+
+            <ConfirmDialog
+                isOpen={Boolean(deleteTarget)}
+                onClose={() => setDeleteTarget(null)}
+                onConfirm={handleConfirmDelete}
+                title={copy('deleteConfirmTitle', { defaultValue: isArabic ? 'تأكيد حذف الجهاز' : 'Confirm Machine Deletion' })}
+                message={copy('deleteConfirm', { machine: deleteTarget?.name || '' })}
+                confirmLabel={copy('delete', { defaultValue: isArabic ? 'حذف' : 'Delete' })}
+                cancelLabel={copy('cancel', { defaultValue: isArabic ? 'إلغاء' : 'Cancel' })}
+                tone="danger"
+            />
         </div>
     );
 };
@@ -315,7 +424,13 @@ const formatDate = (value, locale, fallback) => value ? new Date(value).toLocale
 const tones = { blue: 'bg-blue-50 text-blue-700 dark:bg-blue-400/10 dark:text-blue-300', emerald: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300', amber: 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300', rose: 'bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-300' };
 const riskStyles = { ready: 'bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-400/10 dark:text-emerald-300 dark:ring-emerald-900', watch: 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-900', blocked: 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-400/10 dark:text-rose-300 dark:ring-rose-900' };
 
-const Metric = ({ icon: Icon, label, value, tone }) => <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950"><div className="flex items-start justify-between gap-2"><p className="text-[10px] font-black uppercase leading-4 tracking-wider text-slate-400">{label}</p><span className={`hidden h-9 w-9 items-center justify-center rounded-xl sm:flex ${tones[tone]}`}><Icon size={17} /></span></div><p className="mt-2 text-2xl font-black text-slate-950 dark:text-white">{value}</p></article>;
+const metricTones = {
+    blue: 'border-blue-200/80 bg-blue-50/60 text-blue-700 dark:border-blue-900/70 dark:bg-blue-400/[.06] dark:text-blue-300',
+    emerald: 'border-emerald-200/80 bg-emerald-50/60 text-emerald-700 dark:border-emerald-900/70 dark:bg-emerald-400/[.06] dark:text-emerald-300',
+    amber: 'border-amber-200/80 bg-amber-50/60 text-amber-700 dark:border-amber-900/70 dark:bg-amber-400/[.06] dark:text-amber-300',
+    rose: 'border-rose-200/80 bg-rose-50/60 text-rose-700 dark:border-rose-900/70 dark:bg-rose-400/[.06] dark:text-rose-300',
+};
+const Metric = ({ icon: Icon, label, value, tone }) => <div className={`flex min-w-0 items-center gap-2 rounded-xl border px-2.5 py-2 ${metricTones[tone] || metricTones.blue}`}><span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/80 dark:bg-slate-950/60"><Icon size={14} aria-hidden="true" /></span><span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-slate-600 dark:text-slate-300">{label}</span><strong className="shrink-0 text-base font-black tabular-nums text-slate-950 dark:text-white">{value}</strong></div>;
 const Field = ({ label, className = '', children }) => <label className={`block ${className}`}><span className="mb-1.5 block text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</span>{children}</label>;
 const Status = ({ status = 'Active', copy }) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${status === 'Active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300' : status === 'Under Maintenance' ? 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-300'}`}>{copy(`statuses.${status}`)}</span>;
 const PacsBadge = ({ machine, copy }) => {
@@ -337,8 +452,8 @@ const WorkItem = ({ machine, insight, copy, onEdit, canManage }) => {
     const content = <><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-black text-slate-900 dark:text-white">{machine.name}</p><RiskBadge insight={insight} copy={copy} /></div><p className="mt-1 text-xs text-amber-800 dark:text-amber-200">{insight.reason}</p></>;
     return canManage ? <button type="button" onClick={() => onEdit(machine)} className="rounded-xl border border-amber-200 bg-white p-3 text-start transition hover:border-amber-400 hover:shadow-sm dark:border-amber-900 dark:bg-slate-950">{content}</button> : <article className="rounded-xl border border-amber-200 bg-white p-3 dark:border-amber-900 dark:bg-slate-950">{content}</article>;
 };
-const MachineCard = ({ machine, insight, copy, locale, onEdit, canManage }) => <article className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800"><div className="flex items-start justify-between gap-3"><div><h3 className="font-black text-slate-900 dark:text-white">{machine.name}</h3><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{machine.type}{machine.room_number ? <> <span aria-hidden="true">&bull;</span> {copy('room', { room: machine.room_number })}</> : null}</p></div><RiskBadge insight={insight} copy={copy} /></div><dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3 text-xs dark:bg-slate-900"><Info label={copy('availability')} value={<Status status={machine.status} copy={copy} />} /><Info label={copy('pacs', { defaultValue: 'PACS' })} value={<PacsBadge machine={machine} copy={copy} />} /><Info label={copy('identity')} value={[machine.manufacturer, machine.model].filter(Boolean).join(' ') || copy('notSet')} /><Info label={copy('location')} value={machine.location || copy('notSet')} /><Info label={copy('serial')} value={machine.serial_number || copy('notSet')} /><Info label={copy('nextService')} value={<ServiceInfo insight={insight} copy={copy} locale={locale} />} /><Info label={copy('contract')} value={<ContractInfo insight={insight} copy={copy} locale={locale} />} /></dl>{canManage && <button type="button" onClick={() => onEdit(machine)} className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 text-sm font-bold text-blue-800 dark:border-blue-900 dark:bg-blue-400/10 dark:text-blue-200"><Pencil size={14} />{copy('edit')}</button>}</article>;
-const MachineRow = ({ machine, insight, copy, locale, onEdit, canManage }) => <tr className="hover:bg-slate-50/60 dark:hover:bg-slate-900/60"><td className="px-4 py-4"><p className="font-black text-slate-900 dark:text-white">{machine.name}</p><p className="mt-1 text-xs text-slate-500">{machine.type}{machine.room_number ? <> <span aria-hidden="true">&bull;</span> {copy('room', { room: machine.room_number })}</> : null}</p></td><td className="px-4 py-4"><p className="font-semibold text-slate-700 dark:text-slate-200">{[machine.manufacturer, machine.model].filter(Boolean).join(' ') || copy('notSet')}</p><p className="mt-1 font-mono text-xs text-slate-500">{copy('serialShort')}: {machine.serial_number || copy('notSet')}</p></td><td className="px-4 py-4 text-slate-600 dark:text-slate-300"><span className="inline-flex items-center gap-1.5"><MapPin size={14} />{machine.location || copy('notSet')}</span></td><td className="px-4 py-4"><Status status={machine.status} copy={copy} /></td><td className="px-4 py-4"><PacsBadge machine={machine} copy={copy} /><p className="mt-1 max-w-[160px] truncate font-mono text-xs text-slate-500">{machine.aet || machine.ip_address ? [machine.aet, machine.ip_address, machine.port].filter(Boolean).join(' / ') : copy('notSet')}</p></td><td className="px-4 py-4 text-slate-600 dark:text-slate-300"><ServiceInfo insight={insight} copy={copy} locale={locale} /></td><td className="px-4 py-4 text-slate-600 dark:text-slate-300"><ContractInfo insight={insight} copy={copy} locale={locale} /></td><td className="px-4 py-4"><RiskBadge insight={insight} copy={copy} /><p className="mt-1 max-w-[180px] text-xs text-slate-500">{insight?.reason}</p></td>{canManage && <td className="px-4 py-4 text-end"><button type="button" onClick={() => onEdit(machine)} aria-label={copy('editMachine', { machine: machine.name })} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-400/10 dark:hover:text-blue-300"><Pencil size={16} /></button></td>}</tr>;
+const MachineCard = ({ machine, insight, copy, locale, onEdit, onDelete, canManage }) => <article className="px-4 py-3"><div className="flex items-start justify-between gap-3"><div><h3 className="font-black text-slate-900 dark:text-white">{machine.name}</h3><p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{machine.type}{machine.room_number ? <> <span aria-hidden="true">&bull;</span> {copy('room', { room: machine.room_number })}</> : null}</p></div><RiskBadge insight={insight} copy={copy} /></div><dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg bg-slate-50 p-2.5 text-xs dark:bg-slate-900"><Info label={copy('availability')} value={<Status status={machine.status} copy={copy} />} /><Info label={copy('pacs', { defaultValue: 'PACS' })} value={<PacsBadge machine={machine} copy={copy} />} /><Info label={copy('identity')} value={[machine.manufacturer, machine.model].filter(Boolean).join(' ') || copy('notSet')} /><Info label={copy('location')} value={machine.location || copy('notSet')} /><Info label={copy('serial')} value={machine.serial_number || copy('notSet')} /><Info label={copy('nextService')} value={<ServiceInfo insight={insight} copy={copy} locale={locale} />} /><Info label={copy('contract')} value={<ContractInfo insight={insight} copy={copy} locale={locale} />} /></dl>{canManage && <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => onEdit(machine)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 text-sm font-bold text-blue-800 dark:border-blue-900 dark:bg-blue-400/10 dark:text-blue-200"><Pencil size={14} />{copy('edit')}</button><button type="button" onClick={() => onDelete(machine)} aria-label={copy('deleteMachine', { machine: machine.name })} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 text-sm font-bold text-rose-700 dark:border-rose-900 dark:bg-rose-400/10 dark:text-rose-300"><Trash2 size={14} />{copy('delete')}</button></div>}</article>;
+const MachineRow = ({ machine, insight, copy, locale, onEdit, onDelete, canManage }) => <tr className="hover:bg-slate-50/60 dark:hover:bg-slate-900/60"><td className="px-4 py-4"><p className="font-black text-slate-900 dark:text-white">{machine.name}</p><p className="mt-1 text-xs text-slate-500">{machine.type}{machine.room_number ? <> <span aria-hidden="true">&bull;</span> {copy('room', { room: machine.room_number })}</> : null}</p></td><td className="px-4 py-4"><p className="font-semibold text-slate-700 dark:text-slate-200">{[machine.manufacturer, machine.model].filter(Boolean).join(' ') || copy('notSet')}</p><p className="mt-1 font-mono text-xs text-slate-500">{copy('serialShort')}: {machine.serial_number || copy('notSet')}</p></td><td className="px-4 py-4 text-slate-600 dark:text-slate-300"><span className="inline-flex items-center gap-1.5"><MapPin size={14} />{machine.location || copy('notSet')}</span></td><td className="px-4 py-4"><Status status={machine.status} copy={copy} /></td><td className="px-4 py-4"><PacsBadge machine={machine} copy={copy} /><p className="mt-1 max-w-[160px] truncate font-mono text-xs text-slate-500">{machine.aet || machine.ip_address ? [machine.aet, machine.ip_address, machine.port].filter(Boolean).join(' / ') : copy('notSet')}</p></td><td className="px-4 py-4 text-slate-600 dark:text-slate-300"><ServiceInfo insight={insight} copy={copy} locale={locale} /></td><td className="px-4 py-4 text-slate-600 dark:text-slate-300"><ContractInfo insight={insight} copy={copy} locale={locale} /></td><td className="px-4 py-4"><RiskBadge insight={insight} copy={copy} /><p className="mt-1 max-w-[180px] text-xs text-slate-500">{insight?.reason}</p></td>{canManage && <td className="px-4 py-4 text-end"><div className="flex justify-end gap-1"><button type="button" onClick={() => onEdit(machine)} aria-label={copy('editMachine', { machine: machine.name })} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-blue-50 hover:text-blue-700 dark:hover:bg-blue-400/10 dark:hover:text-blue-300"><Pencil size={16} /></button><button type="button" onClick={() => onDelete(machine)} aria-label={copy('deleteMachine', { machine: machine.name })} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-400/10 dark:hover:text-rose-300"><Trash2 size={16} /></button></div></td>}</tr>;
 const Info = ({ label, value }) => <div><dt className="text-slate-400">{label}</dt><dd className="mt-1 font-bold text-slate-700 dark:text-slate-200">{value}</dd></div>;
 const Loading = ({ label }) => <div className="animate-pulse p-12 text-center text-sm font-bold text-slate-400">{label}</div>;
 const ErrorState = ({ label, retry, onRetry }) => <div role="alert" className="p-10 text-center"><ShieldCheck size={32} className="mx-auto text-rose-300" /><p className="mt-3 text-sm font-semibold text-rose-600">{label}</p><button type="button" onClick={onRetry} className="mt-3 rounded-xl border border-rose-200 px-4 py-2 text-sm font-bold text-rose-700">{retry}</button></div>;

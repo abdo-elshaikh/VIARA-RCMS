@@ -1,8 +1,21 @@
+jest.mock('dns', () => ({
+    promises: {
+        lookup: jest.fn()
+    }
+}));
+
+const dns = require('dns');
 const { validateCustomAiEndpointUrl } = require('../src/utils/customAiEndpointUrl');
 
+beforeEach(() => {
+    dns.promises.lookup.mockReset();
+    dns.promises.lookup.mockResolvedValue({ address: '93.184.216.34' });
+});
+
 describe('custom AI endpoint URL policy', () => {
-    it('accepts a public HTTPS endpoint', () => {
-        expect(validateCustomAiEndpointUrl('https://api.example.com/v1', { production: true }))
+    it('accepts a public HTTPS endpoint', async () => {
+        dns.promises.lookup.mockResolvedValue({ address: '93.184.216.34' });
+        expect(await validateCustomAiEndpointUrl('https://api.example.com/v1', { production: true }))
             .toBe('https://api.example.com/v1');
     });
 
@@ -17,14 +30,20 @@ describe('custom AI endpoint URL policy', () => {
         'https://[fe80::1]/v1',
         'https://[::ffff:127.0.0.1]/v1',
         'https://[2001:db8::1]/v1'
-    ])('rejects unsafe destination %s', (value) => {
-        expect(() => validateCustomAiEndpointUrl(value, { production: true })).toThrow();
+    ])('rejects unsafe destination %s', async (value) => {
+        await expect(validateCustomAiEndpointUrl(value, { production: true })).rejects.toThrow();
     });
 
-    it('requires HTTPS in production', () => {
-        expect(() => validateCustomAiEndpointUrl('http://api.example.com/v1', { production: true }))
-            .toThrow('must use HTTPS in production');
-        expect(validateCustomAiEndpointUrl('http://api.example.com/v1', { production: false }))
+    it('requires HTTPS in production', async () => {
+        await expect(validateCustomAiEndpointUrl('http://api.example.com/v1', { production: true }))
+            .rejects.toThrow('must use HTTPS in production');
+        expect(await validateCustomAiEndpointUrl('http://api.example.com/v1', { production: false }))
             .toBe('http://api.example.com/v1');
+    });
+
+    it('rejects a hostname that resolves to a prohibited IP', async () => {
+        dns.promises.lookup.mockResolvedValue({ address: '127.0.0.1' });
+        await expect(validateCustomAiEndpointUrl('https://evil.example.com/v1', { production: true }))
+            .rejects.toThrow('prohibited IP address');
     });
 });

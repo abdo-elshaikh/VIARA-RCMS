@@ -1,9 +1,11 @@
 /**
- * RCMS Backend API Client
+ * VIARA Backend API Client
  * Compatible with Node/Express & PostgreSQL backend running at http://localhost:3000/api
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000/api";
+import type { PortalNotificationEnvelope, PortalNotificationPageParams } from "../store/api";
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || "/api";
 
 export class ApiError extends Error {
   status: number;
@@ -17,21 +19,113 @@ export class ApiError extends Error {
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
-  return sessionStorage.getItem("token") || localStorage.getItem("rcms_token");
+  return sessionStorage.getItem("token");
 }
 
 export function setAuthToken(token: string) {
   if (typeof window !== "undefined") {
     sessionStorage.setItem("token", token);
-    localStorage.removeItem("rcms_token");
+    localStorage.removeItem("VIARA_token");
   }
 }
 
 export function clearAuthToken() {
   if (typeof window !== "undefined") {
     sessionStorage.removeItem("token");
-    localStorage.removeItem("rcms_token");
+    sessionStorage.removeItem("user");
   }
+}
+
+let refreshPromise: Promise<string | null> | null = null;
+
+async function performRefreshRequest(): Promise<string | null> {
+  try {
+    const csrfMatch =
+      typeof document === "undefined"
+        ? null
+        : document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    const csrfToken = csrfMatch ? decodeURIComponent(csrfMatch[1]) : null;
+    const res = await fetch(`${API_BASE_URL}/portal/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "x-portal-client": "true",
+        ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
+      },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data?.token === "string" && data.token ? data.token : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Single-flight token refresh shared by raw fetches and the RTK Query reauth
+ * flow, so concurrent 401s can never rotate the single-use refresh cookie more
+ * than once (the backend revokes the whole session family on reuse).
+ *
+ * Returns the fresh access token on success (persisted to sessionStorage) or
+ * null on failure (persisted session cleared). Callers that own the store
+ * should additionally update the Redux token / auth state from the result.
+ */
+export function refreshSessionToken(): Promise<string | null> {
+  if (!refreshPromise) {
+    refreshPromise = performRefreshRequest()
+      .then((token) => {
+        if (token) {
+          setAuthToken(token);
+        } else {
+          clearAuthToken();
+        }
+        return token;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
+/** Convenience boolean wrapper used by raw fetches (report HTML, downloads). */
+export async function refreshAuthTokenSilently(): Promise<boolean> {
+  return (await refreshSessionToken()) !== null;
+}
+
+/**
+ * Fetch from the API, retrying once after a silent token refresh when the
+ * first attempt is rejected with 401 (matching the RTK Query reauth flow).
+ */
+export async function fetchWithAuthRetry(
+  endpoint: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const isAuthEndpoint =
+    endpoint.endsWith("/login") ||
+    endpoint.endsWith("/auth/refresh") ||
+    endpoint.endsWith("/portal/auth/refresh") ||
+    endpoint.endsWith("/portal/auth/logout") ||
+    endpoint.endsWith("/auth/logout") ||
+    endpoint.endsWith("/auth/change-password");
+
+  const buildRequest = (): RequestInit => {
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      "x-portal-client": "true",
+      ...(init.headers as Record<string, string>),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    if (init.body) headers["Content-Type"] = "application/json";
+    return { ...init, credentials: "include", headers };
+  };
+
+  let res = await fetch(`${API_BASE_URL}${endpoint}`, buildRequest());
+  if (res.status === 401 && !isAuthEndpoint && (await refreshAuthTokenSilently())) {
+    res = await fetch(`${API_BASE_URL}${endpoint}`, buildRequest());
+  }
+  return res;
 }
 
 export type PortalIdentity = {
@@ -42,16 +136,21 @@ export type PortalIdentity = {
   userId?: string;
 };
 
-export function getAuthIdentity(): PortalIdentity | null {
-  const token = getAuthToken();
-  if (!token) return null;
+/**
+ * Fetch the current user's identity from the backend /api/profile endpoint.
+ * Do NOT decode the JWT client-side — sensitive claims (permissions, email) are
+ * only returned by the server and never exposed to arbitrary JS.
+ */
+export async function getAuthIdentity(): Promise<PortalIdentity | null> {
   try {
-    const encoded = token.split(".")[1];
-    if (!encoded) return null;
-    const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-    const bytes = Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes)) as PortalIdentity;
+    const res = await request<{
+      id?: string;
+      name?: string;
+      email?: string;
+      role?: string;
+      mustChangePassword?: boolean;
+    }>("/profile");
+    return res;
   } catch {
     return null;
   }
@@ -76,9 +175,21 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     headers["Authorization"] = `Bearer ${token}`;
   }
 
+  const method = (options.method || "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    if (csrfMatch) {
+      headers["x-csrf-token"] = decodeURIComponent(csrfMatch[1]);
+    }
+  }
+
   let res: Response;
   try {
-    res = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers });
+    res = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+      credentials: "include",
+    });
   } catch (e) {
     throw new ApiError("Network error. Check your connection and try again.", 0);
   }
@@ -114,10 +225,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 }
 
 async function downloadBlob(endpoint: string): Promise<Blob> {
-  const token = getAuthToken();
-  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const res = await fetchWithAuthRetry(endpoint);
   if (!res.ok) throw new ApiError(`Download failed (${res.status})`, res.status);
   return res.blob();
 }
@@ -203,8 +311,12 @@ export async function submitAppointmentRequest(payload: AppointmentRequestPayloa
 
 // ─── Patient Notifications & Chat API ─────────────────────────────────────
 
-export async function fetchPatientNotifications() {
-  return request<any[]>("/portal/notifications");
+export async function fetchPatientNotifications(params: PortalNotificationPageParams = {}) {
+  const search = new URLSearchParams();
+  if (params.limit !== undefined) search.set("limit", String(params.limit));
+  if (params.offset !== undefined) search.set("offset", String(params.offset));
+  const query = search.toString();
+  return request<PortalNotificationEnvelope>(`/portal/notifications${query ? `?${query}` : ""}`);
 }
 
 export async function fetchPatientNotificationUnreadCount() {
@@ -239,7 +351,9 @@ export async function sendPatientChatMessage(body: string, appointmentId?: strin
 
 export async function downloadReportPdf(examId: string): Promise<Blob | null> {
   try {
-    return await downloadBlob(`/exams/${encodeURIComponent(examId)}/report/pdf?customize=false`);
+    return await downloadBlob(
+      `/exams/${encodeURIComponent(examId)}/report/pdf?format=pdf&customize=false`,
+    );
   } catch {
     return null;
   }
@@ -247,7 +361,7 @@ export async function downloadReportPdf(examId: string): Promise<Blob | null> {
 
 export async function downloadInvoicePdf(invoiceId: string): Promise<Blob | null> {
   try {
-    return await downloadBlob(`/invoices/${encodeURIComponent(invoiceId)}/pdf`);
+    return await downloadBlob(`/portal/invoices/${encodeURIComponent(invoiceId)}/pdf`);
   } catch {
     return null;
   }
@@ -255,10 +369,8 @@ export async function downloadInvoicePdf(invoiceId: string): Promise<Blob | null
 
 export async function downloadPatientDocument(documentId: string): Promise<Blob | null> {
   try {
-    const token = getAuthToken();
-    const res = await fetch(
-      `${API_BASE_URL}/portal/documents/${encodeURIComponent(documentId)}/download`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+    const res = await fetchWithAuthRetry(
+      `/portal/documents/${encodeURIComponent(documentId)}/download`,
     );
     if (!res.ok) throw new ApiError(`Download failed (${res.status})`, res.status);
 
@@ -267,10 +379,12 @@ export async function downloadPatientDocument(documentId: string): Promise<Blob 
 
     const metadata = (await res.json()) as { file_url?: string };
     if (!metadata.file_url) return null;
-    const backendOrigin = API_BASE_URL.replace(/\/api\/?$/, "");
+    const backendOrigin = new URL(API_BASE_URL, window.location.origin).origin;
     const fileUrl = new URL(metadata.file_url, `${backendOrigin}/`).toString();
+    // A document URL must never send the portal bearer token to another origin.
+    if (new URL(fileUrl).origin !== backendOrigin) return null;
     const fileRes = await fetch(fileUrl, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      headers: getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {},
     });
     if (!fileRes.ok) throw new ApiError(`Download failed (${fileRes.status})`, fileRes.status);
     return await fileRes.blob();
@@ -332,7 +446,9 @@ export async function sendDoctorMessageApi(
 
 export async function downloadDoctorReportPdf(examId: string): Promise<Blob | null> {
   try {
-    return await downloadBlob(`/doctor-portal/reports/${encodeURIComponent(examId)}/pdf`);
+    return await downloadBlob(
+      `/doctor-portal/reports/${encodeURIComponent(examId)}/pdf?format=pdf`,
+    );
   } catch {
     return null;
   }
@@ -347,8 +463,14 @@ export async function fetchDoctorMessagesUnreadCount() {
   }
 }
 
-export async function fetchDoctorNotifications() {
-  return request<any[]>("/doctor-portal/notifications");
+export async function fetchDoctorNotifications(params: PortalNotificationPageParams = {}) {
+  const search = new URLSearchParams();
+  if (params.limit !== undefined) search.set("limit", String(params.limit));
+  if (params.offset !== undefined) search.set("offset", String(params.offset));
+  const query = search.toString();
+  return request<PortalNotificationEnvelope>(
+    `/doctor-portal/notifications${query ? `?${query}` : ""}`,
+  );
 }
 
 export async function fetchDoctorNotificationUnreadCount() {

@@ -1,0 +1,14 @@
+﻿.public-dialog--health { width: min(600px, calc(100% - 32px)); }
+.vlp-health-summary { display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px solid var(--vlp-line); border-radius: 15px; color: var(--vlp-ink); background: var(--vlp-soft); font-size: 14px; }
+.vlp-health-summary > svg { flex: none; color: var(--vlp-green); }
+.vlp-health-summary strong { font-weight: 700; }
+.vlp-health-checked { margin-block: 16px; font-size: 13px; color: var(--vlp-muted); }
+.vlp-health-public-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.vlp-health-public-actions button, .vlp-health-admin-row button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.vlp-health-public-actions button:disabled { opacity: .6; cursor: wait; }
+.vlp-health-admin { margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--vlp-line); }
+.vlp-health-admin summary { min-height: 44px; cursor: pointer; font-weight: 700; }
+.vlp-health-admin-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.vlp-health-summary .is-spinning { animation: vlp-health-spin .8s linear infinite; }
+@keyframes vlp-health-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .vlp-health-summary .is-spinning { animation: none; } }

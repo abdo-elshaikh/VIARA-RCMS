@@ -1,8 +1,9 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 
 const getTemplates = (db) => async (req, res, next) => {
     try {
-        const { modalityType, examTypeId, active = 'true' } = req.query;
+        const { modalityType, examTypeId, active = 'true' } = getRequestQuery(req);
         const values = [];
         let param = 1;
         let query = `

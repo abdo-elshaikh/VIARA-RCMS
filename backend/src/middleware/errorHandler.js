@@ -1,4 +1,4 @@
-const logger = require('../utils/logger');
+const logger = require('../config/logger');
 
 const { AppError, ValidationError, AuthenticationError, ConflictError } = require('../utils/errors');
 
@@ -21,8 +21,17 @@ const errorHandler = (err, req, res, next) => {
         error = new ConflictError('The resource is still referenced by another record');
     }
     if (['22P02', '23502', '23514'].includes(error.code)) {
-        const detail = err.detail || err.message || 'The request contains an invalid value';
-        error = new ValidationError(detail.includes('The request contains') ? detail : `Invalid value: ${detail}`);
+        // 22P02 on a UUID path param means "no such record can exist" — the
+        // user-telling answer is 404, not raw Postgres syntax text (UX-003).
+        const isUuidPath = error.code === '22P02'
+            && /uuid/i.test(String(err.message || ''))
+            && /\/[0-9a-f]{0,8}[-a-z0-9]*$/i.test(String(req.originalUrl || '').split('?')[0]);
+        if (isUuidPath) {
+            error = new AppError('Record not found', 404);
+        } else {
+            // PostgreSQL detail may contain the entire failing clinical row.
+            error = new ValidationError('The request contains an invalid value');
+        }
     }
     // JWT Token mappings
     if (error.name === 'JsonWebTokenError') {
@@ -56,12 +65,14 @@ const errorHandler = (err, req, res, next) => {
         status: statusCode >= 500 ? 'error' : 'fail',
         message,
         error: message,
-        code: statusCode
+        code: error.code || statusCode,
+        statusCode
     };
 
-    if (process.env.NODE_ENV !== 'production') {
+    if (error.details) errorResponse.details = error.details;
+
+    if (process.env.NODE_ENV === 'development' && process.env.EXPOSE_DEV_STACK === 'true') {
         errorResponse.stack = error.stack;
-        if (error.details) errorResponse.details = error.details;
     }
 
     // Send error response

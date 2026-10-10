@@ -37,6 +37,22 @@
     "notEnabled": "غير مفعّلة",
     "portalReady": "يمكن للمريض استخدام بيانات دخول البوابة",
     "generatePortalHint": "أنشئ بيانات الدخول عند الحاجة",
+    "activatePortalAccess": "تفعيل الدخول للبوابة",
+    "resetPortalAccess": "إعادة إصدار كلمة المرور",
+    "portalLoginDetails": "تفاصيل الدخول للبوابة",
+    "portalLoginDetailsHint": "استخدم رقم المريض ورابط البوابة لتسجيل الدخول.",
+    "portalLoginId": "معرف الدخول (MRN)",
+    "portalLoginUrl": "رابط الدخول",
+    "temporaryPassword": "كلمة المرور المؤقتة",
+    "passwordUnavailable": "كلمة المرور الحالية مشفرة ولا يمكن عرضها. أعد إصدارها لإنشاء كلمة مرور مؤقتة جديدة.",
+    "copyLoginId": "نسخ معرف الدخول",
+    "copyLoginUrl": "نسخ رابط الدخول",
+    "copyPassword": "نسخ كلمة المرور",
+    "showPassword": "إظهار كلمة المرور",
+    "hidePassword": "إخفاء كلمة المرور",
+    "openPortal": "فتح البوابة",
+    "copied": "تم النسخ إلى الحافظة.",
+    "copyFailed": "تعذر نسخ هذه القيمة.",
     "visitSignalTotal": "المواعيد في هذا السجل",
     "finalizedReports": "التقارير المعتمدة",
     "pendingReports": "{{count}} قيد الانتظار أو غير موثق",
@@ -129,6 +145,37 @@
     "none": "لا يوجد"
   },
   "documents": {
+    "loadError": "تعذر تحميل المستند.",
+    "fileTooLarge": "حجم الملف يتجاوز الحد المسموح وهو 10 ميجابايت.",
+    "selectFile": "يرجى اختيار ملف لرفعه.",
+    "uploaded": "تم رفع المستند بنجاح.",
+    "uploadError": "تعذر رفع المستند.",
+    "previewError": "تعذر تحميل معاينة المستند.",
+    "downloadError": "تعذر تنزيل المستند.",
+    "uploadTitle": "رفع مستند",
+    "type": "نوع المستند",
+    "file": "الملف",
+    "selected": "تم اختيار: {{name}} ({{size}})",
+    "notes": "ملاحظات (اختياري)",
+    "notesPlaceholder": "أضف تفاصيل عن هذا المستند...",
+    "uploading": "جارٍ الرفع...",
+    "upload": "رفع",
+    "title": "مستندات المريض",
+    "loading": "جارٍ تحميل المستندات...",
+    "empty": "لم يتم رفع مستندات بعد.",
+    "types": {
+      "Consent Form": "نموذج موافقة",
+      "Patient ID": "هوية المريض",
+      "Passport": "جواز السفر",
+      "Insurance Card": "بطاقة التأمين",
+      "Insurance Approval": "موافقة التأمين",
+      "Prescription": "وصفة طبية",
+      "Previous Report": "تقرير سابق",
+      "Lab Result": "نتيجة مختبر",
+      "Invoice": "فاتورة",
+      "Signed Form": "نموذج موقّع",
+      "Other": "أخرى"
+    },
     "deleteTitle": "حذف مستند المريض",
     "deleteMessage": "هل تريد حذف {{name}}؟ لن يعود الملف متاحًا في سجل المريض.",
     "delete": "حذف المستند",
@@ -136,6 +183,10 @@
     "deleted": "تم حذف المستند.",
     "deleteError": "تعذر حذف المستند.",
     "deleteAction": "حذف {{name}}",
+    "preview": "معاينة",
+    "previewAction": "معاينة {{name}}",
+    "download": "تنزيل",
+    "downloadAction": "تنزيل {{name}}",
     "fallbackName": "هذا المستند"
   },
   "privacy": {
@@ -206,6 +257,14 @@
     "Other": "آخر"
   },
   "visitDetail": {
+    "metrics": {
+      "label": "ملخص سجل المريض",
+      "totalVisits": "إجمالي الزيارات",
+      "finalizedReports": "التقارير المعتمدة",
+      "pendingReports": "التقارير المعلقة",
+      "deliveredReports": "التقارير المسلّمة"
+    },
+    "openCase": "فتح تفاصيل الزيارة",
     "followUp": "متابعة",
     "followUpContext": "سياق المتابعة",
     "priorStudy": "الفحص السابق",
@@ -290,5 +349,14 @@
   "portal": "بوابة المريض",
   "currency": {
     "egp": "ج.م"
+  },
+  "billing": {
+    "selectAll": "تحديد الكل",
+    "deselectAll": "إلغاء تحديد الكل",
+    "selectedVisitsCount": "تم تحديد {{count}} زيارة",
+    "printSelectedVisits": "طباعة فاتورة بالزيارات المحددة",
+    "printVisitInvoice": "طباعة فاتورة الزيارة",
+    "invoice": "فاتورة",
+    "selectVisitsFirst": "يرجى تحديد زيارة واحدة على الأقل لطباعة الفاتورة"
   }
 }

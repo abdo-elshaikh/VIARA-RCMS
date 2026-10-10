@@ -83,12 +83,14 @@ class MedGemmaAnalyzer:
                 torch.float16 if has_cuda else torch.float32
             )
             self._processor = AutoProcessor.from_pretrained(
-                self.settings.model_id, revision=revision
+                self.settings.model_id, revision=revision, trust_remote_code=False
             )
             self._model = AutoModelForImageTextToText.from_pretrained(
                 self.settings.model_id,
                 revision=revision,
-                torch_dtype=dtype,
+                dtype=dtype,
+                trust_remote_code=False,
+                use_safetensors=True,
                 device_map="auto" if has_cuda else None,
             ).eval()
             if not has_cuda:

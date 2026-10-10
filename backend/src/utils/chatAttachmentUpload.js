@@ -77,7 +77,8 @@ const scanChatAttachment = async (filePath) => {
             maxBuffer: 1024 * 1024
         });
     } catch (error) {
-        throw new AppError(error.killed ? 'Attachment scan timed out' : 'Attachment failed malware screening', 400);
+        if (error.code === 1 && !error.killed) throw new AppError('Attachment failed malware screening', 400);
+        throw new AppError(error.killed ? 'Attachment scan timed out' : 'Attachment scanning service is unavailable', 503);
     }
 };
 
@@ -162,24 +163,66 @@ const serveChatAttachment = (db) => async (req, res, next) => {
     try {
         const storedName = String(req.params.fileName || '');
         const userId = req.user?.user_id || req.user?.userId || null;
-        const doctorId = req.user?.doctorId || null;
-        const isStaffInboxRole = ['Admin', 'Receptionist', 'Marketing'].includes(req.user?.role);
-        const access = await db.query(`
-            SELECT EXISTS (
-                SELECT 1 FROM staff_messages sm
-                WHERE sm.attachments @> jsonb_build_array(jsonb_build_object('storedName', $1::text))
-                  AND (sm.sender_id = $2::uuid OR sm.recipient_id = $2::uuid OR sm.channel_name IS NOT NULL)
-                UNION ALL
-                SELECT 1 FROM patient_portal_messages ppm
-                WHERE ppm.attachments @> jsonb_build_array(jsonb_build_object('storedName', $1::text))
-                  AND (ppm.patient_id = $2::uuid OR $4::boolean)
-                UNION ALL
-                SELECT 1 FROM doctor_portal_messages dpm
-                WHERE dpm.attachments @> jsonb_build_array(jsonb_build_object('storedName', $1::text))
-                  AND (dpm.doctor_id = $3::uuid OR $4::boolean)
-            ) AS allowed
-        `, [storedName, userId, doctorId, isStaffInboxRole]);
-        if (!access.rows[0]?.allowed) {
+        const doctorId = req.user?.doctorId || req.user?.doctor_id || null;
+        const role = req.user?.role || '';
+        const isSystemAdministrator = ['Admin', 'SuperAdmin', 'Developer'].includes(role);
+        const canAccessExternalInbox = ['Admin', 'Receptionist', 'Developer'].includes(role);
+        const attachmentMessages = await db.query(`
+            SELECT 'staff' AS source, sender_id, recipient_id, channel_name,
+                   NULL::uuid AS patient_id, NULL::uuid AS doctor_id
+            FROM staff_messages
+            WHERE attachments @> jsonb_build_array(jsonb_build_object('storedName', $1::text))
+            UNION ALL
+            SELECT 'patient' AS source, NULL::uuid, NULL::uuid, NULL::varchar,
+                   patient_id, NULL::uuid
+            FROM patient_portal_messages
+            WHERE attachments @> jsonb_build_array(jsonb_build_object('storedName', $1::text))
+            UNION ALL
+            SELECT 'doctor' AS source, NULL::uuid, NULL::uuid, NULL::varchar,
+                   NULL::uuid, doctor_id
+            FROM doctor_portal_messages
+            WHERE attachments @> jsonb_build_array(jsonb_build_object('storedName', $1::text))
+        `, [storedName]);
+
+        let allowed = false;
+        for (const message of attachmentMessages.rows) {
+            if (message.source === 'staff') {
+                if (String(message.sender_id) === String(userId) || String(message.recipient_id) === String(userId)) {
+                    allowed = true;
+                    break;
+                }
+                if (message.channel_name && userId) {
+                    const channelResult = await db.query(`
+                        SELECT c.*,
+                               EXISTS (
+                                   SELECT 1 FROM chat_channel_members cm
+                                   WHERE cm.channel_id = c.channel_id AND cm.user_id = $2
+                               ) AS is_member
+                        FROM chat_channels c
+                        WHERE c.channel_id = $1
+                    `, [message.channel_name, userId]);
+                    const channel = channelResult.rows[0];
+                    const roleAllowed = Array.isArray(channel?.allowed_roles)
+                        && channel.allowed_roles.includes(role);
+                    allowed = Boolean(channel) && (
+                        isSystemAdministrator
+                        || String(channel.created_by) === String(userId)
+                        || channel.is_member
+                        || roleAllowed
+                        || (!channel.is_private && (!channel.allowed_roles || channel.allowed_roles.length === 0))
+                    );
+                    if (allowed) break;
+                }
+            } else if (message.source === 'patient') {
+                allowed = String(message.patient_id) === String(userId) || canAccessExternalInbox;
+                if (allowed) break;
+            } else if (message.source === 'doctor') {
+                allowed = String(message.doctor_id) === String(doctorId) || canAccessExternalInbox;
+                if (allowed) break;
+            }
+        }
+
+        if (!allowed) {
             return next(new AppError('Attachment not found', 404));
         }
         const filePath = resolveAttachmentPath(storedName);

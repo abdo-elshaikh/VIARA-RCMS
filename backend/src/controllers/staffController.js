@@ -6,6 +6,8 @@ const {
     assertProtectedUserMutation,
     isProtectedRole
 } = require('../utils/roleGovernance');
+const { triggerEventForRole } = require('../services/notificationJobService');
+const { assertQuota } = require('../services/quotaService');
 
 const getAllStaff = (db) => async (req, res, next) => {
     try {
@@ -34,21 +36,50 @@ const createStaff = (db) => async (req, res, next) => {
         assertCanAssignRole(req.user, role);
 
         // Hash Password
-        const salt = await bcrypt.genSalt(10);
+        const salt = await bcrypt.genSalt(12);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         client = await db.connect();
         await client.query('BEGIN');
+        await assertQuota(client, 'users', { transaction: true });
         const result = await client.query(
             "INSERT INTO users (full_name, email, password_hash, role, must_change_password) VALUES ($1, $2, $3, $4, TRUE) RETURNING user_id, full_name, email, role",
             [fullName, email, hashedPassword, role]
         );
+        // Payroll, attendance, and leave all key off employee_profiles; create
+        // it in the same transaction so a new hire can never be invisible to
+        // payroll until someone remembers to fill the HR form.
+        await client.query(`
+            INSERT INTO employee_profiles (user_id, employee_id, department, job_title, hire_date, employment_status)
+            VALUES ($1, NULL, $2, $3, CURRENT_DATE, $4)
+            ON CONFLICT (user_id) DO NOTHING
+        `, [result.rows[0].user_id, data.department || null, data.jobTitle || null, data.employmentStatus || 'Full-Time']);
         await client.query('COMMIT');
 
         logAction(db, {
             userId: req.user.user_id, action: 'STAFF_CREATED', resourceId: result.rows[0].user_id,
             resourceTable: 'users', ipAddress: req.ip, details: { role, protectedRole: isProtectedRole(role) }, required: isProtectedRole(role)
         }).catch(err => console.error("Non-blocking audit log error:", err));
+
+        triggerEventForRole(db, 'STAFF_CREATED', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                staff_name: fullName,
+                staff_email: email,
+                role: role,
+                created_by: req.user?.full_name || req.user?.email || 'Unknown'
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'STAFF_CREATED', 'HR', {
+            priority: 'Normal',
+            variables: {
+                staff_name: fullName,
+                staff_email: email,
+                role: role,
+                created_by: req.user?.full_name || req.user?.email || 'Unknown'
+            }
+        }).catch(() => {});
 
         res.status(201).json(result.rows[0]);
     } catch (error) {
@@ -86,7 +117,7 @@ const updateStaff = (db) => async (req, res, next) => {
         if (isActive !== undefined) { fields.push(`is_active = $${idx++}`); values.push(isActive); }
 
         if (password && password.length >= 6) {
-            const salt = await bcrypt.genSalt(10);
+            const salt = await bcrypt.genSalt(12);
             const hashedPassword = await bcrypt.hash(password, salt);
             fields.push(`password_hash = $${idx++}`);
             values.push(hashedPassword);
@@ -94,10 +125,29 @@ const updateStaff = (db) => async (req, res, next) => {
 
         if (fields.length === 0) throw new AppError('No fields to update', 400);
 
+        if (role || isActive === false || password) fields.push('current_session_id = NULL');
+
         values.push(id);
         const query = `UPDATE users SET ${fields.join(', ')} WHERE user_id = $${idx} RETURNING user_id, full_name, role, is_active`;
 
         const result = await client.query(query, values);
+
+        // Deactivation must stamp the termination date: payroll prorates the
+        // final period off it, and without it the employee's worked days in
+        // the open period are silently dropped. Reactivation clears it (the
+        // employee is being rehired).
+        if (isActive === false) {
+            await client.query(`
+                UPDATE employee_profiles
+                SET termination_date = COALESCE(termination_date, CURRENT_DATE), updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = $1
+            `, [id]);
+        } else if (isActive === true && targetResult.rows[0].is_active === false) {
+            await client.query(
+                'UPDATE employee_profiles SET termination_date = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1',
+                [id]
+            );
+        }
 
         if (role || isActive === false || password) {
             await client.query(`
@@ -121,6 +171,24 @@ const updateStaff = (db) => async (req, res, next) => {
             required: isProtectedRole(target.role) || isProtectedRole(role)
         }).catch(err => console.error("Non-blocking audit log error:", err));
 
+        triggerEventForRole(db, 'STAFF_UPDATED', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                staff_name: fullName || target.full_name,
+                staff_email: email || '',
+                changed_fields: Object.keys(req.body).filter(key => key !== 'password').join(', ') || 'none'
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'STAFF_UPDATED', 'HR', {
+            priority: 'Normal',
+            variables: {
+                staff_name: fullName || target.full_name,
+                staff_email: email || '',
+                changed_fields: Object.keys(req.body).filter(key => key !== 'password').join(', ') || 'none'
+            }
+        }).catch(() => {});
+
         res.json(result.rows[0]);
     } catch (error) {
         if (client) await client.query('ROLLBACK');
@@ -143,9 +211,16 @@ const deleteStaff = (db) => async (req, res, next) => {
         if (!targetResult.rows.length) throw new AppError('User not found', 404);
         await assertProtectedUserMutation(client, req.user, targetResult.rows[0], targetResult.rows[0].role, false);
         const result = await client.query(
-            "UPDATE users SET is_active = false WHERE user_id = $1 RETURNING user_id", 
+            "UPDATE users SET is_active = false, current_session_id = NULL WHERE user_id = $1 RETURNING user_id",
             [id]
         );
+        // Stamp the termination date so the final payroll period prorates the
+        // employee's actually worked days instead of dropping them.
+        await client.query(`
+            UPDATE employee_profiles
+            SET termination_date = COALESCE(termination_date, CURRENT_DATE), updated_at = CURRENT_TIMESTAMP
+            WHERE user_id = $1
+        `, [id]);
         await client.query(`
             UPDATE refresh_tokens
             SET revoked = TRUE, revoked_at = NOW(), revoked_reason = 'staff_deactivated'
@@ -162,6 +237,24 @@ const deleteStaff = (db) => async (req, res, next) => {
             required: true
         });
         await client.query('COMMIT');
+
+        triggerEventForRole(db, 'STAFF_DEACTIVATED', 'Admin', {
+            priority: 'Normal',
+            variables: {
+                staff_name: targetResult.rows[0].full_name || '',
+                staff_email: '',
+                role: targetResult.rows[0].role
+            }
+        }).catch(() => {});
+
+        triggerEventForRole(db, 'STAFF_DEACTIVATED', 'HR', {
+            priority: 'Normal',
+            variables: {
+                staff_name: targetResult.rows[0].full_name || '',
+                staff_email: '',
+                role: targetResult.rows[0].role
+            }
+        }).catch(() => {});
 
         res.json({ message: 'User deactivated successfully' });
     } catch (error) {

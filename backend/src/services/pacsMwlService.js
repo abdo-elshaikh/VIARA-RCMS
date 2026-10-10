@@ -46,11 +46,15 @@ const toDicomDate = (value) => {
     return match ? `${match[1]}${match[2]}${match[3]}` : '';
 };
 
-const toDicomTime = (date) => {
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
-    const pad = (n) => String(n).padStart(2, '0');
-    return `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+const scheduledParts = (date) => {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) throw new Error('Invalid scheduled examination date');
+    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: process.env.PACS_TIMEZONE || 'Africa/Cairo',
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+    }).formatToParts(date);
+    const value = Object.fromEntries(parts.map(part => [part.type, part.value]));
+    return { date: value.year + value.month + value.day, time: value.hour + value.minute + value.second };
 };
+const toDicomTime = date => scheduledParts(date).time;
 
 const toDicomSex = (gender) => {
     const g = String(gender || '').toUpperCase();
@@ -68,10 +72,12 @@ const safeDecrypt = (value) => {
     }
 };
 
-// DICOM PN: "Family^Given". Strip the caret from source fields to avoid corrupting components.
+const { toDicomPatientName } = require('../utils/arabicTransliteration');
+
+// DICOM PN: "Family^Given". Transliterates Arabic names to clean Latin characters to prevent
+// modality console Mojibake/reversals and allow technician search with standard English keyboards.
 const buildPatientName = (last, first) => {
-    const clean = (s) => String(s || '').replace(/\^/g, ' ').trim();
-    return `${clean(last)}^${clean(first)}`;
+    return toDicomPatientName(last, first, { dualGroup: true, nativeFirst: true });
 };
 
 /**
@@ -83,15 +89,38 @@ const fetchScheduledWorklist = async (pool, options = {}) => {
     const date = options.date || null;
     const modalityId = options.modalityId || null;
     const includeInvalid = Boolean(options.includeInvalid);
+    const autoProvision = Boolean(options.autoProvision);
+
+    // Auto-create missing examination rows for scheduled appointments (only when generating/syncing)
+    if (autoProvision) {
+        await pool.query(`
+                INSERT INTO examinations (
+                    appointment_id, patient_id, modality_id, exam_type_id,
+                    status, queue_stage, order_number, priority, clinical_indication
+                )
+                SELECT a.appointment_id, a.patient_id, a.modality_id, a.exam_type_id,
+                       CASE WHEN a.status = 'Arrived' THEN 'Checked-in'::exam_status ELSE 'Scheduled'::exam_status END,
+                       CASE WHEN a.status = 'Arrived' THEN 'Arrived' ELSE 'Scheduled' END,
+                       COALESCE(a.order_number, 'ORD-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || SUBSTRING(a.appointment_id::text, 1, 6)),
+                       COALESCE(a.priority, 'Routine'),
+                       a.clinical_indication
+                FROM appointments a
+                WHERE a.status::text IN ('Scheduled', 'Confirmed', 'Arrived', 'In-Progress', 'Checked-in')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM examinations e WHERE e.appointment_id = a.appointment_id
+                  )
+            `);
+    }
+
     const values = [];
-    const filters = ["e.status IN ('Scheduled', 'Checked-in')"];
+    const filters = ["e.status::text IN ('Scheduled', 'Checked-in', 'Scanning')"];
 
     if (!includeInvalid) filters.push('e.order_number IS NOT NULL');
     if (date) {
         values.push(date);
         filters.push(`COALESCE(a.start_time, e.created_at)::date = $${values.length}::date`);
     } else {
-        filters.push('COALESCE(a.start_time, e.created_at)::date = CURRENT_DATE');
+        filters.push('COALESCE(a.start_time, e.created_at)::date >= CURRENT_DATE - 2');
     }
     if (modalityId) {
         values.push(modalityId);
@@ -147,10 +176,13 @@ const buildWorklistBuffer = (row, serverAet) => {
     const scheduled = row.scheduled_datetime instanceof Date
         ? row.scheduled_datetime
         : new Date(row.scheduled_datetime);
+    const stationAet = String(row.scheduled_station_aet || serverAet || '').trim();
+    if (!stationAet || stationAet.length > 16 || /[\\\x00-\x1f\x7f]/.test(stationAet)) throw new Error('Scheduled station AET must contain 1-16 valid characters');
     const modality = toDicomModality(row.modality_type);
     const sopInstanceUid = DicomMetaDictionary.uid();
 
     const naturalDataset = {
+        SpecificCharacterSet: 'ISO_IR 192',
         SOPClassUID: MWL_FIND_SOP_CLASS_UID,
         SOPInstanceUID: sopInstanceUid,
 
@@ -170,8 +202,8 @@ const buildWorklistBuffer = (row, serverAet) => {
         // Scheduled Procedure Step Sequence (0040,0100)
         ScheduledProcedureStepSequence: [{
             Modality: modality,
-            ScheduledStationAETitle: row.scheduled_station_aet || serverAet,
-            ScheduledProcedureStepStartDate: toDicomDate(scheduled),
+            ScheduledStationAETitle: stationAet,
+            ScheduledProcedureStepStartDate: scheduledParts(scheduled).date,
             ScheduledProcedureStepStartTime: toDicomTime(scheduled),
             ScheduledProcedureStepDescription: row.procedure_name || 'Imaging Procedure',
             ScheduledProcedureStepID: row.order_number,
@@ -189,7 +221,7 @@ const buildWorklistBuffer = (row, serverAet) => {
         '00020003': { vr: 'UI', Value: [sopInstanceUid] },
         '00020010': { vr: 'UI', Value: [TRANSFER_SYNTAX] },
         '00020012': { vr: 'UI', Value: [IMPLEMENTATION_CLASS_UID] },
-        '00020013': { vr: 'SH', Value: ['RCMS_MWL_1'] }
+        '00020013': { vr: 'SH', Value: ['VIARA_MWL_1'] }
     });
     dict.dict = DicomMetaDictionary.denaturalizeDataset(naturalDataset);
     return Buffer.from(dict.write());
@@ -204,26 +236,36 @@ const buildWorklistBuffer = (row, serverAet) => {
  * replace the Orthanc worklist plugin without changing this producer.
  */
 const regenerateWorklists = async (pool) => {
-    fs.mkdirSync(WORKLIST_DIR, { recursive: true });
-
     const serverAet = await settingsService.get('pacs_server_aet', process.env.ORTHANC_AET || 'MiPACS2');
-    const rows = await fetchScheduledWorklist(pool);
-    const expected = new Set();
-    let written = 0;
+    const rows = await fetchScheduledWorklist(pool, { autoProvision: true });
+    const entries = rows.map((row) => {
+        const orderNumber = String(row.order_number || '').trim();
+        if (!orderNumber) throw new Error('MWL row is missing its accession/order number');
+        const validation = validateWorklistRow(row);
+        if (!validation.valid) {
+            throw new Error(`MWL row is invalid: ${validation.warnings.join('; ')}`);
+        }
+        const fileName = `${orderNumber.replace(/[^A-Za-z0-9_-]/g, '_')}.wl`;
+        return { fileName, buffer: buildWorklistBuffer(row, serverAet), orderNumber };
+    });
+    const expected = new Set(entries.map(({ fileName }) => fileName));
+    if (expected.size !== entries.length) throw new Error('MWL rows contain duplicate accession numbers');
 
-    for (const row of rows) {
-        // Accession numbers are filesystem-safe (alphanumeric order numbers), but sanitize defensively.
-        const fileName = `${String(row.order_number).replace(/[^A-Za-z0-9_-]/g, '_')}.wl`;
-        expected.add(fileName);
+    fs.mkdirSync(WORKLIST_DIR, { recursive: true });
+    for (const { fileName, buffer, orderNumber } of entries) {
+        const target = path.join(WORKLIST_DIR, fileName);
+        const temporary = target + '.' + require('crypto').randomUUID() + '.tmp';
         try {
-            const buffer = buildWorklistBuffer(row, serverAet);
-            fs.writeFileSync(path.join(WORKLIST_DIR, fileName), buffer);
-            written += 1;
-        } catch (err) {
-            logger.error('Failed to write worklist entry', {
-                order_number: row.order_number,
-                error: err.message
+            fs.writeFileSync(temporary, buffer, { flag: 'wx', mode: 0o600 });
+            fs.renameSync(temporary, target);
+        } catch (error) {
+            logger.error('Failed to write worklist entry; stale entries were retained', {
+                order_number: orderNumber,
+                error: error.message
             });
+            throw error;
+        } finally {
+            if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
         }
     }
 
@@ -236,12 +278,51 @@ const regenerateWorklists = async (pool) => {
         }
     }
 
-    logger.info(`MWL regenerated: ${written} scheduled, ${pruned} pruned`, { dir: WORKLIST_DIR });
-    return { written, pruned };
+    logger.info(`MWL regenerated: ${entries.length} scheduled, ${pruned} pruned`, { dir: WORKLIST_DIR });
+    return { written: entries.length, pruned };
+};
+
+let mwlRegenTimeout = null;
+let mwlRegenRunning = false;
+let mwlPendingRegen = false;
+
+/**
+ * Debounced trigger for asynchronous MWL regeneration.
+ * Bundles rapid appointment or examination scheduling events into a single regeneration run.
+ *
+ * @param {object} pool - PostgreSQL pool or client
+ * @param {number} [delayMs=2000] - Debounce delay in milliseconds
+ */
+const triggerMwlRegeneration = (pool, delayMs = 2000) => {
+    if (!pool) return;
+    if (mwlRegenTimeout) {
+        clearTimeout(mwlRegenTimeout);
+    }
+    mwlRegenTimeout = setTimeout(async () => {
+        mwlRegenTimeout = null;
+        if (mwlRegenRunning) {
+            mwlPendingRegen = true;
+            return;
+        }
+        mwlRegenRunning = true;
+        try {
+            await regenerateWorklists(pool);
+        } catch (err) {
+            logger.error('Debounced MWL regeneration failed', { error: err.message });
+        } finally {
+            mwlRegenRunning = false;
+            if (mwlPendingRegen) {
+                mwlPendingRegen = false;
+                triggerMwlRegeneration(pool, 500);
+            }
+        }
+    }, delayMs);
+    mwlRegenTimeout.unref?.();
 };
 
 module.exports = {
     regenerateWorklists,
+    triggerMwlRegeneration,
     // exported for unit tests
     buildWorklistBuffer,
     fetchScheduledWorklist,

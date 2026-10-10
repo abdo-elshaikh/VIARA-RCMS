@@ -37,6 +37,22 @@
     "notEnabled": "Not enabled",
     "portalReady": "Patient can use portal credentials",
     "generatePortalHint": "Generate credentials when needed",
+    "activatePortalAccess": "Activate portal access",
+    "resetPortalAccess": "Reset portal password",
+    "portalLoginDetails": "Portal login details",
+    "portalLoginDetailsHint": "Use the MRN and portal link to sign in.",
+    "portalLoginId": "Login ID (MRN)",
+    "portalLoginUrl": "Login URL",
+    "temporaryPassword": "Temporary password",
+    "passwordUnavailable": "The current password is encrypted and cannot be displayed. Reset it to issue a new temporary password.",
+    "copyLoginId": "Copy login ID",
+    "copyLoginUrl": "Copy login URL",
+    "copyPassword": "Copy password",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "openPortal": "Open portal",
+    "copied": "Copied to clipboard.",
+    "copyFailed": "Could not copy this value.",
     "visitSignalTotal": "Appointments in this record",
     "finalizedReports": "Finalized reports",
     "pendingReports": "{{count}} pending or undocumented",
@@ -129,6 +145,37 @@
     "none": "None"
   },
   "documents": {
+    "loadError": "The document could not be loaded.",
+    "fileTooLarge": "File size exceeds the 10 MB limit.",
+    "selectFile": "Please select a file to upload.",
+    "uploaded": "Document uploaded successfully.",
+    "uploadError": "The document could not be uploaded.",
+    "previewError": "The document preview could not be loaded.",
+    "downloadError": "The document could not be downloaded.",
+    "uploadTitle": "Upload document",
+    "type": "Document type",
+    "file": "File",
+    "selected": "Selected: {{name}} ({{size}})",
+    "notes": "Notes (optional)",
+    "notesPlaceholder": "Add details about this document...",
+    "uploading": "Uploading...",
+    "upload": "Upload",
+    "title": "Patient documents",
+    "loading": "Loading documents...",
+    "empty": "No documents uploaded yet.",
+    "types": {
+      "Consent Form": "Consent form",
+      "Patient ID": "Patient ID",
+      "Passport": "Passport",
+      "Insurance Card": "Insurance card",
+      "Insurance Approval": "Insurance approval",
+      "Prescription": "Prescription",
+      "Previous Report": "Previous report",
+      "Lab Result": "Lab result",
+      "Invoice": "Invoice",
+      "Signed Form": "Signed form",
+      "Other": "Other"
+    },
     "deleteTitle": "Delete patient document",
     "deleteMessage": "Delete {{name}}? This file will no longer be available from the patient record.",
     "delete": "Delete document",
@@ -136,6 +183,10 @@
     "deleted": "Document deleted.",
     "deleteError": "The document could not be deleted.",
     "deleteAction": "Delete {{name}}",
+    "preview": "Preview",
+    "previewAction": "Preview {{name}}",
+    "download": "Download",
+    "downloadAction": "Download {{name}}",
     "fallbackName": "this document"
   },
   "privacy": {
@@ -206,6 +257,14 @@
     "Other": "Other"
   },
   "visitDetail": {
+    "metrics": {
+      "label": "Patient record summary",
+      "totalVisits": "Total visits",
+      "finalizedReports": "Finalized reports",
+      "pendingReports": "Pending reports",
+      "deliveredReports": "Delivered reports"
+    },
+    "openCase": "Open visit details",
     "followUp": "Follow-up",
     "followUpContext": "Follow-up context",
     "priorStudy": "Prior study",
@@ -290,5 +349,14 @@
   "portal": "Patient portal",
   "currency": {
     "egp": "EGP"
+  },
+  "billing": {
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "selectedVisitsCount": "{{count}} visits selected",
+    "printSelectedVisits": "Print Invoice for Selected Visits",
+    "printVisitInvoice": "Print visit invoice",
+    "invoice": "Invoice",
+    "selectVisitsFirst": "Please select at least one visit to print invoice"
   }
 }

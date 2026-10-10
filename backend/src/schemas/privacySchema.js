@@ -28,7 +28,7 @@ const createPrivacyRequestSchema = z.object({
 });
 
 const resolvePrivacyRequestSchema = z.object({
-    action: z.enum(['Export', 'Anonymize', 'Resolve', 'Reject']),
+    action: z.enum(['Export', 'Anonymize', 'CompleteAnonymization', 'Resolve', 'Reject']),
     notes: z.preprocess(emptyToUndefined, z.string().min(5).max(2000).optional())
 });
 

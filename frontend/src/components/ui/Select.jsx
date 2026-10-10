@@ -20,8 +20,8 @@ const Select = forwardRef(({
     return (
         <div className="w-full">
             {label && (
-                <label htmlFor={selectId} className="mb-1.5 ms-1 block text-sm font-semibold text-slate-700 dark:text-[var(--rcms-ink)]">
-                    {label}{required && <span className="ms-1 text-red-500">*</span>}
+                <label htmlFor={selectId} className="ds-field-label mb-1.5 ms-1 block text-sm font-semibold">
+                    {label}{required && <span className="ms-1 text-[var(--VIARA-danger)]" aria-hidden="true">*</span>}
                 </label>
             )}
             <div className="relative">
@@ -30,18 +30,9 @@ const Select = forwardRef(({
                     id={selectId}
                     required={required}
                     aria-invalid={error ? 'true' : 'false'}
+                    aria-errormessage={error ? errorId : undefined}
                     aria-describedby={error ? errorId : helperText ? helperId : undefined}
-                    className={`
-                        w-full px-4 py-2.5 bg-white dark:bg-[var(--rcms-field)] border rounded-xl appearance-none
-                        text-slate-700 dark:text-[var(--rcms-ink)] text-sm font-medium
-                        focus:outline-none focus:ring-4 focus:ring-cyan-500/10 transition-all duration-200
-                        disabled:bg-slate-50 dark:disabled:bg-[var(--rcms-surface)] disabled:text-slate-400 disabled:cursor-not-allowed
-                        ${error
-                            ? 'border-red-300 focus:border-red-500 focus:ring-red-100'
-                            : 'border-slate-200 dark:border-[var(--rcms-line)] focus:border-cyan-600 hover:border-slate-300 dark:hover:border-[var(--rcms-line-strong)]'
-                        }
-                        ${className}
-                    `}
+                    className={`ds-field appearance-none pe-10 text-sm font-medium ${error ? 'ds-field-error' : ''} ${className}`}
                     {...props}
                 >
                     <option value="" disabled className="text-slate-400">
@@ -53,19 +44,19 @@ const Select = forwardRef(({
                         </option>
                     ))}
                 </select>
-                <div className="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-3 text-slate-400">
+                <div className="pointer-events-none absolute inset-y-0 end-0 flex items-center pe-3 text-[var(--VIARA-muted)]" aria-hidden="true">
                     <ChevronDown size={16} />
                 </div>
             </div>
 
             {error && (
-                <p id={errorId} role="alert" className="mt-1.5 ms-1 flex items-center gap-1 text-xs font-medium text-red-500 animate-slide-up">
+                <p id={errorId} role="alert" className="ds-field-error-copy mt-1.5 ms-1 flex items-center gap-1 text-xs font-medium animate-slide-up">
                     {error.message || error}
                 </p>
             )}
 
             {!error && helperText && (
-                <p id={helperId} className="mt-1.5 ms-1 text-xs text-slate-400">
+                <p id={helperId} className="ds-field-help mt-1.5 ms-1 text-xs">
                     {helperText}
                 </p>
             )}

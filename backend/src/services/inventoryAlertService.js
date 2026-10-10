@@ -2,7 +2,7 @@
  * Periodic low-stock and expiry alert checker.
  * Creates in-app notification records for Admin/Technician staff.
  */
-const { dispatch } = require('./notificationService');
+const { triggerEventForRole } = require('./notificationJobService');
 
 const checkInventoryAlerts = async (db) => {
     try {
@@ -13,27 +13,72 @@ const checkInventoryAlerts = async (db) => {
         `);
 
         for (const item of lowStock.rows) {
-            const exists = await db.query(`
-                SELECT 1 FROM notifications
-                WHERE event_type = 'LowStock'
-                  AND entity_id = $1
-                  AND created_at >= NOW() - INTERVAL '24 hours'
-                LIMIT 1
-            `, [item.item_id]);
-            if (exists.rows.length > 0) continue;
-
-            // Dispatch central InApp notification which will encrypt and push in real-time
-            await dispatch(
-                'InApp',
-                'inventory-team',
-                `Low Stock: ${item.name}`,
-                `${item.name} is at ${item.quantity} ${item.unit} (min: ${item.min_level}).`,
-                db,
-                {
-                    eventType: 'LowStock',
-                    entityId: item.item_id
+            await triggerEventForRole(db, 'LowStock', 'Technician', {
+                priority: 'Warning',
+                entityType: 'InventoryItem',
+                entityId: item.item_id,
+                variables: {
+                    item_id: item.item_id,
+                    item_name: item.name,
+                    quantity: item.quantity,
+                    min_level: item.min_level,
+                    unit: item.unit
                 }
-            );
+            }).catch(() => {});
+
+            await triggerEventForRole(db, 'LowStock', 'Admin', {
+                priority: 'Warning',
+                entityType: 'InventoryItem',
+                entityId: item.item_id,
+                variables: {
+                    item_id: item.item_id,
+                    item_name: item.name,
+                    quantity: item.quantity,
+                    min_level: item.min_level,
+                    unit: item.unit
+                }
+            }).catch(() => {});
+        }
+
+        const expired = await db.query(`
+            SELECT b.batch_id, i.item_id, i.name, b.lot_number, b.expiry_date, b.quantity, i.unit
+            FROM inventory_batches b
+            JOIN inventory_items i ON i.item_id = b.item_id
+            WHERE b.expiry_date IS NOT NULL
+              AND b.expiry_date <= CURRENT_DATE
+              AND b.quantity > 0
+        `);
+
+        for (const batch of expired.rows) {
+            await triggerEventForRole(db, 'ItemExpired', 'Technician', {
+                priority: 'Warning',
+                entityType: 'InventoryBatch',
+                entityId: batch.batch_id,
+                variables: {
+                    batch_id: batch.batch_id,
+                    item_id: batch.item_id,
+                    item_name: batch.name,
+                    batch_number: batch.lot_number,
+                    expiry_date: batch.expiry_date,
+                    quantity: batch.quantity,
+                    unit: batch.unit
+                }
+            }).catch(() => {});
+
+            await triggerEventForRole(db, 'ItemExpired', 'Admin', {
+                priority: 'Warning',
+                entityType: 'InventoryBatch',
+                entityId: batch.batch_id,
+                variables: {
+                    batch_id: batch.batch_id,
+                    item_id: batch.item_id,
+                    item_name: batch.name,
+                    batch_number: batch.lot_number,
+                    expiry_date: batch.expiry_date,
+                    quantity: batch.quantity,
+                    unit: batch.unit
+                }
+            }).catch(() => {});
         }
     } catch (err) {
         console.error('[InventoryAlertService]', err.message);

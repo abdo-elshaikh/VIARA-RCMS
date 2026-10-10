@@ -1,10 +1,13 @@
 const express = require('express');
+const checkFeature = require('../../middleware/checkFeature');
 
 // Import modular routes
 const auditRoutes = require('../auditRoutes');
 const rbacRoutes = require('../rbacRoutes');
 const privacyRoutes = require('../privacyRoutes');
-const analyticsRoutes = require('../analyticsRoutes');
+// analyticsRoutes is intentionally NOT imported here.
+// It is mounted directly on /api/analytics in server.js to avoid
+// double-registration at both /api/analytics and /api/v1/analytics.
 const documentRoutes = require('../documentRoutes');
 const integrationRoutes = require('../integrationRoutes');
 const settingsRoutes = require('../settingsRoutes');
@@ -12,21 +15,27 @@ const backupRoutes = require('../backupRoutes');
 const safetyRoutes = require('../safetyRoutes');
 const importRoutes = require('../importRoutes');
 const pacsRoutes = require('../pacsRoutes');
+const displayRoutes = require('../displayRoutes');
+const receptionRoutes = require('../receptionRoutes');
+const roomRoutes = require('../roomRoutes');
 
 module.exports = (pool, authenticateToken, authorizeRole) => {
     const router = express.Router();
 
-    router.use('/audit', auditRoutes(pool, authenticateToken, authorizeRole));
+    router.use('/audit', checkFeature('audit'), auditRoutes(pool, authenticateToken, authorizeRole));
     router.use('/rbac', rbacRoutes(pool, authenticateToken, authorizeRole));
     router.use('/privacy', privacyRoutes(pool, authenticateToken, authorizeRole));
-    router.use('/analytics', analyticsRoutes(pool, authenticateToken, authorizeRole));
+    // analytics NOT mounted here — see /api/analytics in server.js
     router.use('/documents', documentRoutes(pool, authenticateToken, authorizeRole));
     router.use('/integrations', integrationRoutes(pool, authenticateToken, authorizeRole));
     router.use('/settings', settingsRoutes(pool, authenticateToken, authorizeRole));
-    router.use('/backups', backupRoutes(pool, authenticateToken, authorizeRole));
+    router.use('/backups', checkFeature('backup'), backupRoutes(pool, authenticateToken, authorizeRole));
     router.use('/clinical', safetyRoutes(pool, authenticateToken, authorizeRole));
-    router.use('/import', importRoutes(pool, authenticateToken, authorizeRole));
-    router.use('/pacs', pacsRoutes(pool, authenticateToken, authorizeRole));
+    router.use('/import', checkFeature('import'), importRoutes(pool, authenticateToken, authorizeRole));
+    router.use('/pacs', checkFeature('pacs'), pacsRoutes(pool, authenticateToken, authorizeRole));
+    router.use('/display', displayRoutes(pool, authenticateToken, authorizeRole));
+    router.use('/reception', receptionRoutes(pool, authenticateToken, authorizeRole));
+    router.use('/rooms', roomRoutes(pool, authenticateToken, authorizeRole));
 
     router.get('/health', async (req, res) => {
         try {

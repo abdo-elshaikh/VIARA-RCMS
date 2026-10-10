@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-    AlertCircle, ArrowUpDown, Banknote, CalendarClock, CalendarDays, Check,
-    CheckCircle2, ChevronRight, CircleDollarSign, Clock3, FileKey2, FileText, Inbox,
+    AlertCircle, ArrowLeftRight, ArrowUpDown, Banknote, CalendarClock, CalendarDays, Check,
+    CheckCircle2, ChevronRight, CircleDollarSign, Clock3, DoorOpen, FileKey2, FileText, Inbox,
     MinusCircle, RefreshCw, RotateCcw, Scale, Search, Settings2, ShieldAlert, ShieldCheck, UserRound,
     UserCog, WalletCards, X,
 } from 'lucide-react';
@@ -12,7 +12,9 @@ import toast from 'react-hot-toast';
 import PageHeader from '../components/ui/PageHeader';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import TextPromptDialog from '../components/ui/TextPromptDialog';
+import usePageTitle from '../hooks/usePageTitle';
 import {
+    useGetAttendancePermissionsQuery,
     useGetClaimsQuery,
     useGetCashierReconciliationQuery,
     useGetInsuranceApprovalsQuery,
@@ -25,12 +27,14 @@ import {
     useGetPortalReviewRequestsQuery,
     useGetPrivacyRequestsQuery,
     useGetRefundsQuery,
+    useGetShiftRequestsQuery,
     useReviewCashierClosureMutation,
     useReviewPartialPaymentExceptionMutation,
     useReviewPortalAppointmentRequestMutation,
     useReviewPortalProfileUpdateRequestMutation,
     useResolvePrivacyRequestMutation,
     useReviewRefundMutation,
+    useUpdateAttendancePermissionStatusMutation,
     useUpdateClaimStatusMutation,
     useUpdateInsuranceApprovalStatusMutation,
     useUpdateLeaveStatusMutation,
@@ -38,6 +42,7 @@ import {
     useUpdatePayrollPenaltyStatusMutation,
     useUpdatePayrollRuleStatusMutation,
     useUpdatePayrollRunStatusMutation,
+    useUpdateShiftRequestStatusMutation,
 } from '../store/api';
 import { selectCurrentUser } from '../store/authSlice';
 import { getErrorMessage } from '../utils/getErrorMessage';
@@ -50,7 +55,83 @@ import {
     todayInput,
 } from '../utils/payrollWorkflow';
 
-const OPEN_PRIVACY_STATUSES = new Set(['Pending', 'InReview', 'Approved']);
+const INBOX_APPROVAL_STATUS = 'pendingApproval';
+const SOURCE_PENDING_APPROVAL_STATUSES = Object.freeze({
+    leave: new Set(['Pending']),
+    privacy: new Set(['Pending', 'InReview', 'Approved']),
+    refund: new Set(['Pending']),
+    claim: new Set(['Pending Approval']),
+    authorization: new Set(['Pending']),
+    deduction: new Set(['Draft']),
+    rule: new Set(['Pending Approval']),
+    penalty: new Set(['Pending Approval']),
+    variance: new Set(['Requires Review']),
+    partialPayment: new Set(['Pending']),
+    portalAppointment: new Set(['Pending']),
+    profileUpdate: new Set(['Pending']),
+    attendancePermission: new Set(['Pending']),
+    shiftRequest: new Set(['Pending']),
+});
+
+const getRequestSourceStatus = (source, raw = {}) => {
+    if (source === 'payroll') return raw.run_status || raw.status || null;
+    if (source === 'variance') return raw.review_status || raw.status || null;
+    return raw.status || null;
+};
+
+const getSourceStatus = (item) => getRequestSourceStatus(item.source, item.raw || {});
+
+const getLocalizedSourceStatus = (status, t) => {
+    if (!status) return t('fallback.notSpecified');
+
+    const normalized = String(status).trim();
+    const keyMap = {
+        Pending: 'pending',
+        'Pending Approval': 'pendingApproval',
+        'Requires Review': 'requiresReview',
+        'In Review': 'inReview',
+        Approved: 'approved',
+        Rejected: 'rejected',
+        Cancelled: 'cancelled',
+        Draft: 'draft',
+        Resolved: 'resolved',
+        Completed: 'completed',
+    };
+
+    const key = keyMap[normalized] || normalized.replace(/\s+/g, '');
+    const translated = t(`status.${key}`, { defaultValue: normalized });
+    return translated || normalized;
+};
+
+const isPendingApprovalSourceRequest = (source, request) => (
+    SOURCE_PENDING_APPROVAL_STATUSES[source]?.has(getRequestSourceStatus(source, request)) || false
+);
+
+const getPrimaryPendingApprovalStatus = (source) => (
+    SOURCE_PENDING_APPROVAL_STATUSES[source]?.values().next().value
+);
+
+const markPendingApproval = (item, sourceLabels, t) => {
+    const approvalStatusLabel = t(`status.${INBOX_APPROVAL_STATUS}`, { defaultValue: 'Pending approval' });
+    const sourceLabel = sourceLabels[item.source] || item.source;
+    const sourceStatus = getSourceStatus(item);
+    const sourceStatusLabel = getLocalizedSourceStatus(sourceStatus, t);
+
+    return {
+        ...item,
+        approvalStatus: INBOX_APPROVAL_STATUS,
+        approvalStatusLabel,
+        sourceLabel,
+        sourceStatus,
+        sourceStatusLabel,
+        facts: [
+            [t('facts.approvalStatus', { defaultValue: 'Approval status' }), approvalStatusLabel],
+            [t('facts.requestSource', { defaultValue: 'Request source' }), sourceLabel],
+            [t('facts.sourceStatus', { defaultValue: 'Source status' }), sourceStatusLabel],
+            ...(item.facts || []),
+        ],
+    };
+};
 
 const SOURCE_STYLES = {
     leave: {
@@ -131,6 +212,18 @@ const SOURCE_STYLES = {
         iconBox: 'bg-teal-100 text-teal-700 dark:bg-teal-500/15 dark:text-teal-300',
         active: 'border-teal-300 bg-teal-50/70 shadow-teal-100/50 dark:border-teal-700/70 dark:bg-teal-950/25',
     },
+    attendancePermission: {
+        icon: DoorOpen,
+        badge: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/35 dark:text-emerald-300',
+        iconBox: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+        active: 'border-emerald-300 bg-emerald-50/70 shadow-emerald-100/50 dark:border-emerald-700/70 dark:bg-emerald-950/25',
+    },
+    shiftRequest: {
+        icon: ArrowLeftRight,
+        badge: 'border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/60 dark:bg-purple-950/35 dark:text-purple-300',
+        iconBox: 'bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-300',
+        active: 'border-purple-300 bg-purple-50/70 shadow-purple-100/50 dark:border-purple-700/70 dark:bg-purple-950/25',
+    },
 };
 
 const riskRank = { critical: 3, high: 2, routine: 1 };
@@ -171,6 +264,7 @@ const formatAge = (hours, t) => {
 
 const PendingRequests = () => {
     const { t, i18n } = useTranslation('approvals');
+    usePageTitle(t('header.title', 'صندوق الموافقات الموحد'));
     const navigate = useNavigate();
     const user = useSelector(selectCurrentUser);
     const locale = i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-GB';
@@ -179,14 +273,12 @@ const PendingRequests = () => {
     const hasPermission = (permission) => elevated || permissions.has(permission);
     const payrollPermissions = useMemo(() => getPayrollPermissions(user), [user]);
 
-    const canReviewLeave = elevated || user?.role === 'HR';
+    const canReviewLeave = hasPermission('MANAGE_LEAVE');
     const canReviewPrivacy = hasPermission('RESOLVE_PRIVACY_REQUESTS');
     const canExportPatientData = hasPermission('EXPORT_PATIENT_DATA');
     const canAnonymizePatientData = hasPermission('ANONYMIZE_PATIENT_DATA');
     const canReviewRefund = hasPermission('APPROVE_REFUNDS') || hasPermission('ISSUE_REFUNDS');
-    const canReviewClaims = elevated
-        || ['Accountant', 'Insurance_Staff'].includes(user?.role)
-        || hasPermission('MANAGE_INSURANCE_CLAIMS');
+    const canReviewClaims = hasPermission('MANAGE_INSURANCE_CLAIMS');
     const canReviewAuthorization = hasPermission('MANAGE_INSURANCE_APPROVALS');
     const canViewPayroll = payrollPermissions.view;
     const canApprovePayroll = canViewPayroll && payrollPermissions.approve;
@@ -197,8 +289,12 @@ const PendingRequests = () => {
         || payrollPermissions.lock
     );
     const canReviewVariance = hasPermission('APPROVE_SHIFT_VARIANCE');
-    const canReviewPortal = elevated || user?.role === 'Receptionist';
+    const canReviewPortalAppointments = hasPermission('EDIT_APPOINTMENTS');
+    const canReviewProfileUpdates = hasPermission('EDIT_PATIENTS');
+    const canReviewPortal = canReviewPortalAppointments || canReviewProfileUpdates;
     const canReviewPartialPayment = hasPermission('APPROVE_PARTIAL_PAYMENT_EXCEPTION');
+    const canReviewAttendancePermissions = elevated || user?.role === 'HR' || hasPermission('MANAGE_ATTENDANCE') || hasPermission('MANAGE_LEAVE');
+    const canReviewShiftRequests = elevated || user?.role === 'HR' || hasPermission('MANAGE_SHIFTS') || hasPermission('MANAGE_ATTENDANCE') || hasPermission('MANAGE_LEAVE');
 
     const leaveQuery = useGetLeaveRequestsQuery({}, {
         skip: !canReviewLeave,
@@ -208,11 +304,11 @@ const PendingRequests = () => {
         skip: !canReviewPrivacy,
         pollingInterval: 30000,
     });
-    const refundQuery = useGetRefundsQuery({ status: 'Pending', limit: '100' }, {
+    const refundQuery = useGetRefundsQuery({ status: getPrimaryPendingApprovalStatus('refund'), limit: '100' }, {
         skip: !canReviewRefund,
         pollingInterval: 30000,
     });
-    const claimQuery = useGetClaimsQuery({ status: 'Pending Approval', limit: 100 }, {
+    const claimQuery = useGetClaimsQuery({ status: getPrimaryPendingApprovalStatus('claim'), limit: 100 }, {
         skip: !canReviewClaims,
         pollingInterval: 30000,
     });
@@ -220,15 +316,15 @@ const PendingRequests = () => {
         skip: !canReviewAuthorization,
         pollingInterval: 30000,
     });
-    const deductionQuery = useGetPayrollDeductionsQuery({ status: 'Draft', limit: 100 }, {
+    const deductionQuery = useGetPayrollDeductionsQuery({ status: getPrimaryPendingApprovalStatus('deduction'), limit: 100 }, {
         skip: !canApprovePayroll,
         pollingInterval: 30000,
     });
-    const penaltyQuery = useGetPayrollPenaltiesQuery({ status: 'Pending Approval', limit: 100 }, {
+    const penaltyQuery = useGetPayrollPenaltiesQuery({ status: getPrimaryPendingApprovalStatus('penalty'), limit: 100 }, {
         skip: !canApprovePayroll,
         pollingInterval: 30000,
     });
-    const ruleQuery = useGetPayrollRulesQuery({ status: 'Pending Approval' }, {
+    const ruleQuery = useGetPayrollRulesQuery({ status: getPrimaryPendingApprovalStatus('rule') }, {
         skip: !canApprovePayroll,
         pollingInterval: 30000,
     });
@@ -240,12 +336,20 @@ const PendingRequests = () => {
         skip: !canReviewVariance,
         pollingInterval: 30000,
     });
-    const partialPaymentQuery = useGetPartialPaymentExceptionsQuery({ status: 'Pending', limit: 100 }, {
+    const partialPaymentQuery = useGetPartialPaymentExceptionsQuery({ status: getPrimaryPendingApprovalStatus('partialPayment'), limit: 100 }, {
         skip: !canReviewPartialPayment,
         pollingInterval: 30000,
     });
     const portalQuery = useGetPortalReviewRequestsQuery(undefined, {
         skip: !canReviewPortal,
+        pollingInterval: 30000,
+    });
+    const attendancePermissionQuery = useGetAttendancePermissionsQuery({ status: 'Pending' }, {
+        skip: !canReviewAttendancePermissions,
+        pollingInterval: 30000,
+    });
+    const shiftRequestsQuery = useGetShiftRequestsQuery({ status: 'Pending' }, {
+        skip: !canReviewShiftRequests,
         pollingInterval: 30000,
     });
 
@@ -262,8 +366,11 @@ const PendingRequests = () => {
     const [reviewPartialPaymentException, partialPaymentMutation] = useReviewPartialPaymentExceptionMutation();
     const [reviewPortalAppointment, portalAppointmentMutation] = useReviewPortalAppointmentRequestMutation();
     const [reviewPortalProfileUpdate, profileUpdateMutation] = useReviewPortalProfileUpdateRequestMutation();
+    const [updateAttendancePermissionStatus, attendancePermissionMutation] = useUpdateAttendancePermissionStatusMutation();
+    const [updateShiftRequestStatus, shiftRequestMutation] = useUpdateShiftRequestStatusMutation();
 
     const [search, setSearch] = useState('');
+    const requestDetailRef = useRef(null);
     const [sourceFilter, setSourceFilter] = useState('all');
     const [riskFilter, setRiskFilter] = useState('all');
     const [sort, setSort] = useState('priority');
@@ -275,15 +382,17 @@ const PendingRequests = () => {
         privacy: t('sources.privacy'),
         refund: t('sources.refund'),
         claim: t('sources.claim'),
-        deduction: t('sources.deduction', { defaultValue: 'Payroll deduction' }),
-        rule: t('sources.rule', { defaultValue: 'Payroll rule' }),
+        deduction: t('sources.deduction'),
+        rule: t('sources.rule'),
         penalty: t('sources.penalty'),
         payroll: t('sources.payroll'),
         variance: t('sources.variance'),
-        partialPayment: t('sources.partialPayment', { defaultValue: 'Partial payment exceptions' }),
+        partialPayment: t('sources.partialPayment'),
         portalAppointment: t('sources.portalAppointment'),
         profileUpdate: t('sources.profileUpdate'),
         authorization: t('sources.authorization'),
+        attendancePermission: t('sources.attendancePermission'),
+        shiftRequest: t('sources.shiftRequest'),
     }), [t]);
     const availableSources = useMemo(() => [
         canReviewLeave && 'leave',
@@ -296,13 +405,16 @@ const PendingRequests = () => {
         canUsePayrollQueue && 'payroll',
         canReviewVariance && 'variance',
         canReviewPartialPayment && 'partialPayment',
-        canReviewPortal && 'portalAppointment',
-        canReviewPortal && 'profileUpdate',
+        canReviewPortalAppointments && 'portalAppointment',
+        canReviewProfileUpdates && 'profileUpdate',
         canReviewAuthorization && 'authorization',
+        canReviewAttendancePermissions && 'attendancePermission',
+        canReviewShiftRequests && 'shiftRequest',
     ].filter(Boolean), [
         canApprovePayroll, canReviewClaims, canReviewLeave, canReviewPrivacy,
-        canReviewRefund, canReviewVariance, canReviewPartialPayment, canReviewPortal, canReviewAuthorization,
-        canUsePayrollQueue,
+        canReviewRefund, canReviewVariance, canReviewPartialPayment, canReviewPortalAppointments,
+        canReviewProfileUpdates, canReviewAuthorization, canReviewAttendancePermissions,
+        canReviewShiftRequests, canUsePayrollQueue,
     ]);
 
     const items = useMemo(() => {
@@ -310,7 +422,8 @@ const PendingRequests = () => {
 
         if (canReviewLeave) {
             (leaveQuery.data || [])
-                .filter((request) => request.status === 'Pending')
+                .filter((request) => isPendingApprovalSourceRequest('leave', request)
+                    && (user?.role === 'Developer' || String(request.user_id) !== String(user?.user_id)))
                 .forEach((request) => {
                     const days = differenceInDays(request.start_date, request.end_date);
                     normalized.push({
@@ -338,7 +451,7 @@ const PendingRequests = () => {
 
         if (canReviewPrivacy) {
             (privacyQuery.data || [])
-                .filter((request) => OPEN_PRIVACY_STATUSES.has(request.status))
+                .filter((request) => isPendingApprovalSourceRequest('privacy', request))
                 .forEach((request) => {
                     const critical = request.request_type === 'Anonymize';
                     normalized.push({
@@ -371,7 +484,7 @@ const PendingRequests = () => {
 
         if (canReviewRefund) {
             (refundQuery.data || [])
-                .filter((request) => request.status === 'Pending'
+                .filter((request) => isPendingApprovalSourceRequest('refund', request)
                     && (elevated && user?.role === 'Developer'
                         || String(request.requested_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -401,7 +514,9 @@ const PendingRequests = () => {
 
         if (canReviewClaims) {
             (claimQuery.data || [])
-                .filter((request) => request.status === 'Pending Approval')
+                .filter((request) => isPendingApprovalSourceRequest('claim', request)
+                    && (user?.role === 'Developer'
+                        || String(request.created_by) !== String(user?.user_id)))
                 .forEach((request) => {
                     const amount = Number(request.expected_amount || 0);
                     normalized.push({
@@ -430,7 +545,7 @@ const PendingRequests = () => {
 
         if (canReviewAuthorization) {
             (authorizationQuery.data || [])
-                .filter((request) => request.status === 'Pending'
+                .filter((request) => isPendingApprovalSourceRequest('authorization', request)
                     && (user?.role === 'Developer'
                         || String(request.requested_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -460,18 +575,22 @@ const PendingRequests = () => {
 
         if (canApprovePayroll) {
             (deductionQuery.data || [])
-                .filter((request) => request.status === 'Draft'
+                .filter((request) => isPendingApprovalSourceRequest('deduction', request)
                     && (user?.role === 'Developer'
                         || String(request.created_by) !== String(user?.user_id)))
                 .forEach((request) => {
                     const amount = Number(request.amount || 0);
                     const percentage = Number(request.percentage || 0);
+                    const formattedAmount = amount ? formatMoney(amount, request.currency_code || 'EGP', locale) : `${percentage}%`;
                     normalized.push({
                         key: `deduction:${request.deduction_id}`,
                         id: request.deduction_id,
                         source: 'deduction',
                         title: request.employee_name || t('fallback.staffMember'),
-                        subtitle: request.name || t('fallback.deduction', { defaultValue: 'Deduction' }),
+                        subtitle: request.name || t('item.deductionSubtitle', {
+                            type: request.deduction_type || t('fallback.deduction'),
+                            amount: formattedAmount,
+                        }),
                         requester: request.created_by_name || t('fallback.unknown'),
                         submittedAt: request.created_at,
                         risk: amount >= 5000 || percentage >= 25 ? 'high' : 'routine',
@@ -480,7 +599,7 @@ const PendingRequests = () => {
                         link: '/payroll',
                         approveLabel: t('actions.approve'),
                         facts: [
-                            [t('facts.amount'), amount ? formatMoney(amount, request.currency_code || 'EGP', locale) : `${percentage}%`],
+                            [t('facts.amount'), formattedAmount],
                             [t('facts.source'), request.deduction_type || t('fallback.unknown')],
                         ],
                         raw: request,
@@ -488,7 +607,7 @@ const PendingRequests = () => {
                 });
 
             (ruleQuery.data || [])
-                .filter((request) => request.status === 'Pending Approval'
+                .filter((request) => isPendingApprovalSourceRequest('rule', request)
                     && (user?.role === 'Developer'
                         || String(request.created_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -519,7 +638,7 @@ const PendingRequests = () => {
                 });
 
             (penaltyQuery.data || [])
-                .filter((request) => request.status === 'Pending Approval'
+                .filter((request) => isPendingApprovalSourceRequest('penalty', request)
                     && (user?.role === 'Developer'
                         || String(request.created_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -588,9 +707,9 @@ const PendingRequests = () => {
 
         if (canReviewVariance) {
             (varianceQuery.data?.data || [])
-                .filter((request) => request.closure_id
-                    && request.review_status === 'Requires Review'
-                    && String(request.cashier_id) !== String(user?.user_id))
+                .filter((request) => isPendingApprovalSourceRequest('variance', request)
+                    && request.closure_id
+                    && (user?.role === 'Developer' || String(request.cashier_id) !== String(user?.user_id)))
                 .forEach((request) => {
                     const variance = Number(request.variance || 0);
                     normalized.push({
@@ -619,7 +738,7 @@ const PendingRequests = () => {
 
         if (canReviewPartialPayment) {
             (partialPaymentQuery.data || [])
-                .filter((request) => request.status === 'Pending'
+                .filter((request) => isPendingApprovalSourceRequest('partialPayment', request)
                     && (user?.role === 'Developer'
                         || String(request.requested_by) !== String(user?.user_id)))
                 .forEach((request) => {
@@ -655,9 +774,9 @@ const PendingRequests = () => {
                 });
         }
 
-        if (canReviewPortal) {
+        if (canReviewPortalAppointments) {
             (portalQuery.data?.appointmentRequests || [])
-                .filter((request) => request.status === 'Pending')
+                .filter((request) => isPendingApprovalSourceRequest('portalAppointment', request))
                 .forEach((request) => {
                     const preferredTime = request.preferred_date
                         ? new Date(request.preferred_date).getTime()
@@ -688,9 +807,11 @@ const PendingRequests = () => {
                         raw: request,
                     });
                 });
+        }
 
+        if (canReviewProfileUpdates) {
             (portalQuery.data?.profileUpdateRequests || [])
-                .filter((request) => request.status === 'Pending')
+                .filter((request) => isPendingApprovalSourceRequest('profileUpdate', request))
                 .forEach((request) => {
                     const changes = Object.entries(request.requested_changes || {});
                     const changeSummary = changes.map(([field, value]) => (
@@ -718,15 +839,97 @@ const PendingRequests = () => {
                 });
         }
 
-        return normalized;
+        if (canReviewAttendancePermissions) {
+            (attendancePermissionQuery.data || [])
+                .filter((request) => isPendingApprovalSourceRequest('attendancePermission', request)
+                    && (String(request.user_id) !== String(user?.user_id)))
+                .forEach((request) => {
+                    const permKey = request.permission_type ? (request.permission_type.charAt(0).toLowerCase() + request.permission_type.slice(1)) : '';
+                    const permTypeLabel = t(`attendancePermissionTypes.${permKey}`, {
+                        defaultValue: request.permission_type === 'EarlyDeparture'
+                            ? (locale === 'ar-EG' ? 'إذن انصراف مبكر' : 'Early Departure')
+                            : request.permission_type === 'LateArrival'
+                                ? (locale === 'ar-EG' ? 'إذن حضور متأخر' : 'Late Arrival')
+                                : (locale === 'ar-EG' ? 'إذن دخول طارئ للنظام' : 'Emergency Access'),
+                    });
+                    normalized.push({
+                        key: `attendancePermission:${request.permission_id}`,
+                        id: request.permission_id,
+                        source: 'attendancePermission',
+                        title: request.employee_name || t('fallback.staffMember'),
+                        subtitle: t('item.attendancePermissionSubtitle', {
+                            type: permTypeLabel,
+                            minutes: request.minutes_granted || 0,
+                            date: formatLocalizedDate(request.effective_date, locale),
+                            defaultValue: `${permTypeLabel} (${request.minutes_granted || 0} min) · ${formatLocalizedDate(request.effective_date, locale)}`,
+                        }),
+                        requester: request.employee_name || t('fallback.unknown'),
+                        submittedAt: request.created_at || request.updated_at,
+                        risk: getAgeHours(request.created_at) >= 48 ? 'high' : 'routine',
+                        reason: request.reason,
+                        reference: request.permission_id,
+                        link: '/hr?tab=attendance',
+                        approveLabel: t('actions.approve'),
+                        facts: [
+                            [t('facts.effectiveDate', { defaultValue: 'Effective date' }), formatLocalizedDate(request.effective_date, locale)],
+                            [t('facts.permissionType', { defaultValue: 'Permission type' }), permTypeLabel],
+                            [t('facts.allowedTime', { defaultValue: 'Allowed time' }), request.allowed_time || '—'],
+                            [t('facts.minutesGranted', { defaultValue: 'Minutes granted' }), `${request.minutes_granted || 0} ${t('facts.minutes', { defaultValue: 'minutes' })}`],
+                            ...(request.shift_start ? [[t('facts.shift', { defaultValue: 'Shift' }), `${request.shift_start.slice(0, 5)} – ${request.shift_end?.slice(0, 5)}`]] : []),
+                        ],
+                        raw: request,
+                    });
+                });
+        }
+
+        if (canReviewShiftRequests) {
+            (shiftRequestsQuery.data || [])
+                .filter((request) => isPendingApprovalSourceRequest('shiftRequest', request)
+                    && (user?.role === 'Developer' || String(request.user_id) !== String(user?.user_id)))
+                .forEach((request) => {
+                    const isSwap = request.request_type === 'Swap';
+                    const colleagueName = request.target_user_name || t('fallback.peerStaff');
+                    const subtitle = isSwap
+                        ? t('item.shiftSwapSubtitle', { colleague: colleagueName })
+                        : t('item.shiftModificationSubtitle', { date: formatLocalizedDate(request.proposed_start_time, locale) });
+                    const typeLabel = isSwap
+                        ? t('fallback.shiftSwap')
+                        : t('fallback.shiftModification');
+                    normalized.push({
+                        key: `shiftRequest:${request.request_id}`,
+                        id: request.request_id,
+                        source: 'shiftRequest',
+                        title: request.requester_name || t('fallback.staffMember'),
+                        subtitle,
+                        requester: request.requester_name || t('fallback.unknown'),
+                        submittedAt: request.created_at || request.updated_at,
+                        risk: getAgeHours(request.created_at) >= 48 ? 'high' : 'routine',
+                        reason: request.reason,
+                        reference: request.request_id,
+                        link: '/hr',
+                        approveLabel: t('actions.approve'),
+                        facts: [
+                            [t('facts.requestType'), typeLabel],
+                            [t('facts.currentShift'), request.current_start_time ? formatLocalizedDate(request.current_start_time, locale) : '—'],
+                            ...(isSwap ? [[t('facts.targetColleague'), colleagueName]] : []),
+                            ...(!isSwap && request.proposed_start_time ? [[t('facts.proposedTime'), `${new Date(request.proposed_start_time).toLocaleTimeString()} - ${new Date(request.proposed_end_time).toLocaleTimeString()}`]] : []),
+                            [t('facts.reason'), request.reason || '—'],
+                        ],
+                        raw: request,
+                    });
+                });
+        }
+
+        return normalized.map((item) => markPendingApproval(item, sourceLabels, t));
     }, [
         canAnonymizePatientData, canExportPatientData,
         authorizationQuery.data, canApprovePayroll, canUsePayrollQueue,
         canReviewAuthorization, canReviewClaims, canReviewLeave,
-        canReviewPrivacy, canReviewRefund, canReviewVariance, canReviewPartialPayment, claimQuery.data, elevated,
+        canReviewPrivacy, canReviewRefund, canReviewVariance, canReviewPartialPayment,
+        canReviewPortalAppointments, canReviewProfileUpdates, canReviewShiftRequests, canReviewAttendancePermissions, claimQuery.data, elevated,
         deductionQuery.data, leaveQuery.data, locale, partialPaymentQuery.data, payrollPermissions, payrollQuery.data, penaltyQuery.data, privacyQuery.data,
-        portalQuery.data, refundQuery.data, t, user?.role, user?.user_id,
-        varianceQuery.data, canReviewPortal, ruleQuery.data,
+        portalQuery.data, refundQuery.data, sourceLabels, t, user?.role, user?.user_id,
+        varianceQuery.data, ruleQuery.data, attendancePermissionQuery.data, shiftRequestsQuery.data,
     ]);
 
     const counts = useMemo(() => items.reduce((result, item) => {
@@ -742,7 +945,7 @@ const PendingRequests = () => {
             if (!query) return true;
             return [
                 item.title, item.subtitle, item.requester, item.reference,
-                item.reason, sourceLabels[item.source],
+                item.reason, item.approvalStatusLabel, item.sourceLabel, item.sourceStatus, sourceLabels[item.source],
             ].filter(Boolean).some((value) => String(value).toLowerCase().includes(query));
         });
 
@@ -777,10 +980,20 @@ const PendingRequests = () => {
         canReviewVariance && varianceQuery,
         canReviewPartialPayment && partialPaymentQuery,
         canReviewPortal && portalQuery,
+        canReviewAttendancePermissions && attendancePermissionQuery,
+        canReviewShiftRequests && shiftRequestsQuery,
     ].filter(Boolean);
     const loading = enabledQueries.some((query) => query.isLoading);
     const fetching = enabledQueries.some((query) => query.isFetching);
     const failedSources = enabledQueries.filter((query) => query.isError).length;
+    const cappedSources = [
+        [canReviewRefund, refundQuery, 'refund', '/reception'],
+        [canReviewClaims, claimQuery, 'claim', '/insurance'],
+        [canApprovePayroll, deductionQuery, 'deduction', '/payroll'],
+        [canApprovePayroll, penaltyQuery, 'penalty', '/payroll'],
+        [canUsePayrollQueue, payrollQuery, 'payroll', '/payroll'],
+        [canReviewPartialPayment, partialPaymentQuery, 'partialPayment', '/reception'],
+    ].filter(([enabled, query]) => enabled && Array.isArray(query.data) && query.data.length >= 100);
     const busy = leaveMutation.isLoading
         || privacyMutation.isLoading
         || refundMutation.isLoading
@@ -793,7 +1006,9 @@ const PendingRequests = () => {
         || varianceMutation.isLoading
         || partialPaymentMutation.isLoading
         || portalAppointmentMutation.isLoading
-        || profileUpdateMutation.isLoading;
+        || profileUpdateMutation.isLoading
+        || attendancePermissionMutation.isLoading
+        || shiftRequestMutation.isLoading;
     const highRiskCount = items.filter((item) => item.risk !== 'routine').length;
     const oldestHours = items.length
         ? items.reduce((max, item) => Math.max(max, getAgeHours(item.submittedAt) || 0), 0)
@@ -812,6 +1027,8 @@ const PendingRequests = () => {
         if (canReviewVariance) varianceQuery.refetch();
         if (canReviewPartialPayment) partialPaymentQuery.refetch();
         if (canReviewPortal) portalQuery.refetch();
+        if (canReviewAttendancePermissions) attendancePermissionQuery.refetch();
+        if (canReviewShiftRequests) shiftRequestsQuery.refetch();
     };
 
     const executeDecision = async (notes = '') => {
@@ -824,6 +1041,7 @@ const PendingRequests = () => {
                 await updateLeaveStatus({
                     id: item.id,
                     status: approved ? 'Approved' : 'Rejected',
+                    notes: notes || undefined,
                 }).unwrap();
             } else if (item.source === 'refund') {
                 await reviewRefund({
@@ -850,7 +1068,11 @@ const PendingRequests = () => {
                 }).unwrap();
             } else if (item.source === 'privacy') {
                 const privacyAction = approved
-                    ? (item.raw.request_type === 'Correction' ? 'Resolve' : item.raw.request_type)
+                    ? (item.raw.request_type === 'Correction'
+                        ? 'Resolve'
+                        : item.raw.request_type === 'Anonymize' && item.raw.status === 'InReview'
+                            ? 'CompleteAnonymization'
+                            : item.raw.request_type)
                     : 'Reject';
                 await resolvePrivacyRequest({
                     requestId: item.id,
@@ -916,6 +1138,18 @@ const PendingRequests = () => {
                     status: approved ? 'Approved' : 'Rejected',
                     staffNotes: notes,
                 }).unwrap();
+            } else if (item.source === 'attendancePermission') {
+                await updateAttendancePermissionStatus({
+                    id: item.id,
+                    status: approved ? 'Approved' : 'Rejected',
+                    reviewNotes: notes || undefined,
+                }).unwrap();
+            } else if (item.source === 'shiftRequest') {
+                await updateShiftRequestStatus({
+                    id: item.id,
+                    status: approved ? 'Approved' : 'Rejected',
+                    reviewNotes: notes || undefined,
+                }).unwrap();
             }
 
             toast.success(t(approved ? 'messages.approved' : 'messages.rejected', {
@@ -930,7 +1164,7 @@ const PendingRequests = () => {
     };
 
     const decisionNeedsNotes = Boolean(decision && (
-        (decision.action === 'reject' && decision.item.source !== 'leave')
+        decision.action === 'reject'
         || (decision.action === 'approve' && decision.item.source === 'refund')
         || (decision.action === 'approve' && decision.item.source === 'variance')
         || (decision.item.source === 'partialPayment')
@@ -969,13 +1203,14 @@ const PendingRequests = () => {
 
     return (
         <main className="app-page">
-            <div className="mx-auto max-w-screen-2xl space-y-5 pb-10">
+            <div className="approval-inbox-page mx-auto max-w-screen-2xl space-y-5 pb-10">
                 <PageHeader
                     icon={Inbox}
+                    compact
                     eyebrow={t('header.eyebrow')}
                     title={t('header.title')}
                     description={t('header.description')}
-                    className="overflow-hidden rounded-3xl border-slate-200/80 bg-gradient-to-br from-white via-slate-50/70 to-cyan-50/50 shadow-xl shadow-slate-200/35 dark:border-white/10 dark:from-slate-950 dark:via-slate-900 dark:to-cyan-950/20 dark:shadow-none"
+                    className="approval-inbox-header overflow-hidden rounded-3xl border-slate-200/80 bg-gradient-to-br from-white via-slate-50/70 to-cyan-50/50 shadow-xl shadow-slate-200/35 dark:border-white/10 dark:from-slate-950 dark:via-slate-900 dark:to-cyan-950/20 dark:shadow-none"
                     meta={
                         <div className="flex flex-wrap gap-2">
                             <HeaderPill icon={Clock3} label={t('header.liveQueue')} />
@@ -983,6 +1218,13 @@ const PendingRequests = () => {
                             <HeaderPill icon={CheckCircle2} label={t('header.decisionReady')} />
                         </div>
                     }
+                    metrics={[
+                        { key: 'pending', label: t('summary.pending'), value: items.length, icon: Inbox, tone: 'cyan' },
+                        { key: 'priority', label: t('summary.priority'), value: highRiskCount, icon: ShieldAlert, tone: 'rose' },
+                        { key: 'oldest', label: t('summary.oldest'), value: formatAge(oldestHours, t), icon: Clock3, tone: 'amber' },
+                        { key: 'sources', label: t('summary.sources'), value: Object.values(counts).filter(Boolean).length, icon: WalletCards, tone: 'slate' },
+                    ]}
+                    metricsLabel={t('summary.label')}
                     actions={
                         <button
                             type="button"
@@ -996,21 +1238,22 @@ const PendingRequests = () => {
                     }
                 />
 
-                <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label={t('summary.label')}>
-                    <SummaryCard icon={Inbox} label={t('summary.pending')} value={items.length} tone="cyan" />
-                    <SummaryCard icon={ShieldAlert} label={t('summary.priority')} value={highRiskCount} tone="rose" />
-                    <SummaryCard icon={Clock3} label={t('summary.oldest')} value={formatAge(oldestHours, t)} tone="amber" />
-                    <SummaryCard icon={WalletCards} label={t('summary.sources')} value={Object.values(counts).filter(Boolean).length} tone="indigo" />
-                </section>
-
                 {failedSources > 0 && (
                     <div role="alert" className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                         <AlertCircle size={18} className="mt-0.5 shrink-0" />
                         <span>{t('errors.partial', { count: failedSources })}</span>
                     </div>
                 )}
+                {cappedSources.length > 0 && (
+                    <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                        <p>{t('errors.sourceLimit', { defaultValue: i18n.language?.startsWith('ar') ? 'وصل تحميل بعض المصادر إلى حد 100 سجل؛ قد توجد طلبات إضافية. راجع صفحة المصدر لاستكمال المراجعة.' : 'Some sources reached the 100-record loading limit; more requests may exist. Open the source page to continue reviewing.' })}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                            {cappedSources.map(([, , source, link]) => <button key={source} type="button" onClick={() => navigate(link)} className="rounded-lg border border-amber-300 px-3 py-1.5 font-bold underline">{sourceLabels[source]}</button>)}
+                        </div>
+                    </div>
+                )}
 
-                <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xl shadow-slate-200/30 dark:border-white/10 dark:bg-[#07111f] dark:shadow-none">
+                <section className="approval-inbox-workspace overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-xl shadow-slate-200/30 dark:border-white/10 dark:bg-[#07111f] dark:shadow-none">
                     <div className="border-b border-slate-200/80 bg-slate-50/70 p-4 dark:border-white/10 dark:bg-white/[0.025]">
                         <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
                             <label className="relative min-w-0 flex-1">
@@ -1072,6 +1315,11 @@ const PendingRequests = () => {
 
                     {loading ? (
                         <LoadingState />
+                    ) : filteredItems.length === 0 && failedSources > 0 ? (
+                        <div role="alert" className="px-6 py-16 text-center">
+                            <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">{t('errors.partial', { count: failedSources })}</p>
+                            <button type="button" onClick={refreshAll} disabled={fetching} className="mt-4 rounded-xl border px-4 py-2 text-sm font-bold disabled:opacity-50">{t('actions.refresh')}</button>
+                        </div>
                     ) : filteredItems.length === 0 ? (
                         <EmptyState
                             filtered={Boolean(search || sourceFilter !== 'all' || riskFilter !== 'all')}
@@ -1102,13 +1350,22 @@ const PendingRequests = () => {
                                             sourceLabel={sourceLabels[item.source]}
                                             locale={locale}
                                             t={t}
-                                            onSelect={() => setSelectedKey(item.key)}
+                                            onSelect={() => {
+                                                setSelectedKey(item.key);
+                                                if (window.matchMedia('(max-width: 1023px)').matches) {
+                                                    window.requestAnimationFrame(() => {
+                                                        requestDetailRef.current?.focus({ preventScroll: true });
+                                                        requestDetailRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+                                                    });
+                                                }
+                                            }}
                                         />
                                     ))}
                                 </div>
                             </div>
 
                             <RequestDetail
+                                detailRef={requestDetailRef}
                                 item={selectedItem}
                                 sourceLabel={sourceLabels[selectedItem?.source]}
                                 locale={locale}
@@ -1191,25 +1448,6 @@ const HeaderPill = ({ icon: Icon, label }) => (
     </span>
 );
 
-const summaryTones = {
-    cyan: 'bg-cyan-50 text-cyan-700 ring-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-300 dark:ring-cyan-500/20',
-    rose: 'bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20',
-    amber: 'bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20',
-    indigo: 'bg-indigo-50 text-indigo-700 ring-indigo-100 dark:bg-indigo-500/10 dark:text-indigo-300 dark:ring-indigo-500/20',
-};
-
-const SummaryCard = ({ icon: Icon, label, value, tone }) => (
-    <article className="flex min-w-0 items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm dark:border-white/10 dark:bg-[#07111f] sm:p-4">
-        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1 ${summaryTones[tone]}`}>
-            <Icon size={18} />
-        </span>
-        <div className="min-w-0">
-            <p className="truncate text-[10px] font-black uppercase tracking-[.12em] text-slate-400">{label}</p>
-            <p className="mt-1 truncate font-mono text-xl font-black text-slate-950 dark:text-white">{value}</p>
-        </div>
-    </article>
-);
-
 const SelectFilter = ({ icon: Icon, label, value, onChange, options }) => (
     <label className="relative min-w-0 sm:min-w-[165px]">
         <span className="sr-only">{label}</span>
@@ -1255,6 +1493,12 @@ const RiskBadge = ({ risk, t }) => {
     );
 };
 
+const ApprovalStatusBadge = ({ label }) => (
+    <span className="inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-cyan-700 dark:border-cyan-900/60 dark:bg-cyan-950/30 dark:text-cyan-300">
+        {label}
+    </span>
+);
+
 const QueueItem = ({ item, active, sourceLabel, locale, t, onSelect }) => {
     const style = SOURCE_STYLES[item.source];
     const Icon = style.icon;
@@ -1285,6 +1529,7 @@ const QueueItem = ({ item, active, sourceLabel, locale, t, onSelect }) => {
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-1.5">
                         <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${style.badge}`}>{sourceLabel}</span>
+                        <ApprovalStatusBadge label={item.approvalStatusLabel} />
                         <RiskBadge risk={item.risk} t={t} />
                         <span className="ms-auto inline-flex items-center gap-1 text-[10px] font-bold text-slate-400">
                             <Clock3 size={11} />
@@ -1300,13 +1545,13 @@ const QueueItem = ({ item, active, sourceLabel, locale, t, onSelect }) => {
     );
 };
 
-const RequestDetail = ({ item, sourceLabel, locale, t, busy, onNavigate, onApprove, onReject }) => {
+const RequestDetail = ({ item, detailRef, sourceLabel, locale, t, busy, onNavigate, onApprove, onReject }) => {
     if (!item) return null;
     const style = SOURCE_STYLES[item.source];
     const Icon = style.icon;
 
     return (
-        <article className="flex min-h-[560px] flex-col">
+        <article ref={detailRef} tabIndex={-1} className="flex min-h-[560px] scroll-mt-20 flex-col outline-none">
             <header className="border-b border-slate-200/80 p-5 dark:border-white/10 sm:p-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex min-w-0 items-start gap-3.5">
@@ -1316,6 +1561,7 @@ const RequestDetail = ({ item, sourceLabel, locale, t, busy, onNavigate, onAppro
                         <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                                 <span className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-wider ${style.badge}`}>{sourceLabel}</span>
+                                <ApprovalStatusBadge label={item.approvalStatusLabel} />
                                 <RiskBadge risk={item.risk} t={t} />
                             </div>
                             <h2 className="mt-2 break-words text-xl font-black tracking-tight text-slate-950 dark:text-white sm:text-2xl">{item.title}</h2>

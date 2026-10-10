@@ -15,23 +15,39 @@
     "sources": "المصادر النشطة"
   },
   "sources": {
-    "penalty": "الجزاءات",
-    "payroll": "دورات الرواتب",
-    "variance": "فروقات النقدية",
-    "portalAppointment": "مواعيد البوابة",
-    "profileUpdate": "تعديلات الملف الشخصي",
-    "authorization": "الموافقات التأمينية المسبقة",
     "all": "كل الطلبات",
     "leave": "الإجازات",
     "privacy": "الخصوصية",
     "refund": "الاستردادات",
     "claim": "المطالبات",
-    "rule": "????? ????????"
+    "penalty": "الجزاءات",
+    "rule": "قواعد الرواتب",
+    "deduction": "الاستقطاعات والسلف",
+    "payroll": "دورات الرواتب",
+    "variance": "فروقات النقدية",
+    "partialPayment": "استثناءات الدفع الجزئي",
+    "portalAppointment": "مواعيد البوابة",
+    "profileUpdate": "تعديلات الملف الشخصي",
+    "authorization": "الموافقات التأمينية المسبقة",
+    "attendancePermission": "أذونات الانصراف والحضور",
+    "shiftRequest": "تبديل وتعديل الورديات"
   },
   "risk": {
     "critical": "حرج",
     "high": "أولوية",
     "routine": "اعتيادي"
+  },
+  "status": {
+    "pending": "قيد الانتظار",
+    "pendingApproval": "بانتظار الموافقة",
+    "approved": "معتمد",
+    "rejected": "مرفوض",
+    "cancelled": "ملغى",
+    "requiresReview": "يتطلب مراجعة",
+    "inReview": "قيد المراجعة",
+    "draft": "مسودة",
+    "resolved": "تم الحل",
+    "completed": "مكتمل"
   },
   "filters": {
     "search": "البحث في الطلبات",
@@ -72,15 +88,23 @@
     "portalAppointmentSubtitle": "طلب موعد من بوابة المريض",
     "profileUpdateSubtitle": "طلب تعديل الملف من بوابة المريض",
     "authorizationSubtitle": "طلب موافقة تأمينية مسبقة",
+    "partialPaymentSubtitle": "استثناء {{transaction}} للفاتورة {{invoice}}",
     "leaveSubtitle": "إجازة {{type}} · {{count}} يوم",
     "leaveSubtitle_other": "إجازة {{type}} · {{count}} أيام",
     "privacySubtitle": "طلب {{type}}",
     "refundSubtitle": "استرداد للفاتورة {{invoice}}",
-    "payrollRuleSubtitle": "????? ?????? {{type}}"
+    "payrollRuleSubtitle": "قاعدة رواتب {{type}}",
+    "deductionSubtitle": "استقطاع {{type}} · {{amount}}",
+    "attendancePermissionSubtitle": "{{type}} ({{minutes}} دقيقة) · بتاريخ {{date}}",
+    "shiftSwapSubtitle": "طلب تبديل وردية · مع {{colleague}}",
+    "shiftModificationSubtitle": "طلب تعديل وردية · بتاريخ {{date}}"
   },
   "facts": {
     "penaltyType": "نوع الجزاء",
     "source": "المصدر",
+    "requestSource": "مصدر الطلب",
+    "sourceStatus": "حالة المصدر",
+    "approvalStatus": "حالة الموافقة",
     "period": "فترة الرواتب",
     "employees": "الموظفون",
     "netPay": "صافي الرواتب",
@@ -94,6 +118,9 @@
     "requestedChanges": "التغييرات المطلوبة",
     "requestedAmount": "المبلغ المطلوب",
     "approvalNumber": "رقم الموافقة",
+    "transaction": "المعاملة",
+    "netPaid": "صافي المدفوع",
+    "balance": "الرصيد",
     "fields": "{{count}} حقل",
     "fields_other": "{{count}} حقول",
     "requestedBy": "مقدم الطلب",
@@ -103,6 +130,19 @@
     "days": "{{count}} يوم",
     "days_other": "{{count}} أيام",
     "leaveType": "نوع الإجازة",
+    "permissionType": "نوع الإذن",
+    "permittedMinutes": "المدة المصرح بها",
+    "allowedTime": "الوقت المصرح به",
+    "minutesGranted": "الدقائق الممنوحة",
+    "minutes": "دقيقة",
+    "shift": "الوردية",
+    "currentShift": "الوردية الحالية",
+    "targetColleague": "الزميل البديل",
+    "proposedTime": "الموعد المقترح",
+    "reason": "السبب",
+    "targetTime": "الوقت المحدد",
+    "effectiveDate": "تاريخ السريان",
+    "employee": "الموظف",
     "patient": "المريض",
     "mrn": "رقم الملف الطبي",
     "requestType": "نوع الطلب",
@@ -111,15 +151,20 @@
     "invoice": "الفاتورة",
     "payment": "الدفعة الأصلية",
     "provider": "شركة التأمين",
-    "ruleType": "??? ???????",
-    "method": "????? ??????",
-    "value": "??????",
-    "effectiveFrom": "????? ??"
+    "ruleType": "نوع القاعدة",
+    "method": "طريقة الحساب",
+    "value": "القيمة",
+    "effectiveFrom": "سارية من",
+    "paymentReference": "المرجع البنكي للدفع"
   },
   "privacyTypes": {
     "Export": "تصدير البيانات",
     "Correction": "تصحيح البيانات",
     "Anonymize": "إخفاء الهوية"
+  },
+  "partialPaymentTransactions": {
+    "ClinicalQueueTransition": "نقل قائمة الانتظار السريرية",
+    "ResultDelivery": "تسليم النتائج"
   },
   "profileFields": {
     "phone": "الهاتف",
@@ -146,8 +191,10 @@
     "payrollReviewMessage": "تسجيل {{title}} كمراجعة؟ سيتم إرسال دورة الرواتب إلى الاعتماد.",
     "payrollPaidMessage": "تسجيل دفع {{title}} بمبلغ {{amount}} بتاريخ {{date}}؟ سيتم ترحيل الدفع إلى قيود الرواتب.",
     "payrollLockMessage": "إغلاق {{title}}؟ لا يمكن تغيير دورات الرواتب المغلقة من صندوق الموافقات.",
+    "payrollPaymentReferenceMessage": "أدخل المرجع البنكي أو رقم الحوالة قبل تسجيل صرف {{title}}.",
     "approvalNumberMessage": "أدخل رقم موافقة شركة التأمين للطلب {{title}}. سيتم تسجيل المبلغ المطلوب كمبلغ موافق عليه.",
     "approvalNumberPlaceholder": "أدخل رقم الموافقة التأمينية",
+    "paymentReferencePlaceholder": "أدخل رقم الحوالة أو المرجع البنكي",
     "approveTitle": "هل تريد الموافقة على الطلب؟",
     "rejectTitle": "هل تريد رفض الطلب؟",
     "approveMessage": "الموافقة على {{title}} من {{source}}؟ سيتم تسجيل القرار في سجل التدقيق.",
@@ -167,7 +214,8 @@
     "failed": "تعذر حفظ القرار. ربما تمت مراجعة الطلب بالفعل."
   },
   "errors": {
-    "partial": "تعذر تحميل {{count}} من مصادر الطلبات. ما زالت الطلبات المتاحة ظاهرة."
+    "partial": "تعذر تحميل {{count}} من مصادر الطلبات. ما زالت الطلبات المتاحة ظاهرة.",
+    "partial_other": "تعذر تحميل {{count}} من مصادر الطلبات. ما زالت الطلبات المتاحة ظاهرة."
   },
   "empty": {
     "title": "تمت مراجعة كل الطلبات",
@@ -194,6 +242,15 @@
     "insuranceProvider": "شركة التأمين",
     "insuranceTeam": "فريق التأمين",
     "dateUnavailable": "وقت التقديم غير متاح",
-    "payrollRule": "????? ??????"
+    "payrollRule": "قاعدة رواتب",
+    "deduction": "استقطاع",
+    "peerStaff": "زميل",
+    "shiftSwap": "طلب تبديل وردية",
+    "shiftModification": "طلب تعديل وردية"
+  },
+  "attendancePermissionTypes": {
+    "earlyDeparture": "إذن انصراف مبكر",
+    "lateArrival": "إذن حضور متأخر",
+    "emergencyAccess": "دخول طارئ للنظام"
   }
 }

@@ -1,9 +1,11 @@
+const { getRequestQuery } = require('../utils/requestQuery');
 const { encrypt, decrypt, hash } = require('../utils/crypto');
 const { AppError } = require('../middleware/errorHandler');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const { generateSecurePassword } = require('../utils/passwordGenerator');
 const { logAction } = require('../services/auditService');
+const { assertQuota, withQuotaTransaction } = require('../services/quotaService');
 
 const stripSensitivePatientFields = (patient) => {
     const {
@@ -50,17 +52,31 @@ const clinicalPatientScope = (role, patientAlias, parameter) => {
     if (role === 'Radiologist') {
         return `EXISTS (SELECT 1 FROM examinations scope_exam
                         WHERE scope_exam.patient_id = ${patientAlias}.patient_id
-                          AND scope_exam.performing_radiologist_id = ${parameter})`;
+                          AND (
+                              scope_exam.performing_radiologist_id = ${parameter}
+                              OR (scope_exam.current_station = 'Radiologist'
+                                  AND scope_exam.performing_radiologist_id IS NULL)
+                          ))`;
     }
     if (role === 'Technician') {
         return `EXISTS (SELECT 1 FROM appointments scope_appt
+                        JOIN examinations scope_exam ON scope_exam.appointment_id = scope_appt.appointment_id
                         WHERE scope_appt.patient_id = ${patientAlias}.patient_id
-                          AND scope_appt.technician_id = ${parameter})`;
+                          AND (
+                              scope_appt.technician_id = ${parameter}
+                              OR (scope_exam.current_station = 'Modality'
+                                  AND scope_appt.technician_id IS NULL)
+                          ))`;
     }
     if (role === 'Nurse') {
         return `EXISTS (SELECT 1 FROM appointments scope_appt
+                        JOIN examinations scope_exam ON scope_exam.appointment_id = scope_appt.appointment_id
                         WHERE scope_appt.patient_id = ${patientAlias}.patient_id
-                          AND scope_appt.nurse_id = ${parameter})`;
+                          AND (
+                              scope_appt.nurse_id = ${parameter}
+                              OR (scope_exam.current_station = 'Nurse'
+                                  AND scope_appt.nurse_id IS NULL)
+                          ))`;
     }
     return null;
 };
@@ -104,6 +120,7 @@ const decryptPatientRow = (patient) => {
 
 const createPatient = (db) => async (req, res, next) => {
     try {
+        await assertQuota(db, 'patients');
         const validatedData = req.body;
 
         // Auto-generate MRN if not provided
@@ -134,18 +151,70 @@ const createPatient = (db) => async (req, res, next) => {
         const implantsDevicesEnc = encryptOptional(validatedData.implantsDevices);
         const renalFunctionNotesEnc = encryptOptional(validatedData.renalFunctionNotes);
 
-        // Hashes for blind indexing
-        const firstNameHash = hash(validatedData.firstName);
-        const lastNameHash = hash(validatedData.lastName);
+        // Hashes for blind indexing — always lowercase so search is case-insensitive
+        const firstNameHash = hash(validatedData.firstName.toLowerCase());
+        const lastNameHash = hash(validatedData.lastName.toLowerCase());
         const phoneHash = validatedData.phone ? hash(validatedData.phone) : null;
         const dateOfBirthHash = hash(validatedData.dateOfBirth);
         const nationalIdHash = validatedData.nationalId ? hash(validatedData.nationalId) : null;
         const passportNumberHash = validatedData.passportNumber ? hash(validatedData.passportNumber) : null;
         const nameDobHash = buildNameDobHash(validatedData.firstName, validatedData.lastName, validatedData.dateOfBirth);
 
+        // Duplicate guard (backend-enforced): the frontend matcher cannot see
+        // double-clicks or API clients. Exact identity fingerprints first
+        // (phone / national id / passport), then name+DOB composite.
+        const dupConditions = [];
+        const dupValues = [];
+        if (phoneHash) {
+            dupValues.push(phoneHash);
+            dupConditions.push(`phone_hash = $${dupValues.length}`);
+        }
+        if (nationalIdHash) {
+            dupValues.push(nationalIdHash);
+            dupConditions.push(`national_id_hash = $${dupValues.length}`);
+        }
+        if (passportNumberHash) {
+            dupValues.push(passportNumberHash);
+            dupConditions.push(`passport_number_hash = $${dupValues.length}`);
+        }
+        if (nameDobHash) {
+            dupValues.push(nameDobHash);
+            dupConditions.push(`name_dob_hash = $${dupValues.length}`);
+        }
+        if (dupConditions.length) {
+            const existing = await db.query(
+                `SELECT patient_id, mrn, patient_status, created_at
+                 FROM patients
+                 WHERE patient_status NOT IN ('Merged', 'Anonymized')
+                   AND (${dupConditions.join(' OR ')})
+                 LIMIT 1`,
+                dupValues
+            );
+            if (existing.rows.length) {
+                const dup = existing.rows[0];
+                return res.status(409).json({
+                    message: 'A patient with these details already exists',
+                    code: 'PATIENT_DUPLICATE',
+                    existingPatient: {
+                        patient_id: dup.patient_id,
+                        mrn: dup.mrn,
+                        patient_status: dup.patient_status,
+                        created_at: dup.created_at,
+                    },
+                    hint: 'Link the existing record instead of creating a duplicate (merge if needed).',
+                });
+            }
+        }
+
         // Generate portal password
         const generatedPassword = generateSecurePassword();
-        const passwordHash = await bcrypt.hash(generatedPassword, 10);
+        const passwordHash = await bcrypt.hash(generatedPassword, 12);
+        const consentMarketing = validatedData.consentMarketing !== undefined
+            ? Boolean(validatedData.consentMarketing)
+            : (validatedData.optInMarketing !== undefined ? Boolean(validatedData.optInMarketing) : false);
+        const optInMarketing = validatedData.optInMarketing !== undefined
+            ? Boolean(validatedData.optInMarketing)
+            : consentMarketing;
 
         const query = `
       INSERT INTO patients (
@@ -177,6 +246,7 @@ const createPatient = (db) => async (req, res, next) => {
         consent_email,
         consent_whatsapp,
         consent_marketing,
+        opt_in_marketing,
         patient_status,
         email,
         assigned_manager_id,
@@ -194,7 +264,8 @@ const createPatient = (db) => async (req, res, next) => {
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
         $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
         $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
-        $31, $32, $33, $34, $35, $36, $37, $38, $39, $40
+        $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
+        $41
       )
       RETURNING patient_id, mrn, created_at
     `;
@@ -227,7 +298,8 @@ const createPatient = (db) => async (req, res, next) => {
             validatedData.consentSms || false,
             validatedData.consentEmail || false,
             validatedData.consentWhatsapp || false,
-            validatedData.consentMarketing || false,
+            consentMarketing,
+            optInMarketing,
             validatedData.patientStatus || 'Active',
             email,
             validatedData.assignedManagerId || null,
@@ -242,12 +314,24 @@ const createPatient = (db) => async (req, res, next) => {
             emailHash
         ];
 
-        const result = await db.query(query, values);
+        const result = await withQuotaTransaction(db, 'patients', client => client.query(query, values));
+
+        await logAction(db, {
+            userId: req.user?.user_id,
+            action: 'PATIENT_CREATED',
+            resourceId: result.rows[0].patient_id,
+            resourceTable: 'patients',
+            ipAddress: req.ip,
+            details: { mrn: result.rows[0].mrn },
+            required: true
+        });
+        const patientData = { ...result.rows[0] };
+        delete patientData.password_hash;
+        delete patientData.password;
 
         res.status(201).json({
             message: 'Patient created successfully',
-            data: result.rows[0],
-            portalPassword: generatedPassword
+            data: patientData
         });
 
     } catch (error) {
@@ -260,10 +344,10 @@ const createPatient = (db) => async (req, res, next) => {
 
 const getPatients = (db) => async (req, res, next) => {
     try {
-        const { page = 1, limit = 20, offset: offsetQuery, status } = req.query;
-        const search = req.query.search || req.query.q;
-        const offset = (page - 1) * limit;
-        const resolvedOffset = offsetQuery ?? offset;
+        const { status, gender, sortBy = 'createdAt', sortDirection = 'desc' } = getRequestQuery(req);
+        const search = getRequestQuery(req).search || getRequestQuery(req).q;
+        const { getPagination } = require('../utils/pagination');
+        const { limit, offset: resolvedOffset, page } = getPagination(getRequestQuery(req));
 
         let query = `
             SELECT p.*, manager.full_name as assigned_manager_name
@@ -283,17 +367,22 @@ const getPatients = (db) => async (req, res, next) => {
                 where.push(`(p.mrn ILIKE $${values.length + 1})`);
                 values.push(`%${search}%`);
             } else {
-                // Search by hash (exact match on blind index)
-                const searchHash = hash(search);
-                where.push(`(
-                    p.first_name_hash = $${values.length + 1}
-                    OR p.last_name_hash = $${values.length + 1}
-                    OR p.phone_hash = $${values.length + 1}
-                    OR p.national_id_hash = $${values.length + 1}
-                    OR p.passport_number_hash = $${values.length + 1}
-                    OR p.email_hash = $${values.length + 1}
-                )`);
-                values.push(searchHash);
+                // Encrypted fields use blind indexes. Tokenize full names so
+                // "first last" can match both exact component hashes without
+                // exposing plaintext or falling back to a truncated client list.
+                const searchTokens = String(search).trim().split(/\s+/).filter(Boolean).slice(0, 5);
+                searchTokens.forEach((token) => {
+                    const parameter = `$${values.length + 1}`;
+                    where.push(`(
+                        p.first_name_hash = ${parameter}
+                        OR p.last_name_hash = ${parameter}
+                        OR p.phone_hash = ${parameter}
+                        OR p.national_id_hash = ${parameter}
+                        OR p.passport_number_hash = ${parameter}
+                        OR p.email_hash = ${parameter}
+                    )`);
+                    values.push(hash(token.toLowerCase()));
+                });
             }
         }
 
@@ -301,17 +390,41 @@ const getPatients = (db) => async (req, res, next) => {
             where.push(`p.patient_status = $${values.length + 1}`);
             values.push(status);
         }
+        if (gender) {
+            where.push(`p.gender = $${values.length + 1}`);
+            values.push(gender);
+        }
 
         if (where.length > 0) {
             query += ` WHERE ${where.join(' AND ')}`;
         }
 
-        query += ` ORDER BY p.created_at DESC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
+        const sortColumns = {
+            mrn: 'p.mrn',
+            gender: 'p.gender',
+            dateOfBirth: 'p.created_at',
+            createdAt: 'p.created_at'
+        };
+        query += ` ORDER BY ${sortColumns[sortBy] || sortColumns.createdAt} ${sortDirection === 'asc' ? 'ASC' : 'DESC'} NULLS LAST, p.patient_id ASC LIMIT $${values.length + 1} OFFSET $${values.length + 2}`;
         values.push(limit, resolvedOffset);
 
         const result = await db.query(query, values);
 
         let decryptedPatients = result.rows.map(decryptPatientRow);
+        if (req.user.role === 'Marketing') {
+            const marketingFields = [
+                'patient_id', 'mrn', 'first_name', 'last_name', 'name', 'patient_name',
+                'email', 'phone', 'preferred_language', 'communication_preference',
+                'consent_sms', 'consent_email', 'consent_whatsapp', 'consent_marketing',
+                'patient_status', 'assigned_manager_id', 'assigned_manager_name',
+                'lead_status', 'planned_activity', 'loyalty_points', 'last_visit_date', 'created_at'
+            ];
+            decryptedPatients = decryptedPatients.map(patient => Object.fromEntries(
+                marketingFields
+                    .filter(field => patient[field] !== undefined)
+                    .map(field => [field, patient[field]])
+            ));
+        }
 
         // Also fetch total count for pagination metadata
         let countQuery = `SELECT COUNT(*) FROM patients p`;
@@ -327,36 +440,97 @@ const getPatients = (db) => async (req, res, next) => {
                  countWhere.push(`(mrn ILIKE $${countValues.length + 1})`);
                  countValues.push(`%${search}%`);
              } else {
-                 const searchHash = hash(search);
-                 countWhere.push(`(
-                    first_name_hash = $${countValues.length + 1}
-                    OR last_name_hash = $${countValues.length + 1}
-                    OR phone_hash = $${countValues.length + 1}
-                    OR national_id_hash = $${countValues.length + 1}
-                    OR passport_number_hash = $${countValues.length + 1}
-                    OR email_hash = $${countValues.length + 1}
-                 )`);
-                 countValues.push(searchHash);
+                  const searchTokens = String(search).trim().split(/\s+/).filter(Boolean).slice(0, 5);
+                  searchTokens.forEach((token) => {
+                      const parameter = `$${countValues.length + 1}`;
+                      countWhere.push(`(
+                        first_name_hash = ${parameter}
+                        OR last_name_hash = ${parameter}
+                        OR phone_hash = ${parameter}
+                        OR national_id_hash = ${parameter}
+                        OR passport_number_hash = ${parameter}
+                        OR email_hash = ${parameter}
+                      )`);
+                      countValues.push(hash(token.toLowerCase()));
+                  });
              }
         }
         if (status) {
             countWhere.push(`patient_status = $${countValues.length + 1}`);
             countValues.push(status);
         }
+        const statisticsWhere = [...countWhere];
+        const statisticsValues = [...countValues];
+        if (gender) {
+            countWhere.push(`p.gender = $${countValues.length + 1}`);
+            countValues.push(gender);
+        }
         if (countWhere.length > 0) {
             countQuery += ` WHERE ${countWhere.join(' AND ')}`;
         }
         const countResult = await db.query(countQuery, countValues);
         const total = parseInt(countResult.rows[0].count, 10);
+        const statisticsResult = await db.query(`
+            SELECT COUNT(*)::integer AS all_count,
+                   COUNT(*) FILTER (WHERE p.gender = 'Male')::integer AS male_count,
+                   COUNT(*) FILTER (WHERE p.gender = 'Female')::integer AS female_count,
+                   COUNT(*) FILTER (WHERE p.gender NOT IN ('Male', 'Female') OR p.gender IS NULL)::integer AS other_count
+            FROM patients p
+            ${statisticsWhere.length ? `WHERE ${statisticsWhere.join(' AND ')}` : ''}
+        `, statisticsValues);
+        const genderCounts = statisticsResult.rows[0] || {};
 
         res.json({
             data: decryptedPatients,
             meta: {
                 total,
-                page: parseInt(page, 10),
-                limit: parseInt(limit, 10),
-                totalPages: Math.ceil(total / limit)
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit),
+                genderCounts: {
+                    All: Number(genderCounts.all_count || 0),
+                    Male: Number(genderCounts.male_count || 0),
+                    Female: Number(genderCounts.female_count || 0),
+                    Other: Number(genderCounts.other_count || 0)
+                }
             }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getPatientById = (db) => async (req, res, next) => {
+    try {
+        const { id } = req.params;
+
+        const patientValues = [id];
+        const patientScope = clinicalPatientScope(req.user.role, 'p', `$${patientValues.length + 1}`);
+        if (patientScope) patientValues.push(req.user.user_id);
+        const patientQuery = `
+            SELECT p.*, manager.full_name as assigned_manager_name
+            FROM patients p
+            LEFT JOIN users manager ON p.assigned_manager_id = manager.user_id
+            WHERE p.patient_id = $1
+              ${patientScope ? `AND ${patientScope}` : ''}
+        `;
+        const patientResult = await db.query(patientQuery, patientValues);
+
+        if (patientResult.rows.length === 0) {
+            return next(new AppError('Patient not found', 404));
+        }
+
+        const p = patientResult.rows[0];
+        const decryptedPatient = {
+            ...decryptPatientRow(p),
+            portal_enabled: Boolean(p.password_hash)
+        };
+        delete decryptedPatient.password_hash;
+        delete decryptedPatient.password;
+
+        res.json({
+            success: true,
+            data: decryptedPatient
         });
     } catch (error) {
         next(error);
@@ -368,28 +542,27 @@ const getPatientHistory = (db) => async (req, res, next) => {
         const { id } = req.params;
 
         // 1. Fetch Basic Patient Info
+        const patientValues = [id];
+        const patientScope = clinicalPatientScope(req.user.role, 'p', `$${patientValues.length + 1}`);
+        if (patientScope) patientValues.push(req.user.user_id);
         const patientQuery = `
             SELECT p.*, manager.full_name as assigned_manager_name
             FROM patients p
             LEFT JOIN users manager ON p.assigned_manager_id = manager.user_id
             WHERE p.patient_id = $1
-              AND ($2::uuid IS NULL OR EXISTS (
-                    SELECT 1 FROM examinations assigned_exam
-                    WHERE assigned_exam.patient_id = p.patient_id
-                      AND assigned_exam.performing_radiologist_id = $2
-              ))
+              ${patientScope ? `AND ${patientScope}` : ''}
         `;
-        const patientResult = await db.query(patientQuery, [
-            id,
-            req.user.role === 'Radiologist' ? req.user.user_id : null
-        ]);
+        const patientResult = await db.query(patientQuery, patientValues);
 
         if (patientResult.rows.length === 0) {
             return next(new AppError('Patient not found', 404));
         }
 
         const p = patientResult.rows[0];
-        const decryptedPatient = decryptPatientRow(p);
+        const decryptedPatient = {
+            ...decryptPatientRow(p),
+            portal_enabled: Boolean(p.password_hash)
+        };
 
         // 2. Fetch Appointments & Exams
         const apptQuery = `
@@ -400,6 +573,7 @@ const getPatientHistory = (db) => async (req, res, next) => {
                    prior_e.report_status AS prior_report_status,
                    COALESCE(prior_a.start_time, prior_e.created_at) AS prior_exam_time,
                    prior_et.name AS prior_exam_type_name,
+                   inv.invoice_id, inv.invoice_number, inv.invoice_status, inv.total_amount as invoice_total,
                    COALESCE(SUM(rd.print_copy_count), 0)::int as print_copy_count,
                    MAX(rd.delivered_at) as last_result_delivery_at,
                    MAX(rd.delivery_status) as latest_delivery_status
@@ -411,10 +585,18 @@ const getPatientHistory = (db) => async (req, res, next) => {
             LEFT JOIN appointments prior_a ON prior_a.appointment_id = prior_e.appointment_id
             LEFT JOIN examination_types prior_et ON prior_et.type_id = prior_e.exam_type_id
             LEFT JOIN result_deliveries rd ON rd.exam_id = e.exam_id
+            LEFT JOIN LATERAL (
+                SELECT invoice_id, invoice_number, invoice_status, total_amount
+                FROM invoices
+                WHERE appointment_id = a.appointment_id
+                ORDER BY generated_at DESC
+                LIMIT 1
+            ) inv ON true
             WHERE a.patient_id = $1
             GROUP BY a.appointment_id, m.name, et.name, e.exam_id, e.report_status, e.report_finalized_at, e.delivered_at,
                      e.report_content, e.clinical_indication, e.provisional_diagnosis, e.priority, e.body_part, e.contrast_required, e.report_sections,
-                     prior_e.order_number, prior_e.report_status, prior_a.start_time, prior_e.created_at, prior_et.name
+                     prior_e.order_number, prior_e.report_status, prior_a.start_time, prior_e.created_at, prior_et.name,
+                     inv.invoice_id, inv.invoice_number, inv.invoice_status, inv.total_amount
             ORDER BY a.start_time DESC
         `;
         const apptResult = await db.query(apptQuery, [id]);
@@ -439,11 +621,16 @@ const getPatientHistory = (db) => async (req, res, next) => {
         // Audit Log for sensitive patient view
         await logAction(db, {
             userId: req.user?.user_id,
-            action: 'RECORD_VIEW',
+            action: 'PATIENT.VIEWED',
+            eventCode: 'PATIENT.VIEWED',
+            category: 'PHI_ACCESS',
             resourceId: id,
             resourceTable: 'patients',
+            patientId: id,
             ipAddress: req.ip,
-            details: { reason: 'Viewed patient history' }
+            httpMethod: req.method,
+            requestPath: req.originalUrl?.split('?')[0],
+            details: { summary: 'Patient history viewed' }
         });
 
         res.json(response);
@@ -509,14 +696,15 @@ const updatePatient = (db, auditService) => async (req, res, next) => {
             data.consentEmail !== undefined ? data.consentEmail : existing.consent_email,
             data.consentWhatsapp !== undefined ? data.consentWhatsapp : existing.consent_whatsapp,
             data.consentMarketing !== undefined ? data.consentMarketing : existing.consent_marketing,
+            data.optInMarketing !== undefined ? data.optInMarketing : existing.opt_in_marketing,
             data.patientStatus !== undefined ? data.patientStatus : existing.patient_status,
             data.email !== undefined ? (data.email ? encrypt(data.email.trim().toLowerCase()) : null) : existing.email_enc,
             data.gender !== undefined ? data.gender : existing.gender,
             data.assignedManagerId !== undefined ? data.assignedManagerId : existing.assigned_manager_id,
             data.leadStatus !== undefined ? data.leadStatus : existing.lead_status,
             data.plannedActivity !== undefined ? data.plannedActivity : existing.planned_activity,
-            hash(firstName),
-            hash(lastName),
+            hash(firstName.toLowerCase()),
+            hash(lastName.toLowerCase()),
             phone ? hash(phone) : null,
             id,
             data.email !== undefined ? (data.email ? hash(data.email.trim().toLowerCase()) : null) : existing.email_hash
@@ -552,17 +740,19 @@ const updatePatient = (db, auditService) => async (req, res, next) => {
                 consent_email = $26,
                 consent_whatsapp = $27,
                 consent_marketing = $28,
-                patient_status = $29,
-                email_enc = $30,
-                gender = $31,
-                assigned_manager_id = $32,
-                lead_status = $33,
-                planned_activity = $34,
-                first_name_hash = $35,
-                last_name_hash = $36,
-                phone_hash = $37,
-                email_hash = $39
-            WHERE patient_id = $38
+                opt_in_marketing = $29,
+                patient_status = $30,
+                current_session_id = CASE WHEN $30 = 'Active' THEN current_session_id ELSE NULL END,
+                email_enc = $31,
+                gender = $32,
+                assigned_manager_id = $33,
+                lead_status = $34,
+                planned_activity = $35,
+                first_name_hash = $36,
+                last_name_hash = $37,
+                phone_hash = $38,
+                email_hash = $40
+            WHERE patient_id = $39
             RETURNING *
         `, values);
 
@@ -597,7 +787,7 @@ const getDuplicatePatients = (db) => async (req, res, next) => {
             firstName,
             lastName,
             dateOfBirth
-        } = req.query;
+        } = getRequestQuery(req);
 
         const conditions = [];
         const values = [];
@@ -680,6 +870,7 @@ const mergePatients = (db) => async (req, res, next) => {
         await client.query(`
             UPDATE patients
             SET patient_status = 'Merged',
+                current_session_id = NULL,
                 merged_into_patient_id = $1,
                 merged_at = NOW(),
                 merged_by = $2,
@@ -688,7 +879,8 @@ const mergePatients = (db) => async (req, res, next) => {
                 consent_sms = FALSE,
                 consent_email = FALSE,
                 consent_whatsapp = FALSE,
-                consent_marketing = FALSE
+                consent_marketing = FALSE,
+                opt_in_marketing = FALSE
             WHERE patient_id = $4
         `, [targetPatientId, req.user.user_id, reason, sourcePatientId]);
         await logAction(client, {
@@ -735,10 +927,12 @@ const deletePatient = (db) => async (req, res, next) => {
         await client.query(`
             UPDATE patients
             SET patient_status = 'Restricted',
+                current_session_id = NULL,
                 consent_sms = FALSE,
                 consent_email = FALSE,
                 consent_whatsapp = FALSE,
                 consent_marketing = FALSE,
+                opt_in_marketing = FALSE,
                 password_hash = NULL
             WHERE patient_id = $1
         `, [id]);
@@ -773,10 +967,10 @@ const generatePortalPassword = (db) => async (req, res, next) => {
     try {
         const patientId = req.params.id;
         const generatedPassword = generateSecurePassword();
-        const passwordHash = await bcrypt.hash(generatedPassword, 10);
+        const passwordHash = await bcrypt.hash(generatedPassword, 12);
 
         const result = await db.query(
-            "UPDATE patients SET password_hash = $1 WHERE patient_id = $2 RETURNING mrn",
+            "UPDATE patients SET password_hash = $1, current_session_id = NULL WHERE patient_id = $2 RETURNING mrn",
             [passwordHash, patientId]
         );
 
@@ -797,7 +991,8 @@ const generatePortalPassword = (db) => async (req, res, next) => {
         res.json({
             message: 'Portal password generated successfully',
             portalPassword: generatedPassword,
-            mrn: result.rows[0].mrn
+            mrn: result.rows[0].mrn,
+            portalEnabled: true
         });
     } catch (error) {
         next(error);
@@ -807,6 +1002,7 @@ const generatePortalPassword = (db) => async (req, res, next) => {
 module.exports = {
     createPatient,
     getPatients,
+    getPatientById,
     getPatientHistory,
     updatePatient,
     getDuplicatePatients,

@@ -1,2 +1,8 @@
 User-agent: *
 Allow: /
+
+# Authenticated portal areas are single-page routes (not separately indexable),
+# but explicitly opt them out so nothing is ever cached by crawlers.
+Disallow: /patient/
+Disallow: /doctor/
+Disallow: /portal/

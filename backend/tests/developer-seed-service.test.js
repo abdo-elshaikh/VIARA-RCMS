@@ -19,7 +19,7 @@ describe('developerSeedService', () => {
     });
 
     test('normalizes developer email input', () => {
-        expect(normalizeEmail('  DEV@RCMS.COM  ')).toBe('dev@rcms.com');
+        expect(normalizeEmail('  DEV@VIARA.COM  ')).toBe('dev@viara.com');
     });
 
     test('requires a strong developer bootstrap password', () => {
@@ -40,26 +40,26 @@ describe('developerSeedService', () => {
     test('promotes an existing active user and grants permissions', async () => {
         const db = {
             query: jest.fn()
-                .mockResolvedValueOnce({ rows: [{ user_id: 'dev-1', email: 'dev@rcms.com', role: 'Developer' }] })
+                .mockResolvedValueOnce({ rows: [{ user_id: 'dev-1', email: 'dev@VIARA.com', role: 'Developer' }] })
                 .mockResolvedValueOnce({ rows: [] })
         };
 
-        const result = await promoteExistingDeveloperUser(db, 'dev@rcms.com');
+        const result = await promoteExistingDeveloperUser(db, 'dev@VIARA.com');
 
-        expect(result).toEqual({ user_id: 'dev-1', email: 'dev@rcms.com', role: 'Developer' });
+        expect(result).toEqual({ user_id: 'dev-1', email: 'dev@VIARA.com', role: 'Developer' });
         expect(db.query).toHaveBeenCalledTimes(2);
-        expect(db.query.mock.calls[0][1]).toEqual(['dev@rcms.com']);
+        expect(db.query.mock.calls[0][1]).toEqual(['dev@VIARA.com']);
     });
 
     test('upserts a developer user with a hashed password', async () => {
         const db = {
             query: jest.fn()
-                .mockResolvedValueOnce({ rows: [{ user_id: 'dev-1', email: 'dev@rcms.com', role: 'Developer' }] })
+                .mockResolvedValueOnce({ rows: [{ user_id: 'dev-1', email: 'dev@VIARA.com', role: 'Developer' }] })
                 .mockResolvedValueOnce({ rows: [] })
         };
 
         const result = await upsertDeveloperUser(db, {
-            email: 'dev@rcms.com',
+            email: 'dev@VIARA.com',
             password: 'StrongPassword1!',
             fullName: 'System Developer',
             mustChangePassword: true
@@ -67,19 +67,19 @@ describe('developerSeedService', () => {
 
         expect(result.user_id).toBe('dev-1');
         expect(db.query.mock.calls[0][1][0]).toBe('System Developer');
-        expect(db.query.mock.calls[0][1][1]).toBe('dev@rcms.com');
+        expect(db.query.mock.calls[0][1][1]).toBe('dev@VIARA.com');
         expect(db.query.mock.calls[0][1][2]).toEqual(expect.stringMatching(/^\$2[aby]\$/));
         expect(db.query.mock.calls[0][1][3]).toBe(true);
     });
 
     test('seed creates or resets developer when password env is supplied', async () => {
-        process.env.DEVELOPER_EMAIL = ' DEV@RCMS.COM ';
+        process.env.DEVELOPER_EMAIL = ' DEV@VIARA.COM ';
         process.env.DEVELOPER_PASSWORD = 'StrongPassword1!';
         process.env.DEVELOPER_FULL_NAME = 'Lead Developer';
 
         const db = {
             query: jest.fn()
-                .mockResolvedValueOnce({ rows: [{ user_id: 'dev-1', email: 'dev@rcms.com', role: 'Developer' }] })
+                .mockResolvedValueOnce({ rows: [{ user_id: 'dev-1', email: 'dev@VIARA.com', role: 'Developer' }] })
                 .mockResolvedValueOnce({ rows: [] })
         };
 
@@ -87,6 +87,6 @@ describe('developerSeedService', () => {
 
         expect(result).toEqual({ promoted: true, created: true, userId: 'dev-1' });
         expect(db.query.mock.calls[0][1][0]).toBe('Lead Developer');
-        expect(db.query.mock.calls[0][1][1]).toBe('dev@rcms.com');
+        expect(db.query.mock.calls[0][1][1]).toBe('dev@viara.com');
     });
 });

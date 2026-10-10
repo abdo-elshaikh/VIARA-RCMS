@@ -3,8 +3,6 @@ import {
     AlertTriangle,
     BookOpen,
     CheckCircle2,
-    ChevronLeft,
-    ChevronRight,
     Download,
     Filter,
     RefreshCw,
@@ -19,6 +17,8 @@ import {
     useGetTrialBalanceQuery
 } from '../../store/api';
 import { formatFinancialCurrency, formatFinancialDate, toFinancialDateInput } from '../../utils/financialFormat';
+import Pagination from '../ui/Pagination';
+import { escapeFinancialCsvValue as csvEscape } from '../../utils/financialCsv';
 
 const monthStart = () => toFinancialDateInput(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 const today = () => toFinancialDateInput();
@@ -154,12 +154,8 @@ const SOURCE_OPTIONS = [
 
 const PAGE_SIZE_OPTIONS = [50, 100, 150, 250, 500];
 
-const csvEscape = (value) => {
-    const text = value === null || value === undefined ? '' : String(value);
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-};
 
-const GeneralLedger = () => {
+const GeneralLedger = ({ dateRange: externalDateRange, onDateRangeChange }) => {
     const { i18n } = useTranslation('workspace');
     const language = i18n.language;
     const isArabic = language?.startsWith('ar');
@@ -168,8 +164,8 @@ const GeneralLedger = () => {
     const date = useCallback((value) => formatFinancialDate(value, language), [language]);
 
     const [filters, setFilters] = useState({
-        startDate: monthStart(),
-        endDate: today(),
+        startDate: externalDateRange?.startDate || monthStart(),
+        endDate: externalDateRange?.endDate || today(),
         accountCode: '',
         sourceFilter: 'all',
         sourceId: '',
@@ -177,25 +173,34 @@ const GeneralLedger = () => {
         offset: 0
     });
 
+    const effectiveStartDate = externalDateRange?.startDate || filters.startDate;
+    const effectiveEndDate = externalDateRange?.endDate || filters.endDate;
+
+    const handleDateChange = (field, value) => {
+        const nextRange = { startDate: effectiveStartDate, endDate: effectiveEndDate, [field]: value };
+        setFilters((current) => ({ ...current, [field]: value, offset: 0 }));
+        onDateRangeChange?.(nextRange, 'custom');
+    };
+
     const selectedSource = useMemo(
         () => SOURCE_OPTIONS.find((option) => option.value === filters.sourceFilter) || SOURCE_OPTIONS[0],
         [filters.sourceFilter]
     );
 
     const queryParams = useMemo(() => ({
-        startDate: filters.startDate,
-        endDate: filters.endDate,
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate,
         accountCode: filters.accountCode.trim().toUpperCase() || undefined,
         sourceType: selectedSource.mode === 'exact' ? selectedSource.value : undefined,
         sourceTypePrefix: selectedSource.mode === 'prefix' ? selectedSource.value : undefined,
         sourceId: filters.sourceId.trim() || undefined,
         limit: filters.limit,
         offset: filters.offset
-    }), [filters.accountCode, filters.endDate, filters.limit, filters.offset, filters.sourceId, filters.startDate, selectedSource.mode, selectedSource.value]);
+    }), [effectiveStartDate, effectiveEndDate, filters.accountCode, filters.limit, filters.offset, filters.sourceId, selectedSource.mode, selectedSource.value]);
 
     const trialBalanceQuery = useGetTrialBalanceQuery({
-        startDate: filters.startDate,
-        endDate: filters.endDate
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate
     });
     const ledgerQuery = useGetJournalLedgerQuery(queryParams);
 
@@ -230,10 +235,10 @@ const GeneralLedger = () => {
         trialBalanceQuery.refetch();
         ledgerQuery.refetch();
     };
-    const canPrevious = filters.offset > 0;
-    const canNext = filters.offset + filters.limit < totalCount;
     const pageStart = totalCount > 0 ? filters.offset + 1 : 0;
     const pageEnd = Math.min(filters.offset + filters.limit, totalCount);
+    const currentPage = Math.floor(filters.offset / filters.limit) + 1;
+    const pageCount = Math.max(1, Math.ceil(totalCount / filters.limit));
 
     const exportCsv = () => {
         const headers = ['business_date', 'posted_at', 'source_type', 'source_id', 'account_code', 'account_name', 'description', 'debit', 'credit'];
@@ -304,14 +309,14 @@ const GeneralLedger = () => {
                             className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-slate-950 px-3 text-xs font-black text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
                         >
                             <Download size={14} />
-                            {text.exportCsv}
+                            {language?.startsWith('ar') ? 'تصدير الصفحة الحالية CSV' : 'Export current page CSV'}
                         </button>
                     </div>
                 </div>
 
                 <div className="grid gap-3 border-b border-slate-100 p-4 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-6">
-                    <DateInput label={text.startDate} value={filters.startDate} max={filters.endDate} onChange={(value) => setField('startDate', value)} />
-                    <DateInput label={text.endDate} value={filters.endDate} min={filters.startDate} onChange={(value) => setField('endDate', value)} />
+                    <DateInput label={text.startDate} value={effectiveStartDate} max={effectiveEndDate} onChange={(value) => handleDateChange('startDate', value)} />
+                    <DateInput label={text.endDate} value={effectiveEndDate} min={effectiveStartDate} onChange={(value) => handleDateChange('endDate', value)} />
                     <TextInput icon={Search} label={text.accountCode} value={filters.accountCode} onChange={(value) => setField('accountCode', value)} placeholder={text.accountPlaceholder} dir="ltr" />
                     <SelectInput
                         label={text.source}
@@ -372,24 +377,15 @@ const GeneralLedger = () => {
                                 <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                                     {text.pageRange.replace('{{start}}', count(pageStart, language)).replace('{{end}}', count(pageEnd, language)).replace('{{total}}', count(totalCount, language))}
                                 </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setField('offset', Math.max(0, filters.offset - filters.limit), false)}
-                                    disabled={!canPrevious}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                                    title={text.previous}
-                                >
-                                    {isArabic ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setField('offset', filters.offset + filters.limit, false)}
-                                    disabled={!canNext}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 disabled:opacity-40 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-                                    title={text.next}
-                                >
-                                    {isArabic ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
-                                </button>
+                                <Pagination
+                                    currentPage={currentPage}
+                                    pageCount={pageCount}
+                                    onPageChange={(nextPage) => setField('offset', (nextPage - 1) * filters.limit, false)}
+                                    isRtl={isArabic}
+                                    previousLabel={text.previous}
+                                    nextLabel={text.next}
+                                    compact
+                                />
                             </div>
                         </div>
                         <div className="max-h-[620px] overflow-auto">
