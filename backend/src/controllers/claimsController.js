@@ -1,4 +1,5 @@
 const { getRequestQuery } = require('../utils/requestQuery');
+const requestBranchScope = require('../utils/requestBranchScope');
 const { AppError } = require('../middleware/errorHandler');
 const { decrypt } = require('../utils/crypto');
 
@@ -11,6 +12,7 @@ const safeDecrypt = (text) => {
     }
 };
 const { logAction } = require('../services/auditService');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const {
     DEFAULT_BRANCH_ID,
     lockFinancialBusinessDate,
@@ -56,9 +58,23 @@ const getClaims = (db) => async (req, res, next) => {
             WHERE 1=1
         `;
 
-        const userBranchId = req.user?.branch_id || req.user?.branchId;
-        const isGlobalUser = ['Developer', 'Admin'].includes(req.user?.role);
-        const targetBranchId = (isGlobalUser && branchId) ? branchId : userBranchId;
+        const userBranchId = req.branchContext?.branchId || req.user?.branch_id || req.user?.branchId;
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        const isAllBranches = Boolean(req.branchContext?.isAllBranches);
+
+        let targetBranchId = null;
+        if (isOrgAdmin && (isAllBranches || !userBranchId)) {
+            targetBranchId = branchId || null;
+        } else {
+            if (!userBranchId) {
+                return next(new AppError('Branch context required to view claims.', 400, true, 'BRANCH_SELECTION_REQUIRED'));
+            }
+            if (branchId && branchId !== userBranchId && !isOrgAdmin) {
+                return next(new AppError('You do not have access to insurance claims from another branch.', 403, true, 'BRANCH_ACCESS_DENIED'));
+            }
+            targetBranchId = userBranchId;
+        }
+
         if (targetBranchId) {
             query += ` AND c.branch_id = $${param++}::uuid`;
             values.push(targetBranchId);
@@ -107,8 +123,13 @@ const createClaim = (db) => async (req, res, next) => {
     let client;
     try {
         const data = req.body;
+        const branchId = req.branchContext?.branchId;
+        if (!branchId || req.branchContext?.isAllBranches) {
+            throw new AppError('Select a branch before creating a claim', 400, true, 'BRANCH_SELECTION_REQUIRED');
+        }
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         let expectedAmount = moneyNumber(data.expectedAmount);
         let invoice = null;
@@ -122,6 +143,9 @@ const createClaim = (db) => async (req, res, next) => {
             invoice = invoiceResult.rows[0];
             if (!invoice || invoice.invoice_status === 'Voided') {
                 throw new AppError('An active invoice is required for this claim', 409);
+            }
+            if (invoice.branch_id !== branchId) {
+                throw new AppError('Invoice is outside the selected branch', 403, true, 'BRANCH_ACCESS_DENIED');
             }
             if (data.patientId && data.patientId !== invoice.patient_id) {
                 throw new AppError('Claim patient does not match the invoice patient', 409);
@@ -206,7 +230,7 @@ const createClaim = (db) => async (req, res, next) => {
             data.claimReferenceNumber || null,
             expectedAmount,
             req.user.user_id,
-            invoice?.branch_id || data.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID,
+            branchId,
             invoice?.currency_code || 'EGP'
         ]);
 
@@ -224,7 +248,7 @@ const createClaim = (db) => async (req, res, next) => {
                 policyId,
                 approvalId: data.approvalId || null,
                 expectedAmount,
-                branchId: invoice?.branch_id || DEFAULT_BRANCH_ID
+                branchId
             }
         });
 
@@ -236,7 +260,10 @@ const createClaim = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -245,18 +272,23 @@ const updateClaimStatus = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
         const data = req.body;
+        const branchId = requestBranchScope(req);
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existing = await client.query(
-            'SELECT * FROM insurance_claims WHERE claim_id::text = $1 OR claim_number = $1 FOR UPDATE',
-            [id]
+            'SELECT * FROM insurance_claims WHERE (claim_id::text = $1 OR claim_number = $1) AND branch_id = $2::uuid FOR UPDATE',
+            [id, branchId]
         );
         if (existing.rows.length === 0) {
             throw new AppError('Claim not found', 404);
         }
 
         const claim = existing.rows[0];
+        if (claim.branch_id !== branchId) {
+            throw new AppError('Claim is outside the selected branch', 403, true, 'BRANCH_ACCESS_DENIED');
+        }
         if (data.status !== claim.status && !CLAIM_TRANSITIONS[claim.status]?.has(data.status)) {
             throw new AppError(`Claim cannot move from ${claim.status} to ${data.status}`, 409);
         }
@@ -494,7 +526,10 @@ const updateClaimStatus = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 

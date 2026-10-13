@@ -1,5 +1,6 @@
 const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const { decrypt } = require('../utils/crypto');
 const { getInvoicePaymentPosition } = require('../services/partialPaymentExceptionService');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
@@ -171,6 +172,7 @@ const reviewPartialPaymentException = (db) => async (req, res, next) => {
     try {
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existing = await client.query(`
             SELECT ppe.*,
@@ -276,7 +278,7 @@ const reviewPartialPaymentException = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 

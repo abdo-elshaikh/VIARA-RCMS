@@ -8,6 +8,8 @@ const { pipeline } = require('stream/promises');
 const { AppError } = require('../middleware/errorHandler');
 const logger = require('../config/logger');
 const settingsService = require('../services/settingsService');
+const { getOrthancConnection } = require('../services/pacsModalityRegistryService');
+const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
 const { reconcileInstance, reconcileQuarantine, discardQuarantine, writeAudit } = require('../services/pacsReconcileService');
 const { enqueueReconciliation } = require('../services/pacsReconciliationQueue');
 const { proxyToOrthanc, getOrthancUrl, getOrthancAuthHeader } = require('../services/pacsDicomWebService');
@@ -832,13 +834,14 @@ const getPacsWorklistPreview = (db) => async (req, res, next) => {
         const date = String(getRequestQuery(req).date || '').trim() || null;
         const modalityId = String(getRequestQuery(req).modalityId || '').trim() || null;
         const includeInvalid = String(getRequestQuery(req).includeInvalid || 'true').toLowerCase() !== 'false';
-        const cacheKey = `${date || ''}:${modalityId || ''}:${includeInvalid}`;
+        const branchId = req.branchContext?.branchId || String(getRequestQuery(req).branchId || '').trim() || null;
+        const cacheKey = `${branchId || 'all'}:${date || ''}:${modalityId || ''}:${includeInvalid}`;
         const cached = pacsWorklistPreviewCache.get(cacheKey);
         if (cached && (Date.now() - cached.timestamp < PACS_WORKLIST_PREVIEW_CACHE_TTL_MS)) {
             return res.json(cached.data);
         }
 
-        const rows = await fetchScheduledWorklist(db, { date, modalityId, includeInvalid, autoProvision: false });
+        const rows = await fetchScheduledWorklist(db, { date, modalityId, branchId, includeInvalid, autoProvision: false });
         const items = rows.map((row) => {
             const validation = validateWorklistRow(row);
             return {
@@ -1529,22 +1532,59 @@ const searchScheduledExams = (db) => async (req, res, next) => {
         if (q.length < 2) return res.json([]);
         const searchTerms = q.toLowerCase().split(/\s+/).filter(Boolean);
 
+        const user = req.user;
+        const requestedBranchId = req.branchContext?.branchId || String(getRequestQuery(req).branchId || '').trim() || null;
+        const isOrgAdmin = user && (['admin', 'superadmin'].includes(String(user.role || '').toLowerCase()) || user.role === 'Developer' || Boolean(user.is_org_admin));
+
+        let allowedBranchIds = null;
+        if (!isOrgAdmin && user) {
+            const userBranchesResult = await getUserBranches(db, user.user_id, false, user.organization_id);
+            const userBranchIds = (userBranchesResult.branches || []).map(b => b.id);
+            if (requestedBranchId) {
+                if (!userBranchIds.includes(requestedBranchId)) {
+                    throw new AppError('Branch access denied', 403, true, 'BRANCH_ACCESS_DENIED');
+                }
+                allowedBranchIds = [requestedBranchId];
+            } else {
+                allowedBranchIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+            }
+        } else if (requestedBranchId) {
+            allowedBranchIds = [requestedBranchId];
+        }
+
+        const examQueryParams = [];
+        let examBranchClause = '';
+        if (allowedBranchIds && allowedBranchIds.length > 0) {
+            examQueryParams.push(allowedBranchIds);
+            examBranchClause = `AND COALESCE(e.branch_id, a.branch_id, m.branch_id, '${DEFAULT_HQ_BRANCH_ID}'::uuid) = ANY($${examQueryParams.length}::uuid[])`;
+        }
+
         // 1. Fetch active examinations
         const examResult = await db.query(
             `SELECT e.exam_id, COALESCE(e.order_number, a.order_number) AS order_number, e.study_instance_uid, e.status,
                     COALESCE(a.start_time, e.created_at) AS scheduled_datetime,
                     et.name AS exam_type_name, et.code AS exam_type_code,
                     m.name AS modality_name, m.type AS modality_type,
-                    p.mrn, p.first_name_enc, p.last_name_enc
+                    p.mrn, p.first_name_enc, p.last_name_enc,
+                    COALESCE(e.branch_id, a.branch_id, m.branch_id, '${DEFAULT_HQ_BRANCH_ID}'::uuid) AS branch_id
              FROM examinations e
              JOIN patients p ON e.patient_id = p.patient_id
              LEFT JOIN appointments a ON e.appointment_id = a.appointment_id
              LEFT JOIN examination_types et ON e.exam_type_id = et.type_id
              LEFT JOIN modalities m ON e.modality_id = m.modality_id
              WHERE e.status::text IN ('Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Arrived', 'In-Progress', 'Completed', 'Finalized')
+               ${examBranchClause}
              ORDER BY COALESCE(a.start_time, e.created_at) DESC
-             LIMIT 150`
+             LIMIT 150`,
+            examQueryParams
         );
+
+        const apptQueryParams = [];
+        let apptBranchClause = '';
+        if (allowedBranchIds && allowedBranchIds.length > 0) {
+            apptQueryParams.push(allowedBranchIds);
+            apptBranchClause = `AND COALESCE(a.branch_id, m.branch_id, '${DEFAULT_HQ_BRANCH_ID}'::uuid) = ANY($${apptQueryParams.length}::uuid[])`;
+        }
 
         // 2. Fetch active appointments that may not have an examination created yet
         const apptResult = await db.query(
@@ -1554,6 +1594,7 @@ const searchScheduledExams = (db) => async (req, res, next) => {
                     et.name AS exam_type_name, et.code AS exam_type_code,
                     m.name AS modality_name, m.type AS modality_type,
                     p.mrn, p.first_name_enc, p.last_name_enc,
+                    COALESCE(a.branch_id, m.branch_id, '${DEFAULT_HQ_BRANCH_ID}'::uuid) AS branch_id,
                     e.exam_id
              FROM appointments a
              JOIN patients p ON a.patient_id = p.patient_id
@@ -1561,8 +1602,10 @@ const searchScheduledExams = (db) => async (req, res, next) => {
              LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
              LEFT JOIN modalities m ON a.modality_id = m.modality_id
              WHERE a.status::text IN ('Scheduled', 'Confirmed', 'Arrived', 'In-Progress', 'Checked-in', 'Completed')
+               ${apptBranchClause}
              ORDER BY a.start_time DESC
-             LIMIT 150`
+             LIMIT 150`,
+            apptQueryParams
         );
 
         const existingExamIds = new Set(examResult.rows.map(r => r.exam_id));
@@ -1575,8 +1618,8 @@ const searchScheduledExams = (db) => async (req, res, next) => {
                     const ins = await db.query(
                         `INSERT INTO examinations (
                             appointment_id, patient_id, modality_id, exam_type_id,
-                            status, queue_stage, order_number
-                         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                            status, queue_stage, order_number, branch_id
+                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                          RETURNING exam_id`,
                         [
                             appt.appointment_id,
@@ -1585,7 +1628,8 @@ const searchScheduledExams = (db) => async (req, res, next) => {
                             appt.exam_type_id,
                             appt.status === 'Arrived' ? 'Checked-in' : 'Scheduled',
                             appt.status === 'Arrived' ? 'Arrived' : 'Scheduled',
-                            appt.order_number
+                            appt.order_number,
+                            appt.branch_id || DEFAULT_HQ_BRANCH_ID
                         ]
                     );
                     if (ins.rows.length) {
@@ -1610,7 +1654,8 @@ const searchScheduledExams = (db) => async (req, res, next) => {
                     modality_type: appt.modality_type,
                     mrn: appt.mrn,
                     first_name_enc: appt.first_name_enc,
-                    last_name_enc: appt.last_name_enc
+                    last_name_enc: appt.last_name_enc,
+                    branch_id: appt.branch_id
                 });
             }
         }
@@ -1870,8 +1915,9 @@ const createViewerSession = (db) => async (req, res, next) => {
                 user_id: req.user.user_id,
                 session_id: req.user.session_id,
                 parent_session_expires_at: req.user.exp,
-                role: req.user.role,
+                role: req.user.identity_role || req.user.role,
                 scope: 'pacs-viewer',
+                branch_id: req.branchContext?.branchId || examContext?.branch_id || null,
                 study_instance_uids: studyUids,
                 exam_id: examContext?.exam_id || null,
                 order_number: examContext?.order_number || null

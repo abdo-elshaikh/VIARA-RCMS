@@ -1,30 +1,34 @@
 import React from 'react';
-import { RefreshCw, Server, ShieldCheck, Database, Layers, GitBranch, History } from 'lucide-react';
+import { RefreshCw, Server, ShieldCheck, Database, Layers, GitBranch, History, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useGetSystemUpdateStatusQuery, useGetSystemUpdateHistoryQuery } from '../../store/api';
 
 const SystemUpdateSettings = () => {
     const { i18n } = useTranslation(['settings', 'common']);
     const ar = i18n.dir() === 'rtl';
-    const { data: status, isLoading, isError, refetch } = useGetSystemUpdateStatusQuery();
-    const { data: history = [], refetch: refreshHistory } = useGetSystemUpdateHistoryQuery(20);
+    const { data: status, isLoading, isFetching, isError, refetch } = useGetSystemUpdateStatusQuery();
+    const { data: history = [], isLoading: historyLoading, isFetching: historyFetching, isError: historyError, refetch: refreshHistory } = useGetSystemUpdateHistoryQuery(20);
+    const refreshing = isLoading || isFetching || historyLoading || historyFetching;
+    const environmentLabels = ar ? { production: 'الإنتاج', development: 'التطوير', staging: 'الاختبار قبل النشر', test: 'الاختبارات' } : { production: 'Production', development: 'Development', staging: 'Staging', test: 'Test' };
+    const formatDate = value => value && !Number.isNaN(Date.parse(value)) ? new Date(value).toLocaleString(i18n.language) : '—';
+    const pending = ar ? 'جارٍ التحميل…' : 'Loading…';
 
     return (
-        <section className="space-y-5" aria-busy={isLoading}>
-            <div className="rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-6 shadow-2xs">
+        <section className="min-w-0 space-y-5" aria-busy={refreshing}>
+            <div className="min-w-0 overflow-hidden rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-4 shadow-sm sm:p-6">
                 <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
+                    <div className="flex min-w-0 flex-1 basis-64 items-start gap-3">
                         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-[var(--VIARA-radius-control)] bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-accent)]">
                             <Server size={20} aria-hidden="true" />
                         </div>
-                        <div>
-                            <div className="flex items-center gap-2.5">
+                        <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2.5">
                                 <h2 className="text-xl font-bold text-[var(--VIARA-ink)]">
                                     {ar ? 'إصدار النظام' : 'System Release'}
                                 </h2>
                                 {status?.currentVersion && (
                                     <span className="rounded-full border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] px-3 py-0.5 font-mono text-xs font-semibold text-[var(--VIARA-ink)]">
-                                        v{status.currentVersion}
+                                        <bdi>v{status.currentVersion}</bdi>
                                     </span>
                                 )}
                             </div>
@@ -35,11 +39,11 @@ const SystemUpdateSettings = () => {
                     </div>
                     <button
                         type="button"
-                        className="ds-button ds-button-secondary ds-button-sm"
-                        disabled={isLoading}
+                        className="ds-button ds-button-secondary min-h-11"
+                        disabled={refreshing}
                         onClick={() => { refetch(); refreshHistory(); }}
                     >
-                        <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} aria-hidden="true" />
+                        <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} aria-hidden="true" />
                         <span>{ar ? 'تحديث الحالة' : 'Refresh status'}</span>
                     </button>
                 </div>
@@ -64,7 +68,7 @@ const SystemUpdateSettings = () => {
                     </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="mt-5 grid min-w-0 gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 220px), 1fr))' }}>
                     <div className="settings-fact rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-3.5 shadow-2xs">
                         <div className="flex items-center gap-2 text-[var(--VIARA-muted)]">
                             <Layers size={15} aria-hidden="true" />
@@ -72,8 +76,8 @@ const SystemUpdateSettings = () => {
                                 {ar ? 'بيئة التشغيل' : 'Environment'}
                             </span>
                         </div>
-                        <p className="mt-1 font-mono text-sm font-bold text-[var(--VIARA-ink)]">
-                            {status?.environment || '—'}
+                        <p className="mt-2 text-sm font-bold text-[var(--VIARA-ink)]">
+                            {isLoading ? pending : environmentLabels[status?.environment] || <bdi>{status?.environment || '—'}</bdi>}
                         </p>
                     </div>
 
@@ -85,7 +89,7 @@ const SystemUpdateSettings = () => {
                             </span>
                         </div>
                         <p className="mt-1 font-mono text-sm font-bold text-[var(--VIARA-ink)]">
-                            {status?.migrationsCount ?? '—'}
+                            <bdi>{isLoading ? pending : status?.migrationsCount ?? '—'}</bdi>
                         </p>
                     </div>
 
@@ -96,14 +100,15 @@ const SystemUpdateSettings = () => {
                                 {ar ? 'آخر ترحيل' : 'Last Migration'}
                             </span>
                         </div>
-                        <p className="mt-1 break-all font-mono text-xs font-bold text-[var(--VIARA-ink)]" title={status?.lastMigration?.version || ''}>
-                            {status?.lastMigration?.version || '—'}
+                        <p dir="ltr" className="mt-2 break-all text-start font-mono text-xs font-bold leading-6 text-[var(--VIARA-ink)]" title={status?.lastMigration?.version || ''}>
+                            {isLoading ? pending : status?.lastMigration?.version || '—'}
                         </p>
+                        {status?.lastMigration?.applied_at && <p className="mt-1 text-xs text-[var(--VIARA-muted)]"><bdi>{formatDate(status.lastMigration.applied_at)}</bdi></p>}
                     </div>
                 </div>
             </div>
 
-            <div className="rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-6 shadow-2xs">
+            <div className="min-w-0 rounded-2xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface)] p-4 shadow-sm sm:p-6" aria-busy={historyLoading || historyFetching}>
                 <div className="flex items-center gap-2.5">
                     <History size={18} className="text-[var(--VIARA-muted)]" aria-hidden="true" />
                     <h3 className="text-base font-bold text-[var(--VIARA-ink)]">
@@ -112,29 +117,36 @@ const SystemUpdateSettings = () => {
                 </div>
                 <p className="mt-1 text-xs text-[var(--VIARA-muted)]">
                     {ar
-                        ? 'السجلات التاريخية توثق عمليات الترقية السابقة وتغييرات المخطط المطبقة على قاعدة البيانات.'
-                        : 'Historical records document previous upgrades and database schema changes.'}
+                        ? 'عمليات نشر الإصدارات المسجلة في النظام. تُعرض ترحيلات قاعدة البيانات بصورة مستقلة أعلاه.'
+                        : 'Release deployments recorded in the system. Database migrations are shown separately above.'}
                 </p>
 
-                {!history.length ? (
+                {historyLoading ? (
+                    <p role="status" className="mt-4 animate-pulse rounded-xl bg-[var(--VIARA-surface-muted)] p-6 text-center text-sm text-[var(--VIARA-muted)]">{pending}</p>
+                ) : historyError ? (
+                    <div role="alert" className="mt-4 rounded-xl border border-[var(--VIARA-danger-border)] bg-[var(--VIARA-danger-soft)] p-4 text-[var(--VIARA-danger)]">
+                        <p className="flex items-start gap-2 text-sm"><AlertCircle size={18} className="shrink-0" aria-hidden="true" />{ar ? 'تعذر تحميل سجل التحديثات.' : 'Update history could not be loaded.'}</p>
+                        <button type="button" onClick={refreshHistory} disabled={historyFetching} className="ds-button ds-button-secondary mt-3 min-h-11">{ar ? 'إعادة المحاولة' : 'Retry'}</button>
+                    </div>
+                ) : !history.length ? (
                     <div className="mt-4 rounded-xl border border-[var(--VIARA-line)] bg-[var(--VIARA-surface-muted)] p-6 text-center text-xs text-[var(--VIARA-muted)]">
-                        {ar ? 'لا توجد سجلات ترقية سابقة.' : 'No historical upgrade records.'}
+                        {ar ? 'لم تُسجّل عمليات نشر للإصدارات هنا بعد.' : 'No release deployments have been recorded here yet.'}
                     </div>
                 ) : (
                     <ul className="mt-4 divide-y divide-[var(--VIARA-line)] rounded-xl border border-[var(--VIARA-line)]">
                         {history.map(row => (
                             <li key={row.update_id} className="flex flex-wrap items-center justify-between gap-3 p-3.5 text-xs">
-                                <div className="flex items-center gap-2 font-mono">
-                                    <span className="font-semibold text-[var(--VIARA-muted)]">{row.from_version || 'v1.0.0'}</span>
+                                <div dir="ltr" className="flex min-w-0 flex-wrap items-center gap-2 break-all font-mono">
+                                    <span className="font-semibold text-[var(--VIARA-muted)]">{row.from_version || '—'}</span>
                                     <span>→</span>
                                     <span className="font-bold text-[var(--VIARA-ink)]">{row.to_version}</span>
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <span className="rounded-full bg-[var(--VIARA-success-soft)] px-2.5 py-0.5 font-semibold text-[var(--VIARA-success)]">
-                                        {row.status || 'applied'}
+                                <div className="flex min-w-0 flex-wrap items-center gap-3">
+                                    <span className={`rounded-full px-2.5 py-1 font-semibold ${['applied', 'completed', 'success'].includes(row.status?.toLowerCase()) ? 'bg-[var(--VIARA-success-soft)] text-[var(--VIARA-success)]' : ['failed', 'error'].includes(row.status?.toLowerCase()) ? 'bg-[var(--VIARA-danger-soft)] text-[var(--VIARA-danger)]' : 'bg-[var(--VIARA-surface-muted)] text-[var(--VIARA-muted)]'}`}>
+                                        {ar ? ({ applied: 'مطبّق', completed: 'مكتمل', success: 'ناجح', failed: 'فشل', error: 'خطأ', pending: 'قيد الانتظار', running: 'قيد التنفيذ' }[row.status?.toLowerCase()] || row.status || '—') : row.status || '—'}
                                     </span>
                                     <time className="text-[var(--VIARA-muted)]">
-                                        {row.applied_at ? new Date(row.applied_at).toLocaleString(i18n.language) : '—'}
+                                        <bdi>{formatDate(row.applied_at)}</bdi>
                                     </time>
                                 </div>
                             </li>

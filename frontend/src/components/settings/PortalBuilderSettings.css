@@ -1,0 +1,113 @@
+/* ==========================================================================
+   VIARA Portal Builder Settings - Executive Studio Styles
+   ========================================================================== */
+
+.pb-studio-deck {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  border-radius: var(--VIARA-radius-surface, 1rem);
+  box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.05);
+}
+
+.dark .pb-studio-deck {
+  background: rgba(15, 23, 42, 0.88);
+  border-color: rgba(30, 41, 59, 0.85);
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.3);
+}
+
+/* Studio Nav Scrollbar */
+.pb-nav-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-behavior: smooth;
+}
+
+.pb-nav-strip::-webkit-scrollbar {
+  display: none;
+}
+
+/* Studio Section Card */
+.pb-section-card {
+  border-radius: var(--VIARA-radius-surface, 1rem);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dark .pb-section-card {
+  border-color: rgba(30, 41, 59, 0.85);
+  background: rgba(15, 23, 42, 0.95);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.2);
+}
+
+.pb-section-card:hover {
+  border-color: rgba(13, 148, 136, 0.3);
+}
+
+/* Device Mockup Shells */
+.pb-device-tablet {
+  max-width: 768px;
+  margin: 0 auto;
+  border: 10px solid #1e293b;
+  border-radius: 2rem;
+  background: #0f172a;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.pb-device-mobile {
+  max-width: 390px;
+  margin: 0 auto;
+  border: 12px solid #1e293b;
+  border-radius: 2.5rem;
+  background: #0f172a;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+  position: relative;
+}
+
+.pb-device-mobile::before {
+  content: '';
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 18px;
+  background: #0f172a;
+  border-radius: 9999px;
+  z-index: 10;
+}
+
+/* Simulators */
+.pb-simulator-card {
+  border-radius: var(--VIARA-radius-control, 0.75rem);
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.8) 0%, rgba(241, 245, 249, 0.8) 100%);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.dark .pb-simulator-card {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(30, 41, 59, 0.6) 100%);
+  border-color: rgba(51, 65, 85, 0.6);
+}
+
+/* Smooth Accordion */
+.pb-faq-accordion-item {
+  border-radius: var(--VIARA-radius-control, 0.75rem);
+  transition: background-color 0.15s ease;
+}
+
+.pb-faq-accordion-item:hover {
+  background-color: rgba(248, 250, 252, 0.6);
+}
+
+.dark .pb-faq-accordion-item:hover {
+  background-color: rgba(30, 41, 59, 0.4);
+}

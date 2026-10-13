@@ -292,7 +292,11 @@ describe('demo-provision CLI', () => {
             const portal = cli.demoUrl('PORTAL_PORT', 'http');
             expect(env.CLIENT_URL).toBe(frontend);
             expect(env.PORTAL_CLIENT_URL).toBe(portal);
-            expect(env.ALLOWED_ORIGINS).toBe(`${frontend},${portal}`);
+            expect(env.ALLOWED_ORIGINS.split(',')).toEqual([
+                frontend, portal,
+                frontend.replace('://localhost:', '://127.0.0.1:'),
+                portal.replace('://localhost:', '://127.0.0.1:')
+            ]);
             expect(env.WEBAUTHN_ORIGIN).toBe(frontend);
             expect(env.WEBAUTHN_RP_ID).toBe('localhost');
             expect(env.VITE_OHIF_URL).toBe(cli.demoUrl('OHIF_PORT', 'http'));

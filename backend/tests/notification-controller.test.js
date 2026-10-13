@@ -60,6 +60,8 @@ describe('notification controller hardening', () => {
             })
         };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             query: { q: 'urgent', limit: 10, offset: 0 },
             user: { user_id: 'user-1', role: 'Admin' }
         };
@@ -92,7 +94,9 @@ describe('notification controller hardening', () => {
         const res = buildRes();
 
         await getMyNotifications(db)(
-            { query: { q: 'search term', limit: 10, offset: 0 }, user: { user_id: 'user-1', role: 'Admin' } },
+            {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {}, query: { q: 'search term', limit: 10, offset: 0 }, user: { user_id: 'user-1', role: 'Admin' } },
             res,
             jest.fn()
         );
@@ -110,6 +114,8 @@ describe('notification controller hardening', () => {
             })
         };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { id: 'n-1' },
             user: { user_id: 'user-1', role: 'HR' }
         };

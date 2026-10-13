@@ -40,7 +40,8 @@ const createInvoiceSchema = z.object({
     packageCode: z.string().trim().max(100).optional(),
     packageName: z.string().trim().max(150).optional(),
     dueDate: dateString.optional(),
-    notes: z.string().trim().max(1000).optional()
+    notes: z.string().trim().max(1000).optional(),
+    branchId: z.string().uuid().optional()
 }).refine((data) => data.appointmentId || data.examId || data.patientId, {
     message: 'Appointment, exam, or patient is required'
 }).superRefine((data, context) => {
@@ -78,6 +79,7 @@ const updateInvoiceSchema = z.object({
 const getInvoicesQuerySchema = validateDateRange(z.object({
     status: z.enum(['Draft', 'Pending', 'Partial', 'Paid', 'Refunded', 'Voided']).optional(),
     patientId: z.string().uuid().optional(),
+    branchId: z.string().uuid().or(z.literal('all')).optional(),
     q: z.string().trim().max(100).optional(),
     date: dateString.optional(),
     startDate: dateString.optional(),
@@ -92,6 +94,7 @@ const getInvoicesQuerySchema = validateDateRange(z.object({
 }));
 
 const getInvoiceSummaryQuerySchema = validateDateRange(z.object({
+    branchId: z.string().uuid().or(z.literal('all')).optional(),
     date: dateString.optional(),
     startDate: dateString.optional(),
     endDate: dateString.optional()

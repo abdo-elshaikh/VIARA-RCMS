@@ -14,6 +14,7 @@ const { decrypt, hash } = require('../utils/crypto');
 const { verifyUnsubscribeToken } = require('../utils/notificationUnsubscribeToken');
 const settingsService = require('../services/settingsService');
 const { logAction } = require('../services/auditService');
+const branchService = require('../services/branchService');
 
 const FULL_NOTIFICATION_ROLES = new Set(['Developer', 'Admin']);
 const SEARCH_SCAN_LIMIT = Math.min(
@@ -98,6 +99,20 @@ const getNotifications = (db) => async (req, res, next) => {
         const { limit = 50, offset = 0, q } = getRequestQuery(req);
         const userId = getUserId(req);
         let { filters, values, param } = buildStaffNotificationFilters(req);
+
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        if (explicitBranch) {
+            if (!req.user?.is_org_admin) {
+                const ub = await branchService.getUserBranches(db, userId, false);
+                const userBranchIds = ub.branches.map(b => b.id);
+                if (!userBranchIds.includes(explicitBranch)) {
+                    return next(new AppError('You do not have access to this branch | ليس لديك صلاحية لهذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));
+                }
+            }
+            filters += ` AND (n.branch_id = $${param++} OR n.branch_id IS NULL)`;
+            values.push(explicitBranch);
+        }
+
         const viewCondition = getRequestQuery(req).view === 'unread' || getRequestQuery(req).readState === 'unread'
             ? 'nr.read_at IS NULL'
             : getRequestQuery(req).readState === 'read' ? 'nr.read_at IS NOT NULL'

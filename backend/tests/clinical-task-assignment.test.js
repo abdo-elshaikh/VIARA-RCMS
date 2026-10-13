@@ -9,6 +9,10 @@ const examId = '00000000-0000-4000-8000-000000000301';
 const appointmentId = '00000000-0000-4000-8000-000000000302';
 const technicianId = '00000000-0000-4000-8000-000000000303';
 const otherTechnicianId = '00000000-0000-4000-8000-000000000304';
+jest.mock('../src/services/branchService', () => ({
+    ...jest.requireActual('../src/services/branchService'),
+    getUserBranches: jest.fn(async () => ({ branches: [{ id: '00000000-0000-4000-8000-000000000001' }] })),
+}));
 
 describe('clinical task assignment service', () => {
     test('claims an unassigned task atomically and records immutable history', async () => {
@@ -17,6 +21,7 @@ describe('clinical task assignment service', () => {
                 const text = String(sql);
                 if (text.includes('FOR UPDATE OF e, a')) {
                     return { rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                         exam_id: examId,
                         appointment_id: appointmentId,
                         queue_stage: 'Ready for Exam',
@@ -61,6 +66,7 @@ describe('clinical task assignment service', () => {
     test('returns a conflict without exposing another assignee when a task is already owned', async () => {
         const client = {
             query: jest.fn().mockResolvedValue({ rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                 exam_id: examId,
                 appointment_id: appointmentId,
                 queue_stage: 'Ready for Exam',
@@ -83,6 +89,7 @@ describe('clinical task assignment service', () => {
     test('is idempotent when the owner retries the claim request', async () => {
         const client = {
             query: jest.fn().mockResolvedValue({ rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                 exam_id: examId,
                 appointment_id: appointmentId,
                 queue_stage: 'Ready for Exam',
@@ -105,6 +112,7 @@ describe('clinical task assignment service', () => {
     test('prevents another clinical user from releasing a private task', async () => {
         const client = {
             query: jest.fn().mockResolvedValue({ rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                 exam_id: examId,
                 appointment_id: appointmentId,
                 queue_stage: 'Ready for Exam',

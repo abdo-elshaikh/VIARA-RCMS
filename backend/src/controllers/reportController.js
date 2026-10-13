@@ -1,11 +1,42 @@
 const { getRequestQuery } = require('../utils/requestQuery');
 const { decrypt } = require('../utils/crypto');
+const { AppError } = require('../middleware/errorHandler');
 const financialReportService = require('../services/financialReportService');
-const { DEFAULT_COMMISSION_PERCENTAGE } = require('../services/financialPostingService');
+const { DEFAULT_BRANCH_ID, DEFAULT_COMMISSION_PERCENTAGE } = require('../services/financialPostingService');
+
+const resolveReportBranchId = (req) => {
+    const query = getRequestQuery(req);
+    const requested = query.branchId;
+    const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+    const context = req.branchContext;
+
+    if (isOrgAdmin && (context?.isAllBranches || !context?.branchId)) {
+        return requested || context?.branchId || DEFAULT_BRANCH_ID;
+    }
+
+    const effective = context?.branchId || req.user?.branch_id || req.user?.branchId;
+    if (!effective) {
+        throw new AppError('Branch context required for financial reports', 400, true, 'BRANCH_SELECTION_REQUIRED');
+    }
+
+    if (requested && requested !== effective && !isOrgAdmin) {
+        throw new AppError('You do not have access to financial reports for another branch', 403, true, 'BRANCH_ACCESS_DENIED');
+    }
+
+    return effective;
+};
+
+const getScopedReportQuery = (req) => {
+    const query = getRequestQuery(req);
+    return {
+        ...query,
+        branchId: resolveReportBranchId(req)
+    };
+};
 
 const getRevenueReport = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getRevenue(db, getRequestQuery(req)));
+        res.json(await financialReportService.getRevenue(db, getScopedReportQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -13,7 +44,7 @@ const getRevenueReport = (db) => async (req, res, next) => {
 
 const getOutstandingClaims = (db) => async (req, res, next) => {
     try {
-        const range = financialReportService.normalizeRange(getRequestQuery(req));
+        const range = financialReportService.normalizeRange(getScopedReportQuery(req));
         const query = `
             SELECT i.invoice_id, p.mrn, p.first_name_enc, p.last_name_enc,
                    i.branch_id,
@@ -69,7 +100,7 @@ const getOutstandingClaims = (db) => async (req, res, next) => {
 // Phase 15: Receivables Aging Report
 const getReceivablesAging = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getReceivablesAging(db, getRequestQuery(req)));
+        res.json(await financialReportService.getReceivablesAging(db, getScopedReportQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -78,7 +109,7 @@ const getReceivablesAging = (db) => async (req, res, next) => {
 // Phase 15: Doctor Commissions with Payables Integration
 const getDoctorCommissions = (db) => async (req, res, next) => {
     try {
-        const range = financialReportService.normalizeRange(getRequestQuery(req));
+        const range = financialReportService.normalizeRange(getScopedReportQuery(req));
 
         const query = `
             WITH period_activity AS (
@@ -169,7 +200,7 @@ const getDoctorCommissions = (db) => async (req, res, next) => {
 // Phase 15: Tax Summary
 const getTaxSummary = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getTaxSummary(db, getRequestQuery(req)));
+        res.json(await financialReportService.getTaxSummary(db, getScopedReportQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -178,7 +209,7 @@ const getTaxSummary = (db) => async (req, res, next) => {
 // Phase 15: Profit & Loss
 const getProfitAndLoss = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getProfitAndLoss(db, getRequestQuery(req)));
+        res.json(await financialReportService.getProfitAndLoss(db, getScopedReportQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -187,7 +218,7 @@ const getProfitAndLoss = (db) => async (req, res, next) => {
 // Advanced: Profit & Loss as a day/month/year time series
 const getProfitAndLossSeries = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getProfitAndLossSeries(db, getRequestQuery(req)));
+        res.json(await financialReportService.getProfitAndLossSeries(db, getScopedReportQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -196,7 +227,7 @@ const getProfitAndLossSeries = (db) => async (req, res, next) => {
 // Advanced: cash flow as a day/month/year time series
 const getCashFlowSeries = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getCashFlowSeries(db, getRequestQuery(req)));
+        res.json(await financialReportService.getCashFlowSeries(db, getScopedReportQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -205,7 +236,7 @@ const getCashFlowSeries = (db) => async (req, res, next) => {
 // Advanced: discount detection report with governance anomaly flags
 const getDiscountReport = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getDiscountReport(db, getRequestQuery(req)));
+        res.json(await financialReportService.getDiscountReport(db, getScopedReportQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -213,7 +244,7 @@ const getDiscountReport = (db) => async (req, res, next) => {
 
 const getTrialBalance = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getTrialBalance(db, getRequestQuery(req)));
+        res.json(await financialReportService.getTrialBalance(db, getScopedReportQuery(req)));
     } catch (error) {
         next(error);
     }
@@ -221,7 +252,7 @@ const getTrialBalance = (db) => async (req, res, next) => {
 
 const getJournalLedger = (db) => async (req, res, next) => {
     try {
-        res.json(await financialReportService.getJournalLedger(db, getRequestQuery(req)));
+        res.json(await financialReportService.getJournalLedger(db, getScopedReportQuery(req)));
     } catch (error) {
         next(error);
     }

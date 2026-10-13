@@ -39,6 +39,8 @@ describe('end-of-day reception access boundaries', () => {
             }],
         });
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             query: { date: '2026-09-22', receptionistId: 'attacker-controlled-id' },
             user: { user_id: 'receptionist-1', role: 'Receptionist' },
         };
@@ -65,6 +67,8 @@ describe('end-of-day reception access boundaries', () => {
     test('summary is scoped to the authenticated receptionist', async () => {
         mockGetDaySummary.mockResolvedValue({ total: 3, completed: 1 });
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             query: { date: '2026-09-22' },
             user: { user_id: 'receptionist-1', role: 'Receptionist' },
         };
@@ -73,6 +77,7 @@ describe('end-of-day reception access boundaries', () => {
         await endOfDayController.getSummary({})(req, res, jest.fn());
 
         expect(mockGetDaySummary).toHaveBeenCalledWith({}, '2026-09-22', {
+            branchId: '00000000-0000-4000-8000-000000000001',
             sessionId: null,
             receptionistId: 'receptionist-1',
             actorRole: 'Receptionist',
@@ -85,6 +90,8 @@ describe('end-of-day reception access boundaries', () => {
             rows: [{ log_id: 'log-1', risk_score: 50, risk_reason: 'internal', metadata: { secret: true } }],
         });
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             query: { date: '2026-09-22' },
             user: { user_id: 'receptionist-1', role: 'Receptionist' },
         };
@@ -100,9 +107,11 @@ describe('end-of-day reception access boundaries', () => {
         const client = {
             query: jest.fn()
                 .mockResolvedValueOnce({})
+                .mockResolvedValueOnce({})
                 .mockResolvedValueOnce({
                     rows: [{
                         exam_id: 'exam-1',
+                        branch_id: '00000000-0000-4000-8000-000000000001',
                         queue_stage: 'Scheduled',
                         exam_status: 'Scheduled',
                         receptionist_id: 'receptionist-2',
@@ -114,6 +123,7 @@ describe('end-of-day reception access boundaries', () => {
         const db = { connect: jest.fn().mockResolvedValue(client) };
 
         await expect(actualEndOfDayService.resolveExam(db, {
+            branchId: '00000000-0000-4000-8000-000000000001',
             appointmentId: 'appointment-1',
             action: 'no_show',
             actorUserId: 'receptionist-1',
@@ -156,9 +166,11 @@ describe('end-of-day reception access boundaries', () => {
 
     test('carry-forward actually moves the booking to the next day and resets the exam workflow', async () => {
         const queryResults = [
+            { rows: [] },
             {},
             {
                 rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                     exam_id: 'exam-1',
                     queue_stage: 'Ready for Exam',
                     current_station: 'Nurse',
@@ -179,6 +191,7 @@ describe('end-of-day reception access boundaries', () => {
         const db = { connect: jest.fn().mockResolvedValue(client) };
 
         const result = await actualEndOfDayService.resolveExam(db, {
+            branchId: '00000000-0000-4000-8000-000000000001',
             appointmentId: 'appointment-1',
             action: 'carry_forward',
             notes: 'Patient confirmed tomorrow',

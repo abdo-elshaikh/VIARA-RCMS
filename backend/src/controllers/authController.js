@@ -46,7 +46,7 @@ const getPermissionNamesForRole = async (db, role, bypassCache = false) => {
 
 // Legacy function calls mapped to new AuthService for backward compatibility
 const generateTokens = async (db, userPayload, ownerId, ownerTypeOrIsPatient = false, session = {}) => {
-    return await AuthService.generateTokens(db, userPayload, ownerId, ownerTypeOrIsPatient, session);
+    return await AuthService.generateTokens(db, { ...userPayload, role: userPayload.identity_role || userPayload.role }, ownerId, ownerTypeOrIsPatient, session);
 };
 
 const register = (db) => async (req, res, next) => {
@@ -97,6 +97,7 @@ const login = (db) => async (req, res, next) => {
         }
 
         const user = result.rows[0];
+        if (user.is_service_account) return next(new AppError('Invalid Credentials', 401));
 
         // 1. Check Lockout & Password Validation
         const isLocked = Boolean(user.locked_until && new Date() < new Date(user.locked_until));
@@ -269,6 +270,14 @@ const login = (db) => async (req, res, next) => {
 
         const permissions = await getPermissionNamesForRole(db, user.role, true);
 
+        const branchService = require('../services/branchService');
+        const userBranches = await branchService.getUserBranches(
+            db,
+            user.user_id,
+            Boolean(user.is_org_admin || user.role === 'Developer'),
+            user.organization_id
+        );
+
         res.json({
             message: 'Login Successful',
             token,
@@ -277,7 +286,11 @@ const login = (db) => async (req, res, next) => {
                 name: user.full_name,
                 role: user.role,
                 mustChangePassword: user.must_change_password,
-                permissions
+                permissions,
+                organizationId: user.organization_id,
+                isOrgAdmin: Boolean(user.is_org_admin || user.role === 'Developer'),
+                branches: userBranches.branches,
+                defaultBranchId: userBranches.defaultBranchId
             }
         });
 

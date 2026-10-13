@@ -2,6 +2,11 @@ const { getRequestQuery } = require('../utils/requestQuery');
 'use strict';
 
 const insuranceReportService = require('../services/insuranceReportService');
+const requestBranchScope = require('../utils/requestBranchScope');
+const reportOptions = (req) => {
+    const query = getRequestQuery(req);
+    return { ...query, branchId: requestBranchScope(req, query.branchId) };
+};
 
 const formatCsvCell = (val) => {
     if (val === null || val === undefined) return '""';
@@ -23,7 +28,7 @@ const sendCsvResponse = (res, filename, headers, rows) => {
 // 1. Claims Summary Report Controller
 const getClaimsSummary = (db) => async (req, res, next) => {
     try {
-        const report = await insuranceReportService.getClaimsSummaryReport(db, getRequestQuery(req));
+        const report = await insuranceReportService.getClaimsSummaryReport(db, reportOptions(req));
 
         if (getRequestQuery(req).format === 'csv') {
             const dateStr = new Date().toISOString().slice(0, 10);
@@ -57,7 +62,7 @@ const getClaimsSummary = (db) => async (req, res, next) => {
 // 2. Payer Statement of Account & Remittance Controller
 const getPayerStatement = (db) => async (req, res, next) => {
     try {
-        const statement = await insuranceReportService.getPayerStatementOfAccount(db, getRequestQuery(req));
+        const statement = await insuranceReportService.getPayerStatementOfAccount(db, reportOptions(req));
 
         if (getRequestQuery(req).format === 'csv') {
             const dateStr = new Date().toISOString().slice(0, 10);
@@ -96,7 +101,7 @@ const getPayerStatement = (db) => async (req, res, next) => {
 // 3. Insurance Aging Report Controller
 const getInsuranceAging = (db) => async (req, res, next) => {
     try {
-        const report = await insuranceReportService.getInsuranceAgingReport(db, getRequestQuery(req));
+        const report = await insuranceReportService.getInsuranceAgingReport(db, reportOptions(req));
 
         if (getRequestQuery(req).format === 'csv') {
             const dateStr = new Date().toISOString().slice(0, 10);
@@ -127,7 +132,7 @@ const getInsuranceAging = (db) => async (req, res, next) => {
 // 4. Contracts Performance Report Controller
 const getContractsPerformance = (db) => async (req, res, next) => {
     try {
-        const report = await insuranceReportService.getContractsPerformanceReport(db, getRequestQuery(req));
+        const report = await insuranceReportService.getContractsPerformanceReport(db, reportOptions(req));
 
         if (getRequestQuery(req).format === 'csv') {
             const dateStr = new Date().toISOString().slice(0, 10);

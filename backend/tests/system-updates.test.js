@@ -25,6 +25,18 @@ describe('Release management uses approved external deployment', () => {
         expect(pool.query).not.toHaveBeenCalled(); expect(pool.connect).not.toHaveBeenCalled();
     });
     test('history remains available', async () => expect(Array.isArray(await getSystemUpdateHistory(pool))).toBe(true));
+    test('release status and history are readable by Admin and Developer while diagnostics stay restricted', async () => {
+        const app = express();
+        const auth = (req, res, next) => { req.user = { role: req.headers['x-test-role'] }; next(); };
+        const roles = allowed => (req, res, next) => allowed.includes(req.user.role) ? next() : res.sendStatus(403);
+        app.use('/system', systemRoutes(pool, auth, roles));
+        for (const role of ['Admin', 'Developer']) {
+            await request(app).get('/system/updates/status').set('x-test-role', role).expect(200);
+            await request(app).get('/system/updates/history').set('x-test-role', role).expect(200);
+        }
+        await request(app).get('/system/updates/status').set('x-test-role', 'Nurse').expect(403);
+        await request(app).get('/system/diagnostics').set('x-test-role', 'Admin').expect(403);
+    });
     test('HTTP upload/apply reject before accepting multipart files and preserve role gates', async () => {
         const app = express(); app.use(express.json());
         const auth = (req, res, next) => { req.user = { role: req.headers['x-test-role'] || 'Admin' }; next(); };

@@ -45,8 +45,8 @@
 'use strict';
 
 const crypto = require('crypto');
-const path   = require('path');
-const fs     = require('fs');
+const path = require('path');
+const fs = require('fs');
 const logger = require('../config/logger');
 const { getFingerprint } = require('../utils/hardwareFingerprint');
 const { editionHasFeature, EDITION_FEATURES } = require('../config/featureFlags');
@@ -104,14 +104,16 @@ function isLocalDevelopmentEnvironment() {
 
 function getBlankDeveloperLicense() {
     return {
-        edition:        'developer',
-        customerId:     'DEVELOPER',
-        issuedAt:       new Date().toISOString(),
-        expiresAt:      null,
-        maxUsers:       -1,
+        edition: 'developer',
+        customerId: 'DEVELOPER',
+        issuedAt: new Date().toISOString(),
+        expiresAt: null,
+        maxUsers: -1,
+        maxBranches: -1,
+        multiBranchAllowed: true,
         allowedModules: ['*'],
-        daysRemaining:  null,
-        _source:        'dev-fallback',
+        daysRemaining: null,
+        _source: 'dev-fallback',
     };
 }
 
@@ -146,7 +148,7 @@ function _decodeLicenseKey(licenseKey) {
     }
 
     return {
-        payload:   raw.payload,
+        payload: raw.payload,
         signature: Buffer.from(raw.signature, 'base64'),
     };
 }
@@ -159,18 +161,64 @@ function _decodeLicenseKey(licenseKey) {
  */
 function _verifySignature(payload, signature) {
     try {
-        const data       = Buffer.from(JSON.stringify(payload), 'utf8');
-        const publicKey  = crypto.createPublicKey(LICENSE_PUBLIC_KEY_PEM);
+        const data = Buffer.from(JSON.stringify(payload), 'utf8');
+        const pubKey = process.env.LICENSE_PUBLIC_KEY || LICENSE_PUBLIC_KEY_PEM;
+        const publicKey = crypto.createPublicKey(pubKey);
         return crypto.verify('SHA256', data, publicKey, signature);
     } catch {
         return false;
     }
 }
 
+const DEFAULT_GRACE_PERIOD_DAYS = 14;
+
+/**
+ * Compute real-time validity, daysRemaining, grace period status, and expiration (MBT-309).
+ * Standard and Enterprise production licenses grant a 14-day continuity-of-care grace period.
+ * Trial licenses have 0 days grace period by default.
+ *
+ * @param {object} payload
+ * @returns {{ daysRemaining: number|null, inGracePeriod: boolean, graceDaysRemaining: number|null, isExpired: boolean }}
+ */
+function _calculateValidity(payload) {
+    let daysRemaining = null;
+    let inGracePeriod = false;
+    let graceDaysRemaining = null;
+    let isExpired = false;
+
+    if (payload.expiresAt) {
+        const expiry = new Date(payload.expiresAt);
+        const msLeft = expiry.getTime() - Date.now();
+        const graceDays = payload.gracePeriodDays !== undefined
+            ? payload.gracePeriodDays
+            : (payload.edition === 'trial' ? 0 : DEFAULT_GRACE_PERIOD_DAYS);
+        const graceMs = graceDays * 86400000;
+
+        if (msLeft >= 0) {
+            daysRemaining = Math.max(0, Math.ceil(msLeft / 86400000));
+            inGracePeriod = false;
+            graceDaysRemaining = null;
+            isExpired = false;
+        } else if (graceMs > 0 && Math.abs(msLeft) <= graceMs) {
+            daysRemaining = 0;
+            inGracePeriod = true;
+            graceDaysRemaining = Math.max(0, Math.ceil((graceMs - Math.abs(msLeft)) / 86400000));
+            isExpired = false;
+        } else {
+            daysRemaining = 0;
+            inGracePeriod = false;
+            graceDaysRemaining = 0;
+            isExpired = true;
+        }
+    }
+
+    return { daysRemaining, inGracePeriod, graceDaysRemaining, isExpired };
+}
+
 /**
  * Validate the semantic fields of a decoded payload.
  * @param {object} payload
- * @returns {{ valid: boolean, reason?: string }}
+ * @returns {{ valid: boolean, reason?: string, inGracePeriod?: boolean, graceDaysRemaining?: number|null, expired?: boolean }}
  */
 function _validatePayload(payload) {
     if (payload.edition === 'trial' && !payload.expiresAt) {
@@ -189,7 +237,8 @@ function _validatePayload(payload) {
         if (isNaN(expiry.getTime())) {
             return { valid: false, reason: 'expiresAt is not a valid ISO date' };
         }
-        if (expiry < new Date()) {
+        const { isExpired } = _calculateValidity(payload);
+        if (isExpired) {
             return { valid: false, reason: 'License has expired', expired: true };
         }
     }
@@ -199,24 +248,42 @@ function _validatePayload(payload) {
         return { valid: false, reason: 'maxUsers must be an integer or -1' };
     }
 
-    return { valid: true };
+    if (payload.maxBranches !== undefined && payload.maxBranches !== -1
+        && (!Number.isInteger(payload.maxBranches) || payload.maxBranches < 1)) {
+        return { valid: false, reason: 'maxBranches must be an integer >= 1 or -1' };
+    }
+
+    const { inGracePeriod, graceDaysRemaining } = _calculateValidity(payload);
+    return { valid: true, ...(inGracePeriod ? { inGracePeriod: true, graceDaysRemaining } : {}) };
 }
 
 /**
  * Check (and persist) hardware fingerprint binding.
- * On first activation the fingerprint is saved to ACTIVATION_FILE.
- * On subsequent starts the saved value is compared to the current machine.
+ * Supports High Availability (HA) standby nodes and clustered deployments (MBT-310).
  *
  * @param {object} payload  – Decoded license payload
  */
 function _checkHardwareBinding(payload) {
-    // If the license explicitly includes a fingerprint, it must match exactly.
+    const clusterKey = process.env.HA_CLUSTER_KEY;
+    const allowedFingerprints = (process.env.HA_ALLOWED_FINGERPRINTS || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+    // If the license explicitly includes a fingerprint, verify either the primary machine
+    // or an authorized HA standby node / cluster key (MBT-310).
     if (payload.fingerprint) {
         const current = getFingerprint();
-        if (current !== payload.fingerprint) {
+        const matchesPrimary = current === payload.fingerprint;
+        const matchesHaList = Array.isArray(payload.haFingerprints) && payload.haFingerprints.includes(current);
+        const matchesHaNodes = Array.isArray(payload.haNodes) && payload.haNodes.includes(current);
+        const matchesEnvList = allowedFingerprints.includes(current);
+        const matchesCluster = Boolean(clusterKey && payload.clusterKey && payload.clusterKey === clusterKey);
+
+        if (!matchesPrimary && !matchesHaList && !matchesHaNodes && !matchesEnvList && !matchesCluster) {
             throw new Error(
                 'License is locked to a different machine. ' +
-                'Contact VIARA support to transfer your license.'
+                'Contact VIARA support to transfer your license or authorize HA standby nodes.'
             );
         }
         return;
@@ -231,7 +298,11 @@ function _checkHardwareBinding(payload) {
 
     if (fs.existsSync(activationFile)) {
         const saved = fs.readFileSync(activationFile, 'utf8').trim();
-        if (saved !== current) {
+        const matchesSaved = saved === current;
+        const matchesEnvList = allowedFingerprints.includes(current);
+        const matchesCluster = Boolean(clusterKey && (saved === clusterKey || process.env.CLUSTER_NODE_ID));
+
+        if (!matchesSaved && !matchesEnvList && !matchesCluster) {
             if (isLocalDevelopmentEnvironment()) {
                 logger.warn(`⚠️ Hardware fingerprint updated for local development environment (${saved.slice(0, 8)}... -> ${current.slice(0, 8)}...)`);
                 try {
@@ -346,14 +417,27 @@ function loadLicense() {
     // -----------------------------------------------------------------------
     // Compute derived fields
     // -----------------------------------------------------------------------
-    let daysRemaining = null;
-    if (payload.expiresAt) {
-        const msLeft  = new Date(payload.expiresAt).getTime() - Date.now();
-        daysRemaining = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
-    }
+    const { daysRemaining, inGracePeriod, graceDaysRemaining, isExpired } = _calculateValidity(payload);
 
     const allowedModules = payload.allowedModules ||
         (EDITION_FEATURES[payload.edition] || EDITION_FEATURES.trial);
+
+    const multiBranchAllowed = Boolean(
+        allowedModules.includes('multi-branch') ||
+        allowedModules.includes('*') ||
+        payload.edition === 'developer'
+    );
+
+    let maxBranches = 1;
+    if (payload.maxBranches !== undefined) {
+        maxBranches = payload.maxBranches;
+    } else if (payload.edition === 'developer') {
+        maxBranches = -1;
+    } else if (payload.edition === 'enterprise' && multiBranchAllowed) {
+        maxBranches = -1;
+    } else {
+        maxBranches = 1;
+    }
 
     // -----------------------------------------------------------------------
     // Cache and return
@@ -362,6 +446,11 @@ function loadLicense() {
         ...payload,
         allowedModules,
         daysRemaining,
+        inGracePeriod,
+        graceDaysRemaining,
+        isExpired,
+        maxBranches,
+        multiBranchAllowed,
         _source: 'verified',
     };
 
@@ -404,24 +493,43 @@ function inspectLicenseKey(rawKey) {
             return { valid: false, reason: expired ? 'انتهت صلاحية هذا الترخيص' : reason, expired };
         }
 
-        let daysRemaining = null;
-        if (payload.expiresAt) {
-            const msLeft = new Date(payload.expiresAt).getTime() - Date.now();
-            daysRemaining = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
-        }
+        const { daysRemaining, inGracePeriod, graceDaysRemaining, isExpired } = _calculateValidity(payload);
 
         const allowedModules = payload.allowedModules ||
             (EDITION_FEATURES[payload.edition] || EDITION_FEATURES.trial);
+
+        const multiBranchAllowed = Boolean(
+            allowedModules.includes('multi-branch') ||
+            allowedModules.includes('*') ||
+            payload.edition === 'developer'
+        );
+
+        let maxBranches = 1;
+        if (payload.maxBranches !== undefined) {
+            maxBranches = payload.maxBranches;
+        } else if (payload.edition === 'developer') {
+            maxBranches = -1;
+        } else if (payload.edition === 'enterprise' && multiBranchAllowed) {
+            maxBranches = -1;
+        } else {
+            maxBranches = 1;
+        }
 
         return {
             valid: true,
             payload: {
                 customerId: payload.customerId,
+                organizationId: payload.organizationId || null,
                 edition: payload.edition,
                 issuedAt: payload.issuedAt,
                 expiresAt: payload.expiresAt,
                 daysRemaining,
+                inGracePeriod,
+                graceDaysRemaining,
+                isExpired,
                 maxUsers: payload.maxUsers,
+                maxBranches,
+                multiBranchAllowed,
                 allowedModules,
                 isTrial: payload.edition === 'trial',
             }
@@ -464,11 +572,7 @@ function applyLicenseKey(rawKey, { persist = true } = {}) {
 
     _checkHardwareBinding(payload);
 
-    let daysRemaining = null;
-    if (payload.expiresAt) {
-        const msLeft = new Date(payload.expiresAt).getTime() - Date.now();
-        daysRemaining = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
-    }
+    const { daysRemaining, inGracePeriod, graceDaysRemaining, isExpired } = _calculateValidity(payload);
 
     const allowedModules = payload.allowedModules ||
         (EDITION_FEATURES[payload.edition] || EDITION_FEATURES.trial);
@@ -487,10 +591,32 @@ function applyLicenseKey(rawKey, { persist = true } = {}) {
         }
     }
 
+    const multiBranchAllowed = Boolean(
+        allowedModules.includes('multi-branch') ||
+        allowedModules.includes('*') ||
+        payload.edition === 'developer'
+    );
+
+    let maxBranches = 1;
+    if (payload.maxBranches !== undefined) {
+        maxBranches = payload.maxBranches;
+    } else if (payload.edition === 'developer') {
+        maxBranches = -1;
+    } else if (payload.edition === 'enterprise' && multiBranchAllowed) {
+        maxBranches = -1;
+    } else {
+        maxBranches = 1;
+    }
+
     _license = {
         ...payload,
         allowedModules,
         daysRemaining,
+        inGracePeriod,
+        graceDaysRemaining,
+        isExpired,
+        maxBranches,
+        multiBranchAllowed,
         _source: 'activated',
     };
     process.env.LICENSE_KEY = trimmed;
@@ -527,8 +653,11 @@ function getLicense() {
     // never fire, and an expired trial was served indefinitely. The countdown
     // banner showed the same stale number for the life of the process.
     if (_license.expiresAt) {
-        const msLeft = new Date(_license.expiresAt).getTime() - Date.now();
-        _license.daysRemaining = Math.max(0, Math.ceil(msLeft / (1000 * 60 * 60 * 24)));
+        const { daysRemaining, inGracePeriod, graceDaysRemaining, isExpired } = _calculateValidity(_license);
+        _license.daysRemaining = daysRemaining;
+        _license.inGracePeriod = inGracePeriod;
+        _license.graceDaysRemaining = graceDaysRemaining;
+        _license.isExpired = isExpired;
     }
 
     return _license;

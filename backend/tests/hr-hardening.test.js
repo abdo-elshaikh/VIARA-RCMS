@@ -37,6 +37,8 @@ const createResponse = () => ({
 });
 
 const makeReq = (overrides = {}) => ({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
     params: {},
     body: {},
     query: {},
@@ -81,6 +83,8 @@ describe('HR hardening', () => {
             const res = createResponse();
 
             await createStaff(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 body: { fullName: 'New Hire', email: 'new@viara.test', role: 'Nurse', password: 'secret123', department: 'Nursing', jobTitle: 'Staff Nurse' },
                 user: { user_id: USER_ID, role: 'HR', full_name: 'HR Manager' }
             }), res, jest.fn());
@@ -165,6 +169,8 @@ describe('HR hardening', () => {
             const res = createResponse();
 
             await getLeaveBalances(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 query: { year: '2026' },
                 user: { user_id: EMPLOYEE_ID, role: 'Nurse' }
             }), res, jest.fn());
@@ -194,6 +200,8 @@ describe('HR hardening', () => {
             const next = jest.fn();
 
             await createLeaveRequest(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 body: { startDate: '2026-09-01', endDate: '2026-09-10', leaveType: 'Vacation', reason: 'family' },
                 user: { user_id: EMPLOYEE_ID, role: 'Nurse' }
             }), createResponse(), next);
@@ -219,6 +227,8 @@ describe('HR hardening', () => {
             const next = jest.fn();
 
             await createLeaveRequest(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 body: { startDate: '2026-09-01', endDate: '2026-12-31', leaveType: 'Unpaid', reason: 'extended break' },
                 user: { user_id: EMPLOYEE_ID, role: 'Nurse' }
             }), res, next);
@@ -264,6 +274,7 @@ describe('HR hardening', () => {
 
         test('warns when the same role covers the same room during an overlapping window', async () => {
             const client = makeClient([
+                ['SELECT branch_id FROM rooms', () => ok([{ branch_id: '00000000-0000-4000-8000-000000000001' }])],
                 ['SELECT user_id, role FROM users', () => ok([{ user_id: EMPLOYEE_ID, role: 'Technician' }])],
                 ['SELECT shift_id FROM staff_shifts', () => ok([])],
                 ['INSERT INTO staff_shifts', () => ok([{ shift_id: SHIFT_ID, user_id: EMPLOYEE_ID, room_id: ROOM_ID }])],

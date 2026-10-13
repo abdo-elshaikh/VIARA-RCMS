@@ -44,6 +44,8 @@ describe('PACS controller authorization', () => {
     it('rejects a scoped viewer WADO request when the SOP is not indexed to the allowed study', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { 0: 'wado', 1: '' },
             query: { studyUID: '1.2.3', objectUID: '9.9.9' },
@@ -71,6 +73,8 @@ describe('PACS controller authorization', () => {
     it('allows scoped viewer series metadata when the path is already scoped to the allowed study', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies/1.2.3/series/1.2.3.4/metadata' },
             query: {},
@@ -99,6 +103,7 @@ describe('PACS controller authorization', () => {
         writeAudit.mockRejectedValueOnce(Object.assign(new Error('audit unavailable'), { statusCode: 503 }));
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies/1.2.30/metadata' },
             query: {},
@@ -125,6 +130,7 @@ describe('PACS controller authorization', () => {
     it('audits broad study searches before forwarding their query to Orthanc', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies' },
             query: { PatientID: 'private-patient-id' },
@@ -157,6 +163,8 @@ describe('PACS controller authorization', () => {
     it('returns an empty safe study list for scoped viewer patient-level browse requests', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies' },
             query: { '00100020': '25963..', limit: '101' },
@@ -184,6 +192,8 @@ describe('PACS controller authorization', () => {
     it('does not treat RECONCILE_STUDIES as global DICOMweb image access', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies/1.2.3/metadata' },
             query: {},
@@ -211,6 +221,8 @@ describe('PACS controller authorization', () => {
     it('does not let a PACS manager browse private studies without emergency access', async () => {
         const db = { query: jest.fn() };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies' },
             query: {},
@@ -234,6 +246,8 @@ describe('PACS controller authorization', () => {
     it('allows audited emergency access to browse PACS studies', async () => {
         const db = { query: jest.fn() };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies' },
             query: {},
@@ -260,6 +274,8 @@ describe('PACS controller authorization', () => {
     it('does not return imaging metadata for an unassigned exam', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId: 'exam-1' },
             user: {
                 role: 'Technician',
@@ -288,6 +304,8 @@ describe('PACS controller authorization', () => {
             })
         };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { jobId: 'job-1' },
             user: {
                 role: 'Technician',
@@ -310,6 +328,8 @@ describe('PACS controller authorization', () => {
     it('denies PACS study export when the study is outside the user scope', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { studyInstanceUid: '1.2.3' },
             query: { format: 'dicom' },
@@ -337,6 +357,7 @@ describe('PACS controller authorization', () => {
     it('exports rendered PACS images as a ZIP after study access is authorized', async () => {
         const db = {
             query: jest.fn(async (sql) => {
+                if (sql.includes('FROM user_branch_memberships')) return { rows: [{ id: '00000000-0000-4000-8000-000000000001' }] };
                 if (sql.includes('LEFT JOIN appointments')) {
                     return { rows: [{ study_instance_uid: '1.2.3' }] };
                 }
@@ -381,6 +402,8 @@ describe('PACS controller authorization', () => {
             throw new Error(`unexpected fetch ${href}`);
         });
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { studyInstanceUid: '1.2.3' },
             query: { format: 'images', examId: 'exam-1' },

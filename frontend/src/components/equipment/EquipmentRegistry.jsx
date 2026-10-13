@@ -267,7 +267,7 @@ const EquipmentRegistry = () => {
     const saving = isCreating || isUpdating;
 
     return (
-        <div className="space-y-4">
+        <div className="equipment-registry min-w-0 space-y-4">
             <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950" aria-label={copy('summaryLabel')}>
                 <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-3 py-2 dark:border-slate-800 dark:bg-slate-900/70">
                     <div className="inline-flex min-w-0 items-center gap-2 text-xs font-black text-slate-700 dark:text-slate-200">
@@ -298,7 +298,7 @@ const EquipmentRegistry = () => {
 
             {worklist.length > 0 && (
                 <section className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm dark:border-amber-900/70 dark:bg-amber-400/10">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex flex-col gap-3">
                         <div className="flex items-start gap-3">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-amber-700 shadow-sm dark:bg-slate-900"><ShieldAlert size={18} /></span>
                             <div>
@@ -306,7 +306,7 @@ const EquipmentRegistry = () => {
                                 <p className="mt-1 text-sm text-amber-800 dark:text-amber-200">{copy('worklistDescription')}</p>
                             </div>
                         </div>
-                        <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[520px]">
+                        <div className="equipment-card-grid grid min-w-0 gap-2">
                             {worklist.map(({ machine, insight }) => <WorkItem key={machine.modality_id} machine={machine} insight={insight} copy={copy} onEdit={openEdit} canManage={canManageEquipment} />)}
                         </div>
                     </div>
@@ -314,7 +314,7 @@ const EquipmentRegistry = () => {
             )}
 
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <header className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/70 xl:flex-row xl:items-center xl:justify-between">
+                <header className="equipment-registry-header flex flex-col gap-4 border-b border-slate-100 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/70 xl:flex-row xl:items-center xl:justify-between">
                     <div className="flex items-start gap-3">
                         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700 ring-1 ring-blue-100 dark:bg-blue-400/10 dark:text-blue-300 dark:ring-blue-900"><Server size={19} /></span>
                         <div>
@@ -322,7 +322,7 @@ const EquipmentRegistry = () => {
                             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{copy('description')}</p>
                         </div>
                     </div>
-                    <div className="grid gap-2 md:grid-cols-[minmax(220px,1fr)_170px_150px_auto_auto] xl:w-auto">
+                    <div className="equipment-registry-filters">
                         <label className="relative min-w-0">
                             <span className="sr-only">{copy('search')}</span>
                             <Search size={16} className="pointer-events-none absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -343,13 +343,13 @@ const EquipmentRegistry = () => {
                             </select>
                         </label>
                         <button type="button" onClick={refresh} disabled={isFetching} aria-label={copy('refresh')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><RefreshCw size={16} className={isFetching ? 'animate-spin' : ''} />{copy('refresh')}</button>
-                        {canManageEquipment && <button type="button" onClick={openCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition hover:bg-cyan-800"><Plus size={16} />{copy('newMachine')}</button>}
+                        {canManageEquipment && <button type="button" onClick={openCreate} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white transition hover:bg-cyan-800"><Plus size={16} />{copy('newMachine')}</button>}
                     </div>
                 </header>
 
                 {isLoading ? <Loading label={copy('loading')} /> : isError ? <ErrorState label={copy('loadError')} retry={copy('retry')} onRetry={refetch} /> : visibleMachines.length === 0 ? <Empty filtered={Boolean(search || statusFilter !== 'all' || riskFilter !== 'all')} copy={copy} /> : <>
-                    <div className="divide-y divide-slate-100 lg:hidden dark:divide-slate-800">{visibleMachines.map(machine => <MachineCard key={machine.modality_id} machine={machine} insight={insightByMachine.get(machine.modality_id)} copy={copy} locale={locale} onEdit={openEdit} onDelete={handleDelete} canManage={canManageEquipment} />)}</div>
-                    <div className="hidden overflow-x-auto lg:block">
+                    <div className="equipment-registry-cards divide-y divide-slate-100 dark:divide-slate-800">{visibleMachines.map(machine => <MachineCard key={machine.modality_id} machine={machine} insight={insightByMachine.get(machine.modality_id)} copy={copy} locale={locale} onEdit={openEdit} onDelete={handleDelete} canManage={canManageEquipment} />)}</div>
+                    <div className="equipment-registry-table overflow-x-auto">
                         <table className="w-full min-w-[1140px] text-sm">
                             <thead className="border-b border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
                                 <tr>{['machine', 'identity', 'location', 'availability', 'pacs', 'nextService', 'contract', 'risk'].map(key => <th key={key} className="px-4 py-3 text-start text-xs font-black uppercase tracking-wider">{copy(key, { defaultValue: key === 'pacs' ? 'PACS' : undefined })}</th>)}{canManageEquipment && <th className="px-4 py-3 text-end text-xs font-black uppercase tracking-wider">{copy('actions')}</th>}</tr>
@@ -400,7 +400,7 @@ const EquipmentRegistry = () => {
                     <p className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-blue-900 dark:border-blue-900 dark:bg-blue-400/10 dark:text-blue-200">{copy('statusHelp')}</p>
                     <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 dark:border-slate-800 sm:flex-row sm:justify-end">
                         <button type="button" onClick={closeEditor} disabled={saving} className="min-h-11 rounded-xl px-4 text-sm font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800">{copy('cancel')}</button>
-                        <button type="submit" disabled={saving} className="min-h-11 rounded-xl bg-blue-700 px-5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">{saving ? copy('saving') : copy(machineEditor === 'new' ? 'create' : 'save')}</button>
+                        <button type="submit" disabled={saving} className="min-h-11 rounded-xl bg-emerald-700 px-5 text-sm font-bold text-white hover:bg-blue-800 disabled:opacity-50">{saving ? copy('saving') : copy(machineEditor === 'new' ? 'create' : 'save')}</button>
                     </div>
                 </form>
             </Modal>
@@ -430,7 +430,7 @@ const metricTones = {
     amber: 'border-amber-200/80 bg-amber-50/60 text-amber-700 dark:border-amber-900/70 dark:bg-amber-400/[.06] dark:text-amber-300',
     rose: 'border-rose-200/80 bg-rose-50/60 text-rose-700 dark:border-rose-900/70 dark:bg-rose-400/[.06] dark:text-rose-300',
 };
-const Metric = ({ icon: Icon, label, value, tone }) => <div className={`flex min-w-0 items-center gap-2 rounded-xl border px-2.5 py-2 ${metricTones[tone] || metricTones.blue}`}><span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/80 dark:bg-slate-950/60"><Icon size={14} aria-hidden="true" /></span><span className="min-w-0 flex-1 truncate text-[11px] font-semibold text-slate-600 dark:text-slate-300">{label}</span><strong className="shrink-0 text-base font-black tabular-nums text-slate-950 dark:text-white">{value}</strong></div>;
+const Metric = ({ icon: Icon, label, value, tone }) => <div className={`flex min-w-0 items-center gap-2 rounded-xl border px-2.5 py-2 ${metricTones[tone] || metricTones.blue}`}><span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/80 dark:bg-slate-950/60"><Icon size={14} aria-hidden="true" /></span><span className="min-w-0 flex-1 text-[11px] font-semibold text-slate-600 dark:text-slate-300">{label}</span><strong className="shrink-0 text-base font-black tabular-nums text-slate-950 dark:text-white">{value}</strong></div>;
 const Field = ({ label, className = '', children }) => <label className={`block ${className}`}><span className="mb-1.5 block text-xs font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">{label}</span>{children}</label>;
 const Status = ({ status = 'Active', copy }) => <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${status === 'Active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300' : status === 'Under Maintenance' ? 'bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-400/10 dark:text-rose-300'}`}>{copy(`statuses.${status}`)}</span>;
 const PacsBadge = ({ machine, copy }) => {

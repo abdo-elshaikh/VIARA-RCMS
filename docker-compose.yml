@@ -30,6 +30,9 @@ services:
     command: ["npm", "run", "migrate"]
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-VIARA}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-VIARA}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
+      BRANCH_CONTEXT_SECRET: ${BRANCH_CONTEXT_SECRET:-}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Generate APP_DB_PASSWORD for the unprivileged application role}
     volumes:
       - ./database:/database:ro
     networks: [data]
@@ -103,11 +106,14 @@ services:
       PACS_OIDC_USER_ID_CLAIM: ${PACS_OIDC_USER_ID_CLAIM:-viara_user_id}
       PACS_OIDC_REQUIRED_SCOPE: ${PACS_OIDC_REQUIRED_SCOPE:-pacs.read}
       PACS_OIDC_MAX_TOKEN_TTL_SECONDS: ${PACS_OIDC_MAX_TOKEN_TTL_SECONDS:-300}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-VIARA}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-VIARA}
+      DATABASE_URL: postgresql://rcms_app_user:${APP_DB_PASSWORD:?Generate APP_DB_PASSWORD for the unprivileged application role}@postgres:5432/${POSTGRES_DB:-VIARA}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
+      BRANCH_CONTEXT_SECRET: ${BRANCH_CONTEXT_SECRET:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in the root .env file}
       BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:?Set BACKUP_ENCRYPTION_KEY in the root .env file}
       BLIND_INDEX_KEY: ${BLIND_INDEX_KEY:?Set BLIND_INDEX_KEY in the root .env file}
+      ENCRYPTION_KEYS: ${ENCRYPTION_KEYS:-}
+      ENCRYPTION_KEY_ID: ${ENCRYPTION_KEY_ID:-}
       CLIENT_URL: ${CLIENT_URL:?Set CLIENT_URL to the public HTTPS staff application URL}
       TRUST_PROXY: ${TRUST_PROXY:-loopback,linklocal,uniquelocal}
       DB_POOL_MAX: ${DB_POOL_MAX:-20}

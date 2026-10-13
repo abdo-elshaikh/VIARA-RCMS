@@ -131,7 +131,7 @@ const assertAppointmentScheduleRules = async (client, modalityId, startTime, end
     service.assertWithinWorkingHours(startTime, endTime, workingHours);
 
     const machineResult = await client.query(`
-        SELECT m.modality_id, m.name, m.status, m.room_id, m.room_number,
+        SELECT m.modality_id, m.name, m.status, m.room_id, m.room_number, m.branch_id,
                r.name AS room_name, r.status AS room_status
         FROM modalities m
         LEFT JOIN rooms r ON m.room_id = r.room_id

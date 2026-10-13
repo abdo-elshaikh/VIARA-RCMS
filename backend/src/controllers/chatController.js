@@ -4,6 +4,7 @@ const logger = require('../config/logger');
 const { AppError } = require('../middleware/errorHandler');
 const { cleanupUploadedFiles, parseAttachments } = require('../utils/chatAttachmentUpload');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
+const branchService = require('../services/branchService');
 
 const allowedMessageKinds = new Set(['text', 'sticker', 'attachment']);
 const systemAdministratorRoles = new Set(['Admin', 'SuperAdmin', 'Developer']);
@@ -58,8 +59,14 @@ const hasAllowedRole = (channel, role) => Array.isArray(channel.allowed_roles)
     && channel.allowed_roles.length > 0
     && channel.allowed_roles.includes(role);
 
-const canAccessChannel = (channel, userId, role, isMember = false) => {
+const canAccessChannel = (channel, userId, role, isMember = false, userBranchIds = null, isOrgAdmin = false) => {
     if (!channel) return false;
+    // Multi-branch boundary: branch-specific channels are restricted to members of that branch or org admin
+    if (channel.branch_id) {
+        if (!isOrgAdmin && (!Array.isArray(userBranchIds) || !userBranchIds.includes(channel.branch_id))) {
+            return false;
+        }
+    }
     if (isSystemAdministrator(role)) return true;
     if (sameId(channel.created_by, userId) || isMember) return true;
     if (hasAllowedRole(channel, role)) return true;
@@ -72,22 +79,34 @@ const getChannelAccess = async (db, channelId, user) => {
     if (!channel) throw new AppError('Channel not found', 404);
 
     const userId = user.user_id || user.userId;
+    let userBranchIds = [];
+    if (!user.is_org_admin) {
+        const ub = await branchService.getUserBranches(db, userId, false);
+        userBranchIds = ub.branches.map(b => b.id);
+    }
     const membership = await db.query(
         'SELECT channel_role FROM chat_channel_members WHERE channel_id = $1 AND user_id = $2',
         [channelId, userId]
     );
     const channelRole = membership.rows[0]?.channel_role || null;
+    const branchDenied = Boolean(channel.branch_id && !user.is_org_admin && !userBranchIds.includes(channel.branch_id));
     return {
         channel,
         channelRole,
+        branchDenied,
         isMember: Boolean(channelRole),
-        canAccess: canAccessChannel(channel, userId, user.role || '', Boolean(channelRole))
+        canAccess: canAccessChannel(channel, userId, user.role || '', Boolean(channelRole), userBranchIds, user.is_org_admin)
     };
 };
 
 const requireChannelAccess = async (db, channelId, user) => {
     const access = await getChannelAccess(db, channelId, user);
-    if (!access.canAccess) throw new AppError('You do not have access to this channel', 403);
+    if (!access.canAccess) {
+        if (access.branchDenied) {
+            throw new AppError('You do not have access to this branch channel | ليس لديك صلاحية لهذه القناة التابعة لفرع آخر', 403, true, 'BRANCH_ACCESS_DENIED');
+        }
+        throw new AppError('You do not have access to this channel', 403);
+    }
     return access;
 };
 
@@ -99,7 +118,7 @@ const broadcastToChannelAudience = async (db, channel, event, data) => {
         );
         const memberIds = new Set(members.rows.map(row => String(row.user_id)));
         realtimeService.broadcastToStaffMatching(
-            (client) => canAccessChannel(channel, client.userId, client.role, memberIds.has(String(client.userId))),
+            (client) => canAccessChannel(channel, client.userId, client.role, memberIds.has(String(client.userId)), client.branchIds, client.isOrgAdmin),
             event,
             data
         );
@@ -118,6 +137,23 @@ const broadcastToChannelAudience = async (db, channel, event, data) => {
 const getChatUsers = (db) => async (req, res, next) => {
     try {
         const currentUserId = req.user.user_id || req.user.userId;
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+
+        let branchJoin = '';
+        const params = [currentUserId];
+        let paramCount = 2;
+
+        if (explicitBranch) {
+            if (!req.user?.is_org_admin) {
+                const ub = await branchService.getUserBranches(db, currentUserId, false);
+                const userBranchIds = ub.branches.map(b => b.id);
+                if (!userBranchIds.includes(explicitBranch)) {
+                    return next(new AppError('You do not have access to this branch | ليس لديك صلاحية لهذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));
+                }
+            }
+            branchJoin = `JOIN user_branch_memberships ubm ON ubm.user_id = u.user_id AND ubm.branch_id = $${paramCount++} AND ubm.is_active = TRUE`;
+            params.push(explicitBranch);
+        }
 
         const result = await db.query(`
             SELECT u.user_id, u.full_name, u.email, u.role, u.is_active,
@@ -126,6 +162,7 @@ const getChatUsers = (db) => async (req, res, next) => {
                    last_message.created_at AS last_message_at,
                    last_message.sender_id AS last_message_sender_id
             FROM users u
+            ${branchJoin}
             LEFT JOIN (
                 SELECT sender_id, COUNT(*) AS count
                 FROM staff_messages
@@ -142,7 +179,7 @@ const getChatUsers = (db) => async (req, res, next) => {
             ) last_message ON TRUE
             WHERE u.is_active = TRUE AND u.user_id != $1
             ORDER BY last_message.created_at DESC NULLS LAST, u.full_name ASC
-        `, [currentUserId]);
+        `, params);
 
         const onlineUserIds = realtimeService.getOnlineUserIds();
         
@@ -608,8 +645,18 @@ const getChannels = (db) => async (req, res, next) => {
         const currentUserId = req.user.user_id || req.user.userId;
         const userRole = req.user.role || '';
         const isSystemAdmin = isSystemAdministrator(userRole);
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
 
-        const result = await db.query(`
+        let userBranchIds = [];
+        if (!req.user?.is_org_admin) {
+            const ub = await branchService.getUserBranches(db, currentUserId, false);
+            userBranchIds = ub.branches.map(b => b.id);
+            if (explicitBranch && !userBranchIds.includes(explicitBranch)) {
+                return next(new AppError('You do not have access to this branch | ليس لديك صلاحية لهذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));
+            }
+        }
+
+        let query = `
             SELECT c.*,
                    COALESCE(
                        (SELECT COUNT(*) FROM staff_messages sm WHERE sm.channel_name = c.channel_id), 0
@@ -621,12 +668,24 @@ const getChannels = (db) => async (req, res, next) => {
                    CASE WHEN cm.user_id IS NOT NULL THEN TRUE ELSE FALSE END AS is_member
             FROM chat_channels c
             LEFT JOIN chat_channel_members cm ON c.channel_id = cm.channel_id AND cm.user_id = $1
-            ORDER BY c.is_system DESC, c.created_at ASC
-        `, [currentUserId]);
+        `;
+        const params = [currentUserId];
+        let paramCount = 2;
+
+        if (explicitBranch) {
+            query += ` WHERE (c.branch_id = $${paramCount++} OR c.branch_id IS NULL)`;
+            params.push(explicitBranch);
+        } else if (!req.user?.is_org_admin) {
+            query += ` WHERE (c.branch_id = ANY($${paramCount++}::uuid[]) OR c.branch_id IS NULL)`;
+            params.push(userBranchIds);
+        }
+
+        query += ` ORDER BY c.is_system DESC, c.created_at ASC`;
+        const result = await db.query(query, params);
 
         // Filter by access
         const accessibleChannels = result.rows.filter(ch => (
-            canAccessChannel(ch, currentUserId, userRole, ch.is_member)
+            canAccessChannel(ch, currentUserId, userRole, ch.is_member, userBranchIds, req.user?.is_org_admin)
         )).map(ch => {
             const isOwner = sameId(ch.created_by, currentUserId) || ch.my_channel_role === 'owner';
             const isChannelAdmin = isOwner || ch.my_channel_role === 'admin' || isSystemAdmin;
@@ -663,8 +722,20 @@ const createChannel = (db) => async (req, res, next) => {
             isPrivate = false,
             postPermission = 'all_members',
             allowedRoles = [],
-            initialMemberIds = []
+            initialMemberIds = [],
+            branchId = null
         } = req.body;
+
+        const targetBranchId = branchId || req.body?.branch_id || null;
+        if (targetBranchId) {
+            if (!req.user?.is_org_admin) {
+                const ub = await branchService.getUserBranches(db, currentUserId, false);
+                const userBranchIds = ub.branches.map(b => b.id);
+                if (!userBranchIds.includes(targetBranchId)) {
+                    return next(new AppError('You do not have access to create a channel in this branch | ليس لديك صلاحية لإنشاء قناة في هذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));
+                }
+            }
+        }
 
         if (typeof name !== 'string' || !name.trim()) {
             return next(new AppError('Channel name is required', 400));
@@ -685,9 +756,9 @@ const createChannel = (db) => async (req, res, next) => {
 
         const result = await db.query(`
             INSERT INTO chat_channels (
-                channel_id, name, display_name, description, icon_color, created_by, is_system, is_private, post_permission, allowed_roles
+                channel_id, name, display_name, description, icon_color, created_by, is_system, is_private, post_permission, allowed_roles, branch_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9)
+            VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9, $10)
             RETURNING *
         `, [
             cleanSlug,
@@ -698,7 +769,8 @@ const createChannel = (db) => async (req, res, next) => {
             currentUserId,
             Boolean(isPrivate),
             postPermission === 'admins_only' ? 'admins_only' : 'all_members',
-            Array.isArray(allowedRoles) ? allowedRoles : []
+            Array.isArray(allowedRoles) ? allowedRoles : [],
+            targetBranchId
         ]);
 
         const newChannel = result.rows[0];

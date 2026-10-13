@@ -321,7 +321,8 @@
     "availableEmpty": "لا توجد مهام غير مسندة متاحة لدورك.",
     "status": {
       "Unassigned": "غير مسند",
-      "Assigned": "مسند إليك",
+      "Assigned": "مسند",
+      "AssignedToMe": "مسند إليك",
       "In Progress": "قيد التنفيذ",
       "On Hold": "معلّق"
     }

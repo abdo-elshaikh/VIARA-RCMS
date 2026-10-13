@@ -8,13 +8,16 @@ describe('report workflow', () => {
         const next = jest.fn();
 
         await getCaseReports(db, { queue: 'notDelivered' })({
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+            headers: {},
             user: { role: 'Admin', user_id: 'admin-1' }
         }, res, next);
 
         const query = db.query.mock.calls[0][0];
-        expect(query).toContain("last_delivery.delivery_status NOT IN ('Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged')");
+        expect(query).toContain('AND NOT EXISTS (');
+        expect(query).toContain('completed_delivery.delivery_status IN (\'Delivered\', \'Picked Up\', \'Accessed\', \'Printed\', \'Acknowledged\')');
         expect(query).toContain("'Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged'");
-        expect(query).not.toContain('last_delivery.delivery_status IS NOT NULL');
+        expect(query).toContain('AS has_completed_delivery');
         expect(next).not.toHaveBeenCalled();
     });
 
@@ -53,6 +56,7 @@ describe('report workflow', () => {
                 if (text.includes('SELECT e.status') && text.includes('FROM examinations e')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             status: 'Reporting',
                             appointment_id: 'appointment-1',
                             report_locked: false,
@@ -81,6 +85,8 @@ describe('report workflow', () => {
         const next = jest.fn();
 
         await updateReport(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             body: {
                 examId: 'exam-1',
                 reportStatus: 'Approved',
@@ -104,6 +110,7 @@ describe('report workflow', () => {
                 if (text.includes('SELECT e.status') && text.includes('FROM examinations e')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             status: 'Reporting',
                             appointment_id: 'appointment-1',
                             report_locked: false,
@@ -129,6 +136,8 @@ describe('report workflow', () => {
         const next = jest.fn();
 
         await updateReport({ connect: jest.fn().mockResolvedValue(mockClient) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             body: {
                 examId: 'exam-1',
                 status: 'Finalized',

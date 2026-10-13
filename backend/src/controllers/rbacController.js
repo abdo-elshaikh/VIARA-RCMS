@@ -206,12 +206,19 @@ const updateRolePermissions = (db) => async (req, res, next) => {
 const requestBreakGlass = (db) => async (req, res, next) => {
     let client;
     try {
-        const { reason, currentPassword } = req.body;
+        const {
+            reason,
+            currentPassword,
+            targetBranchId = null,
+            targetResourceId = null,
+            targetResourceType = null,
+            durationMinutes: reqDuration
+        } = req.body;
         const userId = req.user.user_id || req.user.userId;
         const sessionId = req.user.session_id || null;
 
         const userResult = await db.query(`
-            SELECT user_id, full_name, role, password_hash, is_active
+            SELECT user_id, full_name, role, password_hash, is_active, organization_id
             FROM users
             WHERE user_id = $1
             LIMIT 1
@@ -247,6 +254,29 @@ const requestBreakGlass = (db) => async (req, res, next) => {
             });
         }
 
+        // Cross-branch / cross-organization validation (MBT-207)
+        let resolvedTargetBranch = null;
+        if (targetBranchId) {
+            const branchCheck = await db.query(`
+                SELECT id, name, code, organization_id
+                FROM branches
+                WHERE id = $1
+            `, [targetBranchId]);
+            resolvedTargetBranch = branchCheck.rows[0];
+            if (!resolvedTargetBranch) {
+                return res.status(404).json({
+                    error: 'Target branch for emergency access was not found.',
+                    code: 'BRANCH_NOT_FOUND'
+                });
+            }
+            if (account.organization_id && resolvedTargetBranch.organization_id !== account.organization_id) {
+                return res.status(403).json({
+                    error: 'Cross-organization emergency access denied. Target branch belongs to another organization.',
+                    code: 'CROSS_ORG_ACCESS_DENIED'
+                });
+            }
+        }
+
         const currentGrant = await findActiveEmergencyGrant(db, { userId, sessionId });
         if (currentGrant) {
             return res.status(409).json({
@@ -254,11 +284,14 @@ const requestBreakGlass = (db) => async (req, res, next) => {
                 code: 'BREAK_GLASS_ALREADY_ACTIVE',
                 grantId: currentGrant.grant_id,
                 permissions: currentGrant.permissions,
-                expiresAt: currentGrant.expires_at
+                expiresAt: currentGrant.expires_at,
+                targetBranchId: currentGrant.target_branch_id || null
             });
         }
 
-        const durationMinutes = getEmergencyAccessDurationMinutes();
+        const durationMinutes = reqDuration
+            ? Math.min(Math.max(Number(reqDuration), 15), 120)
+            : getEmergencyAccessDurationMinutes();
         const expiresAt = new Date(Date.now() + durationMinutes * 60 * 1000);
         const permissions = [...EMERGENCY_ACCESS_PERMISSIONS];
 
@@ -275,18 +308,24 @@ const requestBreakGlass = (db) => async (req, res, next) => {
                 code: 'BREAK_GLASS_ALREADY_ACTIVE',
                 grantId: concurrentGrant.grant_id,
                 permissions: concurrentGrant.permissions,
-                expiresAt: concurrentGrant.expires_at
+                expiresAt: concurrentGrant.expires_at,
+                targetBranchId: concurrentGrant.target_branch_id || null
             });
         }
         const grantResult = await client.query(`
             INSERT INTO emergency_access_logs (
-                user_id, reason, reason_enc, expires_at, permissions, session_id,
+                user_id, organization_id, target_branch_id, target_resource_id, target_resource_type,
+                reason, reason_enc, expires_at, permissions, session_id,
                 ip_address, user_agent, status
             )
-            VALUES ($1, $2, $3, $4, $5::text[], $6, $7, $8, 'Active')
-            RETURNING grant_id, granted_at, expires_at
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10, $11, $12, 'Active')
+            RETURNING grant_id, granted_at, expires_at, target_branch_id
         `, [
             userId,
+            account.organization_id || null,
+            targetBranchId || null,
+            targetResourceId || null,
+            targetResourceType || null,
             'Encrypted clinical justification',
             encrypt(reason),
             expiresAt,
@@ -319,7 +358,11 @@ const requestBreakGlass = (db) => async (req, res, next) => {
                 grantId: grant.grant_id,
                 permissions,
                 expiresAt: grant.expires_at,
-                durationMinutes
+                durationMinutes,
+                targetBranchId: targetBranchId || null,
+                targetBranchName: resolvedTargetBranch?.name || null,
+                targetResourceId: targetResourceId || null,
+                targetResourceType: targetResourceType || null
             }
         });
         await client.query('COMMIT');
@@ -331,7 +374,8 @@ const requestBreakGlass = (db) => async (req, res, next) => {
         const token = signAccessToken(req.user, {
             emergencyAccessId: grant.grant_id,
             elevatedPermissions: permissions,
-            breakGlassExpiry: new Date(grant.expires_at).getTime()
+            breakGlassExpiry: new Date(grant.expires_at).getTime(),
+            emergencyTargetBranchId: targetBranchId || null
         }, tokenTtlSeconds);
 
         const notificationPayload = {
@@ -342,7 +386,8 @@ const requestBreakGlass = (db) => async (req, res, next) => {
                 actor_name: account.full_name,
                 actor_role: account.role,
                 grant_id: grant.grant_id,
-                expires_at: new Date(grant.expires_at).toISOString()
+                expires_at: new Date(grant.expires_at).toISOString(),
+                target_branch_name: resolvedTargetBranch?.name || 'All Branches'
             }
         };
         Promise.all([
@@ -356,7 +401,10 @@ const requestBreakGlass = (db) => async (req, res, next) => {
             grantId: grant.grant_id,
             elevatedPermissions: permissions,
             expiresAt: grant.expires_at,
-            durationMinutes
+            durationMinutes,
+            targetBranchId: targetBranchId || null,
+            targetResourceId: targetResourceId || null,
+            targetResourceType: targetResourceType || null
         });
     } catch (error) {
         if (client) await client.query('ROLLBACK').catch(() => {});
@@ -377,7 +425,10 @@ const getBreakGlassStatus = (db) => async (req, res, next) => {
             grantId: grant?.grant_id || null,
             permissions: grant?.permissions || [],
             grantedAt: grant?.granted_at || null,
-            expiresAt: grant?.expires_at || null
+            expiresAt: grant?.expires_at || null,
+            targetBranchId: grant?.target_branch_id || null,
+            targetResourceId: grant?.target_resource_id || null,
+            targetResourceType: grant?.target_resource_type || null
         });
     } catch (error) {
         next(error);
@@ -393,9 +444,12 @@ const listActiveBreakGlassGrants = (db) => async (req, res, next) => {
         `);
         const result = await db.query(`
             SELECT e.grant_id, e.user_id, u.full_name, u.role, e.permissions,
-                   e.granted_at, e.expires_at, e.ip_address
+                   e.granted_at, e.expires_at, e.ip_address,
+                   e.target_branch_id, b.name as target_branch_name, b.code as target_branch_code,
+                   e.target_resource_id, e.target_resource_type
             FROM emergency_access_logs e
             JOIN users u ON u.user_id = e.user_id
+            LEFT JOIN branches b ON b.id = e.target_branch_id
             WHERE e.status = 'Active' AND e.expires_at > NOW()
             ORDER BY e.granted_at DESC
         `);
@@ -990,7 +1044,7 @@ const getUserPermissions = (db) => async (req, res, next) => {
         const { role } = req.user;
         if (role === 'Developer') {
             const result = await db.query('SELECT name FROM permissions ORDER BY name');
-            return res.json({ permissions: result.rows.map(row => row.name) });
+            return res.json({ permissions: result.rows.map(row => row.name), role, branchId: req.branchContext?.branchId || null });
         }
         const query = `
             SELECT p.name
@@ -1000,7 +1054,7 @@ const getUserPermissions = (db) => async (req, res, next) => {
         `;
         const result = await db.query(query, [role]);
         const permissions = result.rows.map(row => row.name);
-        res.json({ permissions });
+        res.json({ permissions, role, branchId: req.branchContext?.branchId || null });
     } catch (error) {
         next(error);
     }

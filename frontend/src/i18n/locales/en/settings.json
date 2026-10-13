@@ -270,7 +270,9 @@
         "confirmDelete": "Are you sure you want to delete procedure {{name}}?",
         "deleteAction": "Delete Procedure",
         "deleteSuccess": "Procedure deleted successfully.",
-        "deleteError": "Failed to delete procedure."
+        "deleteError": "Failed to delete procedure.",
+        "createTitle": "Create New Clinical Procedure",
+        "editTitle": "Edit Procedure Specifications"
       },
       "machines": {
         "room": "Room / Suite",
@@ -298,7 +300,9 @@
         "deleteSuccess": "Machine deleted successfully.",
         "alreadyRemoved": "Machine was already removed.",
         "deleteError": "Failed to delete machine.",
-        "customOrNone": "— Custom / Unassigned —"
+        "customOrNone": "— Custom / Unassigned —",
+        "createTitle": "Register New Machine",
+        "editTitle": "Edit Machine Specifications"
       },
       "selectOption": "Select an option"
     },
@@ -1316,6 +1320,36 @@
         "testimonials": "Testimonials",
         "faq": "Questions",
         "support": "Support"
+      },
+      "viewport": {
+        "desktop": "Desktop",
+        "tablet": "Tablet",
+        "mobile": "Mobile"
+      },
+      "activeSectionsCount": "{{enabled}} of {{total}} active",
+      "enableAll": "Enable all",
+      "disableAll": "Disable all",
+      "activeOnPage": "Active on page",
+      "hiddenFromVisitors": "Hidden from visitors",
+      "moveToTop": "Move to top",
+      "moveToBottom": "Move to bottom",
+      "invalidImage": "Invalid image or load failure",
+      "imagePreview": "Image preview",
+      "livePreviewCard": "Real-time preview card",
+      "resetToTemplate": "Reset to template default",
+      "colorPresets": "Clinical color presets",
+      "googlePreview": "Google search result preview",
+      "searchResultSim": "Real-time snippet simulation",
+      "socialPreview": "WhatsApp & social share preview",
+      "socialResultSim": "Card metadata simulation",
+      "confirmPublish": {
+        "title": "Confirm Public Portal Publishing",
+        "message": "This draft will be published immediately to all active patients and referring physicians.",
+        "summaryTitle": "Publication summary",
+        "template": "Template",
+        "sections": "Active sections",
+        "cancel": "Cancel",
+        "confirmAction": "Publish Now"
       }
     }
   },

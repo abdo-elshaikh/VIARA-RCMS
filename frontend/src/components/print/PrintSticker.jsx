@@ -332,22 +332,24 @@ const PrintSticker = () => {
     };
     const qrValue = String(qrValueMap[qrPayload] || caseUrl || appointment.order_number || appointment.appointment_id || appointment.mrn || VIARA_BRAND.name);
     const qrCaption = qrPayload === 'case'
-        ? (caseExamId || label('caseDetails'))
+        ? (appointment.order_number || appointment.accession_number || appointment.mrn || (caseExamId ? caseExamId.slice(0, 8) : label('caseDetails')))
         : qrPayload === 'patient'
             ? (appointment.mrn || label('patient'))
             : qrPayload === 'appointment'
-                ? (appointment.appointment_id || label('appointment'))
-                : (appointment.order_number || appointment.exam_id || label('order'));
+                ? (appointment.order_number || (appointment.appointment_id ? appointment.appointment_id.slice(0, 8) : label('appointment')))
+                : (appointment.order_number || appointment.accession_number || appointment.mrn || (appointment.exam_id ? appointment.exam_id.slice(0, 8) : label('order')));
     const patientName = appointment.patient_name || label('patient');
     const examName = appointment.exam_type_name || label('examFallback');
-    const refDoctor = appointment.referring_doctor_name ? appointment.referring_doctor_name.split(' ')[0] : label('self');
+    const refDoctor = (appointment.referring_doctor_name && appointment.referring_doctor_name.trim())
+        ? appointment.referring_doctor_name.trim()
+        : label('self');
     const dobText = formatStickerDateTime(appointment.date_of_birth, dateLocale, { dateStyle: 'short' }, label('notAvailable'));
     const scheduledDate = formatStickerDateTime(appointment.start_time, dateLocale, { dateStyle: 'short' }, label('notAvailable'));
     const scheduledTime = formatStickerDateTime(appointment.start_time, dateLocale, { hour: '2-digit', minute: '2-digit' }, '');
     const genderKey = String(appointment.gender || '').toLowerCase().startsWith('f') ? 'female' : String(appointment.gender || '').toLowerCase().startsWith('m') ? 'male' : 'unknown';
     const age = calculateAge(appointment.date_of_birth);
     const ageText = age === null ? label('notAvailable') : `${age}${label('years')}`;
-    const orderReference = appointment.order_number || appointment.exam_id || appointment.appointment_id;
+    const orderReference = appointment.order_number || appointment.accession_number || (appointment.exam_id ? appointment.exam_id.slice(0, 8) : appointment.appointment_id ? appointment.appointment_id.slice(0, 8) : null);
     const metaFields = [
         { key: 'mrn', label: label('mrn'), value: appointment.mrn || label('notAvailable'), mono: true, show: true },
         { key: 'order', label: label('order'), value: orderReference || label('notAvailable'), mono: true, show: showOrderNumber },
@@ -764,7 +766,7 @@ const PrintSticker = () => {
                             {showQR && qrPosition === 'left' && (
                                 <div className={`flex flex-col items-center justify-center bg-slate-50/50 ${railPad} ${orientation === 'portrait' ? 'h-auto w-full py-2' : 'shrink-0'}`} style={{ ...qrRailStyle('left'), width: orientation === 'portrait' ? '100%' : qrRailWidth }}>
                                     <QRCodeSVG value={qrValue} size={qrSize} className="mb-1" />
-                                    <div className="pd-micro max-w-full truncate font-black text-slate-500 font-mono tracking-wider ltr-embed">
+                                    <div className="pd-micro max-w-full truncate font-black text-slate-500 font-mono tracking-wider ltr-embed" title={qrCaption}>
                                         {qrCaption}
                                     </div>
                                 </div>
@@ -786,19 +788,38 @@ const PrintSticker = () => {
                                     </div>
                                 </div>
 
-                                <div className={`grid ${metaGridClass} gap-x-2 gap-y-0.5 border-t border-slate-100 pt-1.5`}>
-                                    {metaFields.map(field => (
-                                        <div key={field.key} className="pd-micro truncate">
-                                            <span className="font-semibold text-slate-400">{field.label}:</span>{' '}
-                                            <span className={`font-bold text-slate-700 ${field.mono ? 'font-mono ltr-embed' : ''}`}>{field.value}</span>
-                                        </div>
-                                    ))}
+                                <div className={`grid ${metaGridClass} gap-x-2.5 gap-y-1 border-t border-slate-100 pt-1.5`}>
+                                    {metaFields.map((field, idx) => {
+                                        const isLastOdd = metaGridClass === 'grid-cols-2' && idx === metaFields.length - 1 && metaFields.length % 2 === 1;
+                                        return (
+                                            <div
+                                                key={field.key}
+                                                className={`pd-micro min-w-0 truncate ${isLastOdd ? 'col-span-2' : ''}`}
+                                                title={`${field.label}: ${field.value}`}
+                                            >
+                                                <span className="font-semibold text-slate-400 shrink-0">{field.label}:</span>{' '}
+                                                <span
+                                                    className={`font-bold text-slate-700 ${field.mono ? 'font-mono ltr-embed' : ''}`}
+                                                    dir="auto"
+                                                >
+                                                    {field.value}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
 
                                 {showExamDetails && (
                                     <div className="pd-micro flex items-center justify-between font-semibold text-slate-400 border-t border-slate-100 pt-1.5">
-                                        <span className="ltr-embed">{label('scheduled')}: {scheduledDate} {scheduledTime}</span>
-                                        {showMachine && <span className="font-bold uppercase ltr-embed" style={{ color: themeColor }}>{appointment.machine_name || appointment.modality_type || ''}</span>}
+                                        <span className="truncate">
+                                            <span className="text-slate-400">{label('scheduled')}:</span>{' '}
+                                            <span className="ltr-embed font-mono text-slate-600">{scheduledDate} {scheduledTime}</span>
+                                        </span>
+                                        {showMachine && (
+                                            <span className="font-bold uppercase ltr-embed shrink-0" style={{ color: themeColor }}>
+                                                {appointment.machine_name || appointment.modality_type || ''}
+                                            </span>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -806,7 +827,7 @@ const PrintSticker = () => {
                             {showQR && qrPosition === 'right' && (
                                 <div className={`flex flex-col items-center justify-center bg-slate-50/50 ${railPad} ${orientation === 'portrait' ? 'h-auto w-full py-2' : 'shrink-0'}`} style={{ ...qrRailStyle('right'), width: orientation === 'portrait' ? '100%' : qrRailWidth }}>
                                     <QRCodeSVG value={qrValue} size={qrSize} className="mb-1" />
-                                    <div className="pd-micro max-w-full truncate font-black text-slate-500 font-mono tracking-wider ltr-embed">
+                                    <div className="pd-micro max-w-full truncate font-black text-slate-500 font-mono tracking-wider ltr-embed" title={qrCaption}>
                                         {qrCaption}
                                     </div>
                                 </div>

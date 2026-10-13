@@ -120,6 +120,7 @@ describe('result delivery', () => {
 
         const deliveryInsert = client.query.mock.calls.find(([sql]) => String(sql).includes('INSERT INTO result_deliveries'));
         const examUpdate = client.query.mock.calls.find(([sql]) => String(sql).includes('UPDATE examinations'));
+        expect(String(deliveryInsert[0])).toContain("CASE WHEN $9::text IN ('Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged') THEN NOW() ELSE NULL END");
         expect(deliveryInsert[1]).toContain('Images');
         expect(examUpdate[1]).toEqual(expect.arrayContaining([false, true, 'Images Delivered']));
         expect(res.status).toHaveBeenCalledWith(201);

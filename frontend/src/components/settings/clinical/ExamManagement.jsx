@@ -101,7 +101,7 @@ export const ExamDialog = ({ open, editing, form, setForm, machines, onClose, on
             size="wide"
             width="max-w-3xl"
         >
-            <form onSubmit={onSave} className="space-y-5">
+            <form onSubmit={onSave} className="equipment-form space-y-5">
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     <Select
                         label={t('settings.clinical.exams.machine', { defaultValue: 'Primary Modality Machine' })}

@@ -1,4 +1,5 @@
 import { getInMemoryAccessToken } from './accessToken';
+import { getActiveBranchId } from './branchContext';
 
 function getCsrfToken() {
     const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
@@ -9,6 +10,11 @@ export const authenticatedFetch = (url, options = {}) => {
     const token = getInMemoryAccessToken();
     const headers = new Headers(options.headers || {});
     if (token) headers.set('Authorization', `Bearer ${token}`);
+
+    const branchId = getActiveBranchId();
+    if (branchId) {
+        headers.set('x-branch-id', branchId);
+    }
 
     const method = (options.method || 'GET').toUpperCase();
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {

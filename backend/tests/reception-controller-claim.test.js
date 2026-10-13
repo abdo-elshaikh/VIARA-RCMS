@@ -35,6 +35,8 @@ describe('reception claim controller', () => {
     };
 
     const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
       params: { appointmentId: '00000000-0000-4000-8000-000000000401' },
       user: { user_id: '00000000-0000-4000-8000-000000000111', full_name: 'Reception Agent', role: 'Receptionist' },
       ip: '127.0.0.1',

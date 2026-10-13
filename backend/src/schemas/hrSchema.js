@@ -49,6 +49,10 @@ const shiftFields = z.object({
         (value) => (value === '' || value === undefined) ? null : value,
         z.string().uuid().nullable().optional()
     ),
+    branchId: z.preprocess(
+        (value) => (value === '' || value === undefined) ? null : value,
+        z.string().uuid().nullable().optional()
+    ),
     notes: optionalTrimmedString(500)
 });
 
@@ -57,6 +61,10 @@ const createShiftSchema = shiftFields.refine(validShiftRange, { path: ['endTime'
 const updateShiftSchema = shiftFields.partial().refine(validShiftRange, { path: ['endTime'], message: 'Shift end time must be after start time' });
 
 const clockInSchema = z.object({
+    branchId: z.preprocess(
+        (value) => (value === '' || value === undefined) ? null : value,
+        z.string().uuid().nullable().optional()
+    ),
     notes: optionalTrimmedString(500)
 });
 
@@ -88,6 +96,10 @@ const updateAttendanceSchema = z.object({
 
 const manualAttendanceSchema = z.object({
     userId: z.string().uuid(),
+    branchId: z.preprocess(
+        (value) => (value === '' || value === undefined) ? null : value,
+        z.string().uuid().nullable().optional()
+    ),
     clockIn: z.string().datetime(),
     clockOut: z.preprocess((value) => value === '' ? null : value, z.string().datetime().nullable().optional()),
     status: z.enum(['Present', 'Late', 'Absent', 'Half-Day']),

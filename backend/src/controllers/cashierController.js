@@ -5,6 +5,7 @@ const { triggerEventForRole } = require('../services/notificationJobService');
 const { DEFAULT_BRANCH_ID, lockFinancialBusinessDate } = require('../services/financialPostingService');
 const { ensureActiveAttendanceClockIn } = require('./hrController');
 const { decrypt } = require('../utils/crypto');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 
 const getVarianceThreshold = () => {
     const value = Number(process.env.CASH_VARIANCE_THRESHOLD ?? 5);
@@ -21,7 +22,22 @@ const openShift = (db) => async (req, res, next) => {
     try {
         client = await db.connect();
         await client.query('BEGIN');
-        const requestedBranchId = req.body.branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
+        await setBranchContext(client, req);
+        const requestedBranchId = req.body?.branchId || req.branchContext?.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID;
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        if (!isOrgAdmin) {
+            const membershipCheck = await client.query(`
+                SELECT id FROM user_branch_memberships 
+                WHERE user_id = $1 AND branch_id = $2 AND is_active = TRUE
+            `, [req.user.user_id, requestedBranchId]);
+
+            if (membershipCheck.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return next(new AppError('You do not have permission to open a cashier shift in this branch.', 403, true, 'BRANCH_ACCESS_DENIED'));
+            }
+        }
+
         const postingDate = await lockFinancialBusinessDate(client, {
             branchId: requestedBranchId
         });
@@ -152,7 +168,10 @@ const openShift = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -165,6 +184,7 @@ const closeShift = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const shiftResult = await client.query(`
             SELECT s.*, u.full_name AS cashier_name
@@ -301,7 +321,10 @@ const closeShift = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -310,6 +333,7 @@ const reviewCashierClosure = (db) => async (req, res, next) => {
     try {
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const result = await client.query(`
             SELECT c.*, s.cashier_id
             FROM cashier_closures c
@@ -349,7 +373,10 @@ const reviewCashierClosure = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 

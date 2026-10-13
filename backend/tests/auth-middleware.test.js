@@ -83,7 +83,12 @@ describe('JWT authentication responses', () => {
                 expires_at: new Date(Date.now() + 60_000),
                 session_id: null,
             }] })
-            .mockResolvedValue({ rows: [] }) };
+            .mockResolvedValueOnce({ rows: [] })
+            .mockResolvedValue({ rows: [{
+                id: '00000000-0000-4000-8000-000000000001',
+                organization_id: '00000000-0000-4000-8000-000000000000',
+                branch_role: 'Nurse', is_default: true, status: 'active',
+            }] }) };
         configureAuthDatabase(db);
         const token = jwt.sign({
             user_id: '4a8cc118-1d4e-4411-bbf7-6e9464fce34e',

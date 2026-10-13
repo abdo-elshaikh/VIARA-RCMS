@@ -62,7 +62,7 @@ export const RoomManagement = ({ onSelectRoomForMachine, onViewRoomDetails, t: p
     const [roomForm, setRoomForm] = useState(emptyRoomForm);
     const [deleteTarget, setDeleteTarget] = useState(null);
 
-    const { data: rooms = [], isLoading, isFetching, refetch } = useGetRoomsQuery();
+    const { data: rooms = [], isLoading, isError, isFetching, refetch } = useGetRoomsQuery();
     const [createRoom, { isLoading: isCreating }] = useCreateRoomMutation();
     const [updateRoom, { isLoading: isUpdating }] = useUpdateRoomMutation();
     const [deleteRoom, { isLoading: isDeleting }] = useDeleteRoomMutation();
@@ -160,9 +160,9 @@ export const RoomManagement = ({ onSelectRoomForMachine, onViewRoomDetails, t: p
     return (
         <div className="space-y-6">
             {/* Header & Action Ribbon */}
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-4 equipment-responsive-row sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h2 className="text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    <h2 className="text-lg font-black text-slate-900 dark:text-white flex flex-wrap items-center gap-2">
                         <DoorClosed className="text-teal-600 dark:text-teal-400" size={22} />
                         {t('clinicalRoomsSuites')}
                     </h2>
@@ -183,7 +183,7 @@ export const RoomManagement = ({ onSelectRoomForMachine, onViewRoomDetails, t: p
 
             {/* Filter & Search Bar */}
             <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/80 p-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/80">
-                <div className="relative flex-1 min-w-[200px]">
+                <div className="relative min-w-0 flex-1 basis-52">
                     <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
                     <input
                         type="text"
@@ -195,7 +195,7 @@ export const RoomManagement = ({ onSelectRoomForMachine, onViewRoomDetails, t: p
                     />
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                     <select
                         value={typeFilter}
                         onChange={(e) => setTypeFilter(e.target.value)}
@@ -223,6 +223,12 @@ export const RoomManagement = ({ onSelectRoomForMachine, onViewRoomDetails, t: p
             {/* Rooms & suites */}
             {isLoading ? (
                 <div className="p-12 text-center text-xs font-bold text-slate-400 animate-pulse">{t('loadingClinicalRooms')}</div>
+            ) : isError ? (
+                <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center dark:border-rose-900 dark:bg-rose-950/30">
+                    <AlertTriangle className="mx-auto text-rose-600" size={28} />
+                    <p className="mt-3 text-sm font-bold text-rose-700 dark:text-rose-300">{isArabic ? 'تعذر تحميل الغرف والأجنحة. يرجى إعادة المحاولة.' : 'Unable to load rooms and suites. Please retry.'}</p>
+                    <button type="button" onClick={refetch} disabled={isFetching} className="mt-3 min-h-11 rounded-xl border border-rose-200 bg-white px-4 text-sm font-bold text-rose-700 disabled:opacity-50 dark:border-rose-900 dark:bg-slate-900 dark:text-rose-300">{isArabic ? 'إعادة المحاولة' : 'Retry'}</button>
+                </div>
             ) : filteredRooms.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-300 p-12 text-center dark:border-slate-800">
                     <DoorClosed className="mx-auto text-slate-300 dark:text-slate-700" size={36} />
@@ -236,7 +242,7 @@ export const RoomManagement = ({ onSelectRoomForMachine, onViewRoomDetails, t: p
                         const statusInfo = ROOM_STATUSES.find(item => item.value === room.status) || ROOM_STATUSES[0];
                         const machines = Array.isArray(room.machines) ? room.machines : [];
                         return (
-                            <article key={room.room_id} className="flex flex-col gap-3 p-4 transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/40 sm:flex-row sm:items-center sm:justify-between">
+                            <article key={room.room_id} className="flex flex-col gap-3 p-4 transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/40 equipment-responsive-row sm:flex-row sm:items-center sm:justify-between">
                                 <div className="flex min-w-0 items-start gap-3">
                                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-50 text-teal-700 dark:bg-teal-950/40 dark:text-teal-300"><DoorClosed size={18} /></span>
                                     <div className="min-w-0">
@@ -245,8 +251,8 @@ export const RoomManagement = ({ onSelectRoomForMachine, onViewRoomDetails, t: p
                                             <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{room.room_number}</span>
                                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${room.status === 'Active' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' : room.status === 'Under Maintenance' ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300'}`}>{isArabic ? statusInfo.labelAr : statusInfo.labelEn}</span>
                                         </div>
-                                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{isArabic ? typeInfo?.labelAr : typeInfo?.labelEn || room.type}{room.floor ? ` � ${room.floor}` : ''} � {machines.length} {t('installedUnitsX')}</p>
-                                        {machines.length > 0 && <p className="mt-1 truncate text-xs text-slate-400">{machines.slice(0, 2).map(machine => `${machine.type} � ${machine.name}`).join('? ')}{machines.length > 2 ? ` +${machines.length - 2}` : ''}</p>}
+                                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{isArabic ? typeInfo?.labelAr : typeInfo?.labelEn || room.type}{room.floor ? ` · ${room.floor}` : ''} · {machines.length} {t('installedUnitsX')}</p>
+                                        {machines.length > 0 && <p className="mt-1 break-words text-xs text-slate-500 dark:text-slate-400">{machines.slice(0, 2).map(machine => `${machine.type} · ${machine.name}`).join('، ')}{machines.length > 2 ? ` +${machines.length - 2}` : ''}</p>}
                                     </div>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1 sm:ps-3">
@@ -268,7 +274,7 @@ export const RoomManagement = ({ onSelectRoomForMachine, onViewRoomDetails, t: p
                     : (t('registerClinicalSuite'))}
                 size="md"
             >
-                <form onSubmit={handleSave} className="space-y-4">
+                <form onSubmit={handleSave} className="equipment-form space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                             {t('roomSuiteName')}
@@ -283,7 +289,7 @@ export const RoomManagement = ({ onSelectRoomForMachine, onViewRoomDetails, t: p
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                                 {t('roomIdentifierCode')}
@@ -312,7 +318,7 @@ export const RoomManagement = ({ onSelectRoomForMachine, onViewRoomDetails, t: p
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                                 {t('clinicalType')}

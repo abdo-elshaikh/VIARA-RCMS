@@ -12,27 +12,75 @@ const {
 } = require('../schemas/inventorySchema');
 const { recalculateInvoiceAfterItemChange } = require('../services/billingEngineService');
 const { moneyNumber } = require('../services/financialPostingService');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
+
+const assertInventoryBranchAccess = async (db, user, itemBranchId) => {
+    if (!user || user.is_org_admin || user.role === 'Developer') {
+        return;
+    }
+    const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+    const userBranches = await getUserBranches(db, user.user_id, false, user.organization_id);
+    const allowedBranchIds = new Set((userBranches.branches || []).map(b => b.id));
+    const targetBranch = itemBranchId || DEFAULT_HQ_BRANCH_ID;
+    if (!allowedBranchIds.has(targetBranch)) {
+        throw new AppError('Branch access denied for this inventory item', 403, true, 'BRANCH_ACCESS_DENIED');
+    }
+};
 
 const getInventory = (db) => async (req, res, next) => {
     try {
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        let allowedBranchIds = null;
+        if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            allowedBranchIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+        }
+
+        if (explicitBranch && explicitBranch !== 'all' && !isOrgAdminUser) {
+            if (!allowedBranchIds || !allowedBranchIds.includes(explicitBranch)) {
+                return res.status(403).json({
+                    code: 'BRANCH_ACCESS_DENIED',
+                    message: 'User does not have access to requested branch inventory'
+                });
+            }
+        }
+
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        const params = [];
+        let branchFilter = '';
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            params.push(effectiveBranchId);
+            branchFilter = `WHERE i.branch_id = $${params.length}`;
+        } else if (!isOrgAdminUser && allowedBranchIds) {
+            params.push(allowedBranchIds);
+            branchFilter = `WHERE i.branch_id = ANY($${params.length}::uuid[])`;
+        }
+
         // Fetch items along with active batches
         const result = await db.query(`
             SELECT i.*, 
                    COALESCE(
                        json_agg(
-                           json_build_object(
-                               'batch_id', b.batch_id,
-                               'lot_number', b.lot_number,
-                               'expiry_date', b.expiry_date,
-                               'quantity', b.quantity
-                           ) ORDER BY b.expiry_date ASC
+                            json_build_object(
+                                'batch_id', b.batch_id,
+                                'lot_number', b.lot_number,
+                                'expiry_date', b.expiry_date,
+                                'quantity', b.quantity
+                            ) ORDER BY b.expiry_date ASC
                        ) FILTER (WHERE b.batch_id IS NOT NULL AND b.quantity > 0), '[]'
                    ) as active_batches
             FROM inventory_items i
             LEFT JOIN inventory_batches b ON i.item_id = b.item_id
+            ${branchFilter}
             GROUP BY i.item_id
             ORDER BY i.name ASC
-        `);
+        `, params);
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -45,25 +93,29 @@ const addItem = (db) => async (req, res, next) => {
         const data = createInventoryItemSchema.parse(req.body);
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
+        const targetBranchId = req.body.branchId || req.branchContext?.branchId || req.user?.branch_id || '00000000-0000-4000-8000-000000000001';
+        await assertInventoryBranchAccess(client, req.user, targetBranchId);
         const isContrast = data.isContrastAgent ?? (/contrast/i.test(data.category || '') || /صبغة|contrast/i.test(data.name || ''));
         const result = await client.query(
-            "INSERT INTO inventory_items (name, category, quantity, unit, min_level, unit_price, is_contrast_agent) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *",
-            [data.name, data.category || null, data.quantity, data.unit || null, data.minLevel, data.unitPrice ?? 0, isContrast]
+            "INSERT INTO inventory_items (name, category, quantity, unit, min_level, unit_price, is_contrast_agent, branch_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+            [data.name, data.category || null, data.quantity, data.unit || null, data.minLevel, data.unitPrice ?? 0, isContrast, targetBranchId]
         );
 
         if (data.quantity > 0) {
             await client.query(`
                 INSERT INTO stock_movements (
                     item_id, movement_type, quantity_change, unit_price,
-                    total_amount, reference_type, notes, created_by
+                    total_amount, reference_type, notes, created_by, branch_id
                 )
-                VALUES ($1, 'Adjust', $2, $3, $4, 'Manual', 'Initial stock balance', $5)
+                VALUES ($1, 'Adjust', $2, $3, $4, 'Manual', 'Initial stock balance', $5, $6)
             `, [
                 result.rows[0].item_id,
                 data.quantity,
                 moneyNumber(data.unitPrice),
                 moneyNumber(data.quantity * data.unitPrice),
-                req.user.user_id
+                req.user.user_id,
+                targetBranchId
             ]);
         }
 
@@ -77,7 +129,10 @@ const addItem = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -86,6 +141,12 @@ const updateStock = (db) => async (req, res, next) => {
     try {
         const { itemId } = req.params;
         const data = updateInventoryStockSchema.parse(req.body);
+
+        const existingItem = await db.query('SELECT branch_id FROM inventory_items WHERE item_id = $1', [itemId]);
+        if (existingItem.rows.length === 0) {
+            return next(new AppError('Item not found', 404));
+        }
+        await assertInventoryBranchAccess(db, req.user, existingItem.rows[0].branch_id);
 
         const price = data.unitPrice !== undefined ? data.unitPrice : data.unit_price;
         const minLvl = data.minLevel !== undefined ? data.minLevel : data.min_level;
@@ -124,7 +185,7 @@ const updateStock = (db) => async (req, res, next) => {
     }
 };
 
-// ─── Phase 13 Advanced Endpoints ──────────────────────────────────────────────
+// ─── Advanced Endpoints ──────────────────────────────────────────────
 
 const defaultConsumeStockSchema = z.object({
     itemId: z.string().uuid(),
@@ -145,14 +206,17 @@ const consumeStock = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const itemResult = await client.query(`
-            SELECT item_id, name, category, quantity, unit, unit_price
+            SELECT item_id, name, category, quantity, unit, unit_price, branch_id
             FROM inventory_items
             WHERE item_id = $1
             FOR UPDATE
         `, [data.itemId]);
         if (!itemResult.rows[0]) throw new AppError('Inventory item not found', 404);
+        await assertInventoryBranchAccess(client, req.user, itemResult.rows[0].branch_id);
+        const itemBranchId = itemResult.rows[0].branch_id || '00000000-0000-4000-8000-000000000001';
         if (Number(itemResult.rows[0].quantity) < data.quantity) {
             throw new AppError('Insufficient total stock', 400);
         }
@@ -215,17 +279,17 @@ const consumeStock = (db) => async (req, res, next) => {
                 await client.query(`UPDATE inventory_batches SET quantity = quantity - $1 WHERE batch_id = $2 AND quantity >= $1`, [deduct, batch.batch_id]);
 
                 await client.query(`
-                    INSERT INTO stock_movements (item_id, batch_id, movement_type, quantity_change, unit_price, total_amount, reference_type, reference_id, notes, created_by)
-                    VALUES ($1, $2, 'Consume', $3, $4, $5, $6, $7, $8, $9)
-                `, [data.itemId, batch.batch_id, -deduct, unitPrice, deduct * unitPrice, data.referenceType, data.referenceId || null, data.notes, userId]);
+                    INSERT INTO stock_movements (item_id, batch_id, movement_type, quantity_change, unit_price, total_amount, reference_type, reference_id, notes, created_by, branch_id)
+                    VALUES ($1, $2, 'Consume', $3, $4, $5, $6, $7, $8, $9, $10)
+                `, [data.itemId, batch.batch_id, -deduct, unitPrice, deduct * unitPrice, data.referenceType, data.referenceId || null, data.notes, userId, itemBranchId]);
             }
 
             if (remainingToConsume > 0) {
                 // Hybrid system: not all items have batches, log a generic movement without a batch
                 await client.query(`
-                    INSERT INTO stock_movements (item_id, batch_id, movement_type, quantity_change, unit_price, total_amount, reference_type, reference_id, notes, created_by)
-                    VALUES ($1, NULL, 'Consume', $2, $3, $4, $5, $6, $7, $8)
-                `, [data.itemId, -remainingToConsume, unitPrice, remainingToConsume * unitPrice, data.referenceType, data.referenceId || null, data.notes, userId]);
+                    INSERT INTO stock_movements (item_id, batch_id, movement_type, quantity_change, unit_price, total_amount, reference_type, reference_id, notes, created_by, branch_id)
+                    VALUES ($1, NULL, 'Consume', $2, $3, $4, $5, $6, $7, $8, $9)
+                `, [data.itemId, -remainingToConsume, unitPrice, remainingToConsume * unitPrice, data.referenceType, data.referenceId || null, data.notes, userId, itemBranchId]);
             }
         }
 
@@ -317,7 +381,10 @@ const consumeStock = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -337,6 +404,12 @@ const adjustStock = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
+
+        const itemRes = await client.query(`SELECT branch_id FROM inventory_items WHERE item_id = $1 FOR UPDATE`, [data.itemId]);
+        if (!itemRes.rows[0]) throw new AppError('Inventory item not found', 404);
+        await assertInventoryBranchAccess(client, req.user, itemRes.rows[0].branch_id);
+        const itemBranchId = itemRes.rows[0].branch_id || '00000000-0000-4000-8000-000000000001';
 
         if (data.batchId) {
             const batchResult = await client.query(`
@@ -353,9 +426,9 @@ const adjustStock = (db) => async (req, res, next) => {
         }
 
         await client.query(`
-            INSERT INTO stock_movements (item_id, batch_id, movement_type, quantity_change, reference_type, notes, created_by)
-            VALUES ($1, $2, 'Adjust', $3, 'Manual', $4, $5)
-        `, [data.itemId, data.batchId || null, data.quantityChange, data.notes, userId]);
+            INSERT INTO stock_movements (item_id, batch_id, movement_type, quantity_change, reference_type, notes, created_by, branch_id)
+            VALUES ($1, $2, 'Adjust', $3, 'Manual', $4, $5, $6)
+        `, [data.itemId, data.batchId || null, data.quantityChange, data.notes, userId, itemBranchId]);
 
         const result = await client.query(`
             UPDATE inventory_items
@@ -377,7 +450,10 @@ const adjustStock = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -402,6 +478,37 @@ const getStockMovements = (db) => async (req, res, next) => {
         if (referenceIds.length) {
             values.push(referenceIds);
             where.push(`sm.reference_id = ANY($${values.length}::uuid[])`);
+        }
+
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        let allowedBranchIds = null;
+        if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            allowedBranchIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+        }
+
+        if (explicitBranch && explicitBranch !== 'all' && !isOrgAdminUser) {
+            if (!allowedBranchIds || !allowedBranchIds.includes(explicitBranch)) {
+                return res.status(403).json({
+                    code: 'BRANCH_ACCESS_DENIED',
+                    message: 'User does not have access to requested branch stock movements'
+                });
+            }
+        }
+
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            values.push(effectiveBranchId);
+            where.push(`sm.branch_id = $${values.length}::uuid`);
+        } else if (!isOrgAdminUser && allowedBranchIds) {
+            values.push(allowedBranchIds);
+            where.push(`sm.branch_id = ANY($${values.length}::uuid[])`);
         }
         values.push(limit);
         const result = await db.query(`
@@ -446,6 +553,38 @@ const getStockMovements = (db) => async (req, res, next) => {
 
 const getExpiryAlerts = (db) => async (req, res, next) => {
     try {
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        let allowedBranchIds = null;
+        if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            allowedBranchIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+        }
+
+        if (explicitBranch && explicitBranch !== 'all' && !isOrgAdminUser) {
+            if (!allowedBranchIds || !allowedBranchIds.includes(explicitBranch)) {
+                return res.status(403).json({
+                    code: 'BRANCH_ACCESS_DENIED',
+                    message: 'User does not have access to requested branch expiry alerts'
+                });
+            }
+        }
+
+        const effectiveBranchId = explicitBranch || branchContextId;
+        const params = [];
+        let branchFilter = '';
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            params.push(effectiveBranchId);
+            branchFilter = ` AND i.branch_id = $${params.length}::uuid`;
+        } else if (!isOrgAdminUser && allowedBranchIds) {
+            params.push(allowedBranchIds);
+            branchFilter = ` AND i.branch_id = ANY($${params.length}::uuid[])`;
+        }
+
         const result = await db.query(`
             SELECT b.*, i.name as item_name, i.category
             FROM inventory_batches b
@@ -453,8 +592,9 @@ const getExpiryAlerts = (db) => async (req, res, next) => {
             WHERE b.quantity > 0 
               AND b.expiry_date IS NOT NULL 
               AND b.expiry_date <= CURRENT_DATE + INTERVAL '30 days'
+              ${branchFilter}
             ORDER BY b.expiry_date ASC
-        `);
+        `, params);
         res.json(result.rows);
     } catch (error) {
         next(error);

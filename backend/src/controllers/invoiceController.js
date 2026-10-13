@@ -20,6 +20,7 @@ const {
 } = require('../services/financialPostingService');
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 
 const {
     requireDiscountPermission,
@@ -118,6 +119,14 @@ const roleHasAnyPermission = async (client, role, permissionNames = []) => {
         return result.rows.length > 0;
 };
 
+const assertInvoiceBranchAccess = async (db, req, invoice) => {
+    const branchId = require('../utils/requestBranchScope')(req);
+    const invBranchId = invoice?.branch_id || invoice?.branchId;
+    if (branchId !== invBranchId) {
+        throw new AppError('Branch access denied for this invoice', 403, true, 'BRANCH_ACCESS_DENIED');
+    }
+};
+
 const claimFinancialOperation = async (client, req, operationType, resourceId) => {
     const idempotencyKey = req.get('Idempotency-Key');
     if (!idempotencyKey || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(idempotencyKey)) {
@@ -161,6 +170,7 @@ const createInvoice = (db) => async (req, res, next) => {
     try {
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const idempotencyKey = req.get('Idempotency-Key');
         if (!idempotencyKey || !UUID_PATTERN.test(idempotencyKey)) {
@@ -183,9 +193,10 @@ const createInvoice = (db) => async (req, res, next) => {
             return res.status(200).json(replay.rows[0]);
         }
 
-        const postingDate = await lockFinancialBusinessDate(client);
-
         const source = await getDefaultInvoiceSource(client, req.body);
+        const targetBranchId = req.body.branchId || source.branch_id || req.headers?.['x-branch-id'] || req.branchContext?.branchId || req.user?.branch_id || '00000000-0000-4000-8000-000000000001';
+        await assertInvoiceBranchAccess(client, req, { branch_id: targetBranchId });
+        const postingDate = await lockFinancialBusinessDate(client, { branchId: targetBranchId });
         const requestedItems = req.body.items?.length ? req.body.items.map(mapInputItem) : source.items;
         const items = applyPrioritySurcharge(requestedItems, source.priorityFeeItem);
 
@@ -231,8 +242,17 @@ const createInvoice = (db) => async (req, res, next) => {
             }
         }
 
+        const branchRes = await client.query('SELECT invoice_prefix, currency_code FROM branches WHERE id = $1', [postingDate.branchId]);
+        const branchPrefix = branchRes.rows[0]?.invoice_prefix || 'INV-';
+        const branchCurrency = branchRes.rows[0]?.currency_code || 'EGP';
+        const seqRes = await client.query("SELECT nextval('invoice_number_seq') AS seq");
+        const seqStr = String(seqRes.rows[0].seq).padStart(6, '0');
+        const dateStr = (postingDate.businessDate || new Date().toISOString().slice(0, 10)).toString().replace(/-/g, '').slice(0, 8);
+        const generatedInvoiceNumber = `${branchPrefix}${dateStr}-${seqStr}`;
+
         const invoiceResult = await client.query(`
             INSERT INTO invoices (
+                invoice_number,
                 appointment_id, exam_id, patient_id, invoice_status, subtotal_amount, total_amount,
                 insurance_covered_amount, patient_payable_amount, discount_amount, discount_percentage,
                 fixed_discount_amount, percentage_discount_amount,
@@ -241,12 +261,13 @@ const createInvoice = (db) => async (req, res, next) => {
                 idempotency_key, request_fingerprint, insurance_policy_id
             )
             VALUES (
-                $1, $2, $3, 'Pending', $4, $5, $6, $7, $8, $9,
-                $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, 'Pending',
-                $20, $21, $22, $23, $24, $25, $26
+                $1, $2, $3, $4, 'Pending', $5, $6, $7, $8, $9, $10,
+                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 'Pending',
+                $21, $22, $23, $24, $25, $26, $27
             )
             RETURNING *
         `, [
+            generatedInvoiceNumber,
             source.appointment_id,
             source.exam_id || items[0]?.examId || null,
             invoicePatientId,
@@ -269,7 +290,7 @@ const createInvoice = (db) => async (req, res, next) => {
             postingDate.businessDate,
             source.service_date || postingDate.businessDate,
             postingDate.branchId,
-            'EGP',
+            branchCurrency,
             idempotencyKey,
             fingerprint,
             insurancePolicyId
@@ -356,7 +377,10 @@ const createInvoice = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -373,7 +397,30 @@ const getInvoices = (db) => async (req, res, next) => {
         validateEnum(status, VALID_INVOICE_STATUSES, 'status');
         validateSearchQuery(q);
 
-        const cacheKey = !q ? `${status || ''}:${patientId || ''}:${startDate || ''}:${endDate || ''}:${appointmentDate || ''}:${date || ''}:${openOnly}:${includeMeta}:${sortBy}:${sortDirection}:${pageLimit}:${pageOffset}` : null;
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        let allowedBranchIds = null;
+        if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            allowedBranchIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+        }
+
+        if (explicitBranch && explicitBranch !== 'all' && !isOrgAdminUser) {
+            if (!allowedBranchIds || !allowedBranchIds.includes(explicitBranch)) {
+                return res.status(403).json({
+                    code: 'BRANCH_ACCESS_DENIED',
+                    message: 'User does not have access to requested branch invoices'
+                });
+            }
+        }
+
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        const cacheKey = !q ? `${effectiveBranchId || ''}:${status || ''}:${patientId || ''}:${startDate || ''}:${endDate || ''}:${appointmentDate || ''}:${date || ''}:${openOnly}:${includeMeta}:${sortBy}:${sortDirection}:${pageLimit}:${pageOffset}` : null;
         if (process.env.NODE_ENV !== 'test' && cacheKey) {
             const cached = invoicesListCache.get(cacheKey);
             if (cached && (Date.now() - cached.timestamp < INVOICES_LIST_CACHE_TTL_MS)) {
@@ -387,6 +434,7 @@ const getInvoices = (db) => async (req, res, next) => {
             SELECT i.*, a.payment_method AS expected_payment_method,
                    a.payment_amount AS expected_payment_amount,
                    p.mrn, p.first_name_enc, p.last_name_enc, a.order_number,
+                   fb.name AS branch_name, fb.code AS branch_code,
                    COALESCE(e.contrast_required, a.contrast_required, et.contrast_required, false) AS contrast_required,
                    et.name AS exam_type_name,
                    ins.provider_name, ins.policy_number, ins.member_number, ins.plan_name, ins.payer_code,
@@ -435,6 +483,7 @@ const getInvoices = (db) => async (req, res, next) => {
                    COUNT(*) OVER()::integer AS filtered_count
             FROM invoices i
             JOIN patients p ON i.patient_id = p.patient_id
+            LEFT JOIN financial_branches fb ON fb.branch_id = i.branch_id
             LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
             LEFT JOIN examinations e ON i.exam_id = e.exam_id OR a.appointment_id = e.appointment_id
             LEFT JOIN examination_types et ON a.exam_type_id = et.type_id OR e.exam_type_id = et.type_id
@@ -484,6 +533,14 @@ const getInvoices = (db) => async (req, res, next) => {
             values.push(patientId);
         }
 
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            query += ` AND i.branch_id = $${param++}::uuid`;
+            values.push(effectiveBranchId);
+        } else if (!isOrgAdminUser && allowedBranchIds) {
+            query += ` AND i.branch_id = ANY($${param++}::uuid[])`;
+            values.push(allowedBranchIds);
+        }
+
         if (q) {
             const textSearchParam = `$${param++}`;
             values.push(`%${q}%`);
@@ -529,7 +586,7 @@ const getInvoices = (db) => async (req, res, next) => {
         }
 
         query += `
-            GROUP BY i.invoice_id, p.mrn, p.first_name_enc, p.last_name_enc, a.order_number, a.payment_method, a.payment_amount, e.contrast_required, a.contrast_required, et.contrast_required, et.name, ins.provider_name, ins.policy_number, ins.member_number, ins.plan_name, ins.payer_code, preauth.preauthorization_required
+            GROUP BY i.invoice_id, p.mrn, p.first_name_enc, p.last_name_enc, a.order_number, a.payment_method, a.payment_amount, e.contrast_required, a.contrast_required, et.contrast_required, et.name, ins.provider_name, ins.policy_number, ins.member_number, ins.plan_name, ins.payer_code, preauth.preauthorization_required, fb.name, fb.code
         `;
 
         if (openOnly) {
@@ -606,7 +663,30 @@ const findInvoiceForUpdate = async (client, id) => {
 const getInvoiceSummary = (db) => async (req, res, next) => {
     try {
         const { startDate, endDate, date } = getRequestQuery(req);
-        const cacheKey = `${startDate || ''}:${endDate || ''}:${date || ''}`;
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        let allowedBranchIds = null;
+        if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            allowedBranchIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+        }
+
+        if (explicitBranch && explicitBranch !== 'all' && !isOrgAdminUser) {
+            if (!allowedBranchIds || !allowedBranchIds.includes(explicitBranch)) {
+                return res.status(403).json({
+                    code: 'BRANCH_ACCESS_DENIED',
+                    message: 'User does not have access to requested branch invoices'
+                });
+            }
+        }
+
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        const cacheKey = `${effectiveBranchId || ''}:${startDate || ''}:${endDate || ''}:${date || ''}`;
         if (process.env.NODE_ENV !== 'test') {
             const cached = invoiceSummaryCache.get(cacheKey);
             const now = Date.now();
@@ -641,6 +721,14 @@ const getInvoiceSummary = (db) => async (req, res, next) => {
                 param++;
                 values.push(endDate);
             }
+        }
+
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            whereClause += whereClause ? ` AND i.branch_id = $${param++}::uuid` : ` WHERE i.branch_id = $${param++}::uuid`;
+            values.push(effectiveBranchId);
+        } else if (!isOrgAdminUser && allowedBranchIds) {
+            whereClause += whereClause ? ` AND i.branch_id = ANY($${param++}::uuid[])` : ` WHERE i.branch_id = ANY($${param++}::uuid[])`;
+            values.push(allowedBranchIds);
         }
 
         const result = await db.query(`
@@ -986,9 +1074,15 @@ const getInvoiceById = (db) => async (req, res, next) => {
                    et.name AS exam_type_name,
                    ins.provider_name, ins.policy_number, ins.member_number, ins.plan_name, ins.payer_code,
                    COALESCE(preauth.preauthorization_required, false) AS preauthorization_required,
-                   ins.holder_name, ins.valid_from, ins.valid_to, ins.approval_document_url, ins.notes as policy_notes
+                   ins.holder_name, ins.valid_from, ins.valid_to, ins.approval_document_url, ins.notes as policy_notes,
+                   b.name AS branch_name, b.name_ar AS branch_name_ar, b.code AS branch_code,
+                   b.tax_number AS branch_tax_number, b.commercial_registration AS branch_commercial_registration,
+                   b.medical_license AS branch_medical_license, b.phone AS branch_phone,
+                   b.address AS branch_address, b.address_ar AS branch_address_ar,
+                   b.invoice_prefix AS branch_invoice_prefix
             FROM invoices i
             JOIN patients p ON i.patient_id = p.patient_id
+            LEFT JOIN branches b ON b.id = i.branch_id
             LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
             LEFT JOIN examinations e ON e.exam_id = i.exam_id
                 OR (i.exam_id IS NULL AND e.appointment_id = a.appointment_id)
@@ -1032,6 +1126,7 @@ const getInvoiceById = (db) => async (req, res, next) => {
         }
 
         const { first_name_enc, last_name_enc, ...invoice } = invoiceResult.rows[0];
+        await assertInvoiceBranchAccess(db, req, invoice);
         const [items, payments, refunds, creditNotes] = await Promise.all([
             db.query('SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY created_at', [invoice.invoice_id]),
             db.query('SELECT * FROM payments WHERE invoice_id = $1 ORDER BY transaction_date DESC', [invoice.invoice_id]),
@@ -1078,6 +1173,7 @@ const updateInvoice = (db) => async (req, res, next) => {
         const { id } = req.params;
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const existing = await findInvoiceForUpdate(client, id);
 
         if (existing.rows.length === 0) {
@@ -1085,6 +1181,7 @@ const updateInvoice = (db) => async (req, res, next) => {
         }
 
         const invoice = existing.rows[0];
+        await assertInvoiceBranchAccess(client, req, invoice);
         await lockFinancialBusinessDate(client, {
             businessDate: invoice.business_date || invoice.generated_at,
             branchId: invoice.branch_id
@@ -1265,7 +1362,10 @@ const updateInvoice = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -1278,6 +1378,7 @@ const collectPayment = (db) => async (req, res, next) => {
         const idempotencyKey = req.body?.idempotencyKey || req.get('Idempotency-Key') || null;
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const invoiceResult = await findInvoiceForUpdate(client, id);
         if (invoiceResult.rows.length === 0) {
@@ -1286,6 +1387,7 @@ const collectPayment = (db) => async (req, res, next) => {
         }
 
         let invoice = invoiceResult.rows[0];
+        await assertInvoiceBranchAccess(client, req, invoice);
         if (invoice.invoice_status === 'Voided') {
             await client.query('ROLLBACK');
             return next(new AppError('Voided invoices cannot be paid', 409));
@@ -1526,13 +1628,25 @@ const collectPayment = (db) => async (req, res, next) => {
         const paymentDate = paymentAmount > 0
             ? await lockFinancialBusinessDate(client, { branchId: invoice.branch_id })
             : null;
+        let generatedReceiptNumber = null;
+        if (paymentAmount > 0) {
+            const branchRes = await client.query('SELECT code FROM branches WHERE id = $1', [paymentDate.branchId]);
+            const branchCode = branchRes.rows[0]?.code || 'HQ';
+            const rctSeqRes = await client.query("SELECT nextval('receipt_number_seq') AS seq");
+            const rctSeqStr = String(rctSeqRes.rows[0].seq).padStart(6, '0');
+            const rctDateStr = (paymentDate.businessDate || new Date().toISOString().slice(0, 10)).toString().replace(/-/g, '').slice(0, 8);
+            generatedReceiptNumber = branchCode === 'MAIN'
+                ? `RCT-${rctDateStr}-${rctSeqStr}`
+                : `RCT-${branchCode}-${rctDateStr}-${rctSeqStr}`;
+        }
+
         const paymentResult = paymentAmount > 0
             ? await client.query(`
                 INSERT INTO payments (
                     invoice_id, amount, method, processed_by, cashier_shift_id, payment_reference,
-                    business_date, branch_id, currency_code
+                    business_date, branch_id, currency_code, receipt_number
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 RETURNING *
             `, [
                 invoice.invoice_id,
@@ -1543,7 +1657,8 @@ const collectPayment = (db) => async (req, res, next) => {
                 paymentReference || null,
                 paymentDate.businessDate,
                 paymentDate.branchId,
-                invoice.currency_code || 'EGP'
+                invoice.currency_code || 'EGP',
+                generatedReceiptNumber
             ])
             : { rows: [null] };
 
@@ -1581,16 +1696,15 @@ const collectPayment = (db) => async (req, res, next) => {
                 ), inserted AS (
                     INSERT INTO result_deliveries (
                         exam_id, appointment_id, patient_id, delivery_method,
-                        recipient_name, delivery_status, delivered_by, notes
+                        recipient_name, delivery_status, delivered_at, delivered_by, notes
                     )
                     SELECT exam_id, appointment_id, patient_id, 'Patient Portal',
-                           mrn, 'Delivered', $3, 'Released to patient portal after invoice settlement'
+                           mrn, 'Pending', NULL, $3, 'Released to patient portal after invoice settlement; awaiting patient access'
                     FROM ready
                     WHERE NOT EXISTS (
                         SELECT 1 FROM result_deliveries rd
                         WHERE rd.exam_id = ready.exam_id
                           AND rd.delivery_method = 'Patient Portal'
-                          AND rd.delivery_status = 'Delivered'
                     )
                     RETURNING exam_id, patient_id
                 )
@@ -1670,7 +1784,10 @@ const collectPayment = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -1683,6 +1800,7 @@ const refundInvoice = (db) => async (req, res, next) => {
         const idempotencyKey = req.get('Idempotency-Key');
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const invoiceResult = await findInvoiceForUpdate(client, id);
         if (invoiceResult.rows.length === 0) {
@@ -1691,6 +1809,7 @@ const refundInvoice = (db) => async (req, res, next) => {
         }
 
         const invoice = invoiceResult.rows[0];
+        await assertInvoiceBranchAccess(client, req, invoice);
         if (invoice.invoice_status === 'Voided') {
             await client.query('ROLLBACK');
             return next(new AppError('Voided invoices cannot be refunded', 409));
@@ -1856,7 +1975,10 @@ const refundInvoice = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -1921,6 +2043,7 @@ const reviewRefund = (db) => async (req, res, next) => {
         const { status, reason } = req.body;
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const refundResult = await client.query('SELECT * FROM refunds WHERE refund_id = $1 FOR UPDATE', [id]);
         if (refundResult.rows.length === 0) {
@@ -2100,14 +2223,17 @@ const reviewRefund = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
 const getInvoicePdf = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
-        const invoiceReq = { params: req.params };
+        const invoiceReq = { params: req.params, user: req.user, headers: req.headers };
         let payload;
         await getInvoiceById(db)(invoiceReq, { json: (data) => { payload = data; } }, next);
         if (!payload) return;
@@ -2166,7 +2292,7 @@ const getInvoicePdf = (db) => async (req, res, next) => {
             <html dir="${dir}" lang="${lang === 'both' ? 'en' : lang}">
             <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${escapeHtml(payload.invoice_number)}</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');@page{size:A4;margin:18mm}*{box-sizing:border-box}thead{display:table-header-group}body{font-family:${fontStack};margin:0;color:#0f172a;font-size:13px}.header{display:flex;justify-content:space-between;gap:20px;padding-bottom:20px;border-bottom:3px solid ${center.themeColor}}.brand-block{display:flex;align-items:flex-start;gap:14px;min-width:0}.logo{max-width:92px;max-height:56px;object-fit:contain}.mark{display:grid;width:54px;height:54px;place-items:center;border-radius:10px;background:${center.themeColor};color:white;font-weight:800;letter-spacing:.04em}.brand{color:${center.themeColor};margin:0;font-size:20px}.doc-title{margin:4px 0 0;color:#0f172a;font-size:13px;font-weight:800}.meta{margin:4px 0;color:#475569}.center-lines{white-space:pre-wrap;line-height:1.45}.patient{margin:20px 0;padding:14px 16px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc}.section-title{margin:24px 0 8px;font-size:15px}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #e2e8f0;padding:9px;text-align:start}th{background:#f8fafc;color:#475569;font-size:11px;text-transform:uppercase}.right{text-align:end}.totals{width:min(100%,390px);margin:18px 0 0 auto}.totals td{padding:6px 8px}.grand td{border-top:2px solid #0f172a;font-weight:800;font-size:15px}.balance td{color:#b45309;font-weight:800}.reason,.terms{margin-top:10px;padding:10px;border-inline-start:3px solid ${center.themeColor};background:#f8fafc;color:#334155}.footer{margin-top:30px;padding-top:12px;border-top:1px solid #e2e8f0;color:#64748b;font-size:10px}@media print{.no-print{display:none}}@media(max-width:640px){.brand-block{flex-direction:column}}</style></head>
             <body>
-                <header class="header"><div class="brand-block">${center.logoUrl ? `<img class="logo" src="${escapeHtml(center.logoUrl)}" alt="">` : `<div class="mark">${escapeHtml(logoText)}</div>`}<div><h1 class="brand">${escapeHtml(facilityName || center.centerName)}</h1><p class="doc-title">${t.title}</p>${centerLines ? `<p class="meta center-lines">${lineBreaks(centerLines)}</p>` : ''}${center.taxId ? `<p class="meta"><strong>Tax ID:</strong> ${escapeHtml(center.taxId)}</p>` : ''}</div></div><div><p class="meta"><strong>${t.invoice}:</strong> ${escapeHtml(payload.invoice_number)}</p><p class="meta"><strong>${receipt.date}:</strong> ${escapeHtml(new Date(payload.generated_at || payload.created_at).toLocaleString())}</p><p class="meta"><strong>${t.status}:</strong> ${escapeHtml(payload.invoice_status)}</p></div></header>
+                <header class="header"><div class="brand-block">${center.logoUrl ? `<img class="logo" src="${escapeHtml(center.logoUrl)}" alt="">` : `<div class="mark">${escapeHtml(logoText)}</div>`}<div><h1 class="brand">${escapeHtml(facilityName || center.centerName)}</h1><p class="doc-title">${t.title}</p>${centerLines ? `<p class="meta center-lines">${lineBreaks(centerLines)}</p>` : ''}${center.taxId ? `<p class="meta"><strong>Tax ID / البطاقة الضريبية:</strong> ${escapeHtml(center.taxId)}</p>` : ''}${center.commercialRegistration ? `<p class="meta"><strong>CR / السجل التجاري:</strong> ${escapeHtml(center.commercialRegistration)}</p>` : ''}${center.medicalLicense ? `<p class="meta"><strong>License / ترخيص المنشأة:</strong> ${escapeHtml(center.medicalLicense)}</p>` : ''}</div></div><div><p class="meta"><strong>${t.invoice}:</strong> ${escapeHtml(payload.invoice_number)}</p><p class="meta"><strong>${receipt.date}:</strong> ${escapeHtml(new Date(payload.generated_at || payload.created_at).toLocaleString())}</p><p class="meta"><strong>${t.status}:</strong> ${escapeHtml(payload.invoice_status)}</p></div></header>
                 <div class="patient">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;">
                         <div>

@@ -70,6 +70,56 @@ export const systemApi = api.injectEndpoints({
             query: () => '/settings/center',
             providesTags: ['Settings'],
         }),
+        getSettingsBranches: builder.query({
+            query: () => '/settings/branches',
+            providesTags: ['Branches'],
+        }),
+        getBranchQuota: builder.query({
+            query: () => '/settings/branches/quota',
+            providesTags: ['Branches', 'Quota'],
+        }),
+        createSettingsBranch: builder.mutation({
+            query: (body) => ({
+                url: '/settings/branches',
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: ['Branches', 'Quota', 'Settings'],
+        }),
+        updateSettingsBranch: builder.mutation({
+            query: ({ id, ...body }) => ({
+                url: `/settings/branches/${id}`,
+                method: 'PUT',
+                body,
+            }),
+            invalidatesTags: ['Branches', 'Settings'],
+        }),
+        deleteSettingsBranch: builder.mutation({
+            query: (id) => ({
+                url: `/settings/branches/${id}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: ['Branches', 'Quota', 'Settings'],
+        }),
+        getBranchMembers: builder.query({
+            query: (branchId) => `/settings/branches/${branchId}/members`,
+            providesTags: (result, error, branchId) => [{ type: 'BranchMembers', id: branchId }, 'BranchMembers'],
+        }),
+        assignBranchMember: builder.mutation({
+            query: ({ branchId, ...body }) => ({
+                url: `/settings/branches/${branchId}/members`,
+                method: 'POST',
+                body,
+            }),
+            invalidatesTags: (result, error, { branchId }) => [{ type: 'BranchMembers', id: branchId }, 'BranchMembers'],
+        }),
+        removeBranchMember: builder.mutation({
+            query: ({ branchId, userId }) => ({
+                url: `/settings/branches/${branchId}/members/${userId}`,
+                method: 'DELETE',
+            }),
+            invalidatesTags: (result, error, { branchId }) => [{ type: 'BranchMembers', id: branchId }, 'BranchMembers'],
+        }),
         getPublicCenterSettings: builder.query({
             query: () => '/settings/public/home',
             providesTags: ['PublicSettings'],

@@ -12,14 +12,33 @@ const {
 } = require('../services/financialPostingService');
 
 const getUserId = (req) => req.user?.user_id || req.user?.userId || req.user?.id || null;
-const getBranchId = (req, source = {}) => (
-    source.branchId || getRequestQuery(req)?.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID
-);
+const getBranchId = (req, source = {}) => {
+    const requested = source.branchId || getRequestQuery(req)?.branchId;
+    const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+    const context = req.branchContext;
+    if (isOrgAdmin && (context?.isAllBranches || !context?.branchId)) {
+        return requested || context?.branchId || DEFAULT_BRANCH_ID;
+    }
+    const effective = context?.branchId || req.user?.branch_id || req.user?.branchId;
+    if (!effective) {
+        throw new AppError('Branch context required for payroll operations', 400, true, 'BRANCH_SELECTION_REQUIRED');
+    }
+    if (requested && requested !== effective && !isOrgAdmin) {
+        throw new AppError('You cannot access payroll data for another branch', 403, true, 'BRANCH_ACCESS_DENIED');
+    }
+    return effective;
+};
 
 const assertBranchAccess = (req, branchId) => {
-    const userBranchId = req.user?.branch_id || req.user?.branchId;
-    if (req.user?.role !== 'Developer' && userBranchId && userBranchId !== branchId) {
-        throw new AppError('You cannot access payroll data for another branch', 403);
+    if (req.user?.role === 'Developer' || (req.user?.is_org_admin && req.branchContext?.isAllBranches)) {
+        return;
+    }
+    const effective = req.branchContext?.branchId || req.user?.branch_id || req.user?.branchId;
+    if (!effective) {
+        throw new AppError('Branch context required', 400, true, 'BRANCH_SELECTION_REQUIRED');
+    }
+    if (effective !== branchId && !req.user?.is_org_admin) {
+        throw new AppError('You cannot access payroll data for another branch', 403, true, 'BRANCH_ACCESS_DENIED');
     }
 };
 

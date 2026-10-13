@@ -48,7 +48,9 @@ const {
     improveReportFormat,
     listAiReportDrafts,
     generatePreliminaryReportDraft,
-    markAiReportDraftApplied
+    markAiReportDraftApplied,
+    transferExamBranch,
+    getExamBranchTransfers
 } = require('../controllers/examController');
 
 const {
@@ -116,7 +118,7 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         authenticateToken,
         auditRead(auditService, { resourceTable: 'examinations' }),
         authorizeRole(['Radiologist', 'Technician', 'Nurse', 'Admin', 'Receptionist', 'Accountant']),
-        hasPermission(pool, 'VIEW_EXAMS'),
+        hasAnyPermission(pool, ['VIEW_EXAMS', 'MANAGE_QUEUE', 'VIEW_APPOINTMENTS', 'VIEW_REPORTS']),
         async (req, _res, next) => {
             try {
                 const allowed = await pool.query(`SELECT 1 FROM role_permissions rp
@@ -157,6 +159,21 @@ module.exports = function clinicalExamRoutes(pool, auditService) {
         authorizeRole(['Admin']),
         validateRequest(completeCriticalResultFollowupSchema),
         completeCriticalResultFollowup(pool)
+    );
+
+    // ─── Inter-Branch Examination Transfer & Referral (MBT-503) ──────────────
+    router.post('/exams/:id/transfer-branch',
+        authenticateToken,
+        authorizeRole(['Admin', 'Radiologist', 'Technician', 'Receptionist']),
+        hasAnyPermission(pool, ['VIEW_EXAMS', 'MANAGE_QUEUE', 'EDIT_APPOINTMENTS', 'MANAGE_RECEPTION_WORK']),
+        transferExamBranch(pool)
+    );
+
+    router.get('/exams/:id/branch-transfers',
+        authenticateToken,
+        authorizeRole(['Admin', 'Radiologist', 'Technician', 'Receptionist']),
+        hasAnyPermission(pool, ['VIEW_EXAMS', 'MANAGE_QUEUE', 'EDIT_APPOINTMENTS', 'VIEW_REPORTS']),
+        getExamBranchTransfers(pool)
     );
 
     router.post('/exams/:examId/complete-acquisition',

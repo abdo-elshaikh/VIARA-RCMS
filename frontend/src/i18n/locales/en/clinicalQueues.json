@@ -68,7 +68,8 @@
     "availableCount": "Available",
     "status": {
       "Unassigned": "Unassigned",
-      "Assigned": "Assigned to you",
+      "Assigned": "Assigned",
+      "AssignedToMe": "Assigned to you",
       "In Progress": "In progress",
       "On Hold": "On hold"
     }

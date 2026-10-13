@@ -77,6 +77,7 @@ const buildHandler = (existing) => {
         query: jest.fn(async () => ({ rows: [] }))
     };
     const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
         user: receptionist,
         params: { examId },
         body: { toStage: 'Payment Pending' },

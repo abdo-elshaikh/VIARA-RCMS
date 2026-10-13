@@ -270,7 +270,9 @@
         "confirmDelete": "هل أنت متأكد من رغبتك في حذف فحص {{name}}؟",
         "deleteAction": "حذف الفحص",
         "deleteSuccess": "تم حذف الفحص بنجاح.",
-        "deleteError": "تعذر حذف الفحص."
+        "deleteError": "تعذر حذف الفحص.",
+        "createTitle": "إضافة فحص طبي جديد",
+        "editTitle": "تعديل بيانات الفحص"
       },
       "machines": {
         "room": "الغرفة / الجناح",
@@ -298,7 +300,9 @@
         "deleteSuccess": "تم حذف الجهاز بنجاح.",
         "alreadyRemoved": "تمت إزالة الجهاز مسبقاً.",
         "deleteError": "تعذر حذف الجهاز.",
-        "customOrNone": "— مخصص / غير معين —"
+        "customOrNone": "— مخصص / غير معين —",
+        "createTitle": "تسجيل جهاز جديد",
+        "editTitle": "تعديل مواصفات الجهاز"
       },
       "selectOption": "اختر خيارًا"
     },
@@ -1316,6 +1320,36 @@
         "testimonials": "آراء المرضى",
         "faq": "الأسئلة",
         "support": "التواصل والدعم"
+      },
+      "viewport": {
+        "desktop": "حاسوب مكتبي",
+        "tablet": "جهاز لوحي",
+        "mobile": "هاتف محمول"
+      },
+      "activeSectionsCount": "{{enabled}} من أصل {{total}} مفعّل",
+      "enableAll": "تفعيل الكل",
+      "disableAll": "تعطيل الكل",
+      "activeOnPage": "مفعّل بالصفحة",
+      "hiddenFromVisitors": "مخفي عن الزوار",
+      "moveToTop": "نقل إلى البداية",
+      "moveToBottom": "نقل إلى النهاية",
+      "invalidImage": "صورة غير صالحة أو تعذر تحميلها",
+      "imagePreview": "معاينة الصورة",
+      "livePreviewCard": "معاينة حية فورية",
+      "resetToTemplate": "استعادة الترتيب الافتراضي",
+      "colorPresets": "لوحات ألوان سريرية جاهزة",
+      "googlePreview": "معاينة نتيجة البحث في جوجل",
+      "searchResultSim": "محاكاة فورية لكيفية ظهور الرابط عند البحث",
+      "socialPreview": "معاينة المشاركة في واتساب وشبكات التواصل",
+      "socialResultSim": "محاكاة بطاقة المشاركة المعتمدة",
+      "confirmPublish": {
+        "title": "تأكيد نشر البوابة العامة",
+        "message": "سيتم نشر هذه المسودة وتطبيقها مباشرة للزوار والمرضى والأطباء على رابط البوابة الرسمي.",
+        "summaryTitle": "ملخص التعديلات الجاهزة للنشر",
+        "template": "القالب المعتمد",
+        "sections": "الأقسام المفعلة",
+        "cancel": "تراجع",
+        "confirmAction": "تأكيد النشر الفوري"
       }
     }
   },

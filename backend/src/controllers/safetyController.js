@@ -1,5 +1,6 @@
 const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const { logAction } = require('../services/auditService');
 
 const getSafetyTemplates = (db) => async (req, res, next) => {
@@ -102,6 +103,7 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
         // and must never unlock submitting safety responses.
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const examCheck = await client.query(`
             SELECT e.status, e.queue_stage
             FROM examinations e
@@ -206,7 +208,7 @@ const submitSafetyResponse = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 

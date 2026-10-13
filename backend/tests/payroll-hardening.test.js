@@ -94,6 +94,7 @@ const createResponse = () => ({
 });
 
 const makeReq = (overrides = {}) => ({
+    branchContext: { branchId: BRANCH_ID },
     params: {},
     body: {},
     query: {},
@@ -213,6 +214,8 @@ describe('payroll hardening', () => {
             const db = { connect: jest.fn(async () => makeStatusClient(penaltyRow())), query: jest.fn(async () => ok()) };
 
             await updatePenaltyStatus(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 params: { penaltyId: PENALTY_ID },
                 body: { status: 'Cancelled', notes: 'valid reason here' },
                 user: { user_id: CREATOR_ID, role: 'HR' }
@@ -255,6 +258,8 @@ describe('payroll hardening', () => {
             const next = jest.fn();
 
             await acknowledgePenalty(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 params: { penaltyId: PENALTY_ID },
                 body: { status: 'Acknowledged' },
                 user: { user_id: EMPLOYEE_ID, role: 'Technician' }
@@ -272,6 +277,8 @@ describe('payroll hardening', () => {
             const next = jest.fn();
 
             await acknowledgePenalty(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 params: { penaltyId: PENALTY_ID },
                 body: { status: 'Acknowledged' },
                 user: { user_id: USER_ID, role: 'Technician' }
@@ -291,6 +298,8 @@ describe('payroll hardening', () => {
             const next = jest.fn();
 
             await acknowledgePenalty(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 params: { penaltyId: PENALTY_ID },
                 body: { status: 'Disputed', reason: 'I was on approved leave that day' },
                 user: { user_id: EMPLOYEE_ID, role: 'Technician' }
@@ -457,6 +466,8 @@ describe('payroll hardening', () => {
             const next = jest.fn();
 
             await updateDeductionStatus(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 params: { deductionId: 'ded-1' },
                 body: { status: 'Approved' },
                 user: { user_id: CREATOR_ID, role: 'HR' }
@@ -539,7 +550,9 @@ describe('payroll hardening', () => {
             const res = createResponse();
             const next = jest.fn();
 
-            await calculatePayroll(db)(makeReq({ body: { periodId: PERIOD_ID }, user: { user_id: USER_ID, role: 'HR' } }), res, next);
+            await calculatePayroll(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {}, body: { periodId: PERIOD_ID }, user: { user_id: USER_ID, role: 'HR' } }), res, next);
 
             expect(next).not.toHaveBeenCalled();
             const skipped = JSON.parse(runUpdateParams[7]);

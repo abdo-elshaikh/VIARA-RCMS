@@ -1,7 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { api, rehydrateSession } from '../api';
-import authReducer, { logOut } from '../authSlice';
+import authReducer, { logOut, setActiveBranch } from '../authSlice';
 import { clearApiCacheOnSessionBoundary } from '../store';
 
 const createStore = () => configureStore({
@@ -73,6 +73,17 @@ describe('session rehydration', () => {
 });
 
 describe('session-bound API cache isolation', () => {
+    it('clears clinical data on branch change but preserves it for the same branch', async () => {
+        const store = createSessionAwareStore();
+        store.dispatch(setActiveBranch('branch-A'));
+        await store.dispatch(api.util.upsertQueryData('getQueue', { station: 'Modality', limit: 100 }, {
+            data: [{ exam_id: 'branch-A-exam' }],
+        }));
+        store.dispatch(setActiveBranch('branch-A'));
+        expect(Object.keys(store.getState()[api.reducerPath].queries)).not.toHaveLength(0);
+        store.dispatch(setActiveBranch('branch-B'));
+        expect(Object.keys(store.getState()[api.reducerPath].queries)).toHaveLength(0);
+    });
     it('clears cached clinical data when the user logs out', async () => {
         const store = createSessionAwareStore();
 

@@ -46,13 +46,27 @@ const selectTaskForUpdate = async (client, examId) => {
                e.performing_radiologist_id, e.radiologist_assigned_at,
                e.radiologist_task_available_at, e.radiologist_task_started_at, e.radiologist_assignment_version,
                a.nurse_id, a.nurse_assigned_at, a.nurse_task_available_at, a.nurse_task_started_at, a.nurse_assignment_version,
-               a.technician_id, a.technician_assigned_at, a.technician_task_available_at, a.technician_task_started_at, a.technician_assignment_version
+               a.technician_id, a.technician_assigned_at, a.technician_task_available_at, a.technician_task_started_at, a.technician_assignment_version,
+               COALESCE(e.branch_id, a.branch_id) as branch_id
         FROM examinations e
         JOIN appointments a ON a.appointment_id = e.appointment_id
         WHERE e.exam_id = $1
         FOR UPDATE OF e, a
     `, [examId]);
     return result.rows[0] || null;
+};
+
+const assertClinicalTaskBranchAccess = async (client, user, branchId) => {
+    if (!user || user.is_org_admin || user.role === 'Developer') {
+        return;
+    }
+    const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('./branchService');
+    const userBranches = await getUserBranches(client, user.user_id, false, user.organization_id);
+    const allowedBranchIds = new Set((userBranches.branches || []).map(b => b.id));
+    const taskBranchId = branchId || DEFAULT_HQ_BRANCH_ID;
+    if (!allowedBranchIds.has(taskBranchId)) {
+        throw new AppError('Branch access denied for this clinical task', 403, true, 'BRANCH_ACCESS_DENIED');
+    }
 };
 
 const assignmentFromRow = (row, role) => {
@@ -146,6 +160,7 @@ const claimTask = async (client, { examId, user }) => {
     const row = await selectTaskForUpdate(client, examId);
     if (!row) throw new AppError('Clinical task not found', 404, true, 'TASK_NOT_FOUND');
     assertTaskMatchesRole(row, role);
+    await assertClinicalTaskBranchAccess(client, user, row.branch_id);
 
     const current = assignmentFromRow(row, role);
     if (current.assignedUserId) {
@@ -247,6 +262,15 @@ const assignTask = async (client, { examId, targetUserId, actor, reason }) => {
     const row = await selectTaskForUpdate(client, examId);
     if (!row) throw new AppError('Clinical task not found', 404, true, 'TASK_NOT_FOUND');
     assertTaskMatchesRole(row, target.role);
+    await assertClinicalTaskBranchAccess(client, actor, row.branch_id);
+
+    const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('./branchService');
+    const targetBranches = await getUserBranches(client, target.user_id, false, target.organization_id);
+    const targetBranchIds = new Set((targetBranches.branches || []).map(b => b.id));
+    const effectiveBranchId = row.branch_id || DEFAULT_HQ_BRANCH_ID;
+    if (!targetBranchIds.has(effectiveBranchId)) {
+        throw new AppError('Target user does not have an active membership in the branch of this task', 422, true, 'TARGET_NOT_IN_BRANCH');
+    }
 
     const current = assignmentFromRow(row, target.role);
     if (String(current.assignedUserId || '') === String(target.user_id)) {
@@ -294,6 +318,7 @@ const releaseTask = async (client, { examId, actor, reason }) => {
     const role = roleForStation(row.current_station);
     if (!role) throw new AppError('Clinical task not found', 404, true, 'TASK_NOT_FOUND');
     assertTaskMatchesRole(row, role);
+    await assertClinicalTaskBranchAccess(client, actor, row.branch_id);
 
     const current = assignmentFromRow(row, role);
     if (!current.assignedUserId) {

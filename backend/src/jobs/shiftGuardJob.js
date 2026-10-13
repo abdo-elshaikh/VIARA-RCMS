@@ -4,6 +4,7 @@
 // lazy handling at the employee's next action and can block desks or distort
 // hourly payroll indefinitely.
 const logger = require('../config/logger');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const { logSystemAuditEvent } = require('../services/systemAuditService');
 const { AUDIT_EVENT_CODES, AUDIT_OUTCOME } = require('../services/auditTaxonomy');
 const { triggerEvent } = require('../services/notificationJobService');
@@ -332,7 +333,12 @@ const closeAbandonedReceptionShifts = async (db) => {
 };
 
 const flagAbandonedCashierShifts = async (db) => {
-    const staleShifts = await db.query(`
+    const client = await db.connect();
+    let staleShifts;
+    try {
+        await client.query('BEGIN');
+        await setBranchContext(client, { isOrgAdmin: true });
+        staleShifts = await client.query(`
         SELECT s.shift_id, s.cashier_id, s.business_date, s.opened_at, u.full_name AS cashier_name
         FROM cashier_shifts s
         JOIN users u ON u.user_id = s.cashier_id
@@ -365,7 +371,15 @@ const flagAbandonedCashierShifts = async (db) => {
             riskReason: 'Cashier shift has been open across business date boundary or exceeded abandonment threshold.',
         }).catch(() => {});
     }
+    await client.query('COMMIT');
     return { scanned: staleShifts.rows.length, flagged };
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    } finally {
+        await clearBranchContext(client);
+        client.release();
+    }
 };
 
 let inFlight = false;

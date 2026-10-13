@@ -241,6 +241,7 @@ describe('insurance and contracts reporting suite', () => {
             };
 
             const req = {
+                branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
                 query: { format: 'csv', startDate: '2026-01-01', endDate: '2026-01-31' }
             };
             const res = {

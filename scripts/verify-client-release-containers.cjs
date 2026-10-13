@@ -10,11 +10,12 @@ const sourceStage = process.env.VIARA_RELEASE_TEST_PACKAGE_DIR
     : path.join(root, 'dist/client-release/staging-20261009');
 const testDir = fs.mkdtempSync(path.join(root, 'scratch/client-container-test-'));
 const testStartHere = process.env.VIARA_TEST_START_HERE === '1';
+const testPacsScreening = process.env.VIARA_TEST_PACS_SCREENING === '1';
 const stage = testStartHere ? path.join(testDir, 'package') : sourceStage;
 if (testStartHere) fs.cpSync(sourceStage,stage,{recursive:true});
 const envFile = path.join(testStartHere ? stage : testDir, '.env');
 const project = 'viara-release-test-' + crypto.randomBytes(4).toString('hex');
-const keys = ['POSTGRES_PASSWORD','JWT_SECRET','ENCRYPTION_KEY','BACKUP_ENCRYPTION_KEY','BLIND_INDEX_KEY','METRICS_TOKEN','REDIS_PASSWORD','ORTHANC_PASSWORD','PACS_WEBHOOK_SECRET'];
+const keys = ['POSTGRES_PASSWORD','APP_DB_PASSWORD','JWT_SECRET','ENCRYPTION_KEY','BACKUP_ENCRYPTION_KEY','BLIND_INDEX_KEY','METRICS_TOKEN','REDIS_PASSWORD','ORTHANC_PASSWORD','PACS_WEBHOOK_SECRET'];
 const reservePort = () => new Promise(resolve => { const server = net.createServer(); server.listen(0,'127.0.0.1',()=>{ const port=server.address().port; server.close(()=>resolve(port)); }); });
 let launched = false;
 const override = path.join(testDir, 'override.json');
@@ -35,9 +36,15 @@ async function main() {
     env=env.replace(/^([A-Z0-9_]+)=.*$/gm,(line,key)=>key in values ? `${key}=${values[key]}` : line);
     fs.writeFileSync(envFile, env, {mode:0o600});
     const worklists=path.join(testDir,'worklists'); fs.mkdirSync(worklists);
+    const backendVolumes = [`${worklists.replaceAll('\\','/')}:/app/pacs-worklists`];
+    const sourceOverlay = testPacsScreening ? [
+        'src/utils/pacsMalwareScan.js', 'src/services/pacsUploadService.js'
+    ] : [];
+    for(const file of sourceOverlay) backendVolumes.push(`${path.join(root,'backend',file).replaceAll('\\','/') }:/app/${file}:ro`);
+    if(testPacsScreening) backendVolumes.push(`${path.join(root,'backend/clamd.conf').replaceAll('\\','/')}:/etc/clamav/clamd.conf:ro`);
     fs.writeFileSync(override, JSON.stringify({
         services:{
-            backend:{ environment:{ LICENSE_PUBLIC_KEY:publicKey.export({type:'spki',format:'pem'}) }, volumes:[`${worklists.replaceAll('\\','/')}:/app/pacs-worklists`] },
+            backend:{ environment:{ LICENSE_PUBLIC_KEY:publicKey.export({type:'spki',format:'pem'}) }, volumes:backendVolumes },
             orthanc:{ volumes:[`${worklists.replaceAll('\\','/')}:/var/lib/orthanc/worklists`] },
             frontend:{networks:{app:{ipv4_address:'172.31.247.10'}}},
             portal:{networks:{app:{ipv4_address:'172.31.247.11'}}},
@@ -122,8 +129,24 @@ async function main() {
         if(!marker) throw Error('Backup roundtrip result missing');
         backupRoundtrip = JSON.parse(marker.slice('AUDIT_BACKUP_RESULT='.length));
     }
+    let paymentLoad = null;
+    if(process.env.VIARA_TEST_PAYMENT_LOAD==='1') {
+        const code = fs.readFileSync(path.join(root,'scripts/fixtures/audit-payment-load.cjs'),'utf8');
+        const output = compose(['exec','-T','-e','VIARA_AUDIT_SYNTHETIC=1','backend','node','-e',code]);
+        const marker = output.split('\n').find(line=>line.startsWith('AUDIT_PAYMENT_RESULT='));
+        if(!marker) throw Error('Payment load result missing');
+        paymentLoad = JSON.parse(marker.slice('AUDIT_PAYMENT_RESULT='.length));
+    }
+    let pacsScreening = null;
+    if(testPacsScreening) {
+        const code = fs.readFileSync(path.join(root,'scripts/fixtures/audit-pacs-screening.cjs'),'utf8');
+        const output = compose(['exec','-T','-e','VIARA_AUDIT_SYNTHETIC=1','backend','node','-e',code]);
+        const marker = output.split('\n').find(line=>line.startsWith('AUDIT_PACS_SCREENING_RESULT='));
+        if(!marker) throw Error('PACS screening result missing');
+        pacsScreening = {...JSON.parse(marker.slice('AUDIT_PACS_SCREENING_RESULT='.length)),sourceOverlay,configurationOverlay:['backend/clamd.conf']};
+    }
     const statuses=compose(['ps','--format','json']);
-    fs.writeFileSync(path.join(testDir,'result.json'),JSON.stringify({passed:true,project,checks:['fresh schema and migrations','container readiness','first administrator creation and login','existing accounts preserved','runtime portal origin','portal staff denial','portal authentication'],auditChecks,backupRoundtrip,testLicensePublicKeyOverride:true,statuses:statuses.trim().split('\n').map(line=>{const s=JSON.parse(line);return {service:s.Service,state:s.State,health:s.Health};})},null,2));
+    fs.writeFileSync(path.join(testDir,'result.json'),JSON.stringify({passed:true,project,checks:['fresh schema and migrations','container readiness','first administrator creation and login','existing accounts preserved','runtime portal origin','portal staff denial','portal authentication'],auditChecks,backupRoundtrip,paymentLoad,pacsScreening,testLicensePublicKeyOverride:true,statuses:statuses.trim().split('\n').map(line=>{const s=JSON.parse(line);return {service:s.Service,state:s.State,health:s.Health};})},null,2));
     console.log(`PASS: release container checks; isolated synthetic license and database. Results: ${testDir}`);
 }
 main().catch(error=>{ console.error(error.message); if(launched){const logs=spawnSync('docker',[...args,'logs','--no-color','--tail','60'],{encoding:'utf8'});fs.writeFileSync(path.join(testDir,'failure.log'),(logs.stdout||'')+(logs.stderr||''));}process.exitCode=1; }).finally(()=>{

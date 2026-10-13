@@ -92,6 +92,7 @@ describe('P0 Fixes Verification', () => {
             const sha256Hash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
             mockDb.query.mockImplementation(async (sql, params) => {
+                if (sql.includes('FROM user_branch_memberships')) return { rows: [{ id: '00000000-0000-4000-8000-000000000001', branch_role: 'Admin', is_default: true }] };
                 if (sql.includes('WHERE at.token_hash = $1')) {
                     if (params[0] === sha256Hash) {
                         return {
@@ -137,6 +138,7 @@ describe('P0 Fixes Verification', () => {
             const prefix = `${rawToken.substring(0, 15)}...`;
 
             mockDb.query.mockImplementation(async (sql, params) => {
+                if (sql.includes('FROM user_branch_memberships')) return { rows: [{ id: '00000000-0000-4000-8000-000000000001', branch_role: 'Technician', is_default: true }] };
                 // First query by SHA-256 returns nothing
                 if (sql.includes('WHERE at.token_hash = $1')) {
                     return { rows: [] };

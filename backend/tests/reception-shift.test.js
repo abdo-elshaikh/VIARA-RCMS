@@ -16,6 +16,7 @@ const user = { user_id: userId, role: 'Receptionist' };
 const metricDb = (active = 0) => ({
     query: jest.fn(async (sql) => {
         const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
         if (text.includes('FROM reception_work_items')) {
             return { rows: [{ claimed: 7, completed: 5, released: 2, active, transferred: 1, average_handling_minutes: 8.5 }] };
         }
@@ -50,6 +51,7 @@ describe('reception operational shift controls', () => {
         const client = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
                 if (text === 'BEGIN' || text === 'ROLLBACK' || text.includes('pg_advisory_xact_lock')) return { rows: [] };
                 if (text.includes('WHERE user_id = $1 AND status = \'Open\'')) return { rows: [] };
                 if (text.includes('LOWER(desk_identifier)')) {
@@ -63,6 +65,8 @@ describe('reception operational shift controls', () => {
         const next = jest.fn();
 
         await openReceptionShift(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             user,
             body: { desk: 'شباك 2', scope: 'modalities', modalities: ['MRI'] },
             ip: '127.0.0.1',
@@ -88,6 +92,7 @@ describe('reception operational shift controls', () => {
         const client = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
                 if (text === 'BEGIN' || text === 'ROLLBACK' || text.includes('pg_advisory_xact_lock')) return { rows: [] };
                 if (text.includes("WHERE user_id = $1 AND status = 'Open'")) return { rows: [existingShift] };
                 throw new Error(`Unexpected SQL: ${text}`);
@@ -97,6 +102,8 @@ describe('reception operational shift controls', () => {
         const next = jest.fn();
 
         await openReceptionShift({ connect: jest.fn(async () => client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             user,
             body: { desk: 'شباك 1 - الاستقبال العام', scope: 'all' },
             ip: '127.0.0.1',
@@ -115,6 +122,7 @@ describe('reception operational shift controls', () => {
         const client = {
             query: jest.fn(async (sql, values) => {
                 const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
                 if (text === 'BEGIN' || text === 'ROLLBACK') return { rows: [] };
                 if (text.includes('reception_shift_sessions') && text.includes('WHERE session_id = $1')) {
                     return { rows: [{ session_id: sessionId, user_id: userId, status: 'Open', started_at: '2026-09-05T08:00:00Z' }] };
@@ -128,6 +136,8 @@ describe('reception operational shift controls', () => {
         const next = jest.fn();
 
         await closeReceptionShift(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             user,
             params: { sessionId },
             body: {},
@@ -144,6 +154,7 @@ describe('reception operational shift controls', () => {
         const client = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
                 if (text.includes('WITH expired AS')) return { rows: [] };
                 if (text.includes('UPDATE reception_work_items rwi')) {
                     return { rows: [{ work_item_id: 'wi-1', appointment_id: 'appt-1', lease_expires_at: '2026-09-05T09:15:00Z' }] };
@@ -170,6 +181,7 @@ describe('reception operational shift controls', () => {
         const client = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
                 if (text === 'BEGIN' || text === 'ROLLBACK' || text.includes('pg_advisory_xact_lock')) return { rows: [] };
                 if (text.includes("WHERE user_id = $1 AND status = 'Open'")) return { rows: [] };
                 if (text.includes('LOWER(desk_identifier)')) return { rows: [] };
@@ -182,6 +194,8 @@ describe('reception operational shift controls', () => {
         const next = jest.fn();
 
         await openReceptionShift(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             user,
             body: { desk: 'شباك 1', scope: 'all' },
             ip: '127.0.0.1',
@@ -199,6 +213,7 @@ describe('reception operational shift controls', () => {
         const client = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
                 if (text === 'BEGIN' || text === 'ROLLBACK' || text.includes('pg_advisory_xact_lock')) return { rows: [] };
                 if (text.includes("WHERE user_id = $1 AND status = 'Open'")) return { rows: [] };
                 if (text.includes('LOWER(desk_identifier)')) return { rows: [] };
@@ -213,6 +228,8 @@ describe('reception operational shift controls', () => {
         const next = jest.fn();
 
         await openReceptionShift(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             user,
             body: { desk: 'شباك 1', scope: 'all' },
             ip: '127.0.0.1',
@@ -239,6 +256,7 @@ describe('reception operational shift controls', () => {
         const client = {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
                 if (text === 'BEGIN' || text === 'COMMIT' || text.includes('pg_advisory_xact_lock')) return { rows: [] };
                 if (text.includes("WHERE user_id = $1 AND status = 'Open'")) return { rows: [] };
                 if (text.includes('LOWER(desk_identifier)')) return { rows: [] };
@@ -258,6 +276,8 @@ describe('reception operational shift controls', () => {
         const next = jest.fn();
 
         await openReceptionShift(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             user,
             body: { desk: 'شباك 1', scope: 'all' },
             ip: '127.0.0.1',

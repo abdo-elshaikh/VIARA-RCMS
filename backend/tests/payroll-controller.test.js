@@ -282,6 +282,7 @@ describe('payroll controller safeguards', () => {
         const next = jest.fn();
 
         await updatePayrollRuleStatus(db)({
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
             params: { ruleId: '00000000-0000-4000-8000-000000000030' },
             body: { status: 'Rejected', notes: 'Incorrect rule' },
             user: { user_id: '00000000-0000-4000-8000-000000000031', role: 'HR' }
@@ -317,6 +318,7 @@ describe('payroll controller safeguards', () => {
         const next = jest.fn();
 
         await updateDeductionStatus(db)({
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
             params: { deductionId: '00000000-0000-4000-8000-000000000040' },
             body: { status: 'Paused', notes: 'Pause before approval' },
             user: { user_id: '00000000-0000-4000-8000-000000000042', role: 'Accountant' }

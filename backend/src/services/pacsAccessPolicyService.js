@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { AppError } = require('../middleware/errorHandler');
 const { decrypt } = require('../utils/crypto');
 const { writeAudit } = require('./pacsReconcileService');
+const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('./branchService');
 
 const safeEqual = (actual, expected) => {
     const a = Buffer.from(actual || '', 'utf8');
@@ -177,9 +178,10 @@ const assertStudyAccess = async (db, user, studyUids) => {
     }
 
     const { rows } = await db.query(
-        `SELECT e.study_instance_uid
+        `SELECT e.study_instance_uid, COALESCE(e.branch_id, a.branch_id, m.branch_id) AS branch_id
          FROM examinations e
          LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
+         LEFT JOIN modalities m ON m.modality_id = e.modality_id
          WHERE e.study_instance_uid = ANY($1::text[])
            AND (
                  $4::boolean
@@ -197,6 +199,19 @@ const assertStudyAccess = async (db, user, studyUids) => {
     if (denied.length) {
         throw new AppError('Study not found or not assigned to this user', 403);
     }
+
+    // Enterprise branch scoping guard
+    if (user && user.role !== 'Developer' && !user.is_org_admin) {
+        const userBranchesResult = await getUserBranches(db, user.user_id, false, user.organization_id);
+        const allowedBranchIds = new Set((userBranchesResult.branches || []).map(b => b.id));
+        for (const row of rows) {
+            const rowBranchId = row.branch_id || DEFAULT_HQ_BRANCH_ID;
+            if (!allowedBranchIds.has(rowBranchId)) {
+                throw new AppError('Branch access denied for this imaging study', 403, true, 'BRANCH_ACCESS_DENIED');
+            }
+        }
+    }
+
     return uids;
 };
 
@@ -212,6 +227,7 @@ const assertExamViewerAccess = async (db, user, { examId = null, accessionNumber
     const { rows } = await db.query(
         `SELECT e.exam_id, e.order_number, e.study_instance_uid,
                 e.images_available, e.image_count, e.first_image_received_at,
+                COALESCE(e.branch_id, a.branch_id, m.branch_id) AS branch_id,
                 et.name AS exam_type_name, m.name AS modality_name, p.mrn
          FROM examinations e
          LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
@@ -253,6 +269,16 @@ const assertExamViewerAccess = async (db, user, { examId = null, accessionNumber
         throw new AppError('Requested study does not belong to this examination order', 403);
     }
 
+    // Enterprise branch scoping guard
+    if (user && user.role !== 'Developer' && !user.is_org_admin) {
+        const userBranchesResult = await getUserBranches(db, user.user_id, false, user.organization_id);
+        const allowedBranchIds = new Set((userBranchesResult.branches || []).map(b => b.id));
+        const examBranchId = exam.branch_id || DEFAULT_HQ_BRANCH_ID;
+        if (!allowedBranchIds.has(examBranchId)) {
+            throw new AppError('Branch access denied for this examination viewer session', 403, true, 'BRANCH_ACCESS_DENIED');
+        }
+    }
+
     return exam;
 };
 
@@ -261,6 +287,7 @@ const assertExamImagingAccess = async (db, user, examId) => {
         `SELECT e.exam_id, e.order_number, e.study_instance_uid, e.orthanc_study_id,
                 e.images_available, e.image_count, e.priority,
                 e.status,
+                COALESCE(e.branch_id, a.branch_id, m.branch_id) AS branch_id,
                 et.name AS exam_type_name, m.name AS modality_name, m.type AS modality_type, p.mrn
          FROM examinations e
          LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
@@ -283,7 +310,18 @@ const assertExamImagingAccess = async (db, user, examId) => {
     if (!rows.length) {
         throw new AppError('Examination not found or not assigned to this user', 403);
     }
-    return rows[0];
+
+    const exam = rows[0];
+    if (user && user.role !== 'Developer' && !user.is_org_admin) {
+        const userBranchesResult = await getUserBranches(db, user.user_id, false, user.organization_id);
+        const allowedBranchIds = new Set((userBranchesResult.branches || []).map(b => b.id));
+        const examBranchId = exam.branch_id || DEFAULT_HQ_BRANCH_ID;
+        if (!allowedBranchIds.has(examBranchId)) {
+            throw new AppError('Branch access denied for this examination', 403, true, 'BRANCH_ACCESS_DENIED');
+        }
+    }
+
+    return exam;
 };
 
 const assertDicomWebStudyScope = async (db, req, subPath) => {

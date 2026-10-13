@@ -1,0 +1,35 @@
+.downtime-schedule {
+    container: downtime / inline-size;
+}
+
+.downtime-table-panel {
+    display: block;
+}
+
+.downtime-card-panel {
+    display: none;
+}
+
+.downtime-utilization-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+@container downtime (max-width: 479px) {
+    .downtime-controls {
+        width: 100%;
+    }
+
+    .downtime-controls > button {
+        flex: 1;
+    }
+}
+
+@container downtime (max-width: 759px) {
+    .downtime-table-panel {
+        display: none;
+    }
+
+    .downtime-card-panel {
+        display: block;
+    }
+}

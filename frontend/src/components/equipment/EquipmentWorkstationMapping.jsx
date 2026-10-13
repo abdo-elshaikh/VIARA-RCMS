@@ -582,13 +582,13 @@ const EquipmentWorkstationMapping = () => {
 
     return (
         <section
-            className="space-y-4"
+            className="min-w-0 space-y-4"
             aria-labelledby="equipment-workstations-title"
         >
             {/* Header & Metric Ribbon */}
             <div className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <header className="flex flex-col gap-4 border-b border-slate-100 bg-gradient-to-b from-slate-50/90 to-white p-5 dark:border-slate-800 dark:from-slate-900 dark:to-slate-950 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-start gap-3.5">
+                <header className="flex flex-col gap-4 border-b border-slate-100 bg-gradient-to-b from-slate-50/90 to-white p-5 dark:border-slate-800 dark:from-slate-900 dark:to-slate-950 flex-wrap">
+                    <div className="flex min-w-0 items-start gap-3.5">
                         <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-teal-600/10 text-teal-700 shadow-sm ring-1 ring-teal-500/20 dark:bg-teal-500/20 dark:text-teal-300">
                             <Monitor size={22} className="stroke-[2.2]" />
                         </span>
@@ -676,7 +676,7 @@ const EquipmentWorkstationMapping = () => {
 
             {/* Filter & Search Bar */}
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                <div className="relative flex-1 min-w-[240px]">
+                <div className="relative min-w-0 flex-1 basis-60">
                     <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
                     <input
                         type="text"
@@ -724,7 +724,7 @@ const EquipmentWorkstationMapping = () => {
                     </p>
                 </div>
             ) : (
-                <div className="grid gap-4 lg:grid-cols-2">
+                <div className="equipment-card-grid grid min-w-0 gap-4">
                     {filteredPresets.map((preset) => {
                         const scope = getPresetScope(preset);
                         const tabBadge = getTabBadge(preset.tab);

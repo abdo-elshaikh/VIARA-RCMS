@@ -1,5 +1,6 @@
 const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../utils/errors');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const { logAction } = require('../services/auditService');
 const { ensureActiveAttendanceClockIn } = require('./hrController');
 const { onShiftClose } = require('../services/endOfDayService');
@@ -147,12 +148,14 @@ const openReceptionShift = (db) => async (req, res, next) => {
         const scope = ASSIGNMENT_SCOPES.has(requestedScope) ? requestedScope : 'all';
         const rooms = sanitizeTextArray(req.body?.rooms);
         const modalities = sanitizeTextArray(req.body?.modalities);
-        const branchId = req.body?.branchId || req.user?.branch_id || req.user?.branchId || null;
+        const branchId = require('../utils/requestBranchScope')(req, req.body?.branchId);
+
         if (scope === 'rooms' && rooms.length === 0) throw new AppError('Select at least one room for a room-scoped shift', 400);
         if (scope === 'modalities' && modalities.length === 0) throw new AppError('Select at least one device for a device-scoped shift', 400);
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         // Serialize scope allocation across all desks. Row locks alone cannot
         // prevent two new shifts from observing no conflict at the same time.
         await client.query("SELECT pg_advisory_xact_lock(hashtextextended('reception-scope-assignments', 14301))");
@@ -264,7 +267,7 @@ const openReceptionShift = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -273,6 +276,7 @@ const closeReceptionShift = (db) => async (req, res, next) => {
     try {
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const shiftResult = await client.query(`
             SELECT *, TO_CHAR(started_at AT TIME ZONE COALESCE(NULLIF((SELECT setting_value FROM system_settings WHERE setting_key = 'center.timezone'), ''), 'Africa/Cairo'), 'YYYY-MM-DD') AS shift_date
             FROM reception_shift_sessions
@@ -345,7 +349,7 @@ const closeReceptionShift = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -452,6 +456,7 @@ const createShiftHandover = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const shiftResult = await client.query(`
             SELECT * FROM reception_shift_sessions
@@ -505,7 +510,7 @@ const createShiftHandover = (db) => async (req, res, next) => {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -554,6 +559,7 @@ const acknowledgeShiftHandover = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const handoverResult = await client.query(`
             SELECT * FROM reception_shift_handovers
@@ -607,7 +613,7 @@ const acknowledgeShiftHandover = (db) => async (req, res, next) => {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 

@@ -508,5 +508,14 @@ export const {
     useUploadUpdatePatchMutation,
     useApplySystemUpdateMutation,
     useGetSystemUpdateHistoryQuery,
-    useLazyGetSystemUpdateHistoryQuery
+    useLazyGetSystemUpdateHistoryQuery,
+    useGetSettingsBranchesQuery,
+    useGetBranchQuotaQuery,
+    useCreateSettingsBranchMutation,
+    useUpdateSettingsBranchMutation,
+    useDeleteSettingsBranchMutation,
+    useGetBranchMembersQuery,
+    useAssignBranchMemberMutation,
+    useRemoveBranchMemberMutation
 } = api;
+

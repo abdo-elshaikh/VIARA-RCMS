@@ -1018,10 +1018,17 @@ const getSystemTelemetry = (db) => async (req, res, next) => {
             }
         ];
 
+        const branchCountRes = await db.query(`SELECT count(*)::int as count FROM branches WHERE status = 'active'`);
+        const activeBranchesCount = branchCountRes.rows[0]?.count || 0;
+
         res.json({
             dbLatencyMs: Math.max(0.1, dbLatencyMs),
             status: 'Optimal',
             services,
+            multiBranch: {
+                activeBranches: activeBranchesCount,
+                rlsProtection: 'Active'
+            },
             pool: {
                 total: db.totalCount ?? null,
                 idle: db.idleCount ?? null,
@@ -1104,6 +1111,279 @@ const getDemoStatus = (pool) => async (req, res, next) => {
     }
 };
 
+const branchService = require('../services/branchService');
+
+const getBranches = (pool) => async (req, res, next) => {
+    try {
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        const userBranches = await branchService.getUserBranches(
+            pool,
+            req.user?.user_id,
+            isOrgAdmin,
+            req.user?.organization_id
+        );
+
+        // Fetch counts for each branch
+        const branchesWithCounts = await Promise.all(userBranches.branches.map(async (b) => {
+            const counts = await pool.query(`
+                SELECT 
+                    (SELECT COUNT(*)::int FROM user_branch_memberships WHERE branch_id = $1 AND is_active = TRUE) as members_count,
+                    (SELECT COUNT(*)::int FROM modalities WHERE branch_id = $1 AND deleted_at IS NULL) as modalities_count,
+                    (SELECT COUNT(*)::int FROM rooms WHERE branch_id = $1 AND status = 'Active') as rooms_count
+            `, [b.id]);
+            return {
+                ...b,
+                stats: counts.rows[0] || { members_count: 0, modalities_count: 0, rooms_count: 0 }
+            };
+        }));
+
+        res.json({
+            branches: branchesWithCounts,
+            defaultBranchId: userBranches.defaultBranchId,
+            isOrgAdmin
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getBranchQuota = (pool) => async (req, res, next) => {
+    try {
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        if (!isOrgAdmin) {
+            return res.status(403).json({
+                error: 'Cross-branch access denied. Viewing organization branch quota requires organization administrator privileges.',
+                code: 'BRANCH_ACCESS_DENIED'
+            });
+        }
+        const quota = await branchService.checkBranchQuota(pool, req.user?.organization_id);
+        res.json(quota);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const getBranchDetails = (pool) => async (req, res, next) => {
+    try {
+        const branchId = req.params.id;
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        if (!isOrgAdmin) {
+            const membershipRes = await pool.query(
+                `SELECT 1 FROM user_branch_memberships WHERE user_id = $1 AND branch_id = $2 AND is_active = TRUE`,
+                [req.user?.user_id, branchId]
+            );
+            if (!membershipRes.rows[0]) {
+                return res.status(403).json({
+                    error: 'Cross-branch access denied. You do not have an active membership in this branch.',
+                    code: 'BRANCH_ACCESS_DENIED'
+                });
+            }
+        }
+        const branch = await branchService.getBranchById(pool, branchId);
+        if (!branch) {
+            return next(new AppError('Branch not found', 404));
+        }
+        res.json(branch);
+    } catch (error) {
+        next(error);
+    }
+};
+
+const createBranch = (pool) => async (req, res, next) => {
+    try {
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        if (!isOrgAdmin) {
+            return res.status(403).json({
+                error: 'Cross-branch access denied. Only organization administrators can create new branches.',
+                code: 'BRANCH_ACCESS_DENIED'
+            });
+        }
+        const newBranch = await branchService.createBranch(
+            pool,
+            req.body,
+            req.user?.organization_id,
+            req.user?.user_id
+        );
+        res.status(201).json({
+            success: true,
+            branch: newBranch,
+            message: 'Branch created successfully.'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const updateBranch = (pool) => async (req, res, next) => {
+    try {
+        const branchId = req.params.id;
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        if (!isOrgAdmin) {
+            // Must have branch_role = 'Admin' on this specific branch
+            const membershipRes = await pool.query(
+                `SELECT role FROM user_branch_memberships WHERE user_id = $1 AND branch_id = $2 AND is_active = TRUE`,
+                [req.user?.user_id, branchId]
+            );
+            if (!membershipRes.rows[0] || membershipRes.rows[0].role !== 'Admin') {
+                return res.status(403).json({
+                    error: 'Cross-branch access denied. You must be an administrator of this branch to modify its configuration.',
+                    code: 'BRANCH_ACCESS_DENIED'
+                });
+            }
+
+            // Strip organization-level and licensing control fields
+            delete req.body.isMain;
+            delete req.body.is_main;
+            delete req.body.status;
+            delete req.body.organizationId;
+            delete req.body.organization_id;
+            delete req.body.code;
+        }
+
+        const updated = await branchService.updateBranch(pool, branchId, req.body);
+        res.json({
+            success: true,
+            branch: updated,
+            message: 'Branch updated successfully.'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const archiveBranch = (pool) => async (req, res, next) => {
+    try {
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        if (!isOrgAdmin) {
+            return res.status(403).json({
+                error: 'Cross-branch access denied. Only organization administrators can archive branches.',
+                code: 'BRANCH_ACCESS_DENIED'
+            });
+        }
+        const archived = await branchService.archiveBranch(pool, req.params.id);
+        res.json({
+            success: true,
+            branch: archived,
+            message: 'Branch archived successfully.'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const assertMembershipOrganization = async (pool, req, branchId) => {
+    const branch = await branchService.getBranchById(pool, branchId);
+    if (!branch || !req.user?.organization_id || branch.organization_id !== req.user.organization_id) {
+        throw new AppError('Branch is outside your organization', 403, true, 'BRANCH_ACCESS_DENIED');
+    }
+};
+
+const getBranchMembers = (pool) => async (req, res, next) => {
+    try {
+        const branchId = req.params.id;
+        await assertMembershipOrganization(pool, req, branchId);
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        if (!isOrgAdmin) {
+            const membershipRes = await pool.query(
+                `SELECT 1 FROM user_branch_memberships WHERE user_id = $1 AND branch_id = $2 AND is_active = TRUE`,
+                [req.user?.user_id, branchId]
+            );
+            if (!membershipRes.rows[0]) {
+                return res.status(403).json({
+                    error: 'Cross-branch access denied. You do not have access to view members of this branch.',
+                    code: 'BRANCH_ACCESS_DENIED'
+                });
+            }
+        }
+
+        const membersRes = await pool.query(`
+            SELECT 
+                ubm.id as membership_id,
+                ubm.user_id,
+                ubm.role as branch_role,
+                ubm.is_default,
+                ubm.is_active,
+                u.full_name,
+                u.email,
+                u.role as system_role,
+                u.department,
+                u.job_title
+            FROM user_branch_memberships ubm
+            JOIN users u ON u.user_id = ubm.user_id
+            WHERE ubm.branch_id = $1 AND ubm.is_active = TRUE
+            ORDER BY u.full_name ASC
+        `, [branchId]);
+        res.json({ members: membersRes.rows });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const assignBranchMember = (pool) => async (req, res, next) => {
+    try {
+        const branchId = req.params.id;
+        await assertMembershipOrganization(pool, req, branchId);
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        if (!isOrgAdmin) {
+            const membershipRes = await pool.query(
+                `SELECT role FROM user_branch_memberships WHERE user_id = $1 AND branch_id = $2 AND role = 'Admin' AND is_active = TRUE`,
+                [req.user?.user_id, branchId]
+            );
+            if (!membershipRes.rows[0]) {
+                return res.status(403).json({
+                    error: 'Cross-branch access denied. Only branch administrators can manage branch members.',
+                    code: 'BRANCH_ACCESS_DENIED'
+                });
+            }
+        }
+
+        const { userId, role, isDefault } = req.body;
+        if (!userId) {
+            return next(new AppError('userId is required', 400));
+        }
+        const member = await branchService.assignBranchMember(pool, branchId, userId, { role, isDefault });
+        res.json({
+            success: true,
+            membership: member,
+            message: 'User assigned to branch successfully.'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const removeBranchMember = (pool) => async (req, res, next) => {
+    try {
+        const { id: branchId, userId } = req.params;
+        await assertMembershipOrganization(pool, req, branchId);
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        if (!isOrgAdmin) {
+            const membershipRes = await pool.query(
+                `SELECT role FROM user_branch_memberships WHERE user_id = $1 AND branch_id = $2 AND role = 'Admin' AND is_active = TRUE`,
+                [req.user?.user_id, branchId]
+            );
+            if (!membershipRes.rows[0]) {
+                return res.status(403).json({
+                    error: 'Cross-branch access denied. Only branch administrators can manage branch members.',
+                    code: 'BRANCH_ACCESS_DENIED'
+                });
+            }
+        }
+
+        await branchService.removeBranchMember(pool, branchId, userId);
+        res.json({
+            success: true,
+            message: 'User removed from branch successfully.'
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
 module.exports = {
     getCenterSettings,
     getPublicCenterSettings,
@@ -1127,5 +1407,14 @@ module.exports = {
     deleteAiProfile,
     seedDemoData,
     clearDemoData,
-    getDemoStatus
+    getDemoStatus,
+    getBranches,
+    getBranchQuota,
+    getBranchDetails,
+    createBranch,
+    updateBranch,
+    archiveBranch,
+    getBranchMembers,
+    assignBranchMember,
+    removeBranchMember
 };

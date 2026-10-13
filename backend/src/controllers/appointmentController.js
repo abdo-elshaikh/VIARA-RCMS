@@ -14,6 +14,7 @@ const { logAction } = require('../services/auditService');
 const { triggerMwlRegeneration } = require('../services/pacsMwlService');
 const { syncInvoicesAfterAppointmentReschedule } = require('../services/insuranceAuthorizationService');
 const { assertQuota } = require('../services/quotaService');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const crypto = require('crypto');
 
 const generateOrderNumber = () => {
@@ -105,6 +106,13 @@ const assertReceptionistRequiredForReceptionStage = (receptionistId, status, arr
             true,
             'RECEPTIONIST_ASSIGNMENT_REQUIRED'
         );
+    }
+};
+
+const assertAppointmentBranchAccess = async (db, req, appointment) => {
+    const branchId = require('../utils/requestBranchScope')(req);
+    if (branchId !== appointment.branch_id) {
+        throw new AppError('Branch access denied for this appointment', 403, true, 'BRANCH_ACCESS_DENIED');
     }
 };
 
@@ -271,6 +279,7 @@ const createAppointment = (db) => async (req, res, next) => {
         await ensureCatalogArchiveSchema(db);
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         await assertQuota(client, 'appointments', { transaction: true });
 
         try {
@@ -346,6 +355,15 @@ const createAppointment = (db) => async (req, res, next) => {
             }
 
             const scheduledMachine = await assertSchedulingRules(client, data.modalityId, data.startTime, data.endTime);
+
+            // Multibranch isolation check: ensure user has access to the branch the modality belongs to
+            const activeBranchId = req.branchContext?.branchId || req.user?.branch_id;
+            const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+            const targetBranchId = scheduledMachine?.branch_id || activeBranchId;
+            if (!isOrgAdmin && scheduledMachine?.branch_id && activeBranchId && scheduledMachine.branch_id !== activeBranchId) {
+                await client.query('ROLLBACK');
+                return next(new AppError('The selected modality belongs to a different branch than your active branch context.', 403, true, 'BRANCH_ACCESS_DENIED'));
+            }
 
             // Serialize concurrent bookings on the exact same modality slot to prevent race condition double bookings
             const slotLockKey = `modality_slot:${data.modalityId}:${new Date(data.startTime).toISOString()}`;
@@ -423,12 +441,12 @@ const createAppointment = (db) => async (req, res, next) => {
                                 appointment_source, preparation_status, order_number, priority, clinical_indication,
                 provisional_diagnosis, icd_code, body_part, contrast_required, pregnancy_safety_status,
                 implant_safety_status, renal_safety_status, status,
-                is_follow_up, prior_exam_id, follow_up_reason
+                is_follow_up, prior_exam_id, follow_up_reason, branch_id
               )
               VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
                                                                 $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
-                                                                $28, $29, $30, $31, $32, $33, $34, $35
+                                                                $28, $29, $30, $31, $32, $33, $34, $35, $36
               )
               RETURNING *
             `;
@@ -468,7 +486,8 @@ const createAppointment = (db) => async (req, res, next) => {
                 appointmentStatus,
                 followUp.is_follow_up,
                 followUp.prior_exam_id,
-                followUp.is_follow_up ? (data.followUpReason || null) : null
+                followUp.is_follow_up ? (data.followUpReason || null) : null,
+                targetBranchId || '00000000-0000-4000-8000-000000000001'
             ];
 
             const result = await client.query(insertQuery, values);
@@ -512,10 +531,10 @@ const createAppointment = (db) => async (req, res, next) => {
                     provisional_diagnosis, icd_code, body_part, contrast_required, pregnancy_safety_status,
                     implant_safety_status, renal_safety_status,
                     is_follow_up, prior_exam_id, follow_up_reason,
-                    report_request_status, report_request_source
+                    report_request_status, report_request_source, branch_id
                 ) VALUES (
                     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                    $21, $22, $23, $24, $25
+                    $21, $22, $23, $24, $25, $26
                 )
                 RETURNING exam_id, performing_radiologist_id, radiologist_assignment_version
             `;
@@ -544,7 +563,8 @@ const createAppointment = (db) => async (req, res, next) => {
                 appointment.prior_exam_id,
                 appointment.follow_up_reason,
                 reportRequestStatus,
-                reportRequestSource
+                reportRequestSource,
+                targetBranchId || '00000000-0000-4000-8000-000000000001'
             ]);
 
             if (waitlistEntry) {
@@ -714,7 +734,10 @@ const createAppointment = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -728,6 +751,7 @@ const updateAppointment = (db) => async (req, res, next) => {
         await ensureCatalogArchiveSchema(db);
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existingResult = await client.query(
             'SELECT * FROM appointments WHERE appointment_id = $1 FOR UPDATE',
@@ -740,6 +764,7 @@ const updateAppointment = (db) => async (req, res, next) => {
         }
 
         const existing = existingResult.rows[0];
+        await assertAppointmentBranchAccess(client, req, existing);
         const assignmentChanges = [
             ['technicianId', existing.technician_id],
             ['nurseId', existing.nurse_id],
@@ -1215,7 +1240,10 @@ const updateAppointment = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -1228,6 +1256,7 @@ const markNoShow = (db) => async (req, res, next) => {
         // #2 — Open a transaction so status update + history are atomic
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existingResult = await client.query(
             'SELECT * FROM appointments WHERE appointment_id = $1 FOR UPDATE',
@@ -1235,6 +1264,7 @@ const markNoShow = (db) => async (req, res, next) => {
         );
         if (!existingResult.rows[0]) throw new AppError('Appointment not found', 404);
         const existing = existingResult.rows[0];
+        await assertAppointmentBranchAccess(client, req, existing);
         if (!['Scheduled', 'Confirmed'].includes(existing.status)) {
             throw new AppError(`A ${existing.status} appointment cannot be marked as no-show`, 409);
         }
@@ -1306,7 +1336,10 @@ const markNoShow = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -1320,6 +1353,7 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
         await ensureCatalogArchiveSchema(db);
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existingResult = await client.query(
             'SELECT * FROM appointments WHERE appointment_id = $1 FOR UPDATE',
@@ -1332,6 +1366,7 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
         }
 
         const existing = existingResult.rows[0];
+        await assertAppointmentBranchAccess(client, req, existing);
 
         // #15 — Completed orders are terminal. Cancelled ones can be revived:
         // the UI exposes reschedule on cancelled rows, and rescheduling a
@@ -1472,7 +1507,10 @@ const rescheduleAppointment = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -1523,6 +1561,21 @@ const getAvailability = (db) => async (req, res, next) => {
         const startDate = getRequestQuery(req).startDate || date;
         const endDate = getRequestQuery(req).endDate || date;
 
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        const modalityParams = [startDate, endDate];
+        let branchClause = '';
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            modalityParams.push(effectiveBranchId);
+            branchClause = ` AND m.branch_id = $${modalityParams.length}`;
+        } else if (!isOrgAdminUser && branchContextId) {
+            modalityParams.push(branchContextId);
+            branchClause = ` AND m.branch_id = $${modalityParams.length}`;
+        }
+
         // Single SQL query with JSON aggregation replaces the O(n*m) in-memory filtering.
         const [machineAvailability, staffAvailability] = await Promise.all([
             db.query(`
@@ -1548,10 +1601,10 @@ const getAvailability = (db) => async (req, res, next) => {
                     AND a.status != 'Cancelled'
                 LEFT JOIN patients p ON a.patient_id = p.patient_id
                 LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
-                WHERE m.deleted_at IS NULL
+                WHERE m.deleted_at IS NULL ${branchClause}
                 GROUP BY m.modality_id
                 ORDER BY m.name
-            `, [startDate, endDate]),
+            `, modalityParams),
             db.query(`
                 SELECT
                     u.user_id, u.full_name, u.role,
@@ -1609,13 +1662,15 @@ const cancelAppointment = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const appointment = await client.query(
-            'SELECT status, modality_id, exam_type_id, start_time FROM appointments WHERE appointment_id = $1 FOR UPDATE',
+            'SELECT status, modality_id, exam_type_id, start_time, branch_id FROM appointments WHERE appointment_id = $1 FOR UPDATE',
             [id]
         );
         if (!appointment.rows[0]) throw new AppError('Appointment not found', 404);
         const apptData = appointment.rows[0];
+        await assertAppointmentBranchAccess(client, req, apptData);
         if (['Cancelled', 'No-Show', 'Completed'].includes(apptData.status)) {
             throw new AppError(`This appointment is already ${apptData.status.toLowerCase()} and cannot be cancelled again`, 409);
         }
@@ -1725,7 +1780,10 @@ const cancelAppointment = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -1859,6 +1917,23 @@ const getAppointments = (db) => async (req, res, next) => {
                 : assignedStaffId;
             queryParams.push(effectiveStaffId);
             query += ` AND (a.technician_id = $${queryParams.length} OR a.nurse_id = $${queryParams.length} OR a.radiologist_id = $${queryParams.length})`;
+        }
+
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            queryParams.push(effectiveBranchId);
+            query += ` AND COALESCE(a.branch_id, m.branch_id, '00000000-0000-4000-8000-000000000001'::uuid) = $${queryParams.length}`;
+        } else if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            const allowedIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+            queryParams.push(allowedIds);
+            query += ` AND COALESCE(a.branch_id, m.branch_id, '00000000-0000-4000-8000-000000000001'::uuid) = ANY($${queryParams.length}::uuid[])`;
         }
 
         query += ` ORDER BY a.start_time ASC LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
@@ -2030,6 +2105,7 @@ const getAppointmentById = (db) => async (req, res, next) => {
         }
         
         const row = result.rows[0];
+        await assertAppointmentBranchAccess(db, req, row);
         const mapped = { ...row };
         if (row.first_name_enc || row.last_name_enc) {
             mapped.patient_name = [decrypt(row.first_name_enc), decrypt(row.last_name_enc)]

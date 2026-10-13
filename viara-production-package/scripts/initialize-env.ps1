@@ -13,7 +13,7 @@ if (Test-Path -LiteralPath $OutputPath) {
 $content = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $TemplatePath).Path)
 $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
 try {
-    foreach ($name in @('POSTGRES_PASSWORD', 'JWT_SECRET', 'ENCRYPTION_KEY',
+    foreach ($name in @('POSTGRES_PASSWORD', 'APP_DB_PASSWORD', 'JWT_SECRET', 'ENCRYPTION_KEY',
         'BACKUP_ENCRYPTION_KEY', 'BLIND_INDEX_KEY', 'METRICS_TOKEN',
         'REDIS_PASSWORD', 'ORTHANC_PASSWORD', 'PACS_WEBHOOK_SECRET')) {
         $pattern = '(?m)^' + [regex]::Escape($name) + '=[^\r\n]*'

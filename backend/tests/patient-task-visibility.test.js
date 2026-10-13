@@ -38,6 +38,7 @@ describe('patient visibility follows active clinical task ownership', () => {
 
         await getPatientHistory(db)({
             params: { id: patientId },
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
             user: { user_id: technicianId, role: 'Nurse' }
         }, res, next);
 
@@ -46,5 +47,31 @@ describe('patient visibility follows active clinical task ownership', () => {
         expect(sql).toContain('scope_appt.nurse_id IS NULL');
         expect(values).toEqual([patientId, technicianId]);
         expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 404 }));
+    });
+
+    test('patient history reports confirmed deliveries and orders status by its latest event', async () => {
+        const db = {
+            query: jest.fn()
+                .mockResolvedValueOnce({ rows: [{ patient_id: patientId }] })
+                .mockResolvedValue({ rows: [] })
+        };
+        const res = response();
+        const next = jest.fn();
+
+        await getPatientHistory(db)({
+            params: { id: patientId },
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+            user: { user_id: 'admin-1', role: 'Admin' }
+        }, res, next);
+
+        const historyQuery = db.query.mock.calls[1][0];
+        expect(historyQuery).toContain('AND a.branch_id = $2::uuid');
+        expect(historyQuery).toContain('prior_e.branch_id = a.branch_id');
+        expect(db.query.mock.calls[1][1]).toEqual([patientId, '00000000-0000-4000-8000-000000000001']);
+        expect(historyQuery).toContain("MAX(rd.delivered_at) FILTER (WHERE rd.delivery_status IN (");
+        expect(historyQuery).toContain('AS has_completed_delivery');
+        expect(historyQuery).toContain('ORDER BY rdv.created_at DESC, rdv.delivery_id DESC');
+        expect(historyQuery).not.toContain('MAX(rd.delivery_status)');
+        expect(next).not.toHaveBeenCalled();
     });
 });

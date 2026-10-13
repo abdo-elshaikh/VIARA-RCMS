@@ -57,6 +57,8 @@ const buildDb = (existingAppointment) => {
 };
 
 const reqFor = (id) => ({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
     params: { id },
     body: {
         startTime: '2030-06-20T09:00:00.000Z',
@@ -71,6 +73,7 @@ const respond = () => ({ json: jest.fn(), status: jest.fn().mockReturnThis() });
 describe('rescheduleAppointment status guard', () => {
     test('reschedules a Cancelled appointment and revives it to Confirmed', async () => {
         const existing = {
+        branch_id: '00000000-0000-4000-8000-000000000001',
             appointment_id: 'appt-cancelled',
             status: 'Cancelled',
             modality_id: 'modality-1',
@@ -102,6 +105,7 @@ describe('rescheduleAppointment status guard', () => {
 
     test('reschedules a No-Show appointment to Confirmed', async () => {
         const existing = {
+        branch_id: '00000000-0000-4000-8000-000000000001',
             appointment_id: 'appt-noshow',
             status: 'No-Show',
             modality_id: 'modality-1',
@@ -123,6 +127,7 @@ describe('rescheduleAppointment status guard', () => {
 
     test('still blocks rescheduling a Completed appointment with 422', async () => {
         const existing = {
+        branch_id: '00000000-0000-4000-8000-000000000001',
             appointment_id: 'appt-completed',
             status: 'Completed',
             modality_id: 'modality-1',

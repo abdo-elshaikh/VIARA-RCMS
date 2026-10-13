@@ -1,5 +1,6 @@
 const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const { logAction } = require('../services/auditService');
 const { assertInvoiceFullyPaid, assertInvoiceTransactionAllowed } = require('../services/partialPaymentExceptionService');
 const { assertInsuranceAuthorization } = require('../services/insuranceAuthorizationService');
@@ -251,7 +252,12 @@ const getQueue = (db) => async (req, res, next) => {
             canViewFinancialData = permissionResult.rows.length > 0;
         }
 
-        const cacheKey = `${req.user?.user_id || ''}:${req.user?.role || ''}:${canViewFinancialData ? 'finance' : 'no-finance'}:${stage || ''}:${station || ''}:${priority || ''}:${date || ''}:${includeDelivered}:${scope}:${limit}:${offset}`;
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        const cacheKey = `${effectiveBranchId || 'all'}:${req.user?.user_id || ''}:${req.user?.role || ''}:${canViewFinancialData ? 'finance' : 'no-finance'}:${stage || ''}:${station || ''}:${priority || ''}:${date || ''}:${includeDelivered}:${scope}:${limit}:${offset}`;
         if (process.env.NODE_ENV !== 'test') {
             const cached = queueListCache.get(cacheKey);
             if (cached && (Date.now() - cached.at < QUEUE_LIST_CACHE_TTL_MS)) {
@@ -483,6 +489,18 @@ const getQueue = (db) => async (req, res, next) => {
 
         if (includeDelivered !== 'true') {
             filterClauses += ` AND e.queue_stage NOT IN ('Images Delivered', 'Delivered')`;
+        }
+
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            filterClauses += ` AND COALESCE(e.branch_id, a.branch_id, m.branch_id, '00000000-0000-4000-8000-000000000001'::uuid) = $${param++}`;
+            values.push(effectiveBranchId);
+        } else if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            const allowedIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+            filterClauses += ` AND COALESCE(e.branch_id, a.branch_id, m.branch_id, '00000000-0000-4000-8000-000000000001'::uuid) = ANY($${param++}::uuid[])`;
+            values.push(allowedIds);
         }
 
         const clinicalTaskConfig = ROLE_CONFIG[req.user.role];
@@ -761,6 +779,7 @@ const transitionQueue = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existingResult = await client.query(`
             SELECT e.*,
@@ -783,6 +802,17 @@ const transitionQueue = (db) => async (req, res, next) => {
         }
 
         const existing = existingResult.rows[0];
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        if (!isOrgAdmin && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(client, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            const examBranchId = existing.branch_id || DEFAULT_HQ_BRANCH_ID;
+            if (!userBranchIds.includes(examBranchId)) {
+                await client.query('ROLLBACK');
+                return next(new AppError('Branch access denied for this queue item', 403, true, 'BRANCH_ACCESS_DENIED'));
+            }
+        }
 
         // Authorization: check the target stage before any session/shift lookups.
         if (toStage && !canRoleTransition(req.user.role, toStage)) {
@@ -1496,7 +1526,7 @@ const transitionQueue = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -1554,6 +1584,7 @@ const completeAcquisition = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const existingResult = await client.query(`
             SELECT e.*,
                    a.technician_id, a.technician_assigned_at, a.technician_task_available_at,
@@ -1692,7 +1723,7 @@ const completeAcquisition = (db) => async (req, res, next) => {
         }
         return next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -1704,6 +1735,7 @@ const requestDeferredReport = (db) => async (req, res, next) => {
         const { source = 'Reception', reason } = req.body;
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const existingResult = await client.query(`
             SELECT e.*
             FROM examinations e
@@ -1791,7 +1823,7 @@ const requestDeferredReport = (db) => async (req, res, next) => {
         }
         return next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -1803,6 +1835,7 @@ const deferReportForImages = (db) => async (req, res, next) => {
         const { reason = 'Patient requested images only without waiting for report' } = req.body || {};
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const existingResult = await client.query(`
             SELECT e.*
             FROM examinations e
@@ -1867,7 +1900,7 @@ const deferReportForImages = (db) => async (req, res, next) => {
         }
         return next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -1886,6 +1919,7 @@ const claimQueueTask = (db) => async (req, res, next) => {
         validateUUID(req.params.examId, 'examId');
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const assignment = await claimTask(client, {
             examId: req.params.examId,
@@ -1910,7 +1944,7 @@ const claimQueueTask = (db) => async (req, res, next) => {
         await rollbackQuietly(client);
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -1920,6 +1954,7 @@ const assignQueueTask = (db) => async (req, res, next) => {
         validateUUID(req.params.examId, 'examId');
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const assignment = await assignTask(client, {
             examId: req.params.examId,
@@ -1949,7 +1984,7 @@ const assignQueueTask = (db) => async (req, res, next) => {
         await rollbackQuietly(client);
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -1959,6 +1994,7 @@ const releaseQueueTaskAssignment = (db) => async (req, res, next) => {
         validateUUID(req.params.examId, 'examId');
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const assignment = await releaseTask(client, {
             examId: req.params.examId,
@@ -1986,7 +2022,7 @@ const releaseQueueTaskAssignment = (db) => async (req, res, next) => {
         await rollbackQuietly(client);
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 

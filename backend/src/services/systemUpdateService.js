@@ -62,7 +62,7 @@ const getSystemUpdateStatus = async (pool) => {
     let latestUpdate = null;
     try {
         const updateRes = await pool.query(`
-            SELECT u.*, us.username AS initiator_name
+            SELECT u.*, us.full_name AS initiator_name
             FROM system_updates u
             LEFT JOIN users us ON us.user_id = u.initiated_by
             ORDER BY u.applied_at DESC
@@ -165,7 +165,7 @@ const getSystemUpdateHistory = async (pool, limit = 20) => {
                 u.applied_at,
                 u.completed_at,
                 u.logs,
-                us.username AS initiated_by_username,
+                us.email AS initiated_by_username,
                 us.full_name AS initiated_by_fullname
             FROM system_updates u
             LEFT JOIN users us ON us.user_id = u.initiated_by

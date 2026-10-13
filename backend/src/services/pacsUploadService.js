@@ -7,6 +7,7 @@ const { decrypt } = require('../utils/crypto');
 const { toDicomPatientName } = require('../utils/arabicTransliteration');
 const { reconcileInstance } = require('./pacsReconcileService');
 const { getOrthancUrl, getOrthancAuthHeader } = require('./pacsDicomWebService');
+const { scanPacsFile } = require('../utils/pacsMalwareScan');
 
 const { DicomMetaDictionary, DicomMessage } = dcmjs.data;
 
@@ -529,6 +530,14 @@ const uploadFilesToExam = async (pool, {
             activeUserUploads.set(userKey, active + 1);
             userSlotAcquired = true;
         }
+
+        // Screen the entire batch before parsing or sending any bytes to Orthanc.
+        // Wait for every scanner worker before cleanup, even when one scan fails.
+        const scanErrors = [];
+        await runWithConcurrency(files, 2, async file => {
+            try { await scanPacsFile(file); } catch (error) { scanErrors.push(error); }
+        });
+        if (scanErrors.length) throw scanErrors[0];
 
         const identity = await loadExamIdentity(pool, examId, uploadSessionId);
         if (uploadSessionId) {

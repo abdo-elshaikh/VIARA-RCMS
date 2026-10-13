@@ -27,7 +27,7 @@ const getProfile = (db) => async (req, res, next) => {
     try {
         const userId = req.user.user_id;
         const result = await db.query(`
-            SELECT user_id, full_name, email, role, is_active, is_2fa_enabled, phone, department, job_title, bio, avatar_url, preferences, created_at, updated_at
+            SELECT user_id, full_name, email, role, is_active, is_2fa_enabled, phone, department, job_title, bio, avatar_url, preferences, created_at, updated_at, organization_id, is_org_admin
             FROM users
             WHERE user_id = $1 AND is_active = TRUE
         `, [userId]);
@@ -36,7 +36,22 @@ const getProfile = (db) => async (req, res, next) => {
             return next(new AppError('Profile not found', 404));
         }
 
-        res.json(mapProfile(result.rows[0]));
+        const user = result.rows[0];
+        const profile = mapProfile(user);
+        profile.organizationId = user.organization_id;
+        profile.isOrgAdmin = Boolean(user.is_org_admin || user.role === 'Developer');
+
+        const branchService = require('../services/branchService');
+        const userBranches = await branchService.getUserBranches(
+            db,
+            userId,
+            profile.isOrgAdmin,
+            user.organization_id
+        );
+        profile.branches = userBranches.branches;
+        profile.defaultBranchId = userBranches.defaultBranchId;
+
+        res.json(profile);
     } catch (error) {
         next(error);
     }

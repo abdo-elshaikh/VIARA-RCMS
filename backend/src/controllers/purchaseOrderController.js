@@ -1,5 +1,6 @@
 const { z } = require('zod');
 const { AppError } = require('../middleware/errorHandler');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const { createPurchaseOrderSchema, updatePurchaseOrderStatusSchema, receiveStockSchema } = require('../schemas/inventorySchema');
 const { triggerEventForRole } = require('../services/notificationJobService');
 const Decimal = require('decimal.js');
@@ -97,7 +98,7 @@ const createPurchaseOrder = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -152,6 +153,7 @@ const receiveStock = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         // Lock the order so concurrent receipts cannot over-receive the same lines.
         const poCheck = await client.query(`SELECT po.*, s.name as supplier_name FROM purchase_orders po JOIN suppliers s ON po.supplier_id = s.supplier_id WHERE po.po_id = $1 FOR UPDATE`, [id]);

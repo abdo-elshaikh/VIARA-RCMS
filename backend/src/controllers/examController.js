@@ -12,6 +12,8 @@ const aiReportService = require('../services/aiReportService');
 const { isImageAnalysisUsable } = aiReportService;
 const { getReportStatusForSave, getReportTransitionError } = require('../utils/reportWorkflow');
 const { assertReportReadyForFinalization } = require('../services/pacsStudyReadinessService');
+const branchService = require('../services/branchService');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 
 const parseJSONSafe = (value) => {
     if (!value) return null;
@@ -98,9 +100,9 @@ const addReportVersion = async (db, {
         INSERT INTO report_versions (
             exam_id, version_number, report_status, report_content,
             report_sections, amendment_reason, created_by, signature_hash,
-            signatory_name, signatory_role, signed_at
+            signatory_name, signatory_role, signed_at, branch_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, (SELECT branch_id FROM examinations WHERE exam_id = $1))
     `, [
         examId,
         versionNum,
@@ -242,6 +244,23 @@ const getWorklist = (db) => async (req, res, next) => {
             param++;
         }
 
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            query += ` AND COALESCE(e.branch_id, a.branch_id, m.branch_id, '00000000-0000-4000-8000-000000000001'::uuid) = $${param++}`;
+            values.push(effectiveBranchId);
+        } else if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            const allowedIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+            query += ` AND COALESCE(e.branch_id, a.branch_id, m.branch_id, '00000000-0000-4000-8000-000000000001'::uuid) = ANY($${param++}::uuid[])`;
+            values.push(allowedIds);
+        }
+
         query += ` ORDER BY CASE e.priority WHEN 'Emergency' THEN 1 WHEN 'Urgent' THEN 2 ELSE 3 END, e.created_at ASC LIMIT $${param++} OFFSET $${param}`;
         values.push(limit, offset);
 
@@ -338,6 +357,21 @@ const getCaseReports = (db, explicitQuery) => async (req, res, next) => {
             return `$${values.length}`;
         };
 
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            where.push(`COALESCE(e.branch_id, a.branch_id, m.branch_id, '00000000-0000-4000-8000-000000000001'::uuid) = ${addValue(effectiveBranchId)}`);
+        } else if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            const allowedIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+            where.push(`COALESCE(e.branch_id, a.branch_id, m.branch_id, '00000000-0000-4000-8000-000000000001'::uuid) = ANY(${addValue(allowedIds)}::uuid[])`);
+        }
+
         if (filters.search) {
             const param = addValue(`%${filters.search}%`);
             where.push(`(
@@ -379,9 +413,11 @@ const getCaseReports = (db, explicitQuery) => async (req, res, next) => {
                 AND COALESCE(e.report_locked, FALSE) = TRUE
                 AND e.report_finalized_at IS NOT NULL
                 AND e.delivered_at IS NULL
-                AND (
-                    last_delivery.delivery_status IS NULL
-                    OR last_delivery.delivery_status NOT IN ('Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged')
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM result_deliveries completed_delivery
+                    WHERE completed_delivery.exam_id = e.exam_id
+                      AND completed_delivery.delivery_status IN ('Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged')
                 )`);
         } else if (filters.queue === 'urgent') {
             where.push(`e.priority IN ('Emergency', 'Urgent')`);
@@ -419,14 +455,23 @@ const getCaseReports = (db, explicitQuery) => async (req, res, next) => {
                        last_delivery.delivery_method AS last_delivery_method,
                        last_delivery.delivery_status AS last_delivery_status,
                        last_delivery.delivered_at AS last_delivery_at,
+                       EXISTS (
+                           SELECT 1
+                           FROM result_deliveries completed_delivery
+                           WHERE completed_delivery.exam_id = e.exam_id
+                             AND completed_delivery.delivery_status IN ('Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged')
+                       ) AS has_completed_delivery,
                        COUNT(*) FILTER (WHERE e.report_status IN ('Finalized', 'Amended') AND COALESCE(e.report_locked, FALSE) = TRUE AND e.report_finalized_at IS NOT NULL) OVER() AS finalized_count,
                        COUNT(*) FILTER (WHERE e.report_request_status = 'Requested' AND NOT (
                            e.report_status IN ('Finalized', 'Amended')
                            AND COALESCE(e.report_locked, FALSE) = TRUE
                            AND e.report_finalized_at IS NOT NULL
                        )) OVER() AS pending_count,
-                       COUNT(*) FILTER (WHERE e.delivered_at IS NOT NULL OR last_delivery.delivery_status IN (
-                           'Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged'
+                       COUNT(*) FILTER (WHERE e.delivered_at IS NOT NULL OR EXISTS (
+                           SELECT 1
+                           FROM result_deliveries completed_delivery
+                           WHERE completed_delivery.exam_id = e.exam_id
+                             AND completed_delivery.delivery_status IN ('Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged')
                        )) OVER() AS delivered_count,
                        COUNT(*) OVER() AS total_count
                 FROM examinations e
@@ -537,7 +582,7 @@ const getExamById = (db) => async (req, res, next) => {
                    prior_m.name AS prior_modality_name,
                    prior_m.type AS prior_modality_type
             FROM examinations e
-            JOIN appointments a ON e.appointment_id = a.appointment_id
+            LEFT JOIN appointments a ON e.appointment_id = a.appointment_id
             JOIN patients p ON e.patient_id = p.patient_id
             JOIN modalities m ON e.modality_id = m.modality_id
             LEFT JOIN examination_types et ON e.exam_type_id = et.type_id
@@ -581,6 +626,16 @@ const getExamById = (db) => async (req, res, next) => {
         }
 
         const row = result.rows[0];
+        const isOrgAdmin = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        if (!isOrgAdmin && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            const examBranchId = row.branch_id || DEFAULT_HQ_BRANCH_ID;
+            if (!userBranchIds.includes(examBranchId)) {
+                return next(new AppError('Branch access denied for this examination', 403, true, 'BRANCH_ACCESS_DENIED'));
+            }
+        }
         const exam = {
             ...row,
             patient_name: [decrypt(row.first_name_enc), decrypt(row.last_name_enc)].filter(Boolean).join(' '),
@@ -653,6 +708,7 @@ const updateReport = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const checkQuery = `
             SELECT e.status, e.appointment_id, e.report_locked, e.report_sections,
@@ -661,7 +717,8 @@ const updateReport = (db) => async (req, res, next) => {
                     e.queue_stage, e.is_on_hold, e.exam_completed_at, e.images_ready_at,
                     e.images_available, e.image_count, e.study_instance_uid,
                     e.order_number,
-                    COALESCE(e.external_referring_doctor_id, a.referring_doctor_id) AS referring_doctor_id
+                    COALESCE(e.external_referring_doctor_id, a.referring_doctor_id) AS referring_doctor_id,
+                    COALESCE(e.branch_id, a.branch_id) AS branch_id
             FROM examinations e
             JOIN appointments a ON e.appointment_id = a.appointment_id
             WHERE e.exam_id = $1 AND ${assignmentPredicate}
@@ -901,16 +958,15 @@ const updateReport = (db) => async (req, res, next) => {
                 ), inserted AS (
                     INSERT INTO result_deliveries (
                         exam_id, appointment_id, patient_id, delivery_method,
-                        recipient_name, delivery_status, delivered_by, notes
+                        recipient_name, delivery_status, delivered_at, delivered_by, notes
                     )
                     SELECT exam_id, appointment_id, patient_id, 'Patient Portal',
-                           mrn, 'Delivered', $2, 'Released to patient portal after report finalization and invoice settlement'
+                           mrn, 'Pending', NULL, $2, 'Released to patient portal after report finalization and invoice settlement; awaiting patient access'
                     FROM ready
                     WHERE NOT EXISTS (
                         SELECT 1 FROM result_deliveries rd
                         WHERE rd.exam_id = ready.exam_id
                           AND rd.delivery_method = 'Patient Portal'
-                          AND rd.delivery_status = 'Delivered'
                     )
                     RETURNING exam_id
                 )
@@ -938,16 +994,21 @@ const updateReport = (db) => async (req, res, next) => {
                 criticalAcknowledgements = acknowledgementResult.rows;
             }
             if (criticalAcknowledgements.length === 0) {
+                const examBranchId = checkResult.rows[0].branch_id;
                 const acknowledgementResult = await client.query(`
                     INSERT INTO critical_result_acknowledgements (
                         exam_id, recipient_user_id, recipient_role, status, acknowledgement_due_at
                     )
                     SELECT $1, u.user_id, 'Nurse', 'Pending', NOW() + INTERVAL '15 minutes'
                     FROM users u
-                    WHERE u.is_active = TRUE AND u.role = 'Nurse'
+                    JOIN user_branch_memberships ubm ON ubm.user_id = u.user_id
+                    WHERE u.is_active = TRUE
+                      AND u.role = 'Nurse'
+                      AND ubm.branch_id = $2
+                      AND ubm.is_active = TRUE
                     ON CONFLICT DO NOTHING
                     RETURNING acknowledgement_id, recipient_user_id, recipient_role
-                `, [examId]);
+                `, [examId, examBranchId]);
                 criticalAcknowledgements = acknowledgementResult.rows;
                 if (criticalAcknowledgements.length === 0) {
                     const followupResult = await client.query(`
@@ -1090,7 +1151,10 @@ const updateReport = (db) => async (req, res, next) => {
         if (client && !committed) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -1382,6 +1446,7 @@ const amendReport = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existing = await client.query('SELECT * FROM examinations WHERE exam_id = $1 FOR UPDATE', [id]);
         if (existing.rows.length === 0) {
@@ -1484,7 +1549,7 @@ const amendReport = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -1802,4 +1867,226 @@ const markAiReportDraftApplied = (db) => async (req, res, next) => {
     }
 };
 
-module.exports = { getWorklist, getCaseReports, lookupCaseReport, getExamById, updateReport, acknowledgeCriticalResult, getReportPdf, amendReport, improveReportFormat, listAiReportDrafts, generatePreliminaryReportDraft, markAiReportDraftApplied };
+const transferExamBranch = (db) => async (req, res, next) => {
+    const client = typeof db.connect === 'function' ? await db.connect() : db;
+    const ownsTransaction = typeof db.connect === 'function';
+    try {
+        const { id: examId } = req.params;
+        const currentUserId = req.user?.user_id || req.user?.userId;
+        const { targetBranchId, targetModalityId, reason, costResponsibility = 'source_branch' } = req.body || {};
+
+        if (!targetBranchId) {
+            return next(new AppError('targetBranchId is required', 400));
+        }
+        if (!reason || typeof reason !== 'string' || !reason.trim()) {
+            return next(new AppError('A clinical or operational transfer reason is required', 400));
+        }
+        if (!['source_branch', 'target_branch', 'shared'].includes(costResponsibility)) {
+            return next(new AppError('Invalid cost responsibility option', 400));
+        }
+
+        if (ownsTransaction) {
+            await client.query('BEGIN');
+            await setBranchContext(client, req);
+        }
+
+        // 1. Fetch exam with FOR UPDATE
+        const examRes = await client.query(`
+            SELECT e.exam_id, e.branch_id, e.original_branch_id, e.modality_id,
+                   e.appointment_id, e.status, e.queue_stage, e.study_instance_uid,
+                   fb.name AS current_branch_name
+            FROM examinations e
+            LEFT JOIN financial_branches fb ON fb.branch_id = e.branch_id
+            WHERE e.exam_id = $1
+            FOR UPDATE OF e
+        `, [examId]);
+
+        const exam = examRes.rows[0];
+        if (!exam) {
+            if (ownsTransaction) await client.query('ROLLBACK');
+            return next(new AppError('Examination not found', 404));
+        }
+
+        const sourceBranchId = exam.branch_id || '00000000-0000-4000-8000-000000000001';
+
+        // 2. Validate caller has access to the source branch
+        if (!req.user?.is_org_admin) {
+            const userBranches = await branchService.getUserBranches(client, currentUserId, false);
+            const allowedBranchIds = userBranches.branches.map(b => b.id);
+            if (!allowedBranchIds.includes(sourceBranchId)) {
+                if (ownsTransaction) await client.query('ROLLBACK');
+                return next(new AppError('You do not have access to transfer exams from this branch | ليس لديك صلاحية لنقل فحوصات من هذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));
+            }
+        }
+
+        // 3. Validate target branch exists and is different
+        if (sourceBranchId === targetBranchId) {
+            if (ownsTransaction) await client.query('ROLLBACK');
+            return next(new AppError('Target branch must be different from current branch', 400));
+        }
+
+        const targetBranchRes = await client.query(
+            'SELECT branch_id, name, is_active FROM financial_branches WHERE branch_id = $1',
+            [targetBranchId]
+        );
+        const targetBranch = targetBranchRes.rows[0];
+        if (!targetBranch || !targetBranch.is_active) {
+            if (ownsTransaction) await client.query('ROLLBACK');
+            return next(new AppError('Target branch does not exist or is inactive', 400));
+        }
+
+        // 4. Validate target modality if supplied
+        let resolvedModalityId = null;
+        if (targetModalityId) {
+            const modRes = await client.query(
+                'SELECT modality_id, branch_id FROM modalities WHERE modality_id = $1 AND deleted_at IS NULL',
+                [targetModalityId]
+            );
+            if (!modRes.rows.length || modRes.rows[0].branch_id !== targetBranchId) {
+                if (ownsTransaction) await client.query('ROLLBACK');
+                return next(new AppError('Target modality does not belong to the target branch', 400));
+            }
+            resolvedModalityId = targetModalityId;
+        }
+
+        // 5. Preserve original_branch_id
+        const originalBranchId = exam.original_branch_id || sourceBranchId;
+
+        // 6. Update examination: preserves study_instance_uid, retains original_branch_id, updates branch_id
+        await client.query(`
+            UPDATE examinations
+            SET branch_id = $1,
+                original_branch_id = $2,
+                modality_id = COALESCE($3, modality_id)
+            WHERE exam_id = $4
+        `, [targetBranchId, originalBranchId, resolvedModalityId, examId]);
+
+        // 7. If linked appointment exists, update its branch as well
+        if (exam.appointment_id) {
+            await client.query(`
+                UPDATE appointments
+                SET branch_id = $1,
+                    original_branch_id = COALESCE(original_branch_id, $2),
+                    modality_id = COALESCE($3, modality_id),
+                    notes = COALESCE(notes, '') || ' [Transferred to ' || $4 || ']'
+                WHERE appointment_id = $5
+            `, [targetBranchId, originalBranchId, resolvedModalityId, targetBranch.name, exam.appointment_id]);
+        }
+
+        // 8. Record in exam_branch_transfers audit table
+        const transferInsertRes = await client.query(`
+            INSERT INTO exam_branch_transfers (
+                exam_id, source_branch_id, target_branch_id, previous_modality_id,
+                target_modality_id, transferred_by, reason, cost_responsibility
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING *
+        `, [
+            examId,
+            sourceBranchId,
+            targetBranchId,
+            exam.modality_id,
+            resolvedModalityId,
+            currentUserId,
+            reason.trim(),
+            costResponsibility
+        ]);
+
+        const transferRecord = transferInsertRes.rows[0];
+
+        // 9. System audit log
+        await logAction(client, {
+            userId: currentUserId,
+            action: 'EXAM_BRANCH_TRANSFERRED',
+            resourceId: examId,
+            resourceTable: 'examinations',
+            ipAddress: req.ip,
+            details: {
+                transferId: transferRecord.transfer_id,
+                sourceBranchId,
+                targetBranchId,
+                originalBranchId,
+                costResponsibility,
+                reason: reason.trim(),
+                studyInstanceUid: exam.study_instance_uid
+            }
+        });
+
+        if (ownsTransaction) await client.query('COMMIT');
+
+        res.status(200).json({
+            success: true,
+            message: `Examination successfully transferred to ${targetBranch.name}`,
+            transfer: transferRecord,
+            exam: {
+                exam_id: examId,
+                branch_id: targetBranchId,
+                original_branch_id: originalBranchId,
+                modality_id: resolvedModalityId || exam.modality_id,
+                study_instance_uid: exam.study_instance_uid
+            }
+        });
+    } catch (error) {
+        if (ownsTransaction) await client.query('ROLLBACK');
+        next(error);
+    } finally {
+        if (ownsTransaction && client) {
+            await clearBranchContext(client);
+            client.release();
+        }
+    }
+};
+
+const getExamBranchTransfers = (db) => async (req, res, next) => {
+    try {
+        const { id: examId } = req.params;
+        const currentUserId = req.user?.user_id || req.user?.userId;
+
+        // Check exam access
+        const examRes = await db.query('SELECT branch_id, original_branch_id FROM examinations WHERE exam_id = $1', [examId]);
+        const exam = examRes.rows[0];
+        if (!exam) return next(new AppError('Examination not found', 404));
+
+        if (!req.user?.is_org_admin) {
+            const userBranches = await branchService.getUserBranches(db, currentUserId, false);
+            const allowedBranchIds = userBranches.branches.map(b => b.id);
+            const hasAccess = allowedBranchIds.includes(exam.branch_id) || (exam.original_branch_id && allowedBranchIds.includes(exam.original_branch_id));
+            if (!hasAccess) {
+                return next(new AppError('You do not have access to this examination | ليس لديك صلاحية لهذا الفحص', 403, true, 'BRANCH_ACCESS_DENIED'));
+            }
+        }
+
+        const transfers = await db.query(`
+            SELECT t.*,
+                   sb.name AS source_branch_name,
+                   tb.name AS target_branch_name,
+                   u.full_name AS transferred_by_name
+            FROM exam_branch_transfers t
+            LEFT JOIN financial_branches sb ON sb.branch_id = t.source_branch_id
+            LEFT JOIN financial_branches tb ON tb.branch_id = t.target_branch_id
+            LEFT JOIN users u ON u.user_id = t.transferred_by
+            WHERE t.exam_id = $1
+            ORDER BY t.created_at DESC
+        `, [examId]);
+
+        res.json({ transfers: transfers.rows });
+    } catch (error) {
+        next(error);
+    }
+};
+
+module.exports = {
+    getWorklist,
+    getCaseReports,
+    lookupCaseReport,
+    getExamById,
+    updateReport,
+    acknowledgeCriticalResult,
+    getReportPdf,
+    amendReport,
+    improveReportFormat,
+    listAiReportDrafts,
+    generatePreliminaryReportDraft,
+    markAiReportDraftApplied,
+    transferExamBranch,
+    getExamBranchTransfers
+};

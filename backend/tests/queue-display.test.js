@@ -5,6 +5,7 @@ jest.mock('../src/utils/crypto', () => ({
 }));
 
 const buildQueueRow = () => ({
+        branch_id: '00000000-0000-4000-8000-000000000001',
     exam_id: 'exam-1',
     order_number: 'ORD-2026-0001',
     queue_number: 4,

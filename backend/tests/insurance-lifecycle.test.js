@@ -235,6 +235,9 @@ describe('insurance lifecycle and contract controls', () => {
                     if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK' || text.includes('pg_advisory_xact_lock')) {
                         return { rows: [] };
                     }
+                    if (text.includes('set_branch_context') || text.includes('clear_branch_context')) {
+                        return { rows: [] };
+                    }
                     if (text.includes('SELECT * FROM insurance_claims')) {
                         return {
                             rows: [{
@@ -309,6 +312,7 @@ describe('insurance lifecycle and contract controls', () => {
                     return null;
                 }),
                 user: { user_id: 'user-acc', role: 'Accountant' },
+                branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
                 ip: '127.0.0.1'
             };
             const res = { json: jest.fn() };

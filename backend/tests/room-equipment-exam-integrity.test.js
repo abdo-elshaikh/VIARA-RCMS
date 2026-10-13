@@ -28,6 +28,8 @@ describe('Room, Equipment & Clinical Examination Integrity', () => {
                 query: jest.fn().mockResolvedValue({ rows: [] })
             };
             mockReq = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 user: { user_id: '00000000-0000-4000-8000-000000000001', role: 'Admin' },
                 params: {},
                 body: {},
@@ -79,6 +81,7 @@ describe('Room, Equipment & Clinical Examination Integrity', () => {
 
             mockClient.query
                 .mockResolvedValueOnce() // BEGIN
+                .mockResolvedValueOnce({ rows: [] }) // branch context
                 .mockResolvedValueOnce({ rows: [{ room_id: 'existing-room' }] }); // Duplicate query
 
             await createRoom(mockDb)(mockReq, mockRes, next);
@@ -93,6 +96,7 @@ describe('Room, Equipment & Clinical Examination Integrity', () => {
 
             mockClient.query
                 .mockResolvedValueOnce() // BEGIN
+                .mockResolvedValueOnce({ rows: [] }) // branch context
                 .mockResolvedValueOnce({ rows: [{ room_id: 'room-1', name: 'جناح الرنين' }] }) // existing
                 .mockResolvedValueOnce({ rows: [{ modality_id: 'm-1', name: 'MRI Scanner' }] }); // active equipment check
 
@@ -223,6 +227,7 @@ describe('Room, Equipment & Clinical Examination Integrity', () => {
                 query: jest.fn().mockResolvedValue({ rows: [] })
             };
             mockReq = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
                 user: { user_id: '00000000-0000-4000-8000-000000000001', role: 'Receptionist' },
                 body: {
                     patientId: '00000000-0000-4000-8000-000000000002',
@@ -245,6 +250,7 @@ describe('Room, Equipment & Clinical Examination Integrity', () => {
         test('rejects appointment creation when duration is less than exam minimum duration', async () => {
             mockClient.query
                 .mockResolvedValueOnce() // BEGIN
+                .mockResolvedValueOnce({ rows: [] }) // branch context
                 .mockResolvedValueOnce({
                     rows: [{
                         type_id: '00000000-0000-4000-8000-000000000004',
@@ -273,6 +279,8 @@ describe('Room, Equipment & Clinical Examination Integrity', () => {
                 query: jest.fn()
             };
             mockReq = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 query: {},
                 params: {},
                 user: { role: 'Admin', userId: 'user-1' }

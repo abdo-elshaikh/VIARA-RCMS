@@ -20,6 +20,8 @@ import {
     Activity
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { createEquipmentTranslator } from '../utils/equipmentTranslation';
+import '../components/equipment/EquipmentWorkspace.css';
 import EquipmentRegistry from '../components/equipment/EquipmentRegistry';
 import MaintenanceManager from '../components/equipment/MaintenanceManager';
 import DowntimeManager from '../components/equipment/DowntimeManager';
@@ -67,7 +69,8 @@ import {
 } from '../types/equipment';
 
 const Equipment = () => {
-    const { t, i18n } = useTranslation('workspace');
+    const { t: translate, i18n } = useTranslation(['workspace', 'common']);
+    const t = useMemo(() => createEquipmentTranslator(translate), [translate]);
     const isArabic = i18n.language?.startsWith('ar');
     const user = useSelector(selectCurrentUser);
     const permissions = useMemo(() => new Set(user?.permissions || []), [user?.permissions]);
@@ -547,7 +550,7 @@ const Equipment = () => {
     const safeTab = activeTab === 'maintenance' && !canViewMaintenance ? 'matrix' : activeTab;
 
     return (
-        <main className="mx-auto max-w-[1700px] space-y-5 pb-12">
+        <main className="equipment-workspace mx-auto min-w-0 max-w-[1700px] space-y-5 pb-12">
             {/* Standard UI Consistency Compliant PageHeader */}
             <PageHeader
                 icon={Server}
@@ -585,8 +588,8 @@ const Equipment = () => {
                 metricsLabel={t('clinicalOperationsAndAssetsIndicators')}
             />
 
-            <div className="grid items-start gap-4 xl:grid-cols-[232px_minmax(0,1fr)]">
-                <aside className="xl:sticky xl:top-4">
+            <div className="equipment-layout grid min-w-0 items-start gap-4">
+                <aside className="equipment-navigation min-w-0">
                     <EquipmentTabs
                         t={t}
                         tabs={tabs}
@@ -596,12 +599,12 @@ const Equipment = () => {
                 </aside>
 
                 {/* Each section keeps its focused workflow while sharing this navigation frame. */}
-                <div id="equipment-tabpanel" role="tabpanel" aria-labelledby={`equipment-tab-${safeTab}`} tabIndex={0} className="min-w-0 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40">
+                <div id="equipment-tabpanel" role="tabpanel" aria-labelledby={`equipment-tab-${safeTab}`} tabIndex={0} className="equipment-panel min-w-0 transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500/40">
                 {/* 1. HIERARCHY MATRIX */}
                 {safeTab === 'matrix' && (
                     <div className="space-y-4">
                         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                            <div className="relative flex-1 min-w-[240px]">
+                            <div className="relative min-w-0 flex-1 basis-60">
                                 <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
                                 <input
                                     type="text"
@@ -613,7 +616,7 @@ const Equipment = () => {
                                 />
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -645,7 +648,7 @@ const Equipment = () => {
                             <div role="alert" className="rounded-3xl border border-rose-200 bg-rose-50/60 p-12 text-center dark:border-rose-900/60 dark:bg-rose-950/20">
                                 <AlertTriangle className="mx-auto text-rose-500" size={36} />
                                 <p className="mt-3 text-sm font-bold text-rose-700 dark:text-rose-300">{t('matrixLoadError')}</p>
-                                <button type="button" onClick={matrixQuery.refetch} className="mt-4 rounded-xl border border-rose-200 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-white dark:border-rose-900 dark:text-rose-300 dark:hover:bg-slate-900">{t('retry')}</button>
+                                <button type="button" onClick={matrixQuery.refetch} className="mt-4 rounded-xl border border-rose-200 px-4 py-2 text-xs font-bold text-rose-700 hover:bg-white dark:border-rose-900 dark:text-rose-300 dark:hover:bg-slate-900">{t('common:retry', { defaultValue: isArabic ? 'إعادة المحاولة' : 'Retry' })}</button>
                             </div>
                         ) : matrixRooms.length === 0 ? (
                             <div className="rounded-3xl border border-dashed border-slate-300 p-12 text-center dark:border-slate-800">
@@ -706,7 +709,7 @@ const Equipment = () => {
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center gap-2" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
+                                                <div className="flex flex-wrap items-center gap-2" onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
                                                     <button
                                                         type="button"
                                                         onClick={(e) => { e.stopPropagation(); handleSelectRoom(room.room_id); }}
@@ -784,7 +787,7 @@ const Equipment = () => {
                                                                             </div>
                                                                         </div>
 
-                                                                        <div className="flex items-center gap-2">
+                                                                        <div className="flex flex-wrap items-center gap-2">
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={(e) => { e.stopPropagation(); handleOpenCreateExam(machine); }}
@@ -814,7 +817,7 @@ const Equipment = () => {
                                                                                     {t('noProceduresConfiguredForThisModality')}
                                                                                 </div>
                                                                             ) : (
-                                                                                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                                                                <div className="equipment-card-grid grid gap-2">
                                                                                     {procedures.map(proc => (
                                                                                         <div
                                                                                             key={proc.type_id}
@@ -935,7 +938,7 @@ const Equipment = () => {
                         </div>
 
                         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-3.5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                            <div className="relative flex-1 min-w-[220px]">
+                            <div className="relative min-w-0 flex-1 basis-60">
                                 <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
                                 <input
                                     type="text"
@@ -950,6 +953,7 @@ const Equipment = () => {
                             <div className="flex flex-wrap items-center gap-2">
                                 <select
                                     value={procedureModalityFilter}
+                                    aria-label={t('allModalities')}
                                     onChange={(e) => setProcedureModalityFilter(e.target.value)}
                                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
                                 >
@@ -963,6 +967,7 @@ const Equipment = () => {
 
                                 <select
                                     value={procedureContrastFilter}
+                                    aria-label={t('allContrast')}
                                     onChange={(e) => setProcedureContrastFilter(e.target.value)}
                                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300"
                                 >
@@ -1006,7 +1011,7 @@ const Equipment = () => {
                                                 : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200/60 dark:border-slate-700/40';
 
                                 return (
-                                    <article key={exam.type_id} className={`flex flex-col gap-3 p-4 transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/40 sm:flex-row sm:items-center sm:justify-between ${exam.is_active === false ? 'opacity-70 bg-slate-50/80 dark:bg-slate-950/50' : ''}`}>
+                                    <article key={exam.type_id} className={`flex flex-col gap-3 p-4 transition-colors hover:bg-slate-50/70 dark:hover:bg-slate-800/40 equipment-responsive-row sm:flex-row sm:items-center sm:justify-between ${exam.is_active === false ? 'opacity-70 bg-slate-50/80 dark:bg-slate-950/50' : ''}`}>
                                         <div className="min-w-0 flex-1">
                                             <div className="flex flex-wrap items-center gap-2">
                                                 <h4 className="text-sm font-black text-slate-900 dark:text-white">{exam.name}</h4>
@@ -1082,7 +1087,7 @@ const Equipment = () => {
                     : (t('registerNewSuite'))}
                 size="md"
             >
-                <form onSubmit={handleSaveRoom} className="space-y-4">
+                <form onSubmit={handleSaveRoom} className="equipment-form space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                             {t('roomSuiteName')}
@@ -1097,7 +1102,7 @@ const Equipment = () => {
                         />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                                 {t('roomIdentifier')}
@@ -1126,7 +1131,7 @@ const Equipment = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                                 {t('roomType')}
@@ -1201,7 +1206,6 @@ const Equipment = () => {
                 onClose={() => { setIsMachineModalOpen(false); setEditingMachine(null); }}
                 onSave={handleSaveMachine}
                 busy={isBusy}
-                t={t}
             />
 
             {/* Machine Delete Confirmation */}
@@ -1227,7 +1231,6 @@ const Equipment = () => {
                 onClose={() => { setIsExamModalOpen(false); setEditingExam(null); }}
                 onSave={handleSaveExam}
                 busy={isBusy}
-                t={t}
             />
 
             {/* Exam Delete Confirmation */}

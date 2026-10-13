@@ -3,6 +3,7 @@ const { z } = require('zod');
 const { AppError } = require('../utils/errors');
 const { logAction } = require('../services/auditService');
 const { decrypt } = require('../utils/crypto');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 
 const roomSchema = z.object({
     name: z.string().trim().min(2).max(100),
@@ -32,6 +33,19 @@ const getRooms = (db) => async (req, res, next) => {
         if (type) {
             params.push(type);
             filters.push(`r.type = $${params.length}`);
+        }
+
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            params.push(effectiveBranchId);
+            filters.push(`r.branch_id = $${params.length}`);
+        } else if (!isOrgAdminUser && branchContextId) {
+            params.push(branchContextId);
+            filters.push(`r.branch_id = $${params.length}`);
         }
 
         const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
@@ -167,17 +181,19 @@ const createRoom = (db) => async (req, res, next) => {
         const data = roomSchema.parse(req.body);
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
-        const existing = await client.query('SELECT 1 FROM rooms WHERE LOWER(room_number) = LOWER($1)', [data.roomNumber]);
+        const targetBranchId = require('../utils/requestBranchScope')(req, req.body.branchId);
+        const existing = await client.query('SELECT 1 FROM rooms WHERE LOWER(room_number) = LOWER($1) AND branch_id = $2', [data.roomNumber, targetBranchId]);
         if (existing.rows.length) {
-            throw new AppError('A room with this room number already exists', 409);
+            throw new AppError('A room with this room number already exists in the selected branch', 409);
         }
 
         const result = await client.query(`
-            INSERT INTO rooms (name, room_number, type, floor, status, notes)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO rooms (name, room_number, type, floor, status, notes, branch_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING *
-        `, [data.name, data.roomNumber, data.type, data.floor || null, data.status, data.notes || null]);
+        `, [data.name, data.roomNumber, data.type, data.floor || null, data.status, data.notes || null, targetBranchId]);
 
         await logAction(client, {
             userId: req.user.user_id,
@@ -275,6 +291,7 @@ const deleteRoom = (db) => async (req, res, next) => {
         const { id } = req.params;
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existing = await client.query('SELECT * FROM rooms WHERE room_id = $1 FOR UPDATE', [id]);
         if (!existing.rows.length) {
@@ -323,7 +340,10 @@ const deleteRoom = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 

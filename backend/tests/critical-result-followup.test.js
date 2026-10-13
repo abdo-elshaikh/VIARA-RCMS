@@ -28,9 +28,9 @@ describe('critical result administrative follow-up', () => {
         const res = makeResponse();
         const next = jest.fn();
 
-        await getOpenFollowups(db)({}, res, next);
+        await getOpenFollowups(db)({ headers: {}, user: { user_id: 'admin', role: 'Admin' }, branchContext: { branchId: '00000000-0000-4000-8000-000000000001' } }, res, next);
 
-        expect(db.query).toHaveBeenCalledWith(expect.stringContaining("task.status = 'Open'"));
+        expect(db.query).toHaveBeenCalledWith(expect.stringContaining("task.status = 'Open'"), expect.any(Array));
         expect(res.json).toHaveBeenCalledWith({ items: rows });
         expect(next).not.toHaveBeenCalled();
     });
@@ -52,9 +52,11 @@ describe('critical result administrative follow-up', () => {
             query: jest.fn(async (sql) => {
                 const text = String(sql);
                 timeline.push(text);
+                if (text.includes('SELECT task.task_id')) return { rows: [{ task_id: TASK_ID, exam_id: EXAM_ID, status: 'Open', branch_id: '00000000-0000-4000-8000-000000000001' }] };
                 if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') return { rows: [] };
                 if (text.includes('UPDATE critical_result_admin_followup_tasks')) {
                     return { rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                         task_id: TASK_ID,
                         exam_id: EXAM_ID,
                         status: 'Completed',
@@ -75,6 +77,8 @@ describe('critical result administrative follow-up', () => {
         const next = jest.fn();
 
         await completeFollowup(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { id: TASK_ID },
             body: {
                 contactedParty: 'On-call clinic',
@@ -102,8 +106,10 @@ describe('critical result administrative follow-up', () => {
     test('rolls back when required audit logging fails', async () => {
         const client = {
             query: jest.fn(async (sql) => {
+                if (String(sql).includes('SELECT task.task_id')) return { rows: [{ task_id: TASK_ID, exam_id: EXAM_ID, status: 'Open', branch_id: '00000000-0000-4000-8000-000000000001' }] };
                 if (String(sql).includes('UPDATE critical_result_admin_followup_tasks')) {
-                    return { rows: [{ task_id: TASK_ID, exam_id: EXAM_ID, status: 'Completed' }] };
+                    return { rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001', task_id: TASK_ID, exam_id: EXAM_ID, status: 'Completed' }] };
                 }
                 return { rows: [] };
             }),
@@ -113,6 +119,8 @@ describe('critical result administrative follow-up', () => {
         const next = jest.fn();
 
         await completeFollowup({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { id: TASK_ID },
             body: { contactedParty: 'On-call clinic', followUpNotes: 'Urgent result relayed to clinician.' },
             user: { user_id: '00000000-0000-4000-8000-000000000007' }
@@ -129,7 +137,7 @@ describe('critical result administrative follow-up', () => {
             const client = {
                 query: jest.fn(async (sql) => {
                     if (String(sql).includes('UPDATE critical_result_admin_followup_tasks')) return { rows: [] };
-                    if (String(sql).includes('SELECT 1 FROM critical_result_admin_followup_tasks')) return { rows: existingRows };
+                    if (String(sql).includes('SELECT task.task_id')) return { rows: existingRows.map(row => ({ ...row, status: 'Completed', branch_id: '00000000-0000-4000-8000-000000000001' })) };
                     return { rows: [] };
                 }),
                 release: jest.fn()
@@ -137,6 +145,8 @@ describe('critical result administrative follow-up', () => {
             const next = jest.fn();
 
             await completeFollowup({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 params: { id: TASK_ID },
                 body: { contactedParty: 'On-call clinic', followUpNotes: 'Urgent result relayed to clinician.' },
                 user: { user_id: '00000000-0000-4000-8000-000000000007' }

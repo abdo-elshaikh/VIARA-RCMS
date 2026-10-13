@@ -814,7 +814,7 @@ const Modality = () => {
                                                         </div>
                                                         <div className="mt-3 flex flex-wrap gap-1.5">
                                                             <PriorityBadge priority={exam.priority} t={t} />
-                                                            <AssignmentBadge status={exam.assignment_status} t={t} />
+                                                            <AssignmentBadge status={exam.assignment_status} isAssignedToMe={exam.is_assigned_to_me} assigneeName={exam.technician_name} t={t} />
                                                             {exam.is_on_hold && (
                                                                 <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 ring-1 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:ring-amber-900/50">
                                                                     <PauseCircle size={11} /> {t('common.onHold')}
@@ -1142,7 +1142,7 @@ const ModalityQueueCard = ({ exam, t, locale, isMoving, isClaiming, onRelease, o
 
             <div className="mt-2.5 flex flex-wrap gap-1.5 ps-2">
                 <PriorityBadge priority={exam.priority} t={t} />
-                <AssignmentBadge status={exam.assignment_status} t={t} />
+                <AssignmentBadge status={exam.assignment_status} isAssignedToMe={exam.is_assigned_to_me} assigneeName={exam.technician_name} t={t} />
                 {exam.report_request_status === 'NotRequested' && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-cyan-50 px-2 py-0.5 text-[10px] font-bold text-cyan-800 ring-1 ring-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:ring-cyan-800">
                         <ScanLine size={11} /> {isArabic ? 'أفلام فقط (دون تقرير)' : 'Images Only (No Report)'}

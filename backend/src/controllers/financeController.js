@@ -10,6 +10,7 @@ const {
     createClosureSchema, finalizeClosureSchema
 } = require('../schemas/financeSchema');
 const financialReportService = require('../services/financialReportService');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const {
     DEFAULT_COMMISSION_PERCENTAGE,
     DEFAULT_BRANCH_ID,
@@ -18,6 +19,19 @@ const {
     normalizeBusinessDate,
     postJournalBatch
 } = require('../services/financialPostingService');
+
+const assertFinanceBranchAccess = async (db, user, targetBranchId) => {
+    if (!user || user.is_org_admin || user.role === 'Developer') {
+        return;
+    }
+    const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+    const userBranches = await getUserBranches(db, user.user_id, false, user.organization_id);
+    const allowedBranchIds = new Set((userBranches.branches || []).map(b => b.id));
+    const branchToCheck = targetBranchId || DEFAULT_HQ_BRANCH_ID;
+    if (!allowedBranchIds.has(branchToCheck)) {
+        throw new AppError('Branch access denied for this financial operation', 403, true, 'BRANCH_ACCESS_DENIED');
+    }
+};
 
 const assertPeriodOpen = (client, date, branchId = DEFAULT_BRANCH_ID) => lockFinancialBusinessDate(
     client,
@@ -135,7 +149,28 @@ const updateExpenseCategory = (db) => async (req, res, next) => {
 const getExpenses = (db) => async (req, res, next) => {
     try {
         const { startDate, endDate, categoryId } = getRequestQuery(req);
-        const branchId = getRequestQuery(req).branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
+        const explicitBranch = getRequestQuery(req).branchId;
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id || req.user?.branchId;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        let allowedBranchIds = null;
+        if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            allowedBranchIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+        }
+
+        if (explicitBranch && explicitBranch !== 'all' && !isOrgAdminUser) {
+            if (!allowedBranchIds || !allowedBranchIds.includes(explicitBranch)) {
+                return res.status(403).json({
+                    code: 'BRANCH_ACCESS_DENIED',
+                    message: 'User does not have access to requested branch expenses'
+                });
+            }
+        }
+
+        const branchId = explicitBranch || branchContextId || DEFAULT_BRANCH_ID;
         
         validateUUID(categoryId, 'categoryId');
         
@@ -181,6 +216,7 @@ const createExpense = (db) => async (req, res, next) => {
         const userId = req.user.user_id;
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const requestFingerprint = crypto.createHash('sha256').update(JSON.stringify(req.body || {})).digest('hex');
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [`expense:${data.idempotencyKey}`]);
         const replay = await client.query(
@@ -194,7 +230,9 @@ const createExpense = (db) => async (req, res, next) => {
             await client.query('COMMIT');
             return res.json(replay.rows[0]);
         }
-        const postingDate = await assertPeriodOpen(client, data.expenseDate, data.branchId || DEFAULT_BRANCH_ID);
+        const targetBranchId = data.branchId || req.branchContext?.branchId || req.user?.branch_id || DEFAULT_BRANCH_ID;
+        await assertFinanceBranchAccess(client, req.user, targetBranchId);
+        const postingDate = await assertPeriodOpen(client, data.expenseDate, targetBranchId);
 
         const result = await client.query(`
             INSERT INTO expenses (
@@ -230,7 +268,10 @@ const createExpense = (db) => async (req, res, next) => {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -244,6 +285,7 @@ const updateExpense = (db) => async (req, res, next) => {
         if (keys.length === 0) return res.status(400).json({ message: 'No data provided' });
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const existing = await client.query('SELECT * FROM expenses WHERE expense_id = $1 FOR UPDATE', [id]);
         if (existing.rows.length === 0) throw new AppError('Expense not found', 404);
         if (existing.rows[0].reversed_at) throw new AppError('A reversed expense cannot be edited', 409);
@@ -255,6 +297,7 @@ const updateExpense = (db) => async (req, res, next) => {
         if (changesPostedValue) {
             throw new AppError('Posted expense amounts, dates, and payment methods are immutable; reverse and recreate the expense', 409);
         }
+        await assertFinanceBranchAccess(client, req.user, current.branch_id);
         await assertPeriodOpen(client, current.expense_date, current.branch_id);
         
         const setClauses = keys.map((k, i) => {
@@ -282,7 +325,10 @@ const updateExpense = (db) => async (req, res, next) => {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -292,9 +338,11 @@ const deleteExpense = (db) => async (req, res, next) => {
         const { id } = req.params;
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const existing = await client.query('SELECT * FROM expenses WHERE expense_id = $1 FOR UPDATE', [id]);
         if (existing.rows.length === 0) throw new AppError('Expense not found', 404);
         if (existing.rows[0].reversed_at) throw new AppError('Expense is already reversed', 409);
+        await assertFinanceBranchAccess(client, req.user, existing.rows[0].branch_id);
         await assertPeriodOpen(client, existing.rows[0].expense_date, existing.rows[0].branch_id);
         const result = await client.query(`
             UPDATE expenses
@@ -323,7 +371,10 @@ const deleteExpense = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -331,7 +382,9 @@ const deleteExpense = (db) => async (req, res, next) => {
 
 const getCommissionPayables = (db) => async (req, res, next) => {
     try {
-        const branchId = getRequestQuery(req).branchId || req.user.branch_id || req.user.branchId || DEFAULT_BRANCH_ID;
+        const explicitBranch = getRequestQuery(req).branchId;
+        const branchId = explicitBranch || req.branchContext?.branchId || req.user?.branch_id || req.user?.branchId || DEFAULT_BRANCH_ID;
+        await assertFinanceBranchAccess(db, req.user, branchId);
         const result = await db.query(`
             SELECT cp.*, 
                    COALESCE(rd.full_name, u.full_name) as doctor_name
@@ -351,9 +404,11 @@ const payCommission = (db) => async (req, res, next) => {
     let client;
     try {
         const data = payCommissionSchema.parse(req.body);
-        const branchId = data.branchId || DEFAULT_BRANCH_ID;
+        const branchId = data.branchId || req.branchContext?.branchId || req.user?.branch_id || DEFAULT_BRANCH_ID;
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
+        await assertFinanceBranchAccess(client, req.user, branchId);
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [data.doctorId]);
 
         const existingRequest = await client.query(
@@ -439,7 +494,10 @@ const payCommission = (db) => async (req, res, next) => {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -447,7 +505,29 @@ const payCommission = (db) => async (req, res, next) => {
 
 const getFinancialClosures = (db) => async (req, res, next) => {
     try {
-        const { status, startDate, endDate, branchId = DEFAULT_BRANCH_ID } = getRequestQuery(req);
+        const { status, startDate, endDate } = getRequestQuery(req);
+        const explicitBranch = getRequestQuery(req).branchId;
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+
+        let allowedBranchIds = null;
+        if (!isOrgAdminUser && req.user) {
+            const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('../services/branchService');
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const userBranchIds = (userBranches.branches || []).map(b => b.id);
+            allowedBranchIds = userBranchIds.length ? userBranchIds : [DEFAULT_HQ_BRANCH_ID];
+        }
+
+        if (explicitBranch && explicitBranch !== 'all' && !isOrgAdminUser) {
+            if (!allowedBranchIds || !allowedBranchIds.includes(explicitBranch)) {
+                return res.status(403).json({
+                    code: 'BRANCH_ACCESS_DENIED',
+                    message: 'User does not have access to requested branch financial closures'
+                });
+            }
+        }
+
+        const branchId = explicitBranch || branchContextId || DEFAULT_BRANCH_ID;
         
         validateEnum(status, VALID_FINANCE_STATUSES, 'status');
         const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -513,7 +593,10 @@ const createFinancialClosure = (db) => async (req, res, next) => {
         const userId = req.user.user_id;
         client = await db.connect();
         await client.query('BEGIN');
-        const postingDate = await assertPeriodOpen(client, data.closureDate, data.branchId || DEFAULT_BRANCH_ID);
+        await setBranchContext(client, req);
+        const targetBranchId = data.branchId || req.branchContext?.branchId || req.user?.branch_id || DEFAULT_BRANCH_ID;
+        await assertFinanceBranchAccess(client, req.user, targetBranchId);
+        const postingDate = await assertPeriodOpen(client, data.closureDate, targetBranchId);
 
         const existing = await client.query(
             'SELECT closure_id FROM financial_closures WHERE closure_date = $1 AND branch_id = $2 FOR UPDATE',
@@ -546,7 +629,10 @@ const createFinancialClosure = (db) => async (req, res, next) => {
         if (error.code === '23505') return next(new AppError('Closure for this date already exists', 409));
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -557,10 +643,12 @@ const finalizeFinancialClosure = (db) => async (req, res, next) => {
         const data = finalizeClosureSchema.parse(req.body);
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existing = await client.query('SELECT * FROM financial_closures WHERE closure_id = $1 FOR UPDATE', [id]);
         if (existing.rows.length === 0) throw new AppError('Financial closure not found', 404);
         if (existing.rows[0].status === 'Finalized') throw new AppError('Closure is already finalized', 409);
+        await assertFinanceBranchAccess(client, req.user, existing.rows[0].branch_id);
         const closureDate = normalizeBusinessDate(existing.rows[0].closure_date);
         const postingDate = await assertPeriodOpen(client, closureDate, existing.rows[0].branch_id || DEFAULT_BRANCH_ID);
         await assertClosureReady(client, closureDate, postingDate.branchId);
@@ -645,7 +733,10 @@ const finalizeFinancialClosure = (db) => async (req, res, next) => {
         if (error instanceof z.ZodError) return next(new AppError(`Validation Error: ${JSON.stringify(error.errors)}`, 400));
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 

@@ -1,14 +1,23 @@
-const { createClient } = require('redis');
-const { RedisStore } = require('rate-limit-redis');
+let redisModule = null;
+let rateLimitRedisModule = null;
+try {
+    redisModule = require('redis');
+    rateLimitRedisModule = require('rate-limit-redis');
+} catch (_) {
+    // Optional Redis packages; in-memory store used when not installed
+}
 
 let client;
 let connection;
-const sharedEnabled = () => process.env.RATE_LIMIT_STORE === 'redis'
-    || (process.env.NODE_ENV === 'production' && Boolean(process.env.REDIS_URL));
+const sharedEnabled = () => Boolean(redisModule && rateLimitRedisModule) && (
+    process.env.RATE_LIMIT_STORE === 'redis'
+    || (process.env.NODE_ENV === 'production' && Boolean(process.env.REDIS_URL))
+);
 
 const connect = async () => {
+    if (!sharedEnabled()) return;
     if (!client) {
-        client = createClient({ url: process.env.REDIS_URL, socket: { connectTimeout: 2000, reconnectStrategy: false } });
+        client = redisModule.createClient({ url: process.env.REDIS_URL, socket: { connectTimeout: 2000, reconnectStrategy: false } });
         // Redis errors are surfaced by the limiter without logging credentials.
         client.on('error', () => {});
     }
@@ -19,6 +28,7 @@ const connect = async () => {
 
 const createRateLimitStore = (policy) => {
     if (!sharedEnabled()) return undefined;
+    const { RedisStore } = rateLimitRedisModule;
     const store = new RedisStore({
         prefix: `viara:rate-limit:${policy}:`,
         sendCommand: async (...args) => { await connect(); return client.sendCommand(args); }

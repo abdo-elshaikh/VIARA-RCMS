@@ -58,7 +58,7 @@ export const EquipmentHeaderActions = ({
     };
 
     return (
-        <div className="flex items-center justify-end gap-2">
+        <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
             {primaryAction && (
                 <button type="button" onClick={primaryAction.onClick} disabled={primaryAction.disabled} className={primaryClass}>
                     <Plus size={15} aria-hidden="true" />
@@ -122,11 +122,11 @@ export const EquipmentHeaderActions = ({
  */
 export const EquipmentTabs = ({ t, tabs, activeTab, onTabChange }) => {
     return (
-        <div data-workspace-tabs className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 xl:sticky xl:top-4">
-            <div className="hidden border-b border-slate-100 px-4 py-3 dark:border-slate-800 xl:block">
+        <div data-workspace-tabs className="min-w-0 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="equipment-navigation-title hidden border-b border-slate-100 px-4 py-3 dark:border-slate-800">
                 <p className="text-[10px] font-black uppercase tracking-[.14em] text-slate-400">{t('equipmentSections')}</p>
             </div>
-            <nav className="flex gap-1.5 overflow-x-auto p-1.5 scrollbar-none xl:grid xl:grid-cols-1 xl:overflow-visible" role="tablist" aria-label={t('equipmentSections')}>
+            <nav className="equipment-tabs flex gap-1.5 overflow-x-auto p-1.5" role="tablist" aria-label={t('equipmentSections')}>
                 {tabs.map((tab) => {
                     const Icon = tab.icon;
                     const active = activeTab === tab.id;
@@ -143,6 +143,19 @@ export const EquipmentTabs = ({ t, tabs, activeTab, onTabChange }) => {
                             onClick={() => {
                                 onTabChange(tab.id);
                             }}
+                            onKeyDown={event => {
+                                const keys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'];
+                                if (!keys.includes(event.key)) return;
+                                event.preventDefault();
+                                const buttons = [...event.currentTarget.parentElement.querySelectorAll('[role="tab"]')];
+                                const index = buttons.indexOf(event.currentTarget);
+                                const rtl = getComputedStyle(event.currentTarget).direction === 'rtl';
+                                const backwards = event.key === 'ArrowUp' || event.key === (rtl ? 'ArrowRight' : 'ArrowLeft');
+                                const next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : (index + (backwards ? -1 : 1) + buttons.length) % buttons.length;
+                                onTabChange(tabs[next].id);
+                                buttons[next].focus();
+                                buttons[next].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                            }}
                             aria-current={active ? 'page' : undefined}
                             className={`flex min-h-12 min-w-[150px] flex-1 items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-start text-xs font-black transition-all xl:min-w-0 ${
                                 active
@@ -152,7 +165,7 @@ export const EquipmentTabs = ({ t, tabs, activeTab, onTabChange }) => {
                         >
                             <span className="flex min-w-0 items-center gap-2.5">
                                 <Icon size={16} className={active ? 'shrink-0 text-teal-700 dark:text-teal-300' : 'shrink-0 text-slate-400'} aria-hidden="true" />
-                                <span className="truncate">{tab.label}</span>
+                                <span className="whitespace-normal leading-5">{tab.label}</span>
                             </span>
                             {tab.count !== undefined && tab.count !== null && (
                                 <span className={`shrink-0 rounded-lg px-2 py-1 text-[10px] font-black tabular-nums ${

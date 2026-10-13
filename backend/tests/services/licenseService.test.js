@@ -119,6 +119,15 @@ describe('licenseService', () => {
             expect(() => svc.loadLicense()).toThrow();
             expect(svc.inspectLicenseKey(token).valid).toBe(false);
         });
+        test.each([{ maxUsers: 0 }, { maxBranches: 0 }])('rejects invalid quotas during grace period %j', (overrides) => {
+            const { token, publicKeyPem } = makeKey({ daysFromNow: -1, overrides });
+            process.env.LICENSE_PUBLIC_KEY = publicKeyPem;
+            process.env.LICENSE_KEY = token;
+            jest.resetModules();
+            const svc = require('../../src/services/licenseService');
+            expect(svc.inspectLicenseKey(token).valid).toBe(false);
+            expect(() => svc.loadLicense()).toThrow();
+        });
         test('does not grant developer access before production initialization', () => {
             process.env.NODE_ENV = 'production';
             expect(() => licenseService.getLicense()).toThrow(/loaded/);

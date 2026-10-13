@@ -94,6 +94,7 @@
         "Routine": "دورية",
         "Repair": "إصلاح",
         "Calibration": "معايرة",
+        "Calibration & Preventive Maintenance": "المعايرة والصيانة الوقائية",
         "Inspection": "فحص"
       },
       "statuses": {
@@ -166,6 +167,7 @@
         "Routine": "دورية",
         "Repair": "إصلاح",
         "Calibration": "معايرة",
+        "Calibration & Preventive Maintenance": "المعايرة والصيانة الوقائية",
         "Inspection": "فحص"
       },
       "statuses": {

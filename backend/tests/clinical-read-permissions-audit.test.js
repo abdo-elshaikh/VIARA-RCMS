@@ -1,5 +1,5 @@
 const express=require('express');const request=require('supertest');
-jest.mock('../src/middleware/authMiddleware',()=>({authenticateToken:(req,_res,next)=>{req.user={role:'Receptionist',user_id:'synthetic-user'};next();},authorizeRole:()=> (_req,_res,next)=>next()}));
+jest.mock('../src/middleware/authMiddleware',()=>({authenticateToken:(req,_res,next)=>{req.user={role:'Receptionist',user_id:'synthetic-user'};req.branchContext={branchId:'00000000-0000-4000-8000-000000000001'};next();},authorizeRole:()=> (_req,_res,next)=>next()}));
 jest.mock('../src/middleware/auditRead',()=>()=> (_req,_res,next)=>next());
 jest.mock('../src/services/securityEventService',()=>({logSecurityEvent:jest.fn().mockResolvedValue()}));
 jest.mock('../src/services/notificationJobService',()=>({triggerEventForRole:jest.fn().mockResolvedValue(),triggerEvent:jest.fn().mockResolvedValue()}));
@@ -9,10 +9,10 @@ function fixture(permissions){
  const db={query:jest.fn(async(sql,values=[])=>{
   if(sql.includes('FROM role_permissions')){
    const reportCheck=sql.includes("p.name = 'VIEW_REPORTS'");
-   const granted=reportCheck?permissions.includes('VIEW_REPORTS'):permissions.includes(values[1]);
+   const granted=reportCheck?permissions.includes('VIEW_REPORTS'):(Array.isArray(values[1])?values[1].some(p=>permissions.includes(p)):permissions.includes(values[1]));
    return {rows:granted?[{name:reportCheck?'VIEW_REPORTS':values[1]}]:[]};
   }
-  return {rows:[{exam_id:examId,order_number:'ORD-TEST',report_content:'Sensitive report',report_sections:{findings:'Sensitive'},findings:'Sensitive',impression:'Sensitive',prior_report_content:'Prior sensitive',digital_signature_hash:'signature',clinical_indication:'Clinical history',provisional_diagnosis:'Diagnosis'}]};
+  return {rows:[{branch_id:'00000000-0000-4000-8000-000000000001',exam_id:examId,order_number:'ORD-TEST',report_content:'Sensitive report',report_sections:{findings:'Sensitive'},findings:'Sensitive',impression:'Sensitive',prior_report_content:'Prior sensitive',digital_signature_hash:'signature',clinical_indication:'Clinical history',provisional_diagnosis:'Diagnosis'}]};
  })};
  const app=express();app.use('/api',routes(db,{}));app.use((error,_req,res,_next)=>res.status(error.statusCode||500).json({error:error.message}));return {app,db};
 }

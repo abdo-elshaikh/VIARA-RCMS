@@ -70,6 +70,15 @@ const lastExpiryWarningAt = new Set();
  */
 const trialGuard = (req, res, next) => {
     const license = getLicense();
+    const exempt = ALWAYS_READABLE.test(req.path) || isSessionBootstrap(req.path);
+    // Paid-license expiry preserves reads for continuity of care, while new
+    // writes require renewal. Activation and session recovery remain available.
+    if (license?.isExpired && license.edition !== 'trial' && !exempt) {
+        res.setHeader('X-License-Read-Only', 'true');
+        if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+            return res.status(402).json({ error: 'license_expired', code: 'LICENSE_EXPIRED', upgradeUrl: UPGRADE_URL });
+        }
+    }
 
     // ── Non-trial editions pass through immediately ──────────────────────────
     if (!license || license.edition !== 'trial') {
@@ -93,7 +102,6 @@ const trialGuard = (req, res, next) => {
     // ── Block if trial has expired ───────────────────────────────────────────
     // Reading the licence and establishing a session stay open: the SPA needs
     // both to explain why it is locked and offer a way out.
-    const exempt = ALWAYS_READABLE.test(req.path) || isSessionBootstrap(req.path);
 
     if (daysRemaining !== null && daysRemaining <= 0 && !exempt) {
         logger.warn(`Trial expired — blocked request: ${req.method} ${req.originalUrl}`, {

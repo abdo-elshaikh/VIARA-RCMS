@@ -4,6 +4,7 @@ const dcmjs = require('dcmjs');
 const { decrypt } = require('../utils/crypto');
 const logger = require('../config/logger');
 const settingsService = require('./settingsService');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 
 const { DicomDict, DicomMetaDictionary } = dcmjs.data;
 
@@ -86,8 +87,15 @@ const buildPatientName = (last, first) => {
  * exam type, and modality. Accession number is examinations.order_number.
  */
 const fetchScheduledWorklist = async (pool, options = {}) => {
+    const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
+    const ownsClient = typeof pool.connect === 'function';
+    try {
+        if (ownsClient) {
+            await setBranchContext(client, options.branchId ? { branchId: options.branchId } : { isOrgAdmin: true });
+        }
     const date = options.date || null;
     const modalityId = options.modalityId || null;
+    const branchId = options.branchId || null;
     const includeInvalid = Boolean(options.includeInvalid);
     const autoProvision = Boolean(options.autoProvision);
 
@@ -96,14 +104,15 @@ const fetchScheduledWorklist = async (pool, options = {}) => {
         await pool.query(`
                 INSERT INTO examinations (
                     appointment_id, patient_id, modality_id, exam_type_id,
-                    status, queue_stage, order_number, priority, clinical_indication
+                    status, queue_stage, order_number, priority, clinical_indication, branch_id
                 )
                 SELECT a.appointment_id, a.patient_id, a.modality_id, a.exam_type_id,
                        CASE WHEN a.status = 'Arrived' THEN 'Checked-in'::exam_status ELSE 'Scheduled'::exam_status END,
                        CASE WHEN a.status = 'Arrived' THEN 'Arrived' ELSE 'Scheduled' END,
                        COALESCE(a.order_number, 'ORD-' || TO_CHAR(NOW(), 'YYYYMMDD') || '-' || SUBSTRING(a.appointment_id::text, 1, 6)),
                        COALESCE(a.priority, 'Routine'),
-                       a.clinical_indication
+                       a.clinical_indication,
+                       a.branch_id
                 FROM appointments a
                 WHERE a.status::text IN ('Scheduled', 'Confirmed', 'Arrived', 'In-Progress', 'Checked-in')
                   AND NOT EXISTS (
@@ -126,6 +135,10 @@ const fetchScheduledWorklist = async (pool, options = {}) => {
         values.push(modalityId);
         filters.push(`e.modality_id = $${values.length}`);
     }
+    if (branchId) {
+        values.push(branchId);
+        filters.push(`COALESCE(e.branch_id, a.branch_id, m.branch_id) = $${values.length}`);
+    }
 
     const { rows } = await pool.query(`
         SELECT
@@ -139,6 +152,7 @@ const fetchScheduledWorklist = async (pool, options = {}) => {
             COALESCE(e.body_part, et.body_part) AS body_part,
             m.type AS modality_type,
             m.aet AS scheduled_station_aet,
+            COALESCE(e.branch_id, a.branch_id, m.branch_id) AS branch_id,
             p.mrn,
             p.gender,
             p.first_name_enc,
@@ -152,7 +166,13 @@ const fetchScheduledWorklist = async (pool, options = {}) => {
         WHERE ${filters.join(' AND ')}
         ORDER BY scheduled_datetime ASC
     `, values);
-    return rows;
+        return rows;
+    } finally {
+        if (ownsClient) {
+            await clearBranchContext(client);
+            client.release();
+        }
+    }
 };
 
 const validateWorklistRow = (row) => {

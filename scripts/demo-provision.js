@@ -49,6 +49,7 @@ const PORT_KEYS = {
 // All are 32 bytes of hex, matching the length used by the main .env.
 const SECRET_KEYS = [
     'POSTGRES_PASSWORD',
+    'APP_DB_PASSWORD',
     'JWT_SECRET',
     'ENCRYPTION_KEY',
     'BACKUP_ENCRYPTION_KEY',
@@ -176,7 +177,7 @@ function writeEnvFile(project, lease, licenseKey) {
     const urlLines = [
         `CLIENT_URL=${frontendUrl}`,
         `PORTAL_CLIENT_URL=${portalUrl}`,
-        `ALLOWED_ORIGINS=${frontendUrl},${portalUrl}`,
+        `ALLOWED_ORIGINS=${frontendUrl},${portalUrl},${frontendUrl.replace('://localhost:', '://127.0.0.1:')},${portalUrl.replace('://localhost:', '://127.0.0.1:')}`,
         `WEBAUTHN_ORIGIN=${frontendUrl}`,
         'WEBAUTHN_RP_ID=localhost',
         `VITE_OHIF_URL=${demoUrl('OHIF_PORT', 'http')}`,

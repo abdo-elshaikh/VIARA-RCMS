@@ -321,7 +321,8 @@
     "availableEmpty": "No unassigned tasks are available for your role.",
     "status": {
       "Unassigned": "Unassigned",
-      "Assigned": "Assigned to you",
+      "Assigned": "Assigned",
+      "AssignedToMe": "Assigned to you",
       "In Progress": "In progress",
       "On Hold": "On hold"
     }

@@ -1,5 +1,13 @@
-const { createClient } = require('redis');
+let redisModule = null;
+try {
+    redisModule = require('redis');
+} catch (_) {
+    // Optional Redis module; in-memory fallback cache is used
+}
+const createClient = redisModule?.createClient;
+
 const { AppError } = require('./errorHandler');
+const effectiveRole = require('../utils/effectiveRole');
 const { logSecurityEvent } = require('../services/securityEventService');
 const { triggerEventForRole } = require('../services/notificationJobService');
 const { getGrantedEmergencyPermissions } = require('../services/emergencyAccessService');
@@ -14,6 +22,7 @@ let isRefreshing = false;
 // Shared Redis RBAC cache — permissions are consistent across all replicas (TTL: 60 s). Falls back to in-process Map when Redis is unavailable.
 let rbacRedisClient;
 const getRbacRedisClient = () => {
+    if (!createClient || !process.env.REDIS_URL) return null;
     if (!rbacRedisClient) {
         rbacRedisClient = createClient({
             url: process.env.REDIS_URL,
@@ -26,6 +35,7 @@ const getRbacRedisClient = () => {
 
 const connectRbacRedis = async () => {
     const client = getRbacRedisClient();
+    if (!client) return null;
     if (client.isReady) return client;
     if (!client.isOpen) {
         await client.connect().catch(() => {});
@@ -96,7 +106,7 @@ const refreshPermissionCache = async (db) => {
         // Attempt to write to Redis. If the client is not ready, skip silently.
         try {
             const client = await connectRbacRedis();
-            if (client.isReady) {
+            if (client?.isReady) {
                 const pipeline = client.multi();
                 roleMap.forEach((perms, role) => {
                     pipeline.set(
@@ -131,7 +141,8 @@ const hasPermission = (db, requiredPermission) => {
                 return next(new AppError('Unauthorized: User not authenticated', 401));
             }
 
-            const { role, elevatedPermissions } = req.user;
+            const { elevatedPermissions } = req.user;
+            const role = effectiveRole(req);
 
             // Developer owns technical superuser authorization. Admin must be granted explicitly.
             if (role === 'Developer') {
@@ -197,7 +208,8 @@ const hasAnyPermission = (db, requiredPermissions = []) => {
                 return next(new AppError('Authorization middleware misconfigured', 500));
             }
 
-            const { role, elevatedPermissions } = req.user;
+            const { elevatedPermissions } = req.user;
+            const role = effectiveRole(req);
 
             // Developer owns technical superuser authorization. Admin must be granted explicitly.
             if (role === 'Developer') {

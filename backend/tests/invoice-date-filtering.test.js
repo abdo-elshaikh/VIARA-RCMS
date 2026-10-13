@@ -13,6 +13,7 @@ describe('invoice and summary date-scoping', () => {
         };
 
         const req = {
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' }, headers: {},
             query: { date: '2026-09-02' }
         };
         const res = {
@@ -24,8 +25,8 @@ describe('invoice and summary date-scoping', () => {
 
         expect(next).not.toHaveBeenCalled();
         expect(res.json).toHaveBeenCalledWith([]);
-        expect(executedSql).toContain('i.service_date = $1::date');
-        expect(executedSql).toContain('a.start_time::date = $1::date');
+        expect(executedSql).toMatch(/i\.service_date = \$\d+::date/);
+        expect(executedSql).toMatch(/a\.start_time::date = \$\d+::date/);
         expect(executedParams).toContain('2026-09-02');
     });
 
@@ -55,6 +56,7 @@ describe('invoice and summary date-scoping', () => {
         };
 
         const req = {
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' }, headers: {},
             query: { date: '2026-09-02' }
         };
         const res = {
@@ -71,7 +73,7 @@ describe('invoice and summary date-scoping', () => {
             collected: '2000'
         }));
         expect(executedSql).toContain('LEFT JOIN appointments a ON i.appointment_id = a.appointment_id');
-        expect(executedSql).toContain('i.service_date = $1::date');
-        expect(executedParams).toEqual(['2026-09-02']);
+        expect(executedSql).toMatch(/i\.service_date = \$\d+::date/);
+        expect(executedParams).toContain('2026-09-02');
     });
 });

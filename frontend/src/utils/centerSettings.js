@@ -25,38 +25,43 @@ export const AVAILABLE_MODALITIES = [
 ];
 
 export const normalizeBranch = (branch = {}, fallbackIndex = 1) => {
+    const s = (typeof branch.settings === 'object' && branch.settings) ? branch.settings : {};
     return {
         id: branch.id || `branch-${Date.now()}-${fallbackIndex}`,
         code: branch.code || `BR-${String(fallbackIndex).padStart(2, '0')}`,
-        name: branch.name || (branch.isMain ? 'Main Branch' : `Branch ${fallbackIndex}`),
-        nameAr: branch.nameAr || (branch.isMain ? 'الفرع الرئيسي' : `فرع ${fallbackIndex}`),
-        displayName: branch.displayName || branch.name || '',
-        displayNameAr: branch.displayNameAr || branch.nameAr || '',
-        type: branch.type || (branch.isMain ? 'main' : 'branch'),
+        name: branch.name || (branch.is_main || branch.isMain ? 'Main Branch' : `Branch ${fallbackIndex}`),
+        nameAr: branch.name_ar || branch.nameAr || (branch.is_main || branch.isMain ? 'الفرع الرئيسي' : `فرع ${fallbackIndex}`),
+        displayName: s.displayName || branch.display_name || branch.displayName || branch.name || '',
+        displayNameAr: s.displayNameAr || branch.display_name_ar || branch.displayNameAr || branch.name_ar || branch.nameAr || '',
+        type: s.type || branch.type || (branch.is_main || branch.isMain ? 'main' : 'branch'),
         status: branch.status || 'active',
-        isMain: branch.isMain === true || fallbackIndex === 1,
+        isMain: branch.is_main !== undefined ? Boolean(branch.is_main) : (branch.isMain === true || fallbackIndex === 1),
         phone: branch.phone || '',
-        alternativePhone: branch.alternativePhone || '',
+        alternativePhone: branch.alternative_phone || branch.alternativePhone || '',
         hotline: branch.hotline || '',
         whatsapp: branch.whatsapp || '',
         email: branch.email || '',
         address: branch.address || '',
-        addressAr: branch.addressAr || '',
+        addressAr: branch.address_ar || branch.addressAr || '',
         governorate: branch.governorate || '',
         city: branch.city || '',
-        postalCode: branch.postalCode || '',
-        medicalLicense: branch.medicalLicense || '',
-        commercialRegistration: branch.commercialRegistration || '',
-        taxNumber: branch.taxNumber || '',
-        managerName: branch.managerName || '',
-        invoicePrefix: branch.invoicePrefix || '',
-        reportHeaderOverride: branch.reportHeaderOverride || '',
-        reportFooterOverride: branch.reportFooterOverride || '',
-        workingHoursOverride: branch.workingHoursOverride || null,
-        modalities: Array.isArray(branch.modalities) ? branch.modalities : ['MRI', 'CT', 'X-RAY', 'ULTRASOUND'],
-        notes: branch.notes || ''
+        postalCode: branch.postal_code || branch.postalCode || '',
+        medicalLicense: branch.medical_license || branch.medicalLicense || '',
+        commercialRegistration: branch.commercial_registration || branch.commercialRegistration || '',
+        taxNumber: branch.tax_number || branch.taxNumber || '',
+        managerName: s.managerName || branch.managerName || '',
+        invoicePrefix: branch.invoice_prefix || branch.invoicePrefix || 'INV-',
+        reportHeaderOverride: s.reportHeaderOverride || branch.reportHeaderOverride || '',
+        reportFooterOverride: s.reportFooterOverride || branch.reportFooterOverride || '',
+        workingHoursOverride: s.workingHoursOverride || branch.workingHoursOverride || null,
+        modalities: Array.isArray(s.modalities) ? s.modalities : (Array.isArray(branch.modalities) ? branch.modalities : ['MRI', 'CT', 'X-RAY', 'ULTRASOUND']),
+        notes: s.notes || branch.notes || '',
+        membersCount: branch.stats?.members_count ?? branch.members_count ?? 0,
+        modalitiesCount: branch.stats?.modalities_count ?? branch.modalities_count ?? 0,
+        roomsCount: branch.stats?.rooms_count ?? branch.rooms_count ?? 0
     };
 };
+
 
 const DEFAULT_CENTER_SETTINGS = {
     center_id: DEFAULT_CENTER_IDENTITY.center_id,

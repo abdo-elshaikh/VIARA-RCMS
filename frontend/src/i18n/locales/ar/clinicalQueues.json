@@ -68,7 +68,8 @@
     "availableCount": "متاح",
     "status": {
       "Unassigned": "غير مسند",
-      "Assigned": "مسند إليك",
+      "Assigned": "مسند",
+      "AssignedToMe": "مسند إليك",
       "In Progress": "قيد التنفيذ",
       "On Hold": "معلّق"
     }

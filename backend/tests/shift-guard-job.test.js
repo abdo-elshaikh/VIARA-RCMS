@@ -209,6 +209,8 @@ describe('shift guard job', () => {
                 }))
             };
 
+            const client = { query: jest.fn(async sql => sql.includes('FROM cashier_shifts') ? db.query(sql) : { rows: [] }), release: jest.fn() };
+            db.connect = jest.fn(async () => client);
             const result = await flagAbandonedCashierShifts(db);
 
             expect(result.scanned).toBe(1);

@@ -49,6 +49,8 @@ const createResponse = () => ({
 });
 
 const makeReq = (overrides = {}) => ({
+        branchContext: { branchId: BRANCH_ID },
+        headers: {},
     params: { id: INVOICE_ID },
     body: {},
     user: { user_id: USER_ID, role: 'Receptionist' },
@@ -63,6 +65,7 @@ const makeClient = (routes) => {
     const calls = [];
     const query = jest.fn(async (sql, params) => {
         const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
         calls.push({ text, params });
         if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') return ok();
         for (const [fragment, handler] of routes) {
@@ -237,6 +240,8 @@ describe('refund lifecycle', () => {
             const next = jest.fn();
 
             await reviewRefund(db)(makeReq({
+        branchContext: { branchId: BRANCH_ID },
+        headers: {},
                 params: { id: REFUND_ID },
                 body: { status: 'Processed', reason: 'refund completed' },
                 user: { user_id: USER_ID, role: 'Cashier' }
@@ -258,6 +263,8 @@ describe('refund lifecycle', () => {
             const next = jest.fn();
 
             await reviewRefund(db)(makeReq({
+        branchContext: { branchId: BRANCH_ID },
+        headers: {},
                 params: { id: REFUND_ID },
                 body: { status: 'Approved', reason: 'cause fixed, retry' },
                 user: { user_id: REQUESTER_ID, role: 'Receptionist' },
@@ -273,6 +280,8 @@ describe('refund lifecycle', () => {
             const next = jest.fn();
 
             await reviewRefund(db)(makeReq({
+        branchContext: { branchId: BRANCH_ID },
+        headers: {},
                 params: { id: REFUND_ID },
                 body: { status: 'Approved', reason: 'cause fixed, retry' },
                 user: { user_id: USER_ID, role: 'Admin' },
@@ -289,6 +298,8 @@ describe('refund lifecycle', () => {
             const next = jest.fn();
 
             await reviewRefund(db)(makeReq({
+        branchContext: { branchId: BRANCH_ID },
+        headers: {},
                 params: { id: REFUND_ID },
                 body: { status: 'Processed', reason: 'retry execution' },
                 user: { user_id: USER_ID, role: 'Cashier' },

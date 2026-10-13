@@ -31,6 +31,8 @@ describe('safety response task ownership', () => {
         const next = jest.fn();
 
         await submitSafetyResponse(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId },
             body: { templateId, answers: { cleared: true } },
             user: { user_id: technicianId, role: 'Admin' }
@@ -45,6 +47,7 @@ describe('safety response task ownership', () => {
     test('allows the assigned technician to submit the safety response', async () => {
         const client = makeClient(async (sql) => {
             const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
             if (['BEGIN', 'COMMIT'].includes(text)) return { rows: [] };
             if (text.includes('SELECT e.status')) return { rows: [{ status: 'Checked-in', queue_stage: 'Prep Pending' }] };
             if (text.includes('FROM safety_templates')) return { rows: [{ '?column?': 1 }] };
@@ -58,6 +61,8 @@ describe('safety response task ownership', () => {
         const next = jest.fn();
 
         await submitSafetyResponse(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId },
             body: { templateId, answers: { cleared: true } },
             user: { user_id: technicianId, role: 'Technician' }
@@ -75,6 +80,7 @@ describe('safety response task ownership', () => {
     test('includes exam context in a contraindication alert', async () => {
         const client = makeClient(async sql => {
             const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
             if (['BEGIN', 'COMMIT'].includes(text)) return { rows: [] };
             if (text.includes('SELECT e.status')) return { rows: [{ status: 'Checked-in', queue_stage: 'Prep Pending' }] };
             if (text.includes('FROM safety_templates')) return { rows: [{ exists: 1 }] };
@@ -85,6 +91,8 @@ describe('safety response task ownership', () => {
         const db = { connect: jest.fn().mockResolvedValue(client) };
 
         await submitSafetyResponse(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId },
             body: { templateId, answers: { pacemaker: true } },
             user: { user_id: technicianId, role: 'Technician' }
@@ -101,6 +109,7 @@ describe('safety response task ownership', () => {
     test('rolls back the safety response when applying the clinical hold fails', async () => {
         const client = makeClient(async sql => {
             const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
             if (['BEGIN', 'ROLLBACK'].includes(text)) return { rows: [] };
             if (text.includes('SELECT e.status')) return { rows: [{ status: 'Checked-in', queue_stage: 'Prep Pending' }] };
             if (text.includes('FROM safety_templates')) return { rows: [{ exists: 1 }] };
@@ -111,6 +120,8 @@ describe('safety response task ownership', () => {
         const next = jest.fn();
 
         await submitSafetyResponse({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId },
             body: { templateId, answers: { pacemaker: true } },
             user: { user_id: technicianId, role: 'Technician' }

@@ -14,6 +14,8 @@ const configureAuthDatabase = (db) => {
     authDatabase = db;
 };
 
+const { requireBranchContext } = require('./branchContextMiddleware');
+
 const enforcePasswordChange = async (req, res, next) => {
     const checkPath = String(req.originalUrl || req.path || req.url || '').split('?')[0];
     const whitelistedPaths = new Set(['/api/profile', '/api/profile/password', '/api/auth/logout', '/api/auth/refresh', '/api/auth/change-password']);
@@ -25,7 +27,11 @@ const enforcePasswordChange = async (req, res, next) => {
     if (req.user.must_change_password && !isWhitelisted) {
         return res.status(403).json({ error: 'Password change required', code: 'PASSWORD_CHANGE_REQUIRED' });
     }
-    return requireActiveAttendance(authDatabase, req, res, next);
+    // Identity recovery must work even after the user's last membership is revoked.
+    if (isWhitelisted) return next();
+    return requireActiveAttendance(authDatabase, req, res, () => {
+        return requireBranchContext(authDatabase, { requireBranch: false, allowAllBranchesForOrgAdmin: true })(req, res, next);
+    });
 };
 
 const authenticatePersonalAccessToken = async (req, res, next, token) => {
@@ -35,9 +41,9 @@ const authenticatePersonalAccessToken = async (req, res, next, token) => {
     const sha256Hash = crypto.createHash('sha256').update(token).digest('hex');
     let result = await authDatabase.query(`
         SELECT at.token_id, at.token_hash, at.access_level,
-               u.user_id, u.role, u.email, u.full_name, u.must_change_password
+               u.user_id, u.role, u.email, u.full_name, u.must_change_password, u.organization_id, u.is_org_admin
         FROM api_tokens at
-        JOIN users u ON u.user_id = at.user_id AND u.is_active = TRUE
+        JOIN users u ON u.user_id = at.user_id AND u.is_active = TRUE AND NOT u.is_service_account
         WHERE at.token_hash = $1
     `, [sha256Hash]);
 
@@ -48,9 +54,9 @@ const authenticatePersonalAccessToken = async (req, res, next, token) => {
         const prefix = `${token.substring(0, 15)}...`;
         const legacyResult = await authDatabase.query(`
             SELECT at.token_id, at.token_hash, at.access_level,
-                   u.user_id, u.role, u.email, u.full_name, u.must_change_password
+               u.user_id, u.role, u.email, u.full_name, u.must_change_password, u.organization_id, u.is_org_admin
             FROM api_tokens at
-            JOIN users u ON u.user_id = at.user_id AND u.is_active = TRUE
+        JOIN users u ON u.user_id = at.user_id AND u.is_active = TRUE AND NOT u.is_service_account
             WHERE at.prefix = $1
         `, [prefix]);
 
@@ -75,6 +81,8 @@ const authenticatePersonalAccessToken = async (req, res, next, token) => {
         role: matched.role,
         email: matched.email,
         full_name: matched.full_name,
+        organization_id: matched.organization_id,
+        is_org_admin: Boolean(matched.is_org_admin),
         must_change_password: matched.must_change_password
     };
     req.authType = 'personal_access_token';
@@ -128,22 +136,24 @@ const authenticateToken = async (req, res, next) => {
             if (!tableName) return res.status(401).json({ error: 'Invalid Token', code: 'INVALID_ACCESS_TOKEN' });
             if (tableName) {
                 const accountFields = tableName === 'users'
-                    ? 'is_active, role, must_change_password'
+                    ? 'is_active, role, must_change_password, organization_id, is_org_admin, is_service_account'
                     : tableName === 'patients'
-                        ? "(patient_status = 'Active') AS is_active, 'Patient' AS role, FALSE AS must_change_password"
-                        : "(is_active AND portal_is_active) AS is_active, 'Doctor' AS role, FALSE AS must_change_password";
+                        ? "(patient_status = 'Active') AS is_active, 'Patient' AS role, FALSE AS must_change_password, NULL::uuid AS organization_id, FALSE AS is_org_admin"
+                        : "(is_active AND portal_is_active) AS is_active, 'Doctor' AS role, FALSE AS must_change_password, NULL::uuid AS organization_id, FALSE AS is_org_admin";
                 const sessionRes = await authDatabase.query(
                     `SELECT current_session_id, ${accountFields} FROM ${tableName} WHERE ${idColumn} = $1`,
                     [idValue]
                 );
                 const owner = sessionRes.rows[0];
-                if (!owner || !owner.is_active || owner.role !== user.role) {
+                if (!owner || !owner.is_active || owner.is_service_account || owner.role !== user.role) {
                     return res.status(401).json({ error: 'Account access changed. Please sign in again.', code: 'INVALID_ACCESS_TOKEN' });
                 }
                 if (owner.current_session_id !== user.session_id) {
                     return res.status(401).json({ error: 'Logged out. Account accessed from another device.', code: 'CONCURRENT_LOGIN' });
                 }
                 user.must_change_password = owner.must_change_password;
+                user.organization_id = owner.organization_id || null;
+                user.is_org_admin = Boolean(owner.is_org_admin);
             }
         }
 
@@ -181,7 +191,8 @@ const authorizeRole = (roles) => (req, res, next) => {
     if (!req.user) {
         return res.status(401).json({ error: 'Access Denied: User not authenticated' });
     }
-    if (req.user.role === 'Developer' || (Array.isArray(roles) && roles.includes(req.user.role))) {
+    const role = require('../utils/effectiveRole')(req);
+    if (role === 'Developer' || (Array.isArray(roles) && roles.includes(role))) {
         return next();
     }
     return res.status(403).json({ error: 'Access Denied: Insufficient Permissions' });
@@ -213,16 +224,24 @@ const acceptViewerSession = async (decoded, req, res, next, authType) => {
         return res.status(401).json({ error: 'Viewer session must be renewed', code: 'INVALID_VIEWER_SESSION' });
     }
     const { rows } = await authDatabase.query(
-        'SELECT role, current_session_id, is_active, must_change_password FROM users WHERE user_id = $1',
+        'SELECT role, current_session_id, is_active, must_change_password, organization_id, is_org_admin, is_service_account FROM users WHERE user_id = $1',
         [decoded.user_id]
     );
     const owner = rows[0];
-    if (!owner?.is_active || owner.must_change_password || owner.current_session_id !== decoded.session_id || owner.role !== decoded.role) {
+    if (!owner?.is_active || owner.is_service_account || owner.must_change_password || owner.current_session_id !== decoded.session_id || owner.role !== decoded.role) {
         return res.status(401).json({ error: 'Viewer session revoked', code: 'VIEWER_SESSION_REVOKED' });
     }
     req.user = decoded;
+    req.user.organization_id = owner.organization_id;
+    req.user.is_org_admin = Boolean(owner.is_org_admin);
+    if (decoded.branch_id) {
+        if (req.headers['x-branch-id'] && req.headers['x-branch-id'] !== decoded.branch_id) {
+            return res.status(403).json({ error: 'Viewer branch mismatch', code: 'BRANCH_ACCESS_DENIED' });
+        }
+        req.headers['x-branch-id'] = decoded.branch_id;
+    }
     req.authType = authType;
-    return next();
+    return requireBranchContext(authDatabase, { requireBranch: !owner.is_org_admin, allowAllBranchesForOrgAdmin: true })(req, res, next);
 };
 
 const authenticateDicomWeb = async (req, res, next) => {
@@ -249,13 +268,13 @@ const authenticateDicomWeb = async (req, res, next) => {
                 const { userId } = await pacsOidcTokenService.verifyPacsOidcToken(token);
                 if (!authDatabase) return res.status(503).json({ error: 'Authentication service unavailable' });
                 const { rows } = await authDatabase.query(
-                    `SELECT user_id, role, email, full_name, must_change_password
+                    `SELECT user_id, role, email, full_name, must_change_password, organization_id, is_org_admin, is_service_account
                      FROM users
                      WHERE user_id = $1 AND is_active = TRUE`,
                     [userId]
                 );
                 const owner = rows[0];
-                if (!owner || owner.must_change_password) {
+                if (!owner || owner.must_change_password || owner.is_service_account) {
                     return res.status(401).json({ error: 'PACS OIDC user is inactive or requires a password change', code: 'PACS_OIDC_USER_UNAVAILABLE' });
                 }
                 req.user = {
@@ -263,10 +282,12 @@ const authenticateDicomWeb = async (req, res, next) => {
                     role: owner.role,
                     email: owner.email,
                     full_name: owner.full_name,
-                    must_change_password: owner.must_change_password
+                    must_change_password: owner.must_change_password,
+                    organization_id: owner.organization_id,
+                    is_org_admin: owner.is_org_admin
                 };
                 req.authType = 'pacs_oidc';
-                return next();
+                return requireBranchContext(authDatabase, { requireBranch: !owner.is_org_admin, allowAllBranchesForOrgAdmin: true })(req, res, next);
             } catch (error) {
                 if (error.code === 'PACS_OIDC_KEY_SERVICE_UNAVAILABLE') {
                     return res.status(503).json({ error: 'PACS identity provider is unavailable', code: error.code });

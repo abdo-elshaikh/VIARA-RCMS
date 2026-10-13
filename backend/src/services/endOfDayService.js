@@ -3,6 +3,7 @@ const { logSystemAuditEvent } = require('./systemAuditService');
 const { logAction } = require('./auditService');
 const { AUDIT_EVENT_CODES } = require('./auditTaxonomy');
 const { AppError } = require('../middleware/errorHandler');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const { triggerEventForRole, triggerEvent, scheduleAppointmentReminder, cancelPendingAppointmentReminders } = require('./notificationJobService');
 const { triggerMwlRegeneration } = require('./pacsMwlService');
 const { assertAppointmentScheduleRules } = require('./schedulingService');
@@ -10,6 +11,12 @@ const { syncInvoicesAfterAppointmentReschedule } = require('./insuranceAuthoriza
 
 const PENDING_STAGES = Object.freeze(['Scheduled', 'Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam']);
 const CENTER_TIMEZONE_SQL = `COALESCE(NULLIF((SELECT setting_value FROM system_settings WHERE setting_key = 'center.timezone'), ''), 'Africa/Cairo')`;
+const getBranchTimezoneSql = (branchParamIndex = null) => {
+    if (branchParamIndex) {
+        return `COALESCE((SELECT timezone FROM branches WHERE id = $${branchParamIndex}::uuid), ${CENTER_TIMEZONE_SQL})`;
+    }
+    return CENTER_TIMEZONE_SQL;
+};
 const getTargetDate = (date) => date || new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit'
 }).format(new Date());
@@ -22,6 +29,14 @@ const getPendingExams = async (db, opts = {}) => {
     const values = [date, PENDING_STAGES];
     let sessionFilter = '';
     let receptionistFilter = '';
+    let branchFilter = '';
+    let branchParamIndex = null;
+
+    if (opts.branchId) {
+        values.push(opts.branchId);
+        branchParamIndex = values.length;
+        branchFilter = `AND a.branch_id = $${branchParamIndex}::uuid`;
+    }
 
     // If sessionId provided, filter by that shift session
     if (opts.sessionId) {
@@ -54,7 +69,8 @@ const getPendingExams = async (db, opts = {}) => {
     const limitIndex = values.length + 1;
     const offsetIndex = values.length + 2;
     values.push(limit, offset);
-    const where = `a.start_time >= ($1::date::timestamp AT TIME ZONE ${CENTER_TIMEZONE_SQL}) AND a.start_time < (($1::date + 1)::timestamp AT TIME ZONE ${CENTER_TIMEZONE_SQL}) AND a.status NOT IN ('Cancelled', 'No-Show', 'Completed') AND e.queue_stage = ANY($2::text[]) AND e.status IN ('Scheduled', 'Checked-in') ${sessionFilter} ${receptionistFilter}`;
+    const tzSql = getBranchTimezoneSql(branchParamIndex);
+    const where = `a.start_time >= ($1::date::timestamp AT TIME ZONE ${tzSql}) AND a.start_time < (($1::date + 1)::timestamp AT TIME ZONE ${tzSql}) AND a.status NOT IN ('Cancelled', 'No-Show', 'Completed') AND e.queue_stage = ANY($2::text[]) AND e.status IN ('Scheduled', 'Checked-in') ${sessionFilter} ${receptionistFilter} ${branchFilter}`;
     const [dataResult, countResult] = await Promise.all([
         db.query(`
             SELECT e.exam_id, e.appointment_id, e.queue_stage, e.status AS exam_status, e.created_at,
@@ -84,6 +100,15 @@ const getDaySummary = async (db, date, opts = {}) => {
     const values = [targetDate, PENDING_STAGES];
     let receptionistFilter = '';
     let sessionFilter = '';
+    let branchFilter = '';
+    let branchParamIndex = null;
+
+    if (opts.branchId) {
+        values.push(opts.branchId);
+        branchParamIndex = values.length;
+        branchFilter = `AND a.branch_id = $${branchParamIndex}::uuid`;
+    }
+
     if (opts.sessionId) {
         values.push(opts.sessionId);
         sessionFilter = `AND EXISTS (
@@ -109,6 +134,7 @@ const getDaySummary = async (db, date, opts = {}) => {
         values.push(opts.receptionistId);
         receptionistFilter = `AND a.receptionist_id = $${values.length}::uuid`;
     }
+    const tzSql = getBranchTimezoneSql(branchParamIndex);
     const result = await db.query(`
         SELECT COUNT(*) FILTER (WHERE a.status NOT IN ('Cancelled', 'No-Show'))::int AS total,
                COUNT(*) FILTER (WHERE e.queue_stage IN ('Finalized', 'Delivered', 'Images Delivered'))::int AS finalized,
@@ -121,10 +147,11 @@ const getDaySummary = async (db, date, opts = {}) => {
                COUNT(*) FILTER (WHERE e.priority IN ('Urgent', 'Emergency'))::int AS urgent_total,
                COUNT(*) FILTER (WHERE e.priority IN ('Urgent', 'Emergency') AND e.queue_stage = ANY($2::text[]))::int AS urgent_pending
         FROM examinations e JOIN appointments a ON a.appointment_id = e.appointment_id
-        WHERE a.start_time >= ($1::date::timestamp AT TIME ZONE ${CENTER_TIMEZONE_SQL})
-          AND a.start_time < (($1::date + 1)::timestamp AT TIME ZONE ${CENTER_TIMEZONE_SQL})
+        WHERE a.start_time >= ($1::date::timestamp AT TIME ZONE ${tzSql})
+          AND a.start_time < (($1::date + 1)::timestamp AT TIME ZONE ${tzSql})
           ${receptionistFilter}
           ${sessionFilter}
+          ${branchFilter}
     `, values);
     const row = result.rows[0] || {};
     const completed = Number(row.completed || 0);
@@ -132,7 +159,7 @@ const getDaySummary = async (db, date, opts = {}) => {
 };
 
 const resolveExam = async (db, opts) => {
-    const { appointmentId, action, newDate, newTime, notes, actorUserId, actorRole, sessionId } = opts;
+    const { appointmentId, action, newDate, newTime, notes, actorUserId, actorRole, sessionId, branchId } = opts;
     if (!['no_show', 'carry_forward', 'reschedule'].includes(action)) throw new Error(`Invalid action: ${action}`);
     if (action === 'reschedule' && !newDate) throw new Error('newDate is required for reschedule action');
     if (action === 'reschedule') {
@@ -142,18 +169,21 @@ const resolveExam = async (db, opts) => {
         }
     }
     if (action === 'reschedule' && newTime && !/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(String(newTime))) throw new AppError('newTime must use HH:mm or HH:mm:ss format', 400);
+    if (!branchId) throw new AppError('Select a branch to resolve examinations', 400, true, 'BRANCH_SELECTION_REQUIRED');
     const client = await db.connect();
     try {
         await client.query('BEGIN');
+        await setBranchContext(client, { branchId, userId: actorUserId, isOrgAdmin: actorRole === 'Admin' });
         const locked = await client.query(`
             SELECT e.exam_id, e.queue_stage, e.current_station, e.status AS exam_status, a.*,
                    TO_CHAR(a.start_time AT TIME ZONE ${CENTER_TIMEZONE_SQL}, 'YYYY-MM-DD') AS local_start_date,
                    TO_CHAR(a.start_time AT TIME ZONE ${CENTER_TIMEZONE_SQL}, 'HH24:MI:SS') AS local_start_time
             FROM examinations e JOIN appointments a ON a.appointment_id = e.appointment_id
-            WHERE a.appointment_id = $1 FOR UPDATE OF e, a
-        `, [appointmentId]);
+            WHERE a.appointment_id = $1 AND a.branch_id = $2::uuid FOR UPDATE OF e, a
+        `, [appointmentId, branchId]);
         const entry = locked.rows[0];
         if (!entry) throw new Error('Pending examination not found');
+        if (entry.branch_id !== branchId) throw new AppError('Examination is outside the selected branch', 403, true, 'BRANCH_ACCESS_DENIED');
         if (actorRole === 'Receptionist') {
             if (sessionId) {
                 const sessionAccess = await client.query(`
@@ -318,7 +348,10 @@ const resolveExam = async (db, opts) => {
     } catch (error) {
         await client.query('ROLLBACK').catch(() => {});
         throw error;
-    } finally { client.release(); }
+    } finally {
+        await clearBranchContext(client);
+        client.release();
+    }
 };
 
 const bulkResolveExams = async (db, items, actor, sessionId = null) => {

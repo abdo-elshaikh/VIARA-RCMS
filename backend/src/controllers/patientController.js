@@ -6,6 +6,8 @@ const bcrypt = require('bcrypt');
 const { generateSecurePassword } = require('../utils/passwordGenerator');
 const { logAction } = require('../services/auditService');
 const { assertQuota, withQuotaTransaction } = require('../services/quotaService');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
+const effectiveRole = require('../utils/effectiveRole');
 
 const stripSensitivePatientFields = (patient) => {
     const {
@@ -356,7 +358,7 @@ const getPatients = (db) => async (req, res, next) => {
         `;
         const values = [];
         const where = [];
-        const scope = clinicalPatientScope(req.user.role, 'p', `$${values.length + 1}`);
+        const scope = clinicalPatientScope(effectiveRole(req), 'p', `$${values.length + 1}`);
         if (scope) {
             where.push(scope);
             values.push(req.user.user_id);
@@ -430,7 +432,7 @@ const getPatients = (db) => async (req, res, next) => {
         let countQuery = `SELECT COUNT(*) FROM patients p`;
         const countValues = [];
         const countWhere = [];
-        const countScope = clinicalPatientScope(req.user.role, 'p', `$${countValues.length + 1}`);
+        const countScope = clinicalPatientScope(effectiveRole(req), 'p', `$${countValues.length + 1}`);
         if (countScope) {
             countWhere.push(countScope);
             countValues.push(req.user.user_id);
@@ -505,7 +507,7 @@ const getPatientById = (db) => async (req, res, next) => {
         const { id } = req.params;
 
         const patientValues = [id];
-        const patientScope = clinicalPatientScope(req.user.role, 'p', `$${patientValues.length + 1}`);
+        const patientScope = clinicalPatientScope(effectiveRole(req), 'p', `$${patientValues.length + 1}`);
         if (patientScope) patientValues.push(req.user.user_id);
         const patientQuery = `
             SELECT p.*, manager.full_name as assigned_manager_name
@@ -540,10 +542,14 @@ const getPatientById = (db) => async (req, res, next) => {
 const getPatientHistory = (db) => async (req, res, next) => {
     try {
         const { id } = req.params;
+        const branchId = req.branchContext?.branchId;
+        if (!branchId || req.branchContext?.isAllBranches) {
+            return next(new AppError('Select a branch to view patient history', 400, true, 'BRANCH_SELECTION_REQUIRED'));
+        }
 
         // 1. Fetch Basic Patient Info
         const patientValues = [id];
-        const patientScope = clinicalPatientScope(req.user.role, 'p', `$${patientValues.length + 1}`);
+        const patientScope = clinicalPatientScope(effectiveRole(req), 'p', `$${patientValues.length + 1}`);
         if (patientScope) patientValues.push(req.user.user_id);
         const patientQuery = `
             SELECT p.*, manager.full_name as assigned_manager_name
@@ -567,6 +573,7 @@ const getPatientHistory = (db) => async (req, res, next) => {
         // 2. Fetch Appointments & Exams
         const apptQuery = `
             SELECT a.*, m.name as machine_name, et.name as exam_type_name,
+                   b.name as branch_name, b.code as branch_code,
                    e.exam_id, e.report_status, e.report_finalized_at, e.delivered_at,
                    e.report_content, e.clinical_indication, e.provisional_diagnosis, e.priority as exam_priority, e.body_part, e.contrast_required, e.report_sections,
                    prior_e.order_number AS prior_order_number,
@@ -575,16 +582,29 @@ const getPatientHistory = (db) => async (req, res, next) => {
                    prior_et.name AS prior_exam_type_name,
                    inv.invoice_id, inv.invoice_number, inv.invoice_status, inv.total_amount as invoice_total,
                    COALESCE(SUM(rd.print_copy_count), 0)::int as print_copy_count,
-                   MAX(rd.delivered_at) as last_result_delivery_at,
-                   MAX(rd.delivery_status) as latest_delivery_status
+                   MAX(rd.delivered_at) FILTER (WHERE rd.delivery_status IN (
+                       'Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged'
+                   )) as last_result_delivery_at,
+                   COALESCE(BOOL_OR(rd.delivery_status IN (
+                       'Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged'
+                   )), FALSE) AS has_completed_delivery,
+                   latest_delivery.delivery_status AS latest_delivery_status
             FROM appointments a
+            LEFT JOIN branches b ON a.branch_id = b.id
             LEFT JOIN modalities m ON a.modality_id = m.modality_id
             LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
             LEFT JOIN examinations e ON e.appointment_id = a.appointment_id
-            LEFT JOIN examinations prior_e ON prior_e.exam_id = a.prior_exam_id
+            LEFT JOIN examinations prior_e ON prior_e.exam_id = a.prior_exam_id AND prior_e.branch_id = a.branch_id
             LEFT JOIN appointments prior_a ON prior_a.appointment_id = prior_e.appointment_id
             LEFT JOIN examination_types prior_et ON prior_et.type_id = prior_e.exam_type_id
             LEFT JOIN result_deliveries rd ON rd.exam_id = e.exam_id
+            LEFT JOIN LATERAL (
+                SELECT rdv.delivery_status
+                FROM result_deliveries rdv
+                WHERE rdv.exam_id = e.exam_id
+                ORDER BY rdv.created_at DESC, rdv.delivery_id DESC
+                LIMIT 1
+            ) latest_delivery ON TRUE
             LEFT JOIN LATERAL (
                 SELECT invoice_id, invoice_number, invoice_status, total_amount
                 FROM invoices
@@ -593,13 +613,15 @@ const getPatientHistory = (db) => async (req, res, next) => {
                 LIMIT 1
             ) inv ON true
             WHERE a.patient_id = $1
-            GROUP BY a.appointment_id, m.name, et.name, e.exam_id, e.report_status, e.report_finalized_at, e.delivered_at,
+              AND a.branch_id = $2::uuid
+            GROUP BY a.appointment_id, m.name, et.name, b.name, b.code, e.exam_id, e.report_status, e.report_finalized_at, e.delivered_at,
                      e.report_content, e.clinical_indication, e.provisional_diagnosis, e.priority, e.body_part, e.contrast_required, e.report_sections,
                      prior_e.order_number, prior_e.report_status, prior_a.start_time, prior_e.created_at, prior_et.name,
-                     inv.invoice_id, inv.invoice_number, inv.invoice_status, inv.total_amount
+                     inv.invoice_id, inv.invoice_number, inv.invoice_status, inv.total_amount,
+                     latest_delivery.delivery_status
             ORDER BY a.start_time DESC
         `;
-        const apptResult = await db.query(apptQuery, [id]);
+        const apptResult = await db.query(apptQuery, [id, branchId]);
 
         // 3. Calculate Financials
         const totalSpent = apptResult.rows
@@ -838,6 +860,7 @@ const mergePatients = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const locked = await client.query(`
             SELECT patient_id, patient_status
@@ -903,7 +926,7 @@ const mergePatients = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -914,6 +937,7 @@ const deletePatient = (db) => async (req, res, next) => {
         const { id } = req.params;
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existing = await client.query(
             'SELECT patient_id, patient_status FROM patients WHERE patient_id = $1 FOR UPDATE',
@@ -959,7 +983,7 @@ const deletePatient = (db) => async (req, res, next) => {
         if (client) await client.query('ROLLBACK');
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 

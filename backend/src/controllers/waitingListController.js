@@ -1,5 +1,6 @@
 const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const { decrypt, hash } = require('../utils/crypto');
 const { validateEnum, validateUUID, VALID_WAITING_LIST_STATUSES } = require('../utils/queryValidator');
 
@@ -134,6 +135,7 @@ const createWaitingListEntry = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const duplicateKey = [
             data.patientId,
@@ -204,7 +206,10 @@ const createWaitingListEntry = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 
@@ -220,6 +225,7 @@ const updateWaitingListEntry = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const existingResult = await client.query('SELECT * FROM waiting_list WHERE waitlist_id = $1 FOR UPDATE', [id]);
         if (existingResult.rows.length === 0) {
@@ -313,7 +319,10 @@ const updateWaitingListEntry = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) {
+            await clearBranchContext(client);
+            client.release();
+        }
     }
 };
 

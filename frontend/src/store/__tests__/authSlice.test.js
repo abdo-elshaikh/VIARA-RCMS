@@ -1,6 +1,6 @@
 /* eslint-disable no-undef */
 import { configureStore } from '@reduxjs/toolkit';
-import authReducer, { clearEmergencyAccess, decodeUserFromToken, logOut, rehydrateUser, setAccessToken, setCredentials } from '../authSlice';
+import authReducer, { clearEmergencyAccess, decodeUserFromToken, logOut, rehydrateUser, setAccessToken, setCredentials, setActiveBranch } from '../authSlice';
 
 const makeStore = () => configureStore({ reducer: { auth: authReducer } });
 
@@ -11,6 +11,17 @@ const createMockJwt = (payload) => {
 };
 
 describe('staff access token storage', () => {
+    it('drops a previous user branch and requires a choice for multiple branches without a default', () => {
+        const store = makeStore();
+        store.dispatch(setActiveBranch('old-branch'));
+        store.dispatch(setCredentials({ user: { id: 'new-user', role: 'Admin', branches: [{ id: 'A' }, { id: 'B' }] }, token: 'token' }));
+        expect(store.getState().auth.activeBranchId).toBeNull();
+        expect(localStorage.getItem('viara_active_branch_id')).toBeNull();
+        store.dispatch(setActiveBranch('B'));
+        store.dispatch(logOut());
+        expect(store.getState().auth.activeBranchId).toBeNull();
+        expect(localStorage.getItem('viara_active_branch_id')).toBeNull();
+    });
     beforeEach(() => {
         localStorage.clear();
         sessionStorage.clear();
@@ -107,7 +118,7 @@ describe('staff access token storage', () => {
 
         store.dispatch(logOut());
 
-        expect(store.getState().auth).toEqual({ user: null, token: null, isAuthenticated: false });
+        expect(store.getState().auth).toEqual({ user: null, token: null, isAuthenticated: false, activeBranchId: null });
         expect(localStorage.getItem('user')).toBeNull();
         expect(localStorage.getItem('token')).toBeNull();
         expect(sessionStorage.getItem('user')).toBeNull();

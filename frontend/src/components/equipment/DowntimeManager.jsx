@@ -14,6 +14,7 @@ import { getErrorMessage } from '../../utils/getErrorMessage';
 import { hasDeveloperOrAdminRole } from '../../utils/roles';
 import { selectCurrentUser } from '../../store/authSlice';
 import TextPromptDialog from '../ui/TextPromptDialog';
+import './DowntimeManager.css';
 
 const emptyForm = { modalityId: '', startTime: '', endTime: '', reason: '', status: 'Planned' };
 const inputClass = 'min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 outline-none transition focus:border-cyan-600 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-cyan-400';
@@ -115,24 +116,24 @@ const DowntimeManager = () => {
                 <Metric icon={BarChart2} label={copy('averageUtilization')} value={`${summary.averageUtilization}%`} tone="blue" />
             </section>
 
-            <div className={`grid items-start gap-5 ${canViewUtilization ? 'xl:grid-cols-[minmax(0,1fr)_360px]' : ''}`}>
-                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <header className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/70 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-start gap-3">
+            <div className="grid min-w-0 items-start gap-5">
+                <section className="downtime-schedule min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <header className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/70 sm:p-5">
+                        <div className="flex min-w-0 flex-1 basis-64 items-start gap-3">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-700 ring-1 ring-rose-100 dark:bg-rose-400/10 dark:text-rose-300 dark:ring-rose-900">
                                 <AlertTriangle size={19} />
                             </span>
-                            <div>
+                            <div className="min-w-0">
                                 <h2 className="font-black text-slate-900 dark:text-white">{copy('title')}</h2>
                                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{copy('description')}</p>
                             </div>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="downtime-controls flex max-w-full flex-wrap gap-2">
                             <button
                                 type="button"
                                 onClick={() => refetch()}
                                 disabled={isFetching}
-                                className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                             >
                                 <RefreshCw size={15} className={isFetching ? 'animate-spin' : ''} />
                                 {copy('refresh')}
@@ -141,7 +142,8 @@ const DowntimeManager = () => {
                                 <button
                                     type="button"
                                     onClick={() => setShowNew(value => !value)}
-                                    className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white hover:bg-cyan-800 dark:bg-rose-600 dark:hover:bg-rose-700 sm:flex-none shadow-md shadow-slate-900/10"
+                                    aria-expanded={showNew}
+                                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 text-sm font-bold text-white shadow-sm hover:bg-emerald-800 dark:bg-emerald-600 dark:hover:bg-emerald-700"
                                 >
                                     {showNew ? <X size={16} /> : <Plus size={16} />}
                                     {showNew ? copy('closeForm') : copy('log')}
@@ -194,17 +196,21 @@ const DowntimeManager = () => {
                         <Empty title={copy('empty')} description={copy('emptyDescription')} />
                     ) : (
                         <>
-                            <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
+                            <div className="downtime-card-panel divide-y divide-slate-100 dark:divide-slate-800">
                                 {records.map(record => (
                                     <DowntimeCard key={record.downtime_id} record={record} copy={copy} formatDateTime={formatDateTime} onResolve={setResolveTarget} resolving={isResolving} canManage={canManageDowntime} />
                                 ))}
                             </div>
-                            <div className="hidden overflow-x-auto md:block">
-                                <table className="w-full min-w-[760px] text-sm">
+                            <div className="downtime-table-panel">
+                                <table className="w-full table-fixed text-start text-sm">
+                                    <caption className="sr-only">{copy('title')}</caption>
+                                    <colgroup>
+                                        {[24, 28, 30, 18].map(width => <col key={width} style={{ width: `${width}%` }} />)}
+                                    </colgroup>
                                     <thead className="border-b border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
                                         <tr>
                                             {['machine', 'window', 'reason', 'status'].map(key => (
-                                                <th key={key} className="px-4 py-3 text-start text-xs font-black uppercase tracking-wider">{copy(key)}</th>
+                                                <th key={key} scope="col" className="px-4 py-3 text-start text-xs font-black uppercase tracking-wider">{copy(key)}</th>
                                             ))}
                                         </tr>
                                     </thead>
@@ -220,7 +226,7 @@ const DowntimeManager = () => {
                 </section>
 
                 {canViewUtilization && (
-                    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <section className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <header className="flex items-start gap-3 border-b border-slate-100 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/70">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-400/10 dark:text-blue-300">
                                 <BarChart2 size={19} />
@@ -237,7 +243,7 @@ const DowntimeManager = () => {
                         ) : utilization.length === 0 ? (
                             <Empty title={copy('noUtilization')} description={copy('noUtilizationDescription')} />
                         ) : (
-                            <div className="space-y-3 p-4">
+                            <div className="downtime-utilization-grid grid min-w-0 gap-3 p-4">
                                 {utilization.map(row => (
                                     <UtilizationCard key={row.modality_id} row={row} copy={copy} locale={locale} />
                                 ))}
@@ -316,7 +322,7 @@ const ResolveButton = ({ record, copy, onResolve, resolving, canManage }) => {
             type="button"
             onClick={() => onResolve(record)}
             disabled={resolving}
-            className="mt-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70"
+            className="mt-2 inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70"
         >
             <CheckCircle2 size={13} />
             {copy('resolve')}
@@ -325,11 +331,12 @@ const ResolveButton = ({ record, copy, onResolve, resolving, canManage }) => {
 };
 
 const DowntimeCard = ({ record, copy, formatDateTime, onResolve, resolving, canManage }) => (
-    <article className="p-4">
+    <article className="min-w-0 break-words p-4">
         <div className="flex items-start justify-between gap-3">
-            <div>
-                <h3 className="font-black text-slate-900 dark:text-white">{record.modality_name}</h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{formatDateTime(record.start_time)}</p>
+            <div className="min-w-0 flex-1">
+                <h3 className="font-black text-slate-900 dark:text-white"><bdi>{record.modality_name}</bdi></h3>
+                <p className="mt-1 text-xs leading-6 text-slate-500 dark:text-slate-400">{copy('startShort')}: <bdi>{formatDateTime(record.start_time)}</bdi></p>
+                <p className="text-xs leading-6 text-slate-500 dark:text-slate-400">{copy('endShort')}: <bdi>{formatDateTime(record.end_time)}</bdi></p>
             </div>
             <Status value={record.status} copy={copy} />
         </div>
@@ -344,13 +351,13 @@ const DowntimeCard = ({ record, copy, formatDateTime, onResolve, resolving, canM
 );
 
 const DowntimeRow = ({ record, copy, formatDateTime, onResolve, resolving, canManage }) => (
-    <tr className="align-top hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-        <td className="px-4 py-4 font-bold text-slate-900 dark:text-white">{record.modality_name}</td>
+    <tr className="align-top even:bg-slate-50/40 hover:bg-slate-50/60 dark:even:bg-slate-800/20 dark:hover:bg-slate-800/40">
+        <td className="break-words px-4 py-5 font-bold leading-6 text-slate-900 dark:text-white"><bdi>{record.modality_name}</bdi></td>
         <td className="px-4 py-4 text-xs leading-6 text-slate-600 dark:text-slate-300">
-            <div>{copy('startShort')}: {formatDateTime(record.start_time)}</div>
-            <div>{copy('endShort')}: {formatDateTime(record.end_time)}</div>
+            <div>{copy('startShort')}: <bdi>{formatDateTime(record.start_time)}</bdi></div>
+            <div>{copy('endShort')}: <bdi>{formatDateTime(record.end_time)}</bdi></div>
         </td>
-        <td className="max-w-sm px-4 py-4 text-slate-700 dark:text-slate-300">
+        <td className="break-words px-4 py-4 leading-6 text-slate-700 dark:text-slate-300">
             <p>{record.reason}</p>
             {record.resolution_notes && (
                 <p className="mt-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
@@ -374,10 +381,10 @@ const UtilizationCard = ({ row, copy, locale }) => {
     const number = value => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value);
 
     return (
-        <article className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+        <article className="min-w-0 rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
             <div className="flex items-center justify-between gap-3">
-                <h3 className="truncate text-sm font-black text-slate-900 dark:text-white">{row.name}</h3>
-                <span className="text-xs font-black text-blue-700 dark:text-blue-300">{number(percentage)}%</span>
+                <h3 className="min-w-0 break-words text-sm font-black text-slate-900 dark:text-white"><bdi>{row.name}</bdi></h3>
+                <span className="shrink-0 text-xs font-black text-emerald-700 dark:text-emerald-300"><bdi>{number(percentage)}%</bdi></span>
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                 <div className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-600" style={{ width: `${percentage}%` }} />

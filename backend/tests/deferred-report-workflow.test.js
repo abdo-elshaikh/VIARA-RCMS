@@ -81,6 +81,8 @@ describe('deferred reporting workflow', () => {
         const next = jest.fn();
 
         await completeAcquisition({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId: EXAM_ID },
             body: { resultMode: 'ImagesOnly' },
             user: { user_id: USER_ID, role: 'Technician' },
@@ -119,6 +121,8 @@ describe('deferred reporting workflow', () => {
         const next = jest.fn();
 
         await completeAcquisition({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId: EXAM_ID },
             body: { resultMode: 'ImagesOnly' },
             user: { user_id: USER_ID, role: 'Technician' }
@@ -154,6 +158,8 @@ describe('deferred reporting workflow', () => {
         const next = jest.fn();
 
         await requestDeferredReport({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId: EXAM_ID },
             body: { source: 'Reception' },
             user: { user_id: USER_ID, role: 'Receptionist' },
@@ -191,6 +197,8 @@ describe('deferred reporting workflow', () => {
         const next = jest.fn();
 
         await deferReportForImages({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId: EXAM_ID },
             body: { reason: 'Patient wants images now' },
             user: { user_id: USER_ID, role: 'Receptionist' },
@@ -222,6 +230,7 @@ describe('deferred reporting workflow', () => {
         const next = jest.fn();
 
         await transitionQueue({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
             params: { examId: EXAM_ID },
             body: { toStage: 'Finalized' },
             user: { user_id: USER_ID, role: 'Radiologist' },
@@ -252,6 +261,7 @@ describe('deferred reporting workflow', () => {
         const next = jest.fn();
 
         await transitionQueue({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
             params: { examId: EXAM_ID },
             body: { toStage: 'Reporting' },
             user: { user_id: USER_ID, role: 'Technician' },

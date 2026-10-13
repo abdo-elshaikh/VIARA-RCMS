@@ -434,7 +434,7 @@ describe('request and lifecycle business rules', () => {
         const res = { json: jest.fn() };
         const next = jest.fn();
 
-        await getReceivablesAging(db)({}, res, next);
+        await getReceivablesAging(db)({ branchContext: { branchId: '00000000-0000-4000-8000-000000000001' } }, res, next);
 
         const sql = db.query.mock.calls[0][0];
         expect(sql).toContain("i.invoice_status <> 'Voided'");
@@ -452,6 +452,7 @@ describe('request and lifecycle business rules', () => {
         const next = jest.fn();
 
         await getOutstandingClaims(db)({
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
             query: {
                 startDate: '2026-07-01',
                 endDate: '2026-07-30',
@@ -579,6 +580,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('FROM examinations e')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             exam_id: examId,
                             appointment_id: appointmentId,
                             queue_stage: 'Payment Pending',
@@ -591,6 +593,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('WITH latest_invoice')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             invoice_id: '00000000-0000-4000-8000-000000000103',
                             invoice_status: 'Partial',
                             patient_payable_amount: '100.00',
@@ -603,6 +606,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('WITH totals')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             invoice_id: '00000000-0000-4000-8000-000000000103',
                             invoice_number: 'INV-001',
                             invoice_status: 'Paid',
@@ -626,6 +630,8 @@ describe('request and lifecycle business rules', () => {
         const next = jest.fn();
 
         await transitionQueue({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId },
             body: { toStage: 'Ready for Exam' },
             user: { user_id: 'nurse-1', role: 'Nurse' }
@@ -651,6 +657,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('FROM examinations e')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             exam_id: examId,
                             appointment_id: appointmentId,
                             queue_stage: 'Ready for Exam',
@@ -667,6 +674,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('WITH latest_invoice')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             invoice_id: '00000000-0000-4000-8000-000000000123',
                             invoice_status: 'Paid',
                             patient_payable_amount: '100.00',
@@ -679,6 +687,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('WITH totals AS')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             invoice_id: '00000000-0000-4000-8000-000000000123',
                             invoice_status: 'Paid',
                             patient_payable_amount: '100.00',
@@ -698,6 +707,8 @@ describe('request and lifecycle business rules', () => {
         const next = jest.fn();
 
         await transitionQueue({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId },
             body: { toStage: 'In Exam' },
             user: { user_id: 'technician-1', role: 'Technician' }
@@ -722,6 +733,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('FROM examinations e')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             exam_id: examId,
                             appointment_id: appointmentId,
                             queue_stage: 'Ready for Exam',
@@ -750,6 +762,8 @@ describe('request and lifecycle business rules', () => {
         const next = jest.fn();
 
         await transitionQueue({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId },
             body: {
                 action: 'update_safety',
@@ -794,6 +808,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('FROM examinations e')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             exam_id: examId,
                             appointment_id: '00000000-0000-4000-8000-000000000112',
                             queue_stage: toStage === 'Delivered' ? 'Finalized' : 'Ready for Exam',
@@ -811,6 +826,8 @@ describe('request and lifecycle business rules', () => {
         const next = jest.fn();
 
         await transitionQueue({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId },
             body: { toStage },
             user: { user_id: `${role.toLowerCase()}-1`, role }
@@ -861,6 +878,8 @@ describe('request and lifecycle business rules', () => {
         const next = jest.fn();
 
         await getQueue(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             query: { stage: 'Ready for Exam', priority: 'Routine', offset: '1', limit: '1' },
             user: { user_id: 'technician-1', role: 'Technician' }
         }, res, next);
@@ -869,26 +888,26 @@ describe('request and lifecycle business rules', () => {
         expect(db.query).toHaveBeenCalledTimes(3);
         // Find the queries by content since page+KPI run concurrently in Promise.all
         const allCalls = db.query.mock.calls;
-        const [pageSql, pageValues] = allCalls.find(([sql]) => String(sql).includes('LIMIT $5 OFFSET $6')) || [];
+        const [pageSql, pageValues] = allCalls.find(([sql]) => String(sql).includes('LIMIT $6 OFFSET $7')) || [];
         const [kpiSql, kpiValues] = allCalls.find(([sql]) => String(sql).includes('stage_counts AS')) || [];
         expect(pageSql).toContain('e.modality_id');
         expect(pageSql).toContain('clinical_task_hold_intervals');
         expect(pageSql).toContain('active_stage_minutes');
         expect(pageSql).toContain("WHEN e.queue_stage = 'Scheduled' THEN a.start_time");
         expect(pageSql).toContain('GREATEST(0');
-        expect(pageSql).toContain('e.current_station = $3');
-        expect(pageSql).toContain('(a.technician_id = $4 OR a.technician_id IS NULL)');
-        expect(pageSql).toContain('LIMIT $5 OFFSET $6');
-        expect(pageValues).toEqual(['Ready for Exam', 'Routine', 'Modality', 'technician-1', 1, 1]);
+        expect(pageSql).toContain('e.current_station = $4');
+        expect(pageSql).toContain('(a.technician_id = $5 OR a.technician_id IS NULL)');
+        expect(pageSql).toContain('LIMIT $6 OFFSET $7');
+        expect(pageValues).toEqual(['Ready for Exam', 'Routine', '00000000-0000-4000-8000-000000000001', 'Modality', 'technician-1', 1, 1]);
         // Lightweight KPI statement: same filter tree, aggregation-only columns.
         expect(kpiSql).toContain('WITH last_event AS');
         expect(kpiSql).toContain('stage_counts AS');
-        expect(kpiSql).not.toContain('LIMIT $5 OFFSET $6');
-        expect(kpiSql).toContain('(a.technician_id = $4 OR a.technician_id IS NULL)');
+        expect(kpiSql).not.toContain('LIMIT $6 OFFSET $7');
+        expect(kpiSql).toContain('(a.technician_id = $5 OR a.technician_id IS NULL)');
         // The KPI statement must NOT carry display-only payloads.
         expect(kpiSql).not.toContain('first_name_enc');
         expect(kpiSql).not.toContain('report_content');
-        expect(kpiValues).toEqual(['Ready for Exam', 'Routine', 'Modality', 'technician-1', 'technician-1']);
+        expect(kpiValues).toEqual(['Ready for Exam', 'Routine', '00000000-0000-4000-8000-000000000001', 'Modality', 'technician-1', 'technician-1']);
         expect(res.json).toHaveBeenCalledWith({
             data: [expect.objectContaining({ exam_id: '00000000-0000-4000-8000-000000000113' })],
             kpis: {
@@ -919,6 +938,7 @@ describe('request and lifecycle business rules', () => {
                 const text = String(sql);
                 if (text.includes('FROM examinations e') && text.includes('FOR UPDATE OF e, a')) {
                     return { rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                         exam_id: examId,
                         appointment_id: appointmentId,
                         queue_stage: 'Prep Pending',
@@ -941,6 +961,8 @@ describe('request and lifecycle business rules', () => {
         const next = jest.fn();
 
         await transitionQueue({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId },
             body: { action: 'start_task' },
             user: { user_id: 'nurse-1', role: 'Nurse' },
@@ -963,6 +985,7 @@ describe('request and lifecycle business rules', () => {
                 const text = String(sql);
                 if (text.includes('FROM examinations e') && text.includes('FOR UPDATE OF e, a')) {
                     return { rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                         exam_id: examId,
                         appointment_id: appointmentId,
                         queue_stage: 'Ready for Exam',
@@ -985,6 +1008,8 @@ describe('request and lifecycle business rules', () => {
         const next = jest.fn();
 
         await transitionQueue({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId },
             body: { action: 'hold', reason: 'Equipment unavailable' },
             user: { user_id: 'technician-1', role: 'Technician' },
@@ -1004,6 +1029,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('WITH totals')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             invoice_id: '00000000-0000-4000-8000-000000000104',
                             invoice_number: 'INV-002',
                             invoice_status: 'Partial',
@@ -1045,6 +1071,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('WITH totals')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             invoice_id: '00000000-0000-4000-8000-000000000105',
                             invoice_number: 'INV-005',
                             invoice_status: 'Partial',
@@ -1068,6 +1095,8 @@ describe('request and lifecycle business rules', () => {
         const next = jest.fn();
 
         await requestPartialPaymentException({ connect: jest.fn().mockResolvedValue(client) })({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { id: '00000000-0000-4000-8000-000000000105' },
             body: {
                 transactionType: 'ClinicalQueueTransition',
@@ -1094,6 +1123,7 @@ describe('request and lifecycle business rules', () => {
                 if (text.includes('WITH totals')) {
                     return {
                         rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             invoice_id: params[0],
                             invoice_number: 'INV-003',
                             invoice_status: 'Partial',
@@ -1186,6 +1216,8 @@ describe('request and lifecycle business rules', () => {
         const next = jest.fn();
 
         await reviewPartialPaymentException(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { id: '04c43fb6-b232-417e-b342-fab048e00a2c' },
             body: { status: 'Approved', reviewNotes: 'Manager approved partial movement.' },
             user: { user_id: '22222222-2222-4222-8222-222222222222', role: 'Accountant' }
@@ -1215,22 +1247,24 @@ describe('request and lifecycle business rules', () => {
         const userId = '00000000-0000-4000-8000-000000000001';
 
         await getQueue(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             query: { includeDelivered: 'false', limit: '500' },
             user: { user_id: userId, role: 'Radiologist' }
         }, res, next);
 
         const calls = db.query.mock.calls;
-        const [pageSql, pageValues] = calls.find(([sql]) => String(sql).includes('LIMIT $4 OFFSET $5')) || [];
+        const [pageSql, pageValues] = calls.find(([sql]) => String(sql).includes('LIMIT $5 OFFSET $6')) || [];
         const [kpiSql, kpiValues] = calls.find(([sql]) => String(sql).includes('stage_counts AS')) || [];
-        expect(pageSql).toContain('e.current_station = $1');
-        expect(pageSql).toContain('e.queue_stage = ANY($2::text[])');
-        expect(pageSql).toContain('(e.performing_radiologist_id = $3 OR e.performing_radiologist_id IS NULL)');
-        expect(pageValues).toEqual(['Radiologist', ['Reporting'], userId, 500, 0]);
-        expect(kpiSql).toContain('e.current_station = $1');
-        expect(kpiSql).toContain('e.queue_stage = ANY($2::text[])');
-        expect(kpiSql).toContain('(e.performing_radiologist_id = $3 OR e.performing_radiologist_id IS NULL)');
-        expect(kpiSql).toContain('task_assignee_id = $4::uuid');
-        expect(kpiValues).toEqual(['Radiologist', ['Reporting'], userId, userId]);
+        expect(pageSql).toContain('e.current_station = $2');
+        expect(pageSql).toContain('e.queue_stage = ANY($3::text[])');
+        expect(pageSql).toContain('(e.performing_radiologist_id = $4 OR e.performing_radiologist_id IS NULL)');
+        expect(pageValues).toEqual(['00000000-0000-4000-8000-000000000001', 'Radiologist', ['Reporting'], userId, 500, 0]);
+        expect(kpiSql).toContain('e.current_station = $2');
+        expect(kpiSql).toContain('e.queue_stage = ANY($3::text[])');
+        expect(kpiSql).toContain('(e.performing_radiologist_id = $4 OR e.performing_radiologist_id IS NULL)');
+        expect(kpiSql).toContain('task_assignee_id = $5::uuid');
+        expect(kpiValues).toEqual(['00000000-0000-4000-8000-000000000001', 'Radiologist', ['Reporting'], userId, userId]);
         expect(next).not.toHaveBeenCalled();
     });
 });

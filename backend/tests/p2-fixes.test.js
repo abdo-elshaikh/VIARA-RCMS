@@ -238,6 +238,8 @@ describe('Phase 3 Remediation Suite: Distributed Pub/Sub, Native S3 Replicator &
             const broadcastSpy = jest.spyOn(realtimeService, 'broadcastToStaff');
 
             const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 body: { orderNumber: 'ORD-2026-999', roomName: 'Ultrasound 2', modalityId: 5 },
                 user: { user_id: 'user-reception-1' }
             };
@@ -272,6 +274,8 @@ describe('Phase 3 Remediation Suite: Distributed Pub/Sub, Native S3 Replicator &
             const broadcastSpy = jest.spyOn(realtimeService, 'broadcastToStaff');
 
             const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 body: {
                     orderNumber: 'ORD-2026-888',
                     queueNumber: 4,

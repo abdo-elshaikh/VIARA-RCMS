@@ -1,4 +1,5 @@
 const { AppError } = require('../middleware/errorHandler');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const { triggerEvent } = require('../services/notificationJobService');
 const { assertInvoiceFullyPaid } = require('../services/partialPaymentExceptionService');
 const { handleVisitCompletionReward } = require('../services/loyaltyRewardService');
@@ -47,6 +48,7 @@ const deliverResult = (db) => async (req, res, next) => {
         const data = req.body;
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         transactionStarted = true;
 
         const exam = await getExamForDelivery(client, examId);
@@ -120,11 +122,12 @@ const deliverResult = (db) => async (req, res, next) => {
             INSERT INTO result_deliveries (
                 exam_id, appointment_id, patient_id, referring_doctor_id,
                 delivery_method, result_type, recipient_name, recipient_contact, delivery_status,
-                delivered_by, print_copy_count, acknowledged_at, acknowledged_by_name,
+                delivered_at, delivered_by, print_copy_count, acknowledged_at, acknowledged_by_name,
                 notes, access_ip, user_agent
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                    CASE WHEN $12 THEN NOW() ELSE NULL END, $13, $14, $15, $16)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                    CASE WHEN $9::text IN ('Delivered', 'Picked Up', 'Accessed', 'Printed', 'Acknowledged') THEN NOW() ELSE NULL END,
+                    $10, $11, CASE WHEN $12 THEN NOW() ELSE NULL END, $13, $14, $15, $16)
             RETURNING *
         `, [
             exam.exam_id,
@@ -276,7 +279,7 @@ const deliverResult = (db) => async (req, res, next) => {
         }
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 

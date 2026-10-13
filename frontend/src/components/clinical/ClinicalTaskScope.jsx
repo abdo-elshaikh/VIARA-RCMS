@@ -33,7 +33,7 @@ export const ClinicalTaskScope = ({ value, onChange, assignedCount = 0, availabl
     </div>
 );
 
-export const AssignmentBadge = ({ status, t }) => {
+export const AssignmentBadge = ({ status, isAssignedToMe, assigneeName, t }) => {
     const normalized = status || 'Unassigned';
     const styles = {
         Unassigned: 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300',
@@ -41,10 +41,24 @@ export const AssignmentBadge = ({ status, t }) => {
         'In Progress': 'border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300',
         'On Hold': 'border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300',
     };
+
+    let labelText;
+    if (normalized === 'Assigned') {
+        if (isAssignedToMe) {
+            labelText = t('taskScope.status.AssignedToMe', { defaultValue: 'Assigned to you' });
+        } else if (assigneeName) {
+            labelText = `${t('taskScope.status.Assigned', { defaultValue: 'Assigned' })}: ${assigneeName}`;
+        } else {
+            labelText = t('taskScope.status.Assigned', { defaultValue: 'Assigned' });
+        }
+    } else {
+        labelText = t(`taskScope.status.${normalized}`, { defaultValue: normalized });
+    }
+
     return (
         <span className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${styles[normalized] || styles.Assigned}`}>
             <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden="true" />
-            {t(`taskScope.status.${normalized}`, { defaultValue: normalized })}
+            {labelText}
         </span>
     );
 };

@@ -37,7 +37,8 @@ describe('invoice line-item financial recalculation', () => {
                 if (text.includes('WITH totals AS')) {
                     return { rows: [{ patient_payable_amount: '91.72', paid_amount: '0', refunded_amount: '0', credited_amount: '0' }] };
                 }
-                if (text.includes('SET invoice_status = $1')) return { rows: [{ invoice_id: invoiceId, invoice_status: 'Pending' }] };
+                if (text.includes('SET invoice_status = $1')) return { rows: [{
+        branch_id: '00000000-0000-4000-8000-000000000001', invoice_id: invoiceId, invoice_status: 'Pending' }] };
                 return { rows: [] };
             })
         };
@@ -72,6 +73,7 @@ describe('invoice list pagination', () => {
             })
         };
         const req = {
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' }, headers: {},
             query: {
                 openOnly: true,
                 includeMeta: true,

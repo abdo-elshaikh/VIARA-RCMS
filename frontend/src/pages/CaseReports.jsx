@@ -370,7 +370,7 @@ const CaseReports = () => {
 
     const summary = useMemo(() => {
         const finalized = items.filter(isFinalReport).length;
-        const delivered = items.filter((item) => item.delivered_at || item.last_delivery_status).length;
+        const delivered = items.filter((item) => item.delivered_at || item.has_completed_delivery).length;
         const pending = items.length - finalized;
         return {
             total: data?.summary?.total ?? items.length,
@@ -538,7 +538,7 @@ const CaseReports = () => {
                 item.modality_name,
                 item.priority,
                 reportStatus(item),
-                item.last_delivery_status || (item.delivered_at ? 'Delivered' : 'Not delivered'),
+                item.last_delivery_status || (item.delivered_at || item.has_completed_delivery ? 'Delivered' : 'Not delivered'),
                 item.radiologist_name,
                 item.start_time ? new Date(item.start_time).toISOString() : '',
                 item.invoice_number,
@@ -1074,7 +1074,7 @@ const CaseReports = () => {
                                         {/* Delivery Info */}
                                         <div className="min-w-0 text-xs">
                                             <p className="font-bold text-slate-700 dark:text-slate-300">
-                                                {deliveryStatusLabel(item.last_delivery_status, isAr) || (item.delivered_at ? ui.deliveredStatus : ui.notDeliveredStatus)}
+                                                {deliveryStatusLabel(item.last_delivery_status, isAr) || (item.delivered_at || item.has_completed_delivery ? ui.deliveredStatus : ui.notDeliveredStatus)}
                                             </p>
                                             <p className="font-mono text-[10.5px] text-slate-400">
                                                 {fmtDate(item.last_delivery_at || item.delivered_at || item.report_finalized_at, locale, { dateStyle: 'short', timeStyle: 'short' })}

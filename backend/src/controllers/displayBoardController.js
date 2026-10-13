@@ -13,7 +13,11 @@
 const logger = require('../config/logger');
 const { decrypt } = require('../utils/crypto');
 const { AppError } = require('../utils/errors');
+const { getRequestQuery } = require('../utils/requestQuery');
+const branchService = require('../services/branchService');
 const realtimeService = require('../services/realtimeService');
+
+const DEFAULT_HQ_BRANCH_ID = '00000000-0000-4000-8000-000000000001';
 
 const PRE_EXAM_STAGES = ['Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam'];
 
@@ -122,6 +126,9 @@ const buildPhaseProgress = (queueStage) => {
 
 const getDisplayBoard = (db) => async (req, res, next) => {
     try {
+        const query = getRequestQuery(req);
+        const targetBranchId = query.branchId || req.headers?.['x-branch-id'] || DEFAULT_HQ_BRANCH_ID;
+
         const [machinesResult, queueResult, summaryResult, settingsResult, announcementsResult, callsResult] = await Promise.all([
             db.query(`
                 SELECT m.modality_id, m.name AS machine_name, m.type AS machine_type, m.status AS machine_status,
@@ -131,9 +138,9 @@ const getDisplayBoard = (db) => async (req, res, next) => {
                        COALESCE(r.status, 'Active') AS room_status
                 FROM modalities m
                 LEFT JOIN rooms r ON m.room_id = r.room_id
-                WHERE m.deleted_at IS NULL
+                WHERE m.deleted_at IS NULL AND m.branch_id = $1
                 ORDER BY COALESCE(r.room_number, m.room_number) NULLS LAST, m.name
-            `),
+            `, [targetBranchId]),
             db.query(`
                 WITH center_tz AS (
                     SELECT COALESCE(
@@ -162,6 +169,7 @@ const getDisplayBoard = (db) => async (req, res, next) => {
                     JOIN patients p ON e.patient_id = p.patient_id
                     CROSS JOIN day_bounds
                     WHERE COALESCE(p.is_confidential, FALSE) = FALSE
+                      AND e.branch_id = $1
                       AND (
                           (a.start_time >= day_bounds.day_start AND a.start_time < day_bounds.day_end)
                           OR e.arrived_at >= day_bounds.day_start
@@ -172,7 +180,7 @@ const getDisplayBoard = (db) => async (req, res, next) => {
                        start_time, first_name_enc, last_name_enc, gender, queue_number
                 FROM numbered_cases
                 WHERE queue_stage NOT IN ('Cancelled', 'Images Delivered', 'Delivered')
-            `),
+            `, [targetBranchId]),
             db.query(`
                 WITH center_tz AS (
                     SELECT COALESCE(
@@ -194,16 +202,17 @@ const getDisplayBoard = (db) => async (req, res, next) => {
                     COALESCE(ROUND(AVG(GREATEST(0, EXTRACT(EPOCH FROM (NOW() - COALESCE(e.arrived_at, a.start_time, e.created_at))) / 60))
                         FILTER (WHERE e.queue_stage IN ('Arrived', 'Payment Pending', 'Prep Pending', 'Ready for Exam'))::numeric, 0), 0)::int AS average_waiting_minutes
                 FROM examinations e
-                                JOIN appointments a ON e.appointment_id = a.appointment_id
+                JOIN appointments a ON e.appointment_id = a.appointment_id
                 JOIN patients p ON e.patient_id = p.patient_id
                 CROSS JOIN day_bounds
                 WHERE e.queue_stage <> 'Cancelled'
                   AND COALESCE(p.is_confidential, FALSE) = FALSE
-                                    AND (
-                                            (a.start_time >= day_bounds.day_start AND a.start_time < day_bounds.day_end)
-                                            OR e.arrived_at >= day_bounds.day_start
-                                    )
-            `),
+                  AND e.branch_id = $1
+                  AND (
+                      (a.start_time >= day_bounds.day_start AND a.start_time < day_bounds.day_end)
+                      OR e.arrived_at >= day_bounds.day_start
+                  )
+            `, [targetBranchId]),
             db.query(`
                 SELECT setting_key, setting_value
                 FROM system_settings
@@ -212,12 +221,12 @@ const getDisplayBoard = (db) => async (req, res, next) => {
             db.query(`
                 SELECT announcement_id, title, message, tone, display_order
                 FROM display_announcements
-                WHERE is_active = TRUE
+                WHERE is_active = TRUE AND (branch_id = $1 OR branch_id IS NULL)
                 ORDER BY display_order ASC, created_at DESC
                 LIMIT 10
-            `).catch(() => ({ rows: [] })),
+            `, [targetBranchId]).catch(() => ({ rows: [] })),
             db.query(`
-                SELECT d.call_id, d.order_number, d.room_name, d.modality_id, d.call_by_name, d.called_at,
+                SELECT d.call_id, d.order_number, d.room_name, d.modality_id, d.call_by_name, d.called_at, d.branch_id,
                        p.first_name_enc, p.last_name_enc, p.gender,
                        EXTRACT(EPOCH FROM d.called_at) * 1000 AS timestamp
                 FROM display_call_events d
@@ -226,9 +235,10 @@ const getDisplayBoard = (db) => async (req, res, next) => {
                 LEFT JOIN patients p ON p.patient_id = COALESCE(e.patient_id, i.patient_id)
                     AND COALESCE(p.is_confidential, FALSE) = FALSE
                 WHERE d.expires_at > CURRENT_TIMESTAMP
+                  AND (d.branch_id = $1 OR (d.branch_id IS NULL AND (e.branch_id = $1 OR i.branch_id = $1)))
                 ORDER BY d.called_at DESC
                 LIMIT 10
-            `).catch(() => ({ rows: activeBroadcastCalls.filter((call) => Date.now() - call.timestamp < 45000) }))
+            `, [targetBranchId]).catch(() => ({ rows: activeBroadcastCalls.filter((call) => Date.now() - call.timestamp < 45000 && (!call.branchId || call.branchId === targetBranchId)) }))
         ]);
 
         const settings = {};
@@ -317,6 +327,7 @@ const getDisplayBoard = (db) => async (req, res, next) => {
 
         res.set('Cache-Control', 'no-store, max-age=0');
         res.json({
+            branchId: targetBranchId,
             generatedAt: new Date().toISOString(),
             center: {
                 name: settings['center.name'] || null,
@@ -416,16 +427,17 @@ const getDisplayBoard = (db) => async (req, res, next) => {
 // In-memory active broadcast calls for real-time TV synchronized voice call-outs
 
 const broadcastPatientCall = (db) => async (req, res, next) => {
-    const { orderNumber, roomName, modalityId, queueNumber, callByName, deskIdentifier } = req.body || {};
+    const { orderNumber, roomName, modalityId, queueNumber, callByName, deskIdentifier, branchId } = req.body || {};
     const normalizedOrder = String(orderNumber || '').trim();
     if (!normalizedOrder || normalizedOrder.length > 80) {
         return next(new AppError('A valid order number is required for the display call', 400));
     }
 
     let resolvedDesk = deskIdentifier ? String(deskIdentifier).trim().slice(0, 100) : null;
+    let shiftBranchId = null;
     if (req.user?.role === 'Receptionist') {
         const shiftCheck = await db.query(`
-            SELECT session_id, desk_identifier FROM reception_shift_sessions
+            SELECT session_id, desk_identifier, branch_id FROM reception_shift_sessions
             WHERE user_id = $1 AND status = 'Open'
             LIMIT 1
         `, [req.user.user_id]);
@@ -440,10 +452,15 @@ const broadcastPatientCall = (db) => async (req, res, next) => {
         if (!resolvedDesk && shiftCheck.rows[0]?.desk_identifier) {
             resolvedDesk = shiftCheck.rows[0].desk_identifier;
         }
+        if (shiftCheck.rows[0]?.branch_id) {
+            shiftBranchId = shiftCheck.rows[0].branch_id;
+        }
     }
 
     let resolvedPatientName = null;
     let resolvedPatientGender = null;
+    let targetBranchId = shiftBranchId || branchId || req.branchContext?.branchId || req.user?.branch_id || DEFAULT_HQ_BRANCH_ID;
+
     const candidateQueueNumber = queueNumber == null ? null : Number(queueNumber);
     const resolvedQueueNumber = Number.isSafeInteger(candidateQueueNumber) && candidateQueueNumber >= 0
         ? candidateQueueNumber
@@ -453,16 +470,16 @@ const broadcastPatientCall = (db) => async (req, res, next) => {
     // names or fall back to them when a record cannot be verified.
     try {
         const examLookup = await db.query(`
-            SELECT patient_id, first_name_enc, last_name_enc, gender, is_confidential
+            SELECT patient_id, first_name_enc, last_name_enc, gender, is_confidential, branch_id
             FROM (
                 SELECT p.patient_id, p.first_name_enc, p.last_name_enc, p.gender, COALESCE(p.is_confidential, FALSE) AS is_confidential,
-                       e.created_at AS source_created_at
+                       e.branch_id, e.created_at AS source_created_at
                 FROM examinations e
                 JOIN patients p ON e.patient_id = p.patient_id
                 WHERE e.order_number = $1
                 UNION ALL
                 SELECT p.patient_id, p.first_name_enc, p.last_name_enc, p.gender, COALESCE(p.is_confidential, FALSE) AS is_confidential,
-                       i.generated_at AS source_created_at
+                       i.branch_id, i.generated_at AS source_created_at
                 FROM invoices i
                 JOIN patients p ON i.patient_id = p.patient_id
                 WHERE i.invoice_number = $1
@@ -472,6 +489,9 @@ const broadcastPatientCall = (db) => async (req, res, next) => {
         `, [normalizedOrder]);
         if (examLookup.rows.length > 0) {
             const row = examLookup.rows[0];
+            if (row.branch_id) {
+                targetBranchId = row.branch_id;
+            }
             if (!row.is_confidential) {
                 resolvedPatientName = decryptPatientName(row) || null;
                 resolvedPatientGender = row.gender || null;
@@ -479,6 +499,20 @@ const broadcastPatientCall = (db) => async (req, res, next) => {
         }
     } catch (lookupErr) {
         logger.debug('Failed to lookup patient details for call', { error: lookupErr.message });
+    }
+
+    // MBT-510: Enforce cross-branch caller permission
+    if (!req.user?.is_org_admin) {
+        const userBranches = await require('../utils/requestBranches')(db, req);
+        const hasAccess = userBranches.branches.some(b => b.id === targetBranchId);
+        if (!hasAccess) {
+            return next(new AppError(
+                'You do not have access to broadcast calls for this branch | ليس لديك صلاحية لبث النداء لهذا الفرع',
+                403,
+                true,
+                'BRANCH_ACCESS_DENIED'
+            ));
+        }
     }
 
     const resolvedCallByName = callByName === true && Boolean(resolvedPatientName);
@@ -492,6 +526,7 @@ const broadcastPatientCall = (db) => async (req, res, next) => {
         roomName: roomName ? String(roomName).trim().slice(0, 150) : null,
         deskIdentifier: resolvedDesk || null,
         modalityId: modalityId || null,
+        branchId: targetBranchId,
         callByName: resolvedCallByName,
         calledAt: new Date().toISOString(),
         timestamp: Date.now()
@@ -503,12 +538,12 @@ const broadcastPatientCall = (db) => async (req, res, next) => {
                 WHERE expires_at < CURRENT_TIMESTAMP - INTERVAL '1 day'
             ), created AS (
                 INSERT INTO display_call_events (
-                    order_number, room_name, modality_id, called_by, call_by_name
-                ) VALUES ($1, $2, $3, $4, $5)
-                RETURNING call_id, called_at
+                    order_number, room_name, modality_id, called_by, call_by_name, branch_id
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING call_id, called_at, branch_id
             )
-            SELECT call_id, called_at FROM created
-        `, [newCall.orderNumber, newCall.roomName, newCall.modalityId, req.user.user_id, resolvedCallByName]);
+            SELECT call_id, called_at, branch_id FROM created
+        `, [newCall.orderNumber, newCall.roomName, newCall.modalityId, req.user.user_id, resolvedCallByName, targetBranchId]);
         newCall.id = result.rows[0]?.call_id || newCall.id;
         newCall.calledAt = result.rows[0]?.called_at || newCall.calledAt;
         activeBroadcastCalls = [newCall, ...activeBroadcastCalls.filter(c => Date.now() - c.timestamp < 60000)].slice(0, 10);

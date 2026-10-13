@@ -68,7 +68,9 @@ describe('pacsAccessPolicyService', () => {
 
     describe('permissions and access helpers', () => {
         test('shares only active, unassigned radiologist reporting work and keeps explicit assignments scoped', async () => {
-            const db = { query: jest.fn(async () => ({ rows: [{ study_instance_uid: '1.2.3' }] })) };
+            const db = { query: jest.fn(async sql => ({ rows: sql.includes('FROM user_branch_memberships')
+                ? [{ id: '00000000-0000-4000-8000-000000000001', branch_role: 'Radiologist' }]
+                : [{ study_instance_uid: '1.2.3', branch_id: '00000000-0000-4000-8000-000000000001' }] })) };
             await assertStudyAccess(db, {
                 role: 'Radiologist',
                 user_id: '00000000-0000-4000-8000-000000000001'

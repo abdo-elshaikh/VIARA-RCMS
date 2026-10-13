@@ -1,0 +1,40 @@
+.maintenance-schedule {
+    container: maintenance / inline-size;
+}
+
+.maintenance-table-panel {
+    display: block;
+}
+
+.maintenance-card-panel {
+    display: none;
+}
+
+.maintenance-contract-grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+@container maintenance (max-width: 479px) {
+    .maintenance-controls {
+        width: 100%;
+    }
+
+    .maintenance-controls .maintenance-filter {
+        flex-basis: 100%;
+    }
+
+    .maintenance-controls > button {
+        flex: 1;
+    }
+}
+
+/* Use the actual panel width: sidebars can leave little space on a wide screen. */
+@container maintenance (max-width: 759px) {
+    .maintenance-table-panel {
+        display: none;
+    }
+
+    .maintenance-card-panel {
+        display: block;
+    }
+}

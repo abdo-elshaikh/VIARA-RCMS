@@ -2,6 +2,8 @@ const { getRequestQuery } = require('../utils/requestQuery');
 const { AppError } = require('../middleware/errorHandler');
 const { decryptPatientName } = require('./displayBoardController');
 
+const DEFAULT_HQ_BRANCH_ID = '00000000-0000-4000-8000-000000000001';
+
 const DISPLAY_STAGES = [
     'Arrived',
     'Payment Pending',
@@ -23,7 +25,9 @@ const toIso = (value) => {
  */
 const getQueueDisplay = (db) => async (req, res, next) => {
     try {
-        const date = getRequestQuery(req).date || new Date().toISOString().slice(0, 10);
+        const query = getRequestQuery(req);
+        const date = query.date || new Date().toISOString().slice(0, 10);
+        const targetBranchId = query.branchId || req.headers?.['x-branch-id'] || DEFAULT_HQ_BRANCH_ID;
 
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
             return next(new AppError('Invalid queue display date', 400));
@@ -75,6 +79,8 @@ const getQueueDisplay = (db) => async (req, res, next) => {
                 CROSS JOIN day_bounds
                 WHERE e.arrived_at IS NOT NULL
                   AND COALESCE(p.is_confidential, FALSE) = FALSE
+                  AND e.branch_id = $4
+                  AND m.branch_id = $4
                   AND (
                       (a.start_time >= day_bounds.day_start AND a.start_time < day_bounds.day_end)
                       OR e.arrived_at >= day_bounds.day_start
@@ -101,7 +107,7 @@ const getQueueDisplay = (db) => async (req, res, next) => {
                 CASE priority WHEN 'Emergency' THEN 1 WHEN 'Urgent' THEN 2 ELSE 3 END,
                 CASE queue_stage WHEN 'In Exam' THEN 1 WHEN 'Ready for Exam' THEN 2 ELSE 3 END,
                 queue_number
-        `, [date, showOrderNumbers, DISPLAY_STAGES]);
+        `, [date, showOrderNumbers, DISPLAY_STAGES, targetBranchId]);
 
         const items = result.rows.map((row) => {
             const item = {
@@ -124,6 +130,7 @@ const getQueueDisplay = (db) => async (req, res, next) => {
         res.set('Cache-Control', 'public, max-age=10, stale-while-revalidate=20');
         res.json({
             date,
+            branchId: targetBranchId,
             updatedAt: new Date().toISOString(),
             items
         });

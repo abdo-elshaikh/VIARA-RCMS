@@ -45,6 +45,7 @@ import AttendancePermissionModal from '../hr/attendance/AttendancePermissionModa
 import LanguageToggle from '../ui/LanguageToggle';
 import KeyboardShortcutsHelp from '../ui/KeyboardShortcutsHelp';
 import GlobalSearch from './GlobalSearch';
+import BranchSwitcher from './BranchSwitcher';
 import { getLocalizedDemoUserName } from '../../utils/localizedDemoData';
 import { isEmergencyAccessActive } from '../../utils/effectivePermissions';
 import { getNavigationRoutes } from '../../config/routes';
@@ -1054,6 +1055,8 @@ const Topbar = ({ onMobileMenuClick, menuButtonRef }) => {
 
                 {/* Topbar Right Actions Suite */}
                 <div className="topbar-actions ms-auto flex min-w-0 shrink-0 items-center justify-end gap-1 sm:gap-1.5">
+                    <BranchSwitcher className="me-1 hidden sm:inline-flex" />
+
                     <LiveClock
                         isRtl={isRtl}
                         timezone={preferences?.timezone}

@@ -36,7 +36,7 @@ if (!fs.existsSync(rootEnvPath) && !fs.existsSync(backendEnvPath)) {
     console.warn('⚠️ No root or backend .env file found — relying on environment variables');
 }
 
-// NOTE: minor no-op change to trigger nodemon reload when env files are updated
+// NOTE: trigger nodemon/node --watch reload with updated DATABASE_URL
 
 // Validate environment variables before proceeding
 const validateEnv = require('./config/validateEnv');
@@ -62,7 +62,12 @@ try {
 }
 
 const express = require('express');
-const compression = require('compression');
+let compression = null;
+try {
+    compression = require('compression');
+} catch (_) {
+    // Optional dependency; disabled if not installed in runtime environment
+}
 const helmet = require('helmet');
 const {
     patientDataLimiter, invoiceLimiter, sensitiveOpLimiter, notificationLimiter, publicCaseStatusLimiter
@@ -245,7 +250,11 @@ const pool = new Pool({
     statement_timeout: 30000,
     query_timeout: 30000
 });
+const { requestContextMiddleware, backgroundPool } = require('./utils/databaseContext');
+if (process.env.NODE_ENV !== 'test') require('./utils/contextualPool').installContextualPool(pool);
+const workerPool = backgroundPool(pool);
 require('./services/attendanceConfigCache').setAttendanceConfigPool(pool);
+require('./utils/branchTransaction').setDefaultPool(pool);
 configureAuthDatabase(pool);
 realtimeService.setRealtimePool(pool);
 // Failed-login actor attribution in auditLogger (best-effort only).
@@ -303,6 +312,7 @@ if (process.env.NODE_ENV !== 'test') {
     waitForDatabaseConnection(pool)
         .then(async (client) => {
             try {
+                await require('./utils/assertDatabaseRole')(client);
                 await client.query('SELECT password_reset_token, password_reset_expires FROM users LIMIT 0');
                 await require('./services/rateLimitStore').initializeRateLimitStore();
             } catch (error) {
@@ -330,31 +340,31 @@ if (process.env.NODE_ENV !== 'test') {
                 logger.info(`🌝 Client URL: ${process.env.CLIENT_URL}`);
 
                 // Start workers only after the required schema is ready and the API is listening.
-                lifecycle.addStopCallback(startIntegrationWorker(pool));
-                lifecycle.addStopCallback(scheduleDataRetentionJobs(pool));
+                lifecycle.addStopCallback(startIntegrationWorker(workerPool));
+                lifecycle.addStopCallback(scheduleDataRetentionJobs(workerPool));
                 lifecycle.trackStartupTimer(setTimeout(() => {
-                    syncRegisteredModalitiesToOrthanc(pool)
+                    syncRegisteredModalitiesToOrthanc(workerPool)
                         .then((result) => logger.info('PACS modalities synchronized to Orthanc', result))
                         .catch((error) => logger.error('PACS modality startup synchronization failed', { error: error.message }));
                 }, 5000));
-                lifecycle.addStopCallback(startPacsMwlJob(pool));
-                lifecycle.addStopCallback(startPacsTieringJob(pool));
-                lifecycle.addStopCallback(startPacsAiAnalysisJob(pool));
-                lifecycle.addStopCallback(startAuditDetectionJob(pool));
-                lifecycle.addStopCallback(startShiftGuardJob(pool));
-                lifecycle.addStopCallback(startEndOfDayJob(pool));
-                lifecycle.addStopCallback(startLicensePingJob(pool));
-                lifecycle.addStopCallback(startTrialReportJob(pool));
-                lifecycle.addStopCallback(startCredentialExpiryJob(pool));
-                settleStaleAttendanceSessions(pool).catch((err) => logger.error('Initial stale attendance sweep error', { error: err.message }));
+                lifecycle.addStopCallback(startPacsMwlJob(workerPool));
+                lifecycle.addStopCallback(startPacsTieringJob(workerPool));
+                lifecycle.addStopCallback(startPacsAiAnalysisJob(workerPool));
+                lifecycle.addStopCallback(startAuditDetectionJob(workerPool));
+                lifecycle.addStopCallback(startShiftGuardJob(workerPool));
+                lifecycle.addStopCallback(startEndOfDayJob(workerPool));
+                lifecycle.addStopCallback(startLicensePingJob(workerPool));
+                lifecycle.addStopCallback(startTrialReportJob(workerPool));
+                lifecycle.addStopCallback(startCredentialExpiryJob(workerPool));
+                settleStaleAttendanceSessions(workerPool).catch((err) => logger.error('Initial stale attendance sweep error', { error: err.message }));
 
                 // Start PACS reconciliation queue worker
-                const pacsQueueWorker = startPacsReconciliationWorker(pool);
+                const pacsQueueWorker = startPacsReconciliationWorker(workerPool);
                 lifecycle.addStopCallback(pacsQueueWorker);
                 // Start notification job polling (every 60 seconds)
-                startPolling(pool, 60000);
-                startInventoryAlertPolling(pool);
-                startBackupScheduler(pool);
+                startPolling(workerPool, 60000);
+                startInventoryAlertPolling(workerPool);
+                startBackupScheduler(workerPool);
                 lifecycle.addStopCallback(stopPolling);
                 lifecycle.addStopCallback(stopInventoryAlertPolling);
                 lifecycle.addStopCallback(stopBackupScheduler);
@@ -371,6 +381,7 @@ if (process.env.NODE_ENV !== 'test') {
 
 // Global Middleware
 app.use(tracingMiddleware);
+app.use(requestContextMiddleware);
 app.use((req, res, next) => {
     const startedAt = process.hrtime.bigint();
     res.on('finish', () => {
@@ -425,6 +436,7 @@ const getAllowedOrigins = () => new Set([
     ...(process.env.NODE_ENV === 'production' ? [] : parseOriginList('http://localhost:5175')),
 ].filter(Boolean));
 
+const { buildConnectSources } = require('./utils/cspConnectSources');
 app.use(helmet({
     contentSecurityPolicy: {
         useDefaults: false,
@@ -433,7 +445,7 @@ app.use(helmet({
             scriptSrc: ["'self'"],
             styleSrc: ["'self'", "'unsafe-inline'"],
             imgSrc: ["'self'", "data:", "blob:", "https://*"],
-            connectSrc: ["'self'", "ws://*", "wss://*", ...Array.from(getAllowedOrigins()).map(o => o.replace(/^http/, 'ws'))],
+            connectSrc: buildConnectSources(getAllowedOrigins()),
             frameSrc: ["'self'", ...Array.from(getAllowedOrigins())],
             objectSrc: ["'none'"],
             baseUri: ["'self'"],
@@ -521,13 +533,15 @@ app.use((req, res, next) => {
 app.use('/api/webhooks/stripe', express.raw({ type: 'application/json' }));
 app.use('/api/webhooks/twilio', express.raw({ type: 'application/x-www-form-urlencoded' }));
 
-app.use(compression({
-    threshold: 1024,
-    filter: (req, res) => {
-        if (req.headers['x-no-compression']) return false;
-        return compression.filter(req, res);
-    }
-}));
+if (compression) {
+    app.use(compression({
+        threshold: 1024,
+        filter: (req, res) => {
+            if (req.headers['x-no-compression']) return false;
+            return compression.filter(req, res);
+        }
+    }));
+}
 
 // Global JSON limit: 1mb. DICOM/file upload routes define their own higher limits.
 app.use(express.json({ limit: '1mb' }));

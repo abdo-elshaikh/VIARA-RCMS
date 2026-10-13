@@ -15,6 +15,7 @@ import { getErrorMessage } from '../../utils/getErrorMessage';
 import { hasDeveloperOrAdminRole } from '../../utils/roles';
 import { selectCurrentUser } from '../../store/authSlice';
 import Modal from '../ui/Modal';
+import './MaintenanceManager.css';
 
 const emptyMaintenance = { modalityId: '', maintenanceType: 'Routine', scheduledDate: '', performedBy: '', cost: '', notes: '' };
 const emptyContract = { modalityId: '', providerName: '', contactInfo: '', startDate: '', endDate: '', cost: '', status: 'Active', notes: '' };
@@ -145,10 +146,10 @@ const MaintenanceManager = () => {
                 <Metric icon={FileText} label={copy('activeContracts')} value={summary.contracts} tone="emerald" />
             </section>
 
-            <div className={`grid items-start gap-5 ${canManageContracts ? 'xl:grid-cols-[minmax(0,1fr)_360px]' : ''}`}>
-                <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-                    <header className="flex flex-col gap-4 border-b border-slate-100 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/70 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex items-start gap-3">
+            <div className="grid min-w-0 items-start gap-5">
+                <section className="maintenance-schedule min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/70 sm:p-5">
+                        <div className="flex min-w-0 flex-1 basis-64 items-start gap-3">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-700 ring-1 ring-amber-100 dark:bg-amber-400/10 dark:text-amber-300 dark:ring-amber-900">
                                 <Wrench size={19} />
                             </span>
@@ -157,8 +158,8 @@ const MaintenanceManager = () => {
                                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{copy('description')}</p>
                             </div>
                         </div>
-                        <div className="flex flex-col gap-2 sm:flex-row">
-                            <label>
+                        <div className="maintenance-controls flex max-w-full flex-wrap items-center gap-2">
+                            <label className="maintenance-filter min-w-0 flex-1">
                                 <span className="sr-only">{copy('filterStatus')}</span>
                                 <select value={statusFilter} onChange={event => setStatusFilter(event.target.value)} className={inputClass}>
                                     <option value="all">{copy('allStatuses')}</option>
@@ -180,7 +181,7 @@ const MaintenanceManager = () => {
                                 <button
                                     type="button"
                                     onClick={() => setShowNew(value => !value)}
-                                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 text-sm font-bold text-white hover:bg-cyan-800 dark:bg-teal-600 dark:hover:bg-teal-700"
+                                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-teal-800 px-4 text-sm font-bold text-white hover:bg-teal-900 dark:bg-teal-600 dark:hover:bg-teal-700"
                                 >
                                     {showNew ? <X size={16} /> : <Plus size={16} />}
                                     {showNew ? copy('closeForm') : copy('schedule')}
@@ -237,17 +238,21 @@ const MaintenanceManager = () => {
                         <Empty title={copy(statusFilter === 'all' ? 'empty' : 'filteredEmpty')} description={copy(statusFilter === 'all' ? 'emptyDescription' : 'filteredEmptyDescription')} />
                     ) : (
                         <>
-                            <div className="divide-y divide-slate-100 md:hidden dark:divide-slate-800">
+                            <div className="maintenance-card-panel divide-y divide-slate-100 dark:divide-slate-800">
                                 {visibleRecords.map(record => (
                                     <MaintenanceCard key={record.maintenance_id} record={record} copy={copy} formatDate={formatDate} formatMoney={formatMoney} onStatus={handleStatusChange} updating={isUpdating} canManage={canManageMaintenance} />
                                 ))}
                             </div>
-                            <div className="hidden overflow-x-auto md:block">
-                                <table className="w-full min-w-[860px] text-sm">
+                            <div className="maintenance-table-panel">
+                                <table className="w-full table-fixed text-start text-sm">
+                                    <caption className="sr-only">{copy('title')}</caption>
+                                    <colgroup>
+                                        {[24, 29, 18, 13, 16].map((width, index) => <col key={index} style={{ width: `${width}%` }} />)}
+                                    </colgroup>
                                     <thead className="border-b border-slate-200 bg-slate-50 text-slate-500 dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
                                         <tr>
                                             {['machine', 'type', 'scheduledDate', 'cost', 'status'].map(key => (
-                                                <th key={key} className="px-4 py-3 text-start text-xs font-black uppercase tracking-wider">{copy(key)}</th>
+                                                <th key={key} scope="col" className="px-4 py-3.5 text-start text-xs font-bold">{copy(key)}</th>
                                             ))}
                                         </tr>
                                     </thead>
@@ -290,7 +295,7 @@ const MaintenanceManager = () => {
                         ) : visibleContracts.length === 0 ? (
                             <Empty title={copy('noContracts')} description={copy('noContractsDescription')} />
                         ) : (
-                            <div className="space-y-3 p-4">
+                            <div className="maintenance-contract-grid grid min-w-0 gap-3 p-4">
                                 {visibleContracts.map(contract => (
                                     <ContractCard key={contract.contract_id} contract={contract} copy={copy} formatDate={formatDate} formatMoney={formatMoney} />
                                 ))}
@@ -390,7 +395,7 @@ const StatusSelect = ({ record, copy, onStatus, updating, canManage }) => {
             disabled={updating}
             value={record.status}
             onChange={event => onStatus(record, event.target.value)}
-            className={`min-h-9 rounded-lg border px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-teal-400 disabled:opacity-50 ${
+            className={`min-h-11 max-w-full rounded-xl border px-2.5 text-xs font-bold outline-none focus:ring-2 focus:ring-teal-400 disabled:opacity-50 ${
                 record.status === 'Completed'
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300'
                     : record.status === 'In Progress'
@@ -410,9 +415,9 @@ const StatusSelect = ({ record, copy, onStatus, updating, canManage }) => {
 const MaintenanceCard = ({ record, copy, formatDate, formatMoney, onStatus, updating, canManage }) => (
     <article className="p-4">
         <div className="flex items-start justify-between gap-3">
-            <div>
-                <h3 className="font-black text-slate-900 dark:text-white">{record.modality_name}</h3>
-                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{copy(`types.${record.maintenance_type}`)}</p>
+            <div className="min-w-0 flex-1">
+                <h3 className="break-words font-bold text-slate-900 dark:text-white"><bdi>{record.modality_name}</bdi></h3>
+                <p className="mt-1 break-words text-xs leading-5 text-slate-500 dark:text-slate-400">{copy(`types.${record.maintenance_type}`, { defaultValue: record.maintenance_type || '—' })}</p>
             </div>
             <StatusSelect record={record} copy={copy} onStatus={onStatus} updating={updating} canManage={canManage} />
         </div>
@@ -441,16 +446,16 @@ const MaintenanceCard = ({ record, copy, formatDate, formatMoney, onStatus, upda
 );
 
 const MaintenanceRow = ({ record, copy, formatDate, formatMoney, onStatus, updating, canManage }) => (
-    <tr className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
-        <td className="px-4 py-4 font-black text-slate-900 dark:text-white">{record.modality_name}</td>
-        <td className="px-4 py-4">
-            <p className="font-semibold text-slate-700 dark:text-slate-200">{copy(`types.${record.maintenance_type}`)}</p>
-            {record.performed_by && <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{record.performed_by}</p>}
-            {record.notes && <p className="mt-1 max-w-xs truncate text-xs text-slate-500 dark:text-slate-400">{record.notes}</p>}
+    <tr className="align-top transition-colors even:bg-slate-50/40 hover:bg-teal-50/50 dark:even:bg-slate-950/20 dark:hover:bg-teal-950/20">
+        <td className="break-words px-4 py-5 font-bold leading-6 text-slate-900 dark:text-white"><bdi>{record.modality_name}</bdi></td>
+        <td className="break-words px-4 py-5">
+            <p className="font-semibold leading-6 text-slate-700 dark:text-slate-200">{copy(`types.${record.maintenance_type}`, { defaultValue: record.maintenance_type || '—' })}</p>
+            {record.performed_by && <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400"><bdi>{record.performed_by}</bdi></p>}
+            {record.notes && <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-slate-400" title={record.notes}>{record.notes}</p>}
         </td>
-        <td className="px-4 py-4 text-slate-600 dark:text-slate-300">{formatDate(record.scheduled_date)}</td>
-        <td className="px-4 py-4 text-slate-600 dark:text-slate-300 font-mono">{Number(record.cost || 0) > 0 ? formatMoney(record.cost) : '-'}</td>
-        <td className="px-4 py-4">
+        <td className="px-4 py-5 text-xs leading-6 text-slate-600 dark:text-slate-300"><bdi>{formatDate(record.scheduled_date)}</bdi></td>
+        <td className="break-words px-4 py-5 text-sm font-semibold leading-6 tabular-nums text-slate-700 dark:text-slate-300"><bdi>{Number(record.cost || 0) > 0 ? formatMoney(record.cost) : '—'}</bdi></td>
+        <td className="px-4 py-5">
             <StatusSelect record={record} copy={copy} onStatus={onStatus} updating={updating} canManage={canManage} />
         </td>
     </tr>
@@ -466,13 +471,13 @@ const ContractCard = ({ contract, copy, formatDate, formatMoney }) => {
             : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-300';
 
     return (
-        <article className="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+        <article className="min-w-0 break-words rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-slate-800 dark:bg-slate-950/50">
             <div className="flex items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0 flex-1">
                     <h3 className="text-sm font-black text-slate-900 dark:text-white">{contract.modality_name}</h3>
                     <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">{contract.provider_name}</p>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${tone}`}>{label}</span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${tone}`}>{label}</span>
             </div>
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
                 <div>

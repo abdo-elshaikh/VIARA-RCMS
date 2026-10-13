@@ -1,4 +1,5 @@
 const { getRequestQuery } = require('../utils/requestQuery');
+const requestBranchScope = require('../utils/requestBranchScope');
 /**
  * endOfDayController.js
  *
@@ -33,6 +34,7 @@ const getPending = (db) => async (req, res, next) => {
     try {
         const date      = getRequestQuery(req).date   || getBusinessDate();
         const sessionId = getRequestQuery(req).sessionId || null;
+        const branchId  = req.branchContext?.branchId || getRequestQuery(req).branchId || null;
         const limit     = Math.min(Math.max(Number(getRequestQuery(req).limit) || 100, 1), 500);
         const offset    = Math.max(Number(getRequestQuery(req).offset) || 0, 0);
         const actorUserId = req.user.user_id || req.user.id;
@@ -41,6 +43,7 @@ const getPending = (db) => async (req, res, next) => {
         const { rows, total } = await getPendingExams(db, {
             date,
             sessionId,
+            branchId,
             limit,
             offset,
             receptionistId: isReceptionist ? actorUserId : null,
@@ -71,9 +74,11 @@ const getPending = (db) => async (req, res, next) => {
 const getSummary = (db) => async (req, res, next) => {
     try {
         const date = getRequestQuery(req).date || getBusinessDate();
+        const branchId = req.branchContext?.branchId || getRequestQuery(req).branchId || null;
         const actorUserId = req.user.user_id || req.user.id;
         const summary = await getDaySummary(db, date, {
             sessionId: getRequestQuery(req).sessionId || null,
+            branchId,
             receptionistId: req.user.role === 'Receptionist' ? actorUserId : null,
             actorRole: req.user.role,
         });
@@ -93,6 +98,7 @@ const resolveOne = (db) => async (req, res, next) => {
         if (!action) throw new AppError('action is required (no_show | carry_forward | reschedule)', 400);
 
         const result = await resolveExam(db, {
+            branchId: requestBranchScope(req),
             appointmentId,
             action,
             newDate,
@@ -129,6 +135,7 @@ const bulkResolve = (db) => async (req, res, next) => {
         }
 
         const result = await bulkResolveExams(db, items, {
+            branchId: requestBranchScope(req),
             actorUserId : req.user.user_id || req.user.id,
             actorRole   : req.user.role,
         }, sessionId || null);

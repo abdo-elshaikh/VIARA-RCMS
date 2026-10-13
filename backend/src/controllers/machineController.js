@@ -34,8 +34,24 @@ const getMachines = (db) => async (req, res, next) => {
         const infrastructureFields = includeInfrastructure
             ? ', serial_number, aet, ip_address, port, dicom_role'
             : '';
+
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        const branchContextId = req.branchContext?.branchId || req.user?.branch_id;
+        const isOrgAdminUser = Boolean(req.user?.is_org_admin || req.user?.role === 'Developer');
+        const effectiveBranchId = explicitBranch || branchContextId;
+
+        const params = [];
+        let branchFilter = '';
+        if (effectiveBranchId && effectiveBranchId !== 'all') {
+            params.push(effectiveBranchId);
+            branchFilter = ` AND m.branch_id = $${params.length}`;
+        } else if (!isOrgAdminUser && branchContextId) {
+            params.push(branchContextId);
+            branchFilter = ` AND m.branch_id = $${params.length}`;
+        }
+
         const result = await db.query(`
-            SELECT m.modality_id, m.name, m.type, m.room_id, m.manufacturer, m.model,
+            SELECT m.modality_id, m.name, m.type, m.room_id, m.branch_id, m.manufacturer, m.model,
                    m.installation_date, m.location, m.status, m.dicom_synced, m.created_at, m.updated_at,
                    COALESCE(r.name, m.room_number) AS room_name,
                    COALESCE(r.room_number, m.room_number) AS room_number,
@@ -46,10 +62,10 @@ const getMachines = (db) => async (req, res, next) => {
             FROM modalities m
             LEFT JOIN rooms r ON m.room_id = r.room_id
             LEFT JOIN examination_types et ON m.modality_id = et.modality_id
-            WHERE m.deleted_at IS NULL
+            WHERE m.deleted_at IS NULL ${branchFilter}
             GROUP BY m.modality_id, r.name, r.room_number, r.status
             ORDER BY m.name
-        `);
+        `, params);
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -87,35 +103,37 @@ const createMachine = (db) => async (req, res, next) => {
         const data = createMachineSchema.parse(req.body);
         client = await db.connect();
         await client.query('BEGIN');
-        const duplicate = await client.query('SELECT 1 FROM modalities WHERE LOWER(name) = LOWER($1) AND deleted_at IS NULL', [data.name]);
-        if (duplicate.rows.length) throw new AppError('A machine with this name already exists', 409);
+        const targetBranchId = req.body.branchId || req.branchContext?.branchId || req.user?.branch_id || '00000000-0000-4000-8000-000000000001';
+        const duplicate = await client.query('SELECT 1 FROM modalities WHERE LOWER(name) = LOWER($1) AND branch_id = $2 AND deleted_at IS NULL', [data.name, targetBranchId]);
+        if (duplicate.rows.length) throw new AppError('A machine with this name already exists in the selected branch', 409);
 
         let roomId = null;
         if (data.roomId) {
             roomId = data.roomId;
         } else if (data.roomNumber) {
-            const rMatch = await client.query('SELECT room_id FROM rooms WHERE LOWER(room_number) = LOWER($1)', [data.roomNumber]);
+            const rMatch = await client.query('SELECT room_id FROM rooms WHERE LOWER(room_number) = LOWER($1) AND branch_id = $2', [data.roomNumber, targetBranchId]);
             if (rMatch.rows.length) {
                 roomId = rMatch.rows[0].room_id;
             } else {
                 const newRoom = await client.query(`
-                    INSERT INTO rooms (name, room_number, type, floor, status)
-                    VALUES ($1, $2, 'Imaging', $3, 'Active')
-                    ON CONFLICT (room_number) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+                    INSERT INTO rooms (name, room_number, type, floor, status, branch_id)
+                    VALUES ($1, $2, 'Imaging', $3, 'Active', $4)
+                    ON CONFLICT (branch_id, room_number) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
                     RETURNING room_id
-                `, [`جناح ${data.roomNumber}`, data.roomNumber, data.location || null]);
+                `, [`جناح ${data.roomNumber}`, data.roomNumber, data.location || null, targetBranchId]);
                 roomId = newRoom.rows[0].room_id;
             }
         }
 
         const query = `
-            INSERT INTO modalities (name, type, room_number, room_id, serial_number, manufacturer, model, installation_date, location, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO modalities (name, type, room_number, room_id, serial_number, manufacturer, model, installation_date, location, status, branch_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING *
         `;
         const result = await client.query(query, [
             data.name, data.type, data.roomNumber, roomId, data.serialNumber,
-            data.manufacturer, data.model, data.installationDate || null, data.location, data.status
+            data.manufacturer, data.model, data.installationDate || null, data.location, data.status,
+            targetBranchId
         ]);
         await logAction(client, {
             userId: req.user.user_id,

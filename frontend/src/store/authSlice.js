@@ -101,10 +101,20 @@ const readStoredUser = () => {
 
 clearLegacyTokenStorage();
 
+const readStoredBranchId = () => {
+    try {
+        if (typeof localStorage !== 'undefined') {
+            return localStorage.getItem('viara_active_branch_id') || null;
+        }
+    } catch {}
+    return null;
+};
+
 const initialState = {
     user: null,
     token: null,
     isAuthenticated: false,
+    activeBranchId: readStoredBranchId(),
 };
 
 const authSlice = createSlice({
@@ -124,10 +134,22 @@ const authSlice = createSlice({
             }
             state.user = syncEmergencyClaims({
                 ...user,
+                organization_id: user.organization_id || user.organizationId || null,
+                is_org_admin: Boolean(user.is_org_admin ?? user.isOrgAdmin),
                 permissions: user.permissions || []
             }, decodeUserFromToken(token));
             state.token = token;
             state.isAuthenticated = true;
+
+            const branches = Array.isArray(user?.branches) ? user.branches : [];
+            const resolvedBranch = branches.find(branch => branch.id === state.activeBranchId)?.id
+                || branches.find(branch => branch.id === user?.defaultBranchId)?.id
+                || (branches.length === 1 ? branches[0].id : null);
+            state.activeBranchId = resolvedBranch;
+            try {
+                if (resolvedBranch) localStorage.setItem('viara_active_branch_id', resolvedBranch);
+                else localStorage.removeItem('viara_active_branch_id');
+            } catch {}
 
             persistUser(state.user);
             clearLegacyTokenStorage();
@@ -145,6 +167,8 @@ const authSlice = createSlice({
             state.user = null;
             state.token = null;
             state.isAuthenticated = false;
+            state.activeBranchId = null;
+            if (typeof localStorage !== 'undefined') localStorage.removeItem('viara_active_branch_id');
 
             if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
             if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
@@ -222,13 +246,28 @@ const authSlice = createSlice({
             state.user = syncEmergencyClaims(state.user, null);
             persistUser(state.user);
         },
+        setActiveBranch: (state, action) => {
+            state.activeBranchId = action.payload || null;
+            try {
+                if (action.payload) {
+                    localStorage.setItem('viara_active_branch_id', String(action.payload));
+                } else {
+                    localStorage.removeItem('viara_active_branch_id');
+                }
+            } catch {}
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('viara:branch-changed', { detail: { branchId: action.payload } }));
+            }
+        },
     },
 });
 
-export const { setCredentials, logOut, rehydrateUser, updateCurrentUser, setAccessToken, clearEmergencyAccess, permissionsUpdated } = authSlice.actions;
+export const { setCredentials, logOut, rehydrateUser, updateCurrentUser, setAccessToken, clearEmergencyAccess, permissionsUpdated, setActiveBranch } = authSlice.actions;
 
 export default authSlice.reducer;
 
 export const selectCurrentUser = (state) => state.auth.user;
 export const selectCurrentToken = (state) => state.auth.token;
 export const selectIsAuthenticated = (state) => state.auth.isAuthenticated;
+export const selectActiveBranchId = (state) => state.auth.activeBranchId;
+export const selectUserBranches = (state) => state.auth.user?.branches || [];

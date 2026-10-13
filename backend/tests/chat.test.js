@@ -16,6 +16,10 @@ const queryText = (sql) => String(sql || '').replace(/\s+/g, ' ');
 
 const mockDefaultQueryResponse = async (sql, params = []) => {
     const text = queryText(sql);
+    if (text.includes('FROM user_branch_memberships')) {
+        const roles = { '00000000-0000-4000-8000-000000000001': 'Admin', '00000000-0000-4000-8000-000000000002': 'Receptionist', '00000000-0000-4000-8000-000000000004': 'Marketing' };
+        return { rows: [{ id: '00000000-0000-4000-8000-000000000001', organization_id: '00000000-0000-4000-8000-000000000000', branch_role: roles[params[0]], is_default: true }] };
+    }
 
     if (text.includes('SELECT current_session_id,')) {
         const roles = {

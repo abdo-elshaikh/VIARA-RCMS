@@ -4,7 +4,7 @@ const { decrypt } = require('../utils/crypto');
 const bcrypt = require('bcrypt');
 const { AppError } = require('../middleware/errorHandler');
 const { generateTokens } = require('./authController');
-const { triggerEventForRole } = require('../services/notificationJobService');
+const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
 const { resolvePortalDocument, UUID } = require('../services/portalDocumentService');
 const { buildPortalInvoicePdf } = require('../services/portalInvoicePdfService');
 const settingsService = require('../services/settingsService');
@@ -134,6 +134,8 @@ const getMyRecords = (db) => async (req, res, next) => {
                 a.body_part,
                 a.contrast_required,
                 a.preparation_status,
+                COALESCE(fb.name, 'Main Branch') AS branch_name,
+                COALESCE(e.branch_id, a.branch_id) AS branch_id,
                 m.type as modality,
                 et.name as exam_type_name,
                 et.preparation_instructions,
@@ -166,6 +168,7 @@ const getMyRecords = (db) => async (req, res, next) => {
             LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
             LEFT JOIN examinations e ON a.appointment_id = e.appointment_id
             LEFT JOIN users u ON e.performing_radiologist_id = u.user_id
+            LEFT JOIN financial_branches fb ON fb.branch_id = COALESCE(e.branch_id, a.branch_id)
             WHERE a.patient_id = $1
             ORDER BY a.start_time DESC
         `;
@@ -191,6 +194,8 @@ const getMyInvoices = (db) => async (req, res, next) => {
         const result = await db.query(`
             SELECT i.invoice_id, i.invoice_number, i.invoice_status, i.total_amount,
                    i.patient_payable_amount, i.generated_at, i.due_date,
+                   COALESCE(fb.name, 'Main Branch') AS branch_name,
+                   i.branch_id,
                    COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.invoice_id = i.invoice_id AND p.payment_status = 'Completed'), 0) as paid_amount,
                    COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.invoice_id = i.invoice_id AND r.status = 'Processed'), 0) as refunded_amount,
                    COALESCE((SELECT SUM(c.patient_amount) FROM credit_notes c WHERE c.invoice_id = i.invoice_id AND c.reversed_at IS NULL), 0) as credited_amount,
@@ -207,6 +212,7 @@ const getMyInvoices = (db) => async (req, res, next) => {
             LEFT JOIN appointments a ON i.appointment_id = a.appointment_id
             LEFT JOIN examinations e ON (i.exam_id = e.exam_id OR (i.exam_id IS NULL AND a.appointment_id IS NOT NULL AND e.appointment_id = a.appointment_id))
             LEFT JOIN examination_types et ON et.type_id = COALESCE(a.exam_type_id, e.exam_type_id)
+            LEFT JOIN financial_branches fb ON fb.branch_id = i.branch_id
             WHERE i.patient_id = $1::uuid
               AND (a.patient_id IS NULL OR a.patient_id = $1::uuid)
               AND (e.patient_id IS NULL OR e.patient_id = $1::uuid)

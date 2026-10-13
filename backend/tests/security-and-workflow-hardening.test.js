@@ -52,7 +52,9 @@ describe('Security & Workflow Hardening Tests', () => {
                 })
             };
 
-            const req = { body: { fullName: 'Dr. Jane Smith' }, user: { user_id: 'admin-1' } };
+            const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {}, body: { fullName: 'Dr. Jane Smith' }, user: { user_id: 'admin-1' } };
             const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
             const next = jest.fn();
 
@@ -99,6 +101,7 @@ describe('Security & Workflow Hardening Tests', () => {
                 query: jest.fn().mockResolvedValue({
                     rows: [
                         {
+        branch_id: '00000000-0000-4000-8000-000000000001',
                             invoice_id: 'inv-1',
                             invoice_number: 'INV-2026-0001',
                             invoice_status: 'Paid',

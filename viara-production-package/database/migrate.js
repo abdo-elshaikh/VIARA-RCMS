@@ -228,7 +228,19 @@ const MIGRATION_FILES = [
     '194_payroll_compensation_expansion.sql',
     '195_report_version_signature_metadata.sql',
     '196_critical_result_reminder_policy.sql',
-    '197_critical_result_admin_followup_tasks.sql'
+    '197_critical_result_admin_followup_tasks.sql',
+    '198_equipment_soft_delete_columns.sql',
+    '199_unified_branches_and_memberships.sql',
+    '200_display_call_events_branch.sql',
+    '201_chat_and_notifications_branch.sql',
+    '202_exam_branch_transfers.sql',
+    '203_branch_document_numbering.sql',
+    '204_emergency_access_cross_branch.sql',
+    '205_report_version_branch_context.sql',
+    '206_multibranch_row_level_security.sql',
+    '207_branch_membership_and_rls_hardening.sql',
+    '208_signed_branch_context.sql',
+    '209_portal_and_service_rls_context.sql'
 ];
 
 const SEED_FILES = [
@@ -305,6 +317,11 @@ const runMigrations = async (pool, { fresh = false } = {}) => {
     const client = await pool.connect();
     let lockAcquired = false;
     try {
+        const { getContextKey } = backendRequire('./src/utils/branchContextProof');
+        getContextKey();
+        if (!process.env.APP_DB_PASSWORD || !/^[a-f0-9]{64}$/i.test(process.env.APP_DB_PASSWORD)) {
+            throw new Error('APP_DB_PASSWORD must be generated as 32 random bytes in hexadecimal before migration');
+        }
         await client.query("SELECT pg_advisory_lock(hashtext('VIARA_schema_migrations'))");
         lockAcquired = true;
 
@@ -337,6 +354,10 @@ const runMigrations = async (pool, { fresh = false } = {}) => {
             await client.query('BEGIN');
             try {
                 await applySqlFile(client, migration, migration.filename);
+                if (migration.filename === '208_signed_branch_context.sql') {
+                    const { getContextKey } = backendRequire('./src/utils/branchContextProof');
+                    await client.query('INSERT INTO public.branch_context_signing_key(singleton, secret) VALUES(TRUE, $1) ON CONFLICT(singleton) DO UPDATE SET secret = EXCLUDED.secret', [getContextKey()]);
+                }
                 await client.query(
                     'INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)',
                     [migration.filename, migrationChecksum]
@@ -348,6 +369,11 @@ const runMigrations = async (pool, { fresh = false } = {}) => {
             }
         }
 
+        await client.query('INSERT INTO public.branch_context_signing_key(singleton, secret) VALUES(TRUE, $1) ON CONFLICT(singleton) DO UPDATE SET secret = EXCLUDED.secret', [getContextKey()]);
+        const appPassword = process.env.APP_DB_PASSWORD;
+        if (!appPassword || !/^[a-f0-9]{64}$/i.test(appPassword)) throw new Error('APP_DB_PASSWORD must be generated as 32 random bytes in hexadecimal');
+        const passwordSql = await client.query("SELECT format('ALTER ROLE rcms_app_user LOGIN PASSWORD %L', $1::text) AS sql", [appPassword]);
+        await client.query(passwordSql.rows[0].sql);
         console.log('✅ Migrations complete.');
     } finally {
         if (lockAcquired) {

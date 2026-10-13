@@ -2,8 +2,10 @@ const { getRequestQuery } = require('../utils/requestQuery');
 const { z } = require('zod');
 const { isGlobalReviewer, assertStaffSupervision } = require('../services/staffSupervisorService');
 const { AppError } = require('../middleware/errorHandler');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const { logAction } = require('../services/auditService');
 const { triggerEvent, triggerEventForRole } = require('../services/notificationJobService');
+const branchService = require('../services/branchService');
 const {
     updateProfileSchema,
     createShiftSchema, updateShiftSchema,
@@ -209,7 +211,7 @@ const updateEmployeeProfile = (db) => async (req, res, next) => {
         if (error?.code === '23505') return next(new AppError('Employee ID already exists for another employee', 409));
         next(error);
     } finally {
-        if (client) client.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -279,6 +281,25 @@ const getShifts = (db) => async (req, res, next) => {
             params.push(getRequestQuery(req).roomId);
         }
 
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        if (!req.user?.is_org_admin) {
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const allowedBranchIds = userBranches.branches.map(b => b.id);
+            if (explicitBranch && !allowedBranchIds.includes(explicitBranch)) {
+                return next(new AppError('You do not have access to this branch | ليس لديك صلاحية لهذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));
+            }
+            if (explicitBranch) {
+                query += ` AND s.branch_id = $${paramCount++}`;
+                params.push(explicitBranch);
+            } else {
+                query += ` AND s.branch_id = ANY($${paramCount++}::uuid[])`;
+                params.push(allowedBranchIds);
+            }
+        } else if (explicitBranch) {
+            query += ` AND s.branch_id = $${paramCount++}`;
+            params.push(explicitBranch);
+        }
+
         query += ` ORDER BY s.start_time ASC LIMIT $${paramCount}::int`;
         params.push(pageLimit);
         const result = await db.query(query, params);
@@ -338,6 +359,21 @@ const createShift = (db) => async (req, res, next) => {
             await assertStaffSupervision(client, req.user, data.userId, 'shifts', { lock: true });
         }
 
+        const targetBranchId = data.branchId || req.body?.branchId || req.branchContext?.branchId || req.user?.branch_id || '00000000-0000-4000-8000-000000000001';
+        if (data.roomId) {
+            const roomCheck = await client.query('SELECT branch_id FROM rooms WHERE room_id = $1', [data.roomId]);
+            if (roomCheck.rows.length && roomCheck.rows[0].branch_id !== targetBranchId) {
+                throw new AppError('Room does not belong to the selected branch | الغرفة لا تنتمي للفرع المختار', 400);
+            }
+        }
+        if (!req.user?.is_org_admin) {
+            const callerBranches = await require('../utils/requestBranches')(client, req);
+            const callerHasAccess = callerBranches.branches.some(b => b.id === targetBranchId);
+            if (!callerHasAccess) {
+                throw new AppError('You do not have access to schedule shifts for this branch | ليس لديك صلاحية لجدولة ورديات في هذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED');
+            }
+        }
+
         const conflict = await client.query(`
             SELECT shift_id FROM staff_shifts
             WHERE user_id = $1 AND start_time < $3 AND end_time > $2
@@ -346,9 +382,9 @@ const createShift = (db) => async (req, res, next) => {
         if (conflict.rows.length) throw new AppError('Employee already has an overlapping shift', 409);
 
         const result = await client.query(`
-            INSERT INTO staff_shifts (user_id, start_time, end_time, room_id, notes)
-            VALUES ($1, $2, $3, $4, $5) RETURNING *
-        `, [data.userId, data.startTime, data.endTime, data.roomId ?? null, data.notes]);
+            INSERT INTO staff_shifts (user_id, start_time, end_time, room_id, notes, branch_id)
+            VALUES ($1, $2, $3, $4, $5, $6) RETURNING *
+        `, [data.userId, data.startTime, data.endTime, data.roomId ?? null, data.notes, targetBranchId]);
 
         // Scheduling over an approved leave is usually a mistake, but shift
         // planners sometimes do it deliberately for on-call coverage — warn
@@ -691,6 +727,25 @@ const getAttendance = (db) => async (req, res, next) => {
             query += ` AND a.clock_out IS NULL`;
         }
 
+        const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
+        if (!req.user?.is_org_admin) {
+            const userBranches = await require('../utils/requestBranches')(db, req);
+            const allowedBranchIds = userBranches.branches.map(b => b.id);
+            if (explicitBranch && !allowedBranchIds.includes(explicitBranch)) {
+                return next(new AppError('You do not have access to this branch | ليس لديك صلاحية لهذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));
+            }
+            if (explicitBranch) {
+                query += ` AND a.branch_id = $${paramCount++}`;
+                params.push(explicitBranch);
+            } else {
+                query += ` AND a.branch_id = ANY($${paramCount++}::uuid[])`;
+                params.push(allowedBranchIds);
+            }
+        } else if (explicitBranch) {
+            query += ` AND a.branch_id = $${paramCount++}`;
+            params.push(explicitBranch);
+        }
+
         query += ` ORDER BY a.clock_in DESC LIMIT $${paramCount}::int`;
         params.push(limit);
         const result = await db.query(query, params);
@@ -792,6 +847,15 @@ const clockIn = (db) => async (req, res, next) => {
         if (!employee.rows.length) throw new AppError('Attendance is available to active employees only', 403);
         const employeeName = req.user?.full_name || req.user?.name || 'Employee';
 
+        const requestedBranchId = data.branchId || req.branchContext?.branchId;
+        if (requestedBranchId && !req.user?.is_org_admin) {
+            const userBranches = await branchService.getUserBranches(client, userId, false);
+            const hasAccess = userBranches.branches.some(b => b.id === requestedBranchId);
+            if (!hasAccess) {
+                throw new AppError('You are not assigned to work at this branch | لست مسجلاً للعمل في هذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED');
+            }
+        }
+
         const existing = await client.query('SELECT * FROM attendance_logs WHERE user_id = $1 AND clock_out IS NULL FOR UPDATE', [userId]);
         if (existing.rows.length > 0) {
             const activeSession = existing.rows[0];
@@ -892,10 +956,19 @@ const clockIn = (db) => async (req, res, next) => {
             ? (data.notes ? `${data.notes} (إذن تأخير معتمد: ${permittedLateMinutes} د)` : `إذن تأخير معتمد: ${permittedLateMinutes} د`)
             : data.notes;
 
+        const targetBranchId = shift?.branch_id || data.branchId || req.branchContext?.branchId || req.user?.branch_id || '00000000-0000-4000-8000-000000000001';
+        if (!req.user?.is_org_admin) {
+            const userBranches = await branchService.getUserBranches(client, userId, false);
+            const hasAccess = userBranches.branches.some(b => b.id === targetBranchId);
+            if (!hasAccess) {
+                throw new AppError('You are not assigned to work at this branch | لست مسجلاً للعمل في هذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED');
+            }
+        }
+
         const result = await client.query(`
             INSERT INTO attendance_logs (
                 user_id, clock_in, shift_id, late_minutes, status, notes,
-                shift_link_type, scheduled_start_snapshot, scheduled_end_snapshot
+                shift_link_type, scheduled_start_snapshot, scheduled_end_snapshot, branch_id
             )
             VALUES (
                 $1,
@@ -906,7 +979,8 @@ const clockIn = (db) => async (req, res, next) => {
                 $5,
                 $6,
                 $7,
-                $8
+                $8,
+                $9
             ) RETURNING *
         `, [
             userId,
@@ -916,7 +990,8 @@ const clockIn = (db) => async (req, res, next) => {
             appendNotes,
             shiftLinkType,
             scheduledStart,
-            scheduledEnd
+            scheduledEnd,
+            targetBranchId
         ]);
 
         const insertedLog = result.rows[0];
@@ -987,6 +1062,7 @@ const clockOut = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1::text, 11705))', [userId]);
 
         const isSupervisor = ['Admin', 'Developer', 'HR'].includes(req.user?.role);

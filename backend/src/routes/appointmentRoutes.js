@@ -94,6 +94,14 @@ module.exports = function appointmentRoutes(pool, auditService) {
         cancelAppointment(pool)
     );
 
+    router.post('/appointments/:id/cancel',
+        authenticateToken,
+        authorizeRole(['Receptionist', 'Admin']),
+        hasPermission(pool, 'DELETE_APPOINTMENTS'),
+        validateRequest(cancelAppointmentSchema),
+        cancelAppointment(pool)
+    );
+
     router.post('/appointments/:id/no-show',
         authenticateToken,
         authorizeRole(['Receptionist', 'Admin']),

@@ -13,11 +13,15 @@ const getKeyring = () => {
             logger.warn?.('Invalid ENCRYPTION_KEYS config; ignoring it for decryption fallback.', { error: error.message });
         }
     }
-    return {
-        default: process.env.ENCRYPTION_KEY,
-        backup: process.env.BACKUP_ENCRYPTION_KEY,
-        ...configured
+    const keyring = {
+        ...configured,
+        default: process.env.ENCRYPTION_KEY || configured.default,
+        backup: process.env.BACKUP_ENCRYPTION_KEY || configured.backup
     };
+    if (configured.default && process.env.ENCRYPTION_KEY && configured.default !== process.env.ENCRYPTION_KEY) {
+        keyring['configured_default'] = configured.default;
+    }
+    return keyring;
 };
 
 const getEncryptionKey = (keyId = process.env.ENCRYPTION_KEY_ID || 'default') => {
@@ -32,11 +36,11 @@ const getDecryptKeyCandidates = (preferredKeyId) => {
     const keyring = getKeyring();
     const orderedIds = [];
     if (preferredKeyId) orderedIds.push(preferredKeyId);
-    if (process.env.ENCRYPTION_KEY_ID && process.env.ENCRYPTION_KEY_ID !== preferredKeyId) {
+    if (process.env.ENCRYPTION_KEY_ID && !orderedIds.includes(process.env.ENCRYPTION_KEY_ID)) {
         orderedIds.push(process.env.ENCRYPTION_KEY_ID);
     }
-    if ('default' !== preferredKeyId) orderedIds.push('default');
-    if ('backup' !== preferredKeyId && process.env.BACKUP_ENCRYPTION_KEY) orderedIds.push('backup');
+    if (!orderedIds.includes('default')) orderedIds.push('default');
+    if (process.env.BACKUP_ENCRYPTION_KEY && !orderedIds.includes('backup')) orderedIds.push('backup');
     for (const [keyId, keyHex] of Object.entries(keyring)) {
         if (keyHex && !orderedIds.includes(keyId)) orderedIds.push(keyId);
     }
@@ -45,8 +49,9 @@ const getDecryptKeyCandidates = (preferredKeyId) => {
     for (const keyId of orderedIds) {
         const keyHex = keyring[keyId];
         if (!/^[0-9a-fA-F]{64}$/.test(keyHex || '')) continue;
-        if (!uniqueCandidates.find(candidate => candidate.keyId === keyId)) {
-            uniqueCandidates.push({ keyId, key: Buffer.from(keyHex, 'hex') });
+        const candidateBuf = Buffer.from(keyHex, 'hex');
+        if (!uniqueCandidates.some(candidate => candidate.key.equals(candidateBuf))) {
+            uniqueCandidates.push({ keyId, key: candidateBuf });
         }
     }
 

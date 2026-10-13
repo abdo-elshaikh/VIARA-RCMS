@@ -791,7 +791,7 @@ const Nurse = () => {
                                                 <div className="flex flex-wrap gap-1.5">
                                                     <QueuePill stage={item.queue_stage} t={t} />
                                                     <PriorityBadge priority={item.priority} label={t(`common.priority.${item.priority || 'Routine'}`, { defaultValue: item.priority || 'Routine' })} />
-                                                    <AssignmentBadge status={item.assignment_status} t={t} />
+                                                    <AssignmentBadge status={item.assignment_status} isAssignedToMe={item.is_assigned_to_me} assigneeName={item.nurse_name} t={t} />
                                                 </div>
                                                  {item.is_on_hold && (
                                                      <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-rose-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-rose-700 ring-1 ring-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:ring-rose-900/50">
@@ -1186,7 +1186,7 @@ const NurseQueueCard = ({
                 <div className={`${expanded ? '' : 'hidden'} mt-2.5 flex flex-wrap gap-1.5`}>
                     <QueuePill stage={item.queue_stage} t={t} />
                     <PriorityBadge priority={item.priority} label={t(`common.priority.${item.priority || 'Routine'}`, { defaultValue: item.priority || 'Routine' })} />
-                    <AssignmentBadge status={item.assignment_status} t={t} />
+                    <AssignmentBadge status={item.assignment_status} isAssignedToMe={item.is_assigned_to_me} assigneeName={item.nurse_name} t={t} />
                 </div>
             </div>
 

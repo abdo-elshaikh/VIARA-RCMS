@@ -15,6 +15,10 @@ const baseQuery = fetchBaseQuery({
         if (token) {
             headers.set('authorization', `Bearer ${token}`);
         }
+        const activeBranchId = getState().auth.activeBranchId || (typeof localStorage !== 'undefined' ? localStorage.getItem('viara_active_branch_id') : null);
+        if (activeBranchId) {
+            headers.set('x-branch-id', activeBranchId);
+        }
         return headers;
     },
 });
@@ -102,7 +106,7 @@ export const api = createApi({
     tagTypes: [
         'User', 'Profile', 'Sessions', 'Passkeys', 'Tokens', 'Patients', 'Appointments', 'ScheduleAvailability', 'WaitingList', 'PortalReviewRequests', 'ReferringDoctors', 'Machines', 'ExamTypes', 'Rooms', 'Dashboard', 'Staff', 'StaffProfiles', 'Shifts', 'Attendance', 'LeaveRequests', 'Payroll', 'PayrollRuns', 'PayrollCompensation', 'PayrollRules', 'PayrollDeductions', 'PayrollPenalties', 'Inventory', 'PatientHistory', 'PatientDuplicates', 'OrderTimeline', 'Queue', 'CaseReports', 'Invoices', 'Refunds', 'PartialPaymentExceptions', 'Cashier', 'Insurance', 'Claims', 'ReportTemplates', 'ResultDelivery', 'AiReportDrafts', 'Notifications', 'NotificationTemplates', 'NotificationJobs', 'Audit', 'RBAC', 'Privacy', 'Analytics', 'Documents', 'Integrations', 'Settings', 'PublicSettings', 'PublicLanding', 'AdminTelemetry', 'Governance', 'Backups', 'ClinicalSafety', 'Closures', 'Pacs', 'PacsQuarantine', 'PacsAudit', 'PacsAiAnalysis', 'FinancialReports', 'Commissions', 'ExpenseCategories', 'Expenses', 'Segments', 'Campaigns', 'Feedback', 'ChatMessages', 'StaffUsers', 'PatientConversations', 'DoctorConversations', 'ChatUnread', 'ChatChannels',
         'LoyaltyHistory', 'ClinicalRecalls', 'DoctorInteractions', 'DisplayBoard', 'SupervisorAssignments', 'SupervisorTasks', 'StaffSupervision', 'SupervisorInbox', 'SupervisorRecommendations',
-        'License', 'SystemUpdates', 'CriticalResultFollowups'
+        'License', 'SystemUpdates', 'CriticalResultFollowups', 'Branches', 'BranchMembers', 'Quota'
     ],
     endpoints: () => ({}),
 });

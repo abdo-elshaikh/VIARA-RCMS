@@ -204,6 +204,8 @@ const getDoctorCases = (db) => async (req, res, next) => {
                 a.clinical_indication,
                 a.body_part,
                 a.contrast_required,
+                COALESCE(fb.name, 'Main Branch') AS branch_name,
+                COALESCE(e.branch_id, a.branch_id) AS branch_id,
                 p.mrn              AS patient_mrn,
                 p.first_name_enc,
                 p.last_name_enc,
@@ -220,6 +222,7 @@ const getDoctorCases = (db) => async (req, res, next) => {
             LEFT JOIN modalities m ON a.modality_id = m.modality_id
             LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
             LEFT JOIN examinations e ON e.appointment_id = a.appointment_id
+            LEFT JOIN financial_branches fb ON fb.branch_id = COALESCE(e.branch_id, a.branch_id)
             WHERE a.referring_doctor_id = $1
               ${filters}
             ORDER BY a.start_time DESC
@@ -272,13 +275,16 @@ const getDoctorReport = (db) => async (req, res, next) => {
                 p.first_name_enc,
                 p.last_name_enc,
                 et.name             AS exam_type_name,
-                m.type              AS modality
+                m.type              AS modality,
+                COALESCE(fb.name, 'Main Branch') AS branch_name,
+                COALESCE(e.branch_id, a.branch_id) AS branch_id
             FROM examinations e
             JOIN appointments a ON e.appointment_id = a.appointment_id
             JOIN patients p ON a.patient_id = p.patient_id
             LEFT JOIN users u ON e.performing_radiologist_id = u.user_id
             LEFT JOIN examination_types et ON a.exam_type_id = et.type_id
             LEFT JOIN modalities m ON a.modality_id = m.modality_id
+            LEFT JOIN financial_branches fb ON fb.branch_id = COALESCE(e.branch_id, a.branch_id)
             WHERE e.exam_id = $1
               AND a.referring_doctor_id = $2
               AND e.report_status IN ('Finalized', 'Amended')

@@ -7,7 +7,11 @@ const requestBreakGlassSchema = z.object({
         .max(1000, 'Clinical justification must not exceed 1000 characters'),
     currentPassword: z.string()
         .min(1, 'Current password is required')
-        .max(200, 'Current password is too long')
+        .max(200, 'Current password is too long'),
+    targetBranchId: z.string().uuid('Invalid target branch UUID').optional().nullable(),
+    targetResourceId: z.string().uuid('Invalid target resource UUID').optional().nullable(),
+    targetResourceType: z.string().trim().max(50).optional().nullable(),
+    durationMinutes: z.number().int().min(15).max(120).optional()
 }).strict();
 
 const revokeBreakGlassSchema = z.object({

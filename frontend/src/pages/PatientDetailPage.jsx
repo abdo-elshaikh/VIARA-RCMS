@@ -486,7 +486,7 @@ const PatientDetailPage = () => {
     const contactReady = Boolean(patient.phone || patient.email);
     const portalReady = Boolean(patient.password_hash || patient.portal_enabled);
     const portalLoginUrl = getPatientPortalLoginUrl();
-    const deliveredReports = history.filter(item => item.delivered_at || item.last_result_delivery_at || String(item.latest_delivery_status || '').toLowerCase() === 'delivered').length;
+    const deliveredReports = history.filter(item => item.delivered_at || item.has_completed_delivery).length;
     const finalizedReports = history.filter(item => item.report_content || /final|approved|signed|completed/i.test(String(item.report_status || ''))).length;
     const pendingReports = Math.max(history.length - finalizedReports, 0);
     const paidVisits = history.filter(item => Number(item.payment_amount || 0) > 0).length;

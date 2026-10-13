@@ -389,5 +389,28 @@
     "phoneHotline": "Phone / hotline",
     "samplePatient": "Sample patient: Alex Morgan [M/45]",
     "portalWelcome": "Welcome to the Radiology Patient Portal"
+  },
+  "timezone": {
+    "title": "Facility Standard Timezone",
+    "hint": "Governs all patient appointments, clinical shifts, scan timestamps, and audit records.",
+    "detectDevice": "Use Device Timezone",
+    "matchesDevice": "Matches your device clock",
+    "diffAhead": "+{{count}}h from your device",
+    "diffBehind": "-{{count}}h from your device",
+    "changeBtn": "Change or search timezone...",
+    "quick": "Quick pick:",
+    "modalTitle": "Select Facility Timezone",
+    "modalSubtitle": "Synchronizes patient appointment shifts and imaging audit logs.",
+    "searchPlaceholder": "Search by city, country, or GMT offset (e.g. Cairo, Riyadh, Dubai)...",
+    "notFound": "No matching timezones found",
+    "enterManual": "Enter custom IANA identifier manually",
+    "regions": {
+      "all": "All",
+      "mena": "Middle East & Arab",
+      "africa": "Africa",
+      "asia": "Asia",
+      "europe": "Europe",
+      "americas": "Americas"
+    }
   }
 }

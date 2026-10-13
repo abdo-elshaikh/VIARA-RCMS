@@ -53,7 +53,8 @@ const getActiveEmergencyGrant = async (db, user = {}) => {
     }
 
     const result = await db.query(`
-        SELECT grant_id, user_id, permissions, granted_at, expires_at, status, session_id
+        SELECT grant_id, user_id, permissions, granted_at, expires_at, status, session_id,
+               organization_id, target_branch_id, target_resource_id, target_resource_type
         FROM emergency_access_logs
         WHERE grant_id = $1
           AND user_id = $2
@@ -112,7 +113,8 @@ const findActiveEmergencyGrant = async (db, { userId, sessionId } = {}) => {
     if (sessionId) params.push(sessionId);
 
     const result = await db.query(`
-        SELECT grant_id, user_id, permissions, granted_at, expires_at, status, session_id
+        SELECT grant_id, user_id, permissions, granted_at, expires_at, status, session_id,
+               organization_id, target_branch_id, target_resource_id, target_resource_type
         FROM emergency_access_logs
         WHERE user_id = $1
           AND status = 'Active'
@@ -141,7 +143,8 @@ const attachActiveEmergencyClaims = async (db, user = {}) => {
         ...baseClaims,
         emergencyAccessId: grant.grant_id,
         elevatedPermissions: grant.permissions,
-        breakGlassExpiry: new Date(grant.expires_at).getTime()
+        breakGlassExpiry: new Date(grant.expires_at).getTime(),
+        emergencyTargetBranchId: grant.target_branch_id || null
     };
 };
 

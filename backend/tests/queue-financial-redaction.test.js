@@ -24,6 +24,8 @@ describe('queue financial field visibility', () => {
                 .mockResolvedValueOnce({ rows: [{ total: 1, by_stage: { Arrived: 1 } }] }),
         };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             query: {},
             user: { user_id: '11111111-1111-4111-8111-111111111111', role: 'Receptionist' },
         };
@@ -57,6 +59,8 @@ describe('queue financial field visibility', () => {
                 .mockResolvedValueOnce({ rows: [{ total: 1, by_stage: { 'Payment Pending': 1 } }] }),
         };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             query: {},
             user: { user_id: '22222222-2222-4222-8222-222222222222', role: 'Receptionist' },
         };

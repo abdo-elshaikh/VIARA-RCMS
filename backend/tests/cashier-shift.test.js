@@ -35,6 +35,7 @@ describe('cashier shift lifecycle', () => {
             const db = {
                 query: jest.fn(async (sql) => {
                     const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
                     if (text.includes('FROM role_permissions')) return { rows: [] };
                     if (text.includes('FROM cashier_shifts s')) return { rows: [] };
                     throw new Error(`Unexpected SQL: ${text}`);
@@ -44,6 +45,8 @@ describe('cashier shift lifecycle', () => {
             const next = jest.fn();
 
             await getReconciliation(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 user: { user_id: USER_ID, role: 'Receptionist' },
                 query: { cashierId: '00000000-0000-4000-8000-000000000999' }
             }, res, next);
@@ -57,6 +60,7 @@ describe('cashier shift lifecycle', () => {
             const db = {
                 query: jest.fn(async (sql) => {
                     const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
                     if (text.includes('FROM role_permissions')) return { rows: [{ 1: 1 }] };
                     if (text.includes('FROM cashier_shifts s')) return { rows: [] };
                     throw new Error(`Unexpected SQL: ${text}`);
@@ -67,6 +71,8 @@ describe('cashier shift lifecycle', () => {
             const otherCashier = '00000000-0000-4000-8000-000000000999';
 
             await getReconciliation(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 user: { user_id: USER_ID, role: 'Accountant' },
                 query: { cashierId: otherCashier }
             }, res, next);
@@ -83,6 +89,7 @@ describe('cashier shift lifecycle', () => {
             const client = {
                 query: jest.fn(async (sql, params) => {
                     const text = String(sql);
+        if (text.includes('set_branch_context') || text.includes('clear_branch_context')) return { rows: [] };
                     if (text === 'BEGIN' || text === 'COMMIT') return { rows: [] };
                     if (text.includes('FROM cashier_shifts s')) {
                         return {
@@ -115,6 +122,8 @@ describe('cashier shift lifecycle', () => {
             const next = jest.fn();
 
             await closeShift(db)({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
                 params: { id: SHIFT_ID },
                 body: { countedCash: 400, varianceReason: 'short drawer', notes: 'recounted twice' },
                 user: { user_id: USER_ID, role: 'Cashier' },

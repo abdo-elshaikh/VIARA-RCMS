@@ -300,16 +300,24 @@ function signPayload(payload, privateKeyPem) {
 
 // Keep the same payload field order as before so an issued key stays byte-stable.
 function buildPayload(options) {
-    return {
-        v: 1,
+    const isV2 = options.maxBranches !== undefined || options.organizationId !== undefined;
+    const payload = {
+        v: isV2 ? 2 : 1,
         customerId: options.customerId,
-        edition: options.edition,
-        issuedAt: options.issuedAt,
-        expiresAt: options.expiresAt,
-        maxUsers: options.maxUsers,
-        fingerprint: options.fingerprint || null,
-        allowedModules: options.allowedModules || null,
     };
+    if (options.organizationId) {
+        payload.organizationId = options.organizationId;
+    }
+    payload.edition = options.edition;
+    payload.issuedAt = options.issuedAt;
+    payload.expiresAt = options.expiresAt;
+    payload.maxUsers = options.maxUsers;
+    if (options.maxBranches !== undefined) {
+        payload.maxBranches = options.maxBranches;
+    }
+    payload.fingerprint = options.fingerprint || null;
+    payload.allowedModules = options.allowedModules || null;
+    return payload;
 }
 
 // ── Presentation ────────────────────────────────────────────────────────────
@@ -555,12 +563,30 @@ function resolveFromFlags() {
     );
     if (!modulesCheck.ok) fail(`${modulesCheck.error} (--modules)`);
 
+    const rawBranches = flags['max-branches'] ?? flags.maxBranches;
+    let maxBranches = undefined;
+    if (rawBranches !== undefined) {
+        if (['u', 'unlimited', '-1'].includes(String(rawBranches).toLowerCase())) {
+            maxBranches = -1;
+        } else {
+            const parsed = Number(rawBranches);
+            if (!Number.isInteger(parsed) || (parsed !== -1 && parsed < 1)) {
+                fail('Maximum branches must be an integer >= 1 or -1 for unlimited (--max-branches)');
+            }
+            maxBranches = parsed;
+        }
+    }
+
+    const orgId = flags['org-id'] ?? flags.orgId;
+
     return buildPayload({
         customerId,
+        organizationId: orgId ? String(orgId) : null,
         edition,
         issuedAt: now.toISOString(),
         expiresAt,
         maxUsers: usersCheck.value,
+        maxBranches,
         fingerprint: fingerprintCheck.value,
         allowedModules: modulesCheck.value,
     });

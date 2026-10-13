@@ -29,6 +29,8 @@ const createResponse = () => ({
 });
 
 const makeReq = (overrides = {}) => ({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
     body: {},
     ip: '127.0.0.1',
     user: { user_id: USER_ID, role: 'Technician' },
@@ -39,6 +41,7 @@ const makeClient = (handlers) => {
     const client = {
         query: jest.fn(async (sql, params) => {
             const text = String(sql);
+            if (text.includes('FROM user_branch_memberships')) return { rows: [{ id: '00000000-0000-4000-8000-000000000001', branch_role: 'Technician' }] };
             for (const [matcher, handler] of Object.entries(handlers)) {
                 if (text.includes(matcher)) return handler(sql, params);
             }
@@ -77,6 +80,7 @@ describe('HR attendance controller', () => {
             '2026-08-03T04:00:00.000Z',
             '2026-08-04T04:00:00.000Z',
             USER_ID,
+            ['00000000-0000-4000-8000-000000000001'],
             100
         ]);
         expect(next).not.toHaveBeenCalled();
@@ -131,7 +135,7 @@ describe('HR attendance controller', () => {
 
         await clockIn(db)(makeReq(), res, next);
 
-        expect(captureInsertParams).toEqual([USER_ID, null, 0, 'Present', undefined, 'Unscheduled', null, null]);
+        expect(captureInsertParams).toEqual([USER_ID, null, 0, 'Present', undefined, 'Unscheduled', null, null, '00000000-0000-4000-8000-000000000001']);
         expect(res.status).toHaveBeenCalledWith(201);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ log_id: 'log-1' }));
         expect(next).not.toHaveBeenCalled();
@@ -194,6 +198,7 @@ describe('HR attendance controller', () => {
             '2026-08-03T00:00:00.000Z',
             '2026-08-10T00:00:00.000Z',
             USER_ID,
+            ['00000000-0000-4000-8000-000000000001'],
             500
         ]);
         expect(res.json).toHaveBeenCalledWith([]);
@@ -210,6 +215,8 @@ describe('HR attendance controller', () => {
         const next = jest.fn();
 
         await updateLeaveStatus(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { id: 'leave-1' },
             body: { status: 'Approved' },
             user: { user_id: USER_ID, role: 'HR' }
@@ -230,6 +237,8 @@ describe('HR attendance controller', () => {
         const next = jest.fn();
 
         await updateLeaveStatus(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { id: 'leave-1' },
             body: { status: 'Approved', notes: 'covered by standby staff' },
             user: { user_id: USER_ID, role: 'HR' }
@@ -255,6 +264,8 @@ describe('HR attendance controller', () => {
         const next = jest.fn();
 
         await getProductivityReport(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             query: { startDate: '2026-08-01', endDate: '2026-08-09' },
             user: { user_id: USER_ID, role: 'HR' }
         }), res, next);
@@ -293,6 +304,8 @@ describe('HR attendance controller', () => {
         const next = jest.fn();
 
         await recordManualAttendance(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             body: {
                 userId: '00000000-0000-4000-8000-000000000002',
                 clockIn: '2026-08-20T08:00:00.000Z',
@@ -323,6 +336,8 @@ describe('HR attendance controller', () => {
         const next = jest.fn();
 
         await upsertLeaveBalance(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { userId: '00000000-0000-4000-8000-000000000002' },
             body: {
                 year: 2026,
@@ -354,6 +369,8 @@ describe('HR attendance controller', () => {
         const next = jest.fn();
 
         await createLeaveRequest(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             body: {
                 userId: '00000000-0000-4000-8000-000000000002',
                 startDate: '2026-09-01',
@@ -380,6 +397,8 @@ describe('HR attendance controller', () => {
         const next = jest.fn();
 
         await createLeaveRequest(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             body: {
                 userId: '00000000-0000-4000-8000-000000000002',
                 startDate: '2026-09-01',
@@ -559,7 +578,9 @@ describe('HR attendance controller', () => {
         const res = createResponse();
         const next = jest.fn();
 
-        await createAttendancePermission(db)(makeReq({ body: validReq, user: { user_id: USER_ID, role: 'Technician' } }), res, next);
+        await createAttendancePermission(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {}, body: validReq, user: { user_id: USER_ID, role: 'Technician' } }), res, next);
 
         expect(res.status).toHaveBeenCalledWith(201);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ permission_id: 'perm-new-1', status: 'Pending' }));
@@ -581,6 +602,8 @@ describe('HR attendance controller', () => {
         const next = jest.fn();
 
         await getAttendanceAuditLedger(db)(makeReq({
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             query: { isViolation: 'false', limit: '50' },
             user: { user_id: USER_ID, role: 'HR' }
         }), res, next);

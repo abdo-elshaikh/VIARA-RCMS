@@ -22,7 +22,16 @@ const {
     deleteAiProfile,
     seedDemoData,
     clearDemoData,
-    getDemoStatus
+    getDemoStatus,
+    getBranches,
+    getBranchQuota,
+    getBranchDetails,
+    createBranch,
+    updateBranch,
+    archiveBranch,
+    getBranchMembers,
+    assignBranchMember,
+    removeBranchMember
 } = require('../controllers/settingsController');
 const { hasPermission } = require('../middleware/rbacMiddleware');
 const { aiSettingsTestLimiter } = require('../middleware/rateLimiters');
@@ -46,6 +55,19 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
 
     // Admin handles operational settings; Developer can access through the global bypass.
     router.put('/center', authenticateToken, authorizeRole(['Admin']), hasPermission(pool, 'MANAGE_SETTINGS'), updateCenterSettings(pool));
+
+    // Enterprise Multi-Branch Management
+    router.get('/branches/quota', authenticateToken, authorizeRole(['Admin', 'Developer']), getBranchQuota(pool));
+    router.get('/branches', authenticateToken, authorizeRole(['Admin', 'Radiologist', 'Technician', 'Nurse', 'Receptionist', 'Accountant', 'Cashier', 'Developer', 'HR', 'Marketing', 'Insurance_Staff']), getBranches(pool));
+    router.get('/branches/:id', authenticateToken, authorizeRole(['Admin', 'Radiologist', 'Technician', 'Nurse', 'Receptionist', 'Accountant', 'Cashier', 'Developer', 'HR', 'Marketing', 'Insurance_Staff']), getBranchDetails(pool));
+    router.post('/branches', authenticateToken, authorizeRole(['Admin', 'Developer']), hasPermission(pool, 'MANAGE_SETTINGS'), createBranch(pool));
+    router.put('/branches/:id', authenticateToken, authorizeRole(['Admin', 'Developer']), hasPermission(pool, 'MANAGE_SETTINGS'), updateBranch(pool));
+    router.delete('/branches/:id', authenticateToken, authorizeRole(['Admin', 'Developer']), hasPermission(pool, 'MANAGE_SETTINGS'), archiveBranch(pool));
+
+    // Branch Memberships
+    router.get('/branches/:id/members', authenticateToken, authorizeRole(['Admin', 'Developer']), getBranchMembers(pool));
+    router.post('/branches/:id/members', authenticateToken, authorizeRole(['Admin', 'Developer']), hasPermission(pool, 'MANAGE_USERS'), assignBranchMember(pool));
+    router.delete('/branches/:id/members/:userId', authenticateToken, authorizeRole(['Admin', 'Developer']), hasPermission(pool, 'MANAGE_USERS'), removeBranchMember(pool));
 
     router.get('/database', authenticateToken, authorizeRole(['Developer']), hasPermission(pool, 'MANAGE_DATABASE_CONFIG'), getDatabaseSettings(pool));
     router.put('/database', authenticateToken, authorizeRole(['Developer']), hasPermission(pool, 'MANAGE_DATABASE_CONFIG'), updateDatabaseSettings(pool));

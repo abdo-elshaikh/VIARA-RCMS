@@ -559,7 +559,7 @@ const QueueRow = React.memo(({
                             {t(`roleCommand.stages.${item.queue_stage}`, { defaultValue: item.queue_stage })}
                         </span>
                         <SafetySummary item={item} t={t} />
-                        <AssignmentBadge status={item.assignment_status} t={t} />
+                        <AssignmentBadge status={item.assignment_status} isAssignedToMe={item.is_assigned_to_me} assigneeName={item.technician_name || item.radiologist_name || item.nurse_name} t={t} />
                         {Boolean(item.critical_result) && (
                             <Badge tone="danger">
                                 <AlertTriangle size={12} strokeWidth={2.5} />
@@ -655,7 +655,7 @@ const QueueRow = React.memo(({
                                 {t(`roleCommand.stages.${item.queue_stage}`, { defaultValue: item.queue_stage })}
                             </span>
                             <SafetySummary item={item} t={t} />
-                            <AssignmentBadge status={item.assignment_status} t={t} />
+                            <AssignmentBadge status={item.assignment_status} isAssignedToMe={item.is_assigned_to_me} assigneeName={item.technician_name || item.radiologist_name || item.nurse_name} t={t} />
                             {Boolean(item.critical_result) && (
                                 <Badge tone="danger">
                                     <AlertTriangle size={12} strokeWidth={2.5} />

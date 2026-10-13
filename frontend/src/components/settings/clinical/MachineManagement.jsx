@@ -85,7 +85,7 @@ export const MachineDialog = ({ open, editing, form, setForm, onClose, onSave, b
             size="wide"
             width="max-w-2xl"
         >
-            <form onSubmit={onSave} className="space-y-5">
+            <form onSubmit={onSave} className="equipment-form space-y-5">
                 <div className="grid gap-4 sm:grid-cols-2">
                     <Field
                         label={t('settings.clinical.machines.name', { defaultValue: 'Machine Name' })}

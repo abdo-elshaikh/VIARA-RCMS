@@ -130,6 +130,7 @@ const getDefaultInvoiceSource = async (client, { appointmentId, examId, patientI
     const result = await client.query(`
          SELECT a.appointment_id, a.patient_id, a.payment_amount, a.payment_method,
              a.priority, a.priority_fee_amount,
+             COALESCE(a.branch_id, e.branch_id) AS branch_id,
                (a.start_time AT TIME ZONE COALESCE(NULLIF((
                    SELECT setting_value FROM system_settings WHERE setting_key = 'center.timezone'
                ), ''), 'Africa/Cairo'))::date AS service_date,
@@ -192,6 +193,7 @@ const getDefaultInvoiceSource = async (client, { appointmentId, examId, patientI
         patient_id: row.patient_id,
         appointment_id: row.appointment_id,
         exam_id: row.exam_id,
+        branch_id: row.branch_id || null,
         priority: row.priority || 'Routine',
         priorityFeeAmount,
         priorityFeeItem,

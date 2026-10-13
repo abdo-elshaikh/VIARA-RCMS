@@ -170,7 +170,7 @@ export const RoomDetailsView = ({
             {/* Room Hero Overview Banner */}
             <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-                    <div className="flex items-start gap-4">
+                    <div className="flex min-w-0 items-start gap-4">
                         <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-teal-600 ring-1 ring-teal-100 dark:bg-teal-950/40 dark:text-teal-300 dark:ring-teal-900">
                             <DoorClosed size={28} />
                         </div>
@@ -200,7 +200,9 @@ export const RoomDetailsView = ({
 
                             <div className="mt-2 flex flex-wrap items-center gap-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
                                 {room.floor && <span>{isArabic ? `الموقع: الطابق ${room.floor}` : `Location: Floor ${room.floor}`}</span>}
-                                <span>• {isArabic ? `تم الإنشاء: ${new Date(room.created_at).toLocaleDateString()}` : `Created: ${new Date(room.created_at).toLocaleDateString()}`}</span>
+                                {room.created_at && !Number.isNaN(Date.parse(room.created_at)) && (
+                                    <span>• {isArabic ? 'تم الإنشاء:' : 'Created:'} <bdi>{new Date(room.created_at).toLocaleDateString(isArabic ? 'ar-EG' : 'en-EG')}</bdi></span>
+                                )}
                                 {room.notes && <span className="text-slate-400">({room.notes})</span>}
                             </div>
                         </div>
@@ -346,7 +348,7 @@ export const RoomDetailsView = ({
                             </button>
                         </div>
                     ) : (
-                        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="equipment-card-grid grid min-w-0 gap-4">
                             {machines.map(m => (
                                 <div
                                     key={m.modality_id}
@@ -409,7 +411,7 @@ export const RoomDetailsView = ({
                             </p>
                         </div>
                     ) : (
-                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="equipment-card-grid grid min-w-0 gap-3">
                             {procedures.map(p => (
                                 <div
                                     key={p.type_id}
@@ -472,8 +474,8 @@ export const RoomDetailsView = ({
                             </p>
                         </div>
                     ) : (
-                        <div className="rounded-2xl border border-slate-200/80 bg-white overflow-hidden dark:border-slate-800 dark:bg-slate-900 shadow-sm">
-                            <table className="w-full text-start text-xs">
+                        <div className="rounded-2xl border border-slate-200/80 bg-white overflow-x-auto dark:border-slate-800 dark:bg-slate-900 shadow-sm">
+                            <table className="w-full min-w-[640px] text-start text-xs">
                                 <thead className="bg-slate-50 border-b border-slate-200/80 text-slate-500 dark:bg-slate-950/50 dark:border-slate-800">
                                     <tr>
                                         <th className="px-4 py-3 text-start font-bold">{t('timeDate')}</th>
@@ -527,7 +529,7 @@ export const RoomDetailsView = ({
                         {t('technicalSpecificationsSafetyFacilities')}
                     </h3>
 
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="equipment-card-grid grid min-w-0 gap-4">
                         <div className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-950/40">
                             <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
                                 <ShieldAlert size={16} className="text-teal-600" />

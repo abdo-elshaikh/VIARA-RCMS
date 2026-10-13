@@ -9,7 +9,8 @@ const t = (key) => ({
     'taskScope.mine': 'My tasks',
     'taskScope.available': 'Available tasks',
     'taskScope.status.Unassigned': 'Unassigned',
-    'taskScope.status.Assigned': 'Assigned to you',
+    'taskScope.status.Assigned': 'Assigned',
+    'taskScope.status.AssignedToMe': 'Assigned to you',
 }[key] || key);
 
 describe('ClinicalTaskScope', () => {
@@ -39,5 +40,16 @@ describe('ClinicalTaskScope', () => {
         const badge = screen.getByText('Unassigned');
         expect(badge).toBeInTheDocument();
         expect(badge).toHaveClass('border-amber-300');
+    });
+
+    it('distinguishes between task assigned to current user vs another staff member', () => {
+        const { rerender } = render(<AssignmentBadge status="Assigned" isAssignedToMe={true} t={t} />);
+        expect(screen.getByText('Assigned to you')).toBeInTheDocument();
+
+        rerender(<AssignmentBadge status="Assigned" isAssignedToMe={false} assigneeName="Tech. Sara" t={t} />);
+        expect(screen.getByText('Assigned: Tech. Sara')).toBeInTheDocument();
+
+        rerender(<AssignmentBadge status="Assigned" isAssignedToMe={false} t={t} />);
+        expect(screen.getByText('Assigned')).toBeInTheDocument();
     });
 });

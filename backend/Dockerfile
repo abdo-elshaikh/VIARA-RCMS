@@ -32,6 +32,8 @@ RUN if [ "$BACKUP_OFFSITE_ENABLED" = "true" ]; then \
 
 COPY --chown=node:node . .
 COPY clamd.conf /etc/clamav/clamd.conf
+# ClamAV's config parser rejects CRLF numeric values from Windows checkouts.
+RUN sed -i 's/\r$//' /etc/clamav/clamd.conf
 
 RUN mkdir -p /app/license /app/pacs-cold /app/pacs-worklists && chown node:node /app/license /app/pacs-cold /app/pacs-worklists
 

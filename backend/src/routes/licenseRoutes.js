@@ -74,6 +74,9 @@ module.exports = function licenseRoutes(pool, authenticateToken) {
         if (!result.valid) {
             return res.status(400).json({ valid: false, error: result.reason });
         }
+        if (result.payload.organizationId && result.payload.organizationId !== req.user?.organization_id) {
+            return res.status(403).json({ valid: false, error: 'License organization mismatch', code: 'LICENSE_ORGANIZATION_MISMATCH' });
+        }
 
         return res.json({ valid: true, license: result.payload });
     });
@@ -90,6 +93,11 @@ module.exports = function licenseRoutes(pool, authenticateToken) {
         }
 
         try {
+            const inspected = inspectLicenseKey(key);
+            if (!inspected.valid) throw new Error(inspected.reason);
+            if (inspected.payload.organizationId && inspected.payload.organizationId !== req.user?.organization_id) {
+                return res.status(403).json({ success: false, error: 'License organization mismatch', code: 'LICENSE_ORGANIZATION_MISMATCH' });
+            }
             const license = applyLicenseKey(key, { persist: true });
             if (req.app?.locals) {
                 req.app.locals.license = license;

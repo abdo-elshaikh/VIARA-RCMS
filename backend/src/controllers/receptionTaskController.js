@@ -1,4 +1,5 @@
 const { getRequestQuery } = require('../utils/requestQuery');
+const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
 const {
     claimReceptionTask,
     releaseReceptionTask,
@@ -29,6 +30,7 @@ const claimTask = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const assignment = await claimReceptionTask(client, {
             appointmentId,
@@ -57,7 +59,7 @@ const claimTask = (db) => async (req, res, next) => {
         await rollbackQuietly(client);
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -70,6 +72,7 @@ const releaseTask = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const assignment = await releaseReceptionTask(client, {
             appointmentId,
@@ -95,7 +98,7 @@ const releaseTask = (db) => async (req, res, next) => {
         await rollbackQuietly(client);
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -109,6 +112,7 @@ const transferTask = (db) => async (req, res, next) => {
 
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
 
         const assignment = await transferReceptionTask(client, {
             appointmentId,
@@ -138,7 +142,7 @@ const transferTask = (db) => async (req, res, next) => {
         await rollbackQuietly(client);
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 
@@ -185,6 +189,7 @@ const heartbeatTasks = (db) => async (req, res, next) => {
     try {
         client = await db.connect();
         await client.query('BEGIN');
+        await setBranchContext(client, req);
         const result = await renewReceptionTaskLeases(client, {
             user: req.user,
         });
@@ -194,7 +199,7 @@ const heartbeatTasks = (db) => async (req, res, next) => {
         await rollbackQuietly(client);
         next(error);
     } finally {
-        client?.release();
+        if (client) { await clearBranchContext(client); client.release(); }
     }
 };
 

@@ -531,6 +531,10 @@ describe('critical result notification workflow', () => {
 
         const statements = client.query.mock.calls.map(([sql]) => String(sql));
         expect(statements.filter(sql => sql.includes('INSERT INTO critical_result_acknowledgements'))).toHaveLength(1);
+        const portalRelease = statements.find(sql => sql.includes('INSERT INTO result_deliveries'));
+        expect(portalRelease).toContain("'Pending', NULL");
+        expect(portalRelease).toContain('AND rd.delivery_method = \'Patient Portal\'');
+        expect(portalRelease).not.toContain("rd.delivery_status = 'Delivered'");
         expect(timeline.indexOf('notify:Radiologist')).toBeLessThan(timeline.indexOf('COMMIT'));
         expect(timeline.indexOf('notify:Doctor')).toBeLessThan(timeline.indexOf('COMMIT'));
         expect(triggerEvent).toHaveBeenCalledWith(client, 'CriticalResultFinalized', expect.objectContaining({
