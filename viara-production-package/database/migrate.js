@@ -240,7 +240,13 @@ const MIGRATION_FILES = [
     '206_multibranch_row_level_security.sql',
     '207_branch_membership_and_rls_hardening.sql',
     '208_signed_branch_context.sql',
-    '209_portal_and_service_rls_context.sql'
+    '209_portal_and_service_rls_context.sql',
+    '210_readonly_backup_role.sql',
+    '211_emergency_readonly_rls_context.sql',
+    '212_license_quota_aggregate.sql',
+    '213_exam_branch_transfer_policy.sql',
+    '214_license_quota_patient_status.sql',
+    '215_license_quota_organization_scope.sql'
 ];
 
 const SEED_FILES = [
@@ -322,6 +328,9 @@ const runMigrations = async (pool, { fresh = false } = {}) => {
         if (!process.env.APP_DB_PASSWORD || !/^[a-f0-9]{64}$/i.test(process.env.APP_DB_PASSWORD)) {
             throw new Error('APP_DB_PASSWORD must be generated as 32 random bytes in hexadecimal before migration');
         }
+        if (!process.env.BACKUP_DB_PASSWORD || !/^[a-f0-9]{64}$/i.test(process.env.BACKUP_DB_PASSWORD)) {
+            throw new Error('BACKUP_DB_PASSWORD must be generated as 32 random bytes in hexadecimal before migration');
+        }
         await client.query("SELECT pg_advisory_lock(hashtext('VIARA_schema_migrations'))");
         lockAcquired = true;
 
@@ -374,6 +383,22 @@ const runMigrations = async (pool, { fresh = false } = {}) => {
         if (!appPassword || !/^[a-f0-9]{64}$/i.test(appPassword)) throw new Error('APP_DB_PASSWORD must be generated as 32 random bytes in hexadecimal');
         const passwordSql = await client.query("SELECT format('ALTER ROLE rcms_app_user LOGIN PASSWORD %L', $1::text) AS sql", [appPassword]);
         await client.query(passwordSql.rows[0].sql);
+        const backupPasswordSql = await client.query("SELECT format('ALTER ROLE viara_backup_reader LOGIN PASSWORD %L', $1::text) AS sql", [process.env.BACKUP_DB_PASSWORD]);
+        await client.query(backupPasswordSql.rows[0].sql);
+        await client.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'branch_context_signing_key') THEN
+                    REVOKE ALL ON TABLE public.branch_context_signing_key FROM PUBLIC, rcms_app_user;
+                END IF;
+                IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'portal_appointment_acl') THEN
+                    REVOKE ALL ON TABLE public.portal_appointment_acl FROM PUBLIC, rcms_app_user;
+                END IF;
+                IF EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'portal_exam_acl') THEN
+                    REVOKE ALL ON TABLE public.portal_exam_acl FROM PUBLIC, rcms_app_user;
+                END IF;
+            END $$;
+        `);
         console.log('✅ Migrations complete.');
     } finally {
         if (lockAcquired) {

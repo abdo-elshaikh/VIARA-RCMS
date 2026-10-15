@@ -1,0 +1,67 @@
+{
+  "syntheticOnly": true,
+  "noNetworkOrDatabaseConnections": true,
+  "optionalBranchRole": {
+    "actualRole": "Unassigned",
+    "adminGuardAllowed": false
+  },
+  "branchAdminGlobalPolicy": {
+    "canManageNursePolicy": false
+  },
+  "emergencyPacsScope": {
+    "unfilteredBrowseAllowed": false,
+    "unindexedOtherStudyAllowed": false,
+    "scopeDbQueries": 1,
+    "note": "Policy-level proof; no Orthanc query or assertion about live patient data."
+  },
+  "realtime": {
+    "identityKeys": [
+      "userId",
+      "role",
+      "branchId",
+      "branchIds",
+      "organizationId",
+      "isOrgAdmin"
+    ],
+    "branchAChannelReachedA": true,
+    "branchBNotificationReachedA": false,
+    "branchBNotificationReachedB": true
+  },
+  "notificationPersistence": {
+    "success": true,
+    "insertIncludesBranchId": true,
+    "insertIncludesOrganizationId": true
+  },
+  "emergencyPacsController": {
+    "forwarded": [],
+    "errors": [
+      "Study-scoped PACS access is required for emergency access",
+      "Study not found or not assigned to this user"
+    ],
+    "audits": [],
+    "examinationAuthorizationQueries": 1,
+    "coldAvailabilityQueries": 0
+  },
+  "viewerRenewal": [
+    {
+      "identityRole": "Technician",
+      "branchRole": "Radiologist",
+      "multipleBranches": false,
+      "initialAccepted": true,
+      "renewedRole": "Technician",
+      "retainsBranchId": true,
+      "afterAccepted": true,
+      "afterStatus": 200
+    },
+    {
+      "identityRole": "Radiologist",
+      "branchRole": "Radiologist",
+      "multipleBranches": true,
+      "initialAccepted": true,
+      "renewedRole": "Radiologist",
+      "retainsBranchId": true,
+      "afterAccepted": true,
+      "afterStatus": 200
+    }
+  ]
+}

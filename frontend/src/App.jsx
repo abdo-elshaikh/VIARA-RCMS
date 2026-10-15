@@ -3,9 +3,10 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from
 import toast, { Toaster } from 'react-hot-toast';
 import { useSelector, useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
-import { selectCurrentToken, selectCurrentUser, selectIsAuthenticated, rehydrateUser, logOut, setAccessToken, permissionsUpdated } from './store/authSlice';
+import { selectCurrentToken, selectCurrentUser, selectIsAuthenticated, selectActiveBranchId, rehydrateUser, logOut, setAccessToken, permissionsUpdated } from './store/authSlice';
 import ErrorBoundary from './components/ErrorBoundary';
-import { api, rehydrateSession, useGetPreferencesQuery } from './store/api';
+import { api, rehydrateSession, restoreStaffSession, useGetPreferencesQuery } from './store/api';
+import BranchSelectionRequired from './components/dashboard/BranchSelectionRequired';
 import Modal from './components/ui/Modal';
 import { DEFAULT_PREFERENCES, selectPreferences, updateAllPreferences } from './store/preferencesSlice';
 import { getRouteRoles } from './config/routes';
@@ -148,11 +149,17 @@ const showDesktopNotification = ({ title, body, tag, preferences, critical = fal
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     const user = useSelector(selectCurrentUser);
     const isAuthenticated = useSelector(selectIsAuthenticated);
+    const activeBranchId = useSelector(selectActiveBranchId);
     const location = useLocation();
 
     // Check authentication
     if (!isAuthenticated) {
         return <Navigate to="/login" state={{ from: location }} replace />;
+    }
+
+    if (Array.isArray(user?.branches) && !user.is_org_admin && user.role !== 'Developer'
+        && !user.branches.some(branch => branch.id === activeBranchId)) {
+        return <BranchSelectionRequired user={user} />;
     }
 
     // Force password change on first login
@@ -382,30 +389,27 @@ const App = () => {
     const currentUser = useSelector(selectCurrentUser);
     const preferences = useSelector((state) => state.preferences);
     const [isRehydrated, setIsRehydrated] = useState(false);
-    const [permissionsHydrated, setPermissionsHydrated] = useState(false);
+    const activeBranchId = useSelector(selectActiveBranchId);
 
     // Backfill effective permissions for sessions that were restored without
     // a permission list (e.g. legacy persisted users), so route/nav permission
     // gates operate on real data instead of failing open forever.
     useEffect(() => {
         if (!isAuthenticated) {
-            setPermissionsHydrated(false);
             return undefined;
         }
-        if (permissionsHydrated) return undefined;
-        setPermissionsHydrated(true);
         if (!api.endpoints?.getMyPermissions?.initiate) return undefined;
         let cancelled = false;
-        const result = dispatch(api.endpoints.getMyPermissions.initiate(undefined));
+        const result = dispatch(api.endpoints.getMyPermissions.initiate(undefined, { forceRefetch: true }));
         Promise.resolve(typeof result?.unwrap === 'function' ? result.unwrap() : result)
             .then((data) => {
                 if (!cancelled && Array.isArray(data?.permissions)) {
-                    dispatch(permissionsUpdated(data.permissions));
+                    dispatch(permissionsUpdated({ ...data, branchId: data.branchId ?? activeBranchId ?? null }));
                 }
         })
             .catch(() => {});
-        return () => { cancelled = true; };
-    }, [dispatch, isAuthenticated, permissionsHydrated]);
+        return () => { cancelled = true; result?.unsubscribe?.(); };
+    }, [dispatch, isAuthenticated, activeBranchId, currentUser?.user_id, currentUser?.role, currentUser?.organization_id]);
 
     // Apply global UI preferences
     useEffect(() => {
@@ -460,9 +464,9 @@ const App = () => {
     useEffect(() => {
         let active = true;
 
-        dispatch(rehydrateSession())
-            .then((token) => {
-                if (active) dispatch(rehydrateUser(token));
+        dispatch(restoreStaffSession())
+            .then((session) => {
+                if (active) dispatch(rehydrateUser(session));
             })
             .catch(() => {
                 if (active) dispatch(logOut());
@@ -597,7 +601,7 @@ const App = () => {
                                 Promise.resolve(typeof result?.unwrap === 'function' ? result.unwrap() : result)
                                     .then((data) => {
                                         if (Array.isArray(data?.permissions)) {
-                                            dispatch(permissionsUpdated(data.permissions));
+                                            dispatch(permissionsUpdated(data));
                                         }
                                     })
                                     .catch(() => {});

@@ -21,6 +21,11 @@ untested restore path is equivalent to having no backups.**
 UTC). Everything since the last successful dump is lost. Orthanc DICOM files
 are NOT covered by these dumps — see §6.
 
+**Restore Scope & Multi-Branch Limitation:**
+- **Full-Instance Restore Only:** Backups and restores operate at the PostgreSQL cluster/database level.
+- **No Branch-Level Restore:** Branch-level cherry-picking or single-branch restores are not supported due to shared foreign keys, global patient directories, unified user accounts, and system-wide relational integrity. Restoring a backup restores all branches together to that point in time.
+
+
 ---
 
 ## 1. Preconditions

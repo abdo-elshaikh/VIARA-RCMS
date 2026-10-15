@@ -141,13 +141,16 @@ const scheduleJob = async (db, opts) => {
     try {
         const idempotencyKey = buildIdempotencyKey(opts);
         const safeVariables = sanitizeNotificationVariables(opts.eventType, opts.variables || {});
+        const scope = require('../utils/databaseContext').currentContext();
+        const branchId = opts.branchId || scope?.branchId || null;
+        const organizationId = opts.organizationId || scope?.organizationId || null;
         const result = await db.query(`
             INSERT INTO notification_jobs (
                 event_type, channel, recipient_type, recipient_id,
                 recipient_contact, recipient_contact_enc, entity_type, entity_id, variables,
-                scheduled_for, idempotency_key, priority
+                scheduled_for, idempotency_key, priority, branch_id, organization_id
             )
-            VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, NULL, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
             DO UPDATE SET
                 scheduled_for = CASE
@@ -174,7 +177,9 @@ const scheduleJob = async (db, opts) => {
             safeVariables,
             opts.scheduledFor || new Date(),
             idempotencyKey,
-            opts.priority || 'Normal'
+            opts.priority || 'Normal',
+            branchId,
+            organizationId
         ]);
         return result.rows[0];
     } catch (err) {
@@ -621,6 +626,8 @@ const dispatchWithFallback = async (db, job, policies = []) => {
                 audienceType: job.recipient_type === 'Patient' ? 'Patient' : job.recipient_type === 'Doctor' ? 'Doctor' : 'Staff',
                 audienceRole: job.recipient_type === 'Staff' ? job.variables?.role : null,
                 priority: job.priority || 'Normal',
+                branchId: job.branch_id || null,
+                organizationId: job.organization_id || null,
                 idempotencyKey: job.job_id ? `notification-job:${job.job_id}:${channel}` : job.idempotency_key,
                 variables: job.variables
             }
@@ -1185,6 +1192,8 @@ const triggerEvent = async (db, eventType, payload = {}) => {
         }
 
         for (const job of jobs) {
+            job.branchId = payload.branchId || require('../utils/databaseContext').currentContext()?.branchId || null;
+            job.organizationId = payload.organizationId || require('../utils/databaseContext').currentContext()?.organizationId || null;
             await scheduleJob(db, job);
         }
         return { scheduled: jobs.length };
@@ -1197,9 +1206,22 @@ const triggerEvent = async (db, eventType, payload = {}) => {
 
 const triggerEventForRole = async (db, eventType, role, payload = {}) => {
     try {
-        const usersResult = await db.query(`
-            SELECT user_id FROM users WHERE role = $1 AND is_active = TRUE
-        `, [role]);
+        const scope = require('../utils/databaseContext').currentContext();
+        const branchId = payload.branchId || scope?.branchId || null;
+        const organizationId = payload.organizationId || scope?.organizationId || null;
+        if (!organizationId) throw new Error('Notification audience organization is required');
+        const usersResult = branchId
+            ? await db.query(`
+                SELECT u.user_id FROM users u
+                JOIN user_branch_memberships m ON m.user_id = u.user_id AND m.branch_id = $2 AND m.is_active = TRUE
+                JOIN branches b ON b.id = m.branch_id AND b.organization_id = u.organization_id AND b.status = 'active'
+                WHERE m.role = $1 AND u.is_active = TRUE AND NOT u.is_service_account
+                  AND u.organization_id = $3
+            `, [role, branchId, organizationId])
+            : await db.query(`
+                SELECT user_id FROM users WHERE role = $1 AND is_active = TRUE AND NOT is_service_account
+                  AND organization_id = $2
+            `, [role, organizationId]);
 
         let scheduled = 0;
         for (const user of usersResult.rows) {

@@ -3,6 +3,7 @@ const { AppError } = require('../middleware/errorHandler');
 const { decrypt } = require('../utils/crypto');
 const { writeAudit } = require('./pacsReconcileService');
 const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('./branchService');
+const { getActiveEmergencyGrant } = require('./emergencyAccessService');
 
 const safeEqual = (actual, expected) => {
     const a = Buffer.from(actual || '', 'utf8');
@@ -168,6 +169,38 @@ const resolveDicomWebStudyScope = async (db, subPath, query = {}) => {
     };
 };
 
+const assertImagingBranchScope = async (db, user, rows) => {
+    if (hasEmergencyClinicalPacsAccess(user)) {
+        const grant = await getActiveEmergencyGrant(db, user);
+        if (!grant || !grant.permissions.includes('VIEW_PACS_IMAGES') || !grant.organization_id
+            || grant.organization_id !== user.organization_id) {
+            throw new AppError('Emergency imaging grant is unavailable', 403, true, 'BRANCH_ACCESS_DENIED');
+        }
+        for (const row of rows) {
+            const branchId = row.branch_id || DEFAULT_HQ_BRANCH_ID;
+            const resourceType = String(grant.target_resource_type || '').toLowerCase();
+            const resourceId = ({ patient: row.patient_id, exam: row.exam_id,
+                examination: row.exam_id, appointment: row.appointment_id })[resourceType];
+            if (row.organization_id !== grant.organization_id
+                || (user.branch_id && branchId !== user.branch_id)
+                || (grant.target_branch_id && branchId !== grant.target_branch_id)
+                || (grant.target_resource_id && resourceId !== grant.target_resource_id)) {
+                throw new AppError('Imaging study is outside the emergency grant', 403, true, 'BRANCH_ACCESS_DENIED');
+            }
+        }
+        return;
+    }
+    if (user?.role === 'Developer' || user?.is_org_admin) return;
+    const memberships = await getUserBranches(db, user.user_id, false, user.organization_id);
+    const allowed = new Set((memberships.branches || []).map(branch => branch.id));
+    for (const row of rows) {
+        if (!allowed.has(row.branch_id || DEFAULT_HQ_BRANCH_ID)
+            || (user.organization_id && row.organization_id && row.organization_id !== user.organization_id)) {
+            throw new AppError('Branch access denied for this imaging study', 403, true, 'BRANCH_ACCESS_DENIED');
+        }
+    }
+};
+
 const assertStudyAccess = async (db, user, studyUids) => {
     const uids = parseStudyUidList(studyUids);
     if (!uids.length) {
@@ -178,10 +211,12 @@ const assertStudyAccess = async (db, user, studyUids) => {
     }
 
     const { rows } = await db.query(
-        `SELECT e.study_instance_uid, COALESCE(e.branch_id, a.branch_id, m.branch_id) AS branch_id
+        `SELECT e.study_instance_uid, e.exam_id, e.patient_id, e.appointment_id, b.organization_id,
+                COALESCE(e.branch_id, a.branch_id, m.branch_id) AS branch_id
          FROM examinations e
          LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
          LEFT JOIN modalities m ON m.modality_id = e.modality_id
+         LEFT JOIN branches b ON b.id = COALESCE(e.branch_id, a.branch_id, m.branch_id, '${DEFAULT_HQ_BRANCH_ID}'::uuid)
          WHERE e.study_instance_uid = ANY($1::text[])
            AND (
                  $4::boolean
@@ -200,17 +235,7 @@ const assertStudyAccess = async (db, user, studyUids) => {
         throw new AppError('Study not found or not assigned to this user', 403);
     }
 
-    // Enterprise branch scoping guard
-    if (user && user.role !== 'Developer' && !user.is_org_admin) {
-        const userBranchesResult = await getUserBranches(db, user.user_id, false, user.organization_id);
-        const allowedBranchIds = new Set((userBranchesResult.branches || []).map(b => b.id));
-        for (const row of rows) {
-            const rowBranchId = row.branch_id || DEFAULT_HQ_BRANCH_ID;
-            if (!allowedBranchIds.has(rowBranchId)) {
-                throw new AppError('Branch access denied for this imaging study', 403, true, 'BRANCH_ACCESS_DENIED');
-            }
-        }
-    }
+    await assertImagingBranchScope(db, user, rows);
 
     return uids;
 };
@@ -225,7 +250,7 @@ const assertExamViewerAccess = async (db, user, { examId = null, accessionNumber
     }
 
     const { rows } = await db.query(
-        `SELECT e.exam_id, e.order_number, e.study_instance_uid,
+        `SELECT e.exam_id, e.patient_id, e.appointment_id, b.organization_id, e.order_number, e.study_instance_uid,
                 e.images_available, e.image_count, e.first_image_received_at,
                 COALESCE(e.branch_id, a.branch_id, m.branch_id) AS branch_id,
                 et.name AS exam_type_name, m.name AS modality_name, p.mrn
@@ -233,6 +258,7 @@ const assertExamViewerAccess = async (db, user, { examId = null, accessionNumber
          LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
          LEFT JOIN examination_types et ON et.type_id = e.exam_type_id
          LEFT JOIN modalities m ON m.modality_id = e.modality_id
+         LEFT JOIN branches b ON b.id = COALESCE(e.branch_id, a.branch_id, m.branch_id, '${DEFAULT_HQ_BRANCH_ID}'::uuid)
          JOIN patients p ON p.patient_id = e.patient_id
          WHERE (($3::text <> '' AND e.exam_id::text = $3::text)
              OR ($4::text <> '' AND e.order_number = $4::text))
@@ -269,22 +295,14 @@ const assertExamViewerAccess = async (db, user, { examId = null, accessionNumber
         throw new AppError('Requested study does not belong to this examination order', 403);
     }
 
-    // Enterprise branch scoping guard
-    if (user && user.role !== 'Developer' && !user.is_org_admin) {
-        const userBranchesResult = await getUserBranches(db, user.user_id, false, user.organization_id);
-        const allowedBranchIds = new Set((userBranchesResult.branches || []).map(b => b.id));
-        const examBranchId = exam.branch_id || DEFAULT_HQ_BRANCH_ID;
-        if (!allowedBranchIds.has(examBranchId)) {
-            throw new AppError('Branch access denied for this examination viewer session', 403, true, 'BRANCH_ACCESS_DENIED');
-        }
-    }
+    await assertImagingBranchScope(db, user, [exam]);
 
     return exam;
 };
 
 const assertExamImagingAccess = async (db, user, examId) => {
     const { rows } = await db.query(
-        `SELECT e.exam_id, e.order_number, e.study_instance_uid, e.orthanc_study_id,
+        `SELECT e.exam_id, e.patient_id, e.appointment_id, b.organization_id, e.order_number, e.study_instance_uid, e.orthanc_study_id,
                 e.images_available, e.image_count, e.priority,
                 e.status,
                 COALESCE(e.branch_id, a.branch_id, m.branch_id) AS branch_id,
@@ -293,6 +311,7 @@ const assertExamImagingAccess = async (db, user, examId) => {
          LEFT JOIN appointments a ON a.appointment_id = e.appointment_id
          LEFT JOIN examination_types et ON et.type_id = e.exam_type_id
          LEFT JOIN modalities m ON m.modality_id = e.modality_id
+         LEFT JOIN branches b ON b.id = COALESCE(e.branch_id, a.branch_id, m.branch_id, '${DEFAULT_HQ_BRANCH_ID}'::uuid)
          JOIN patients p ON p.patient_id = e.patient_id
          WHERE e.exam_id = $1
            AND (
@@ -312,14 +331,7 @@ const assertExamImagingAccess = async (db, user, examId) => {
     }
 
     const exam = rows[0];
-    if (user && user.role !== 'Developer' && !user.is_org_admin) {
-        const userBranchesResult = await getUserBranches(db, user.user_id, false, user.organization_id);
-        const allowedBranchIds = new Set((userBranchesResult.branches || []).map(b => b.id));
-        const examBranchId = exam.branch_id || DEFAULT_HQ_BRANCH_ID;
-        if (!allowedBranchIds.has(examBranchId)) {
-            throw new AppError('Branch access denied for this examination', 403, true, 'BRANCH_ACCESS_DENIED');
-        }
-    }
+    await assertImagingBranchScope(db, user, [exam]);
 
     return exam;
 };
@@ -328,7 +340,7 @@ const assertDicomWebStudyScope = async (db, req, subPath) => {
     const { studyUids: requested, unresolvedEntityUids } = await resolveDicomWebStudyScope(db, subPath, req.query || {});
     const pathStudyUids = getPathStudyUids(subPath);
     const isStudyBrowse = req.method === 'GET' && /^\/dicom-web\/studies\/?$/.test(subPath);
-    const isGlobal = hasEmergencyClinicalPacsAccess(req.user);
+    const isGlobal = hasGlobalPacsAccess(req.user) && !hasEmergencyClinicalPacsAccess(req.user);
 
     if (['pacs_viewer_cookie', 'pacs_viewer_bearer'].includes(req.authType)) {
         const allowed = parseStudyUidList(req.user?.study_instance_uids || []);
@@ -344,22 +356,33 @@ const assertDicomWebStudyScope = async (db, req, subPath) => {
         if (denied.length) {
             throw new AppError('PACS viewer session is not scoped to this study', 403);
         }
+        if (hasEmergencyClinicalPacsAccess(req.user)) await assertStudyAccess(db, req.user, requested);
         return;
     }
 
-    if (!isGlobal) {
-        if (isStudyBrowse && !requested.length) {
-            throw new AppError('Study-scoped PACS access is required', 403);
-        }
-        if (!requested.length && unresolvedEntityUids.length) {
-            throw new AppError('Requested DICOM object is not indexed for this user', 403);
-        }
+    if (hasEmergencyClinicalPacsAccess(req.user)) {
         if (!requested.length) {
+            throw new AppError('Study-scoped PACS access is required for emergency access', 403);
+        }
+        await assertStudyAccess(db, req.user, requested);
+        return;
+    }
+
+    if (isStudyBrowse && !requested.length) {
+        const queryKeys = Object.keys(req.query || {}).filter((k) => req.query[k] !== undefined && req.query[k] !== '');
+        if (!queryKeys.length) {
             throw new AppError('Study-scoped PACS access is required', 403);
         }
-        if (requested.length) {
-            await assertStudyAccess(db, req.user, requested);
-        }
+        return;
+    }
+    if (!requested.length && unresolvedEntityUids.length) {
+        throw new AppError('Requested DICOM object is not indexed for this user', 403);
+    }
+    if (!requested.length) {
+        throw new AppError('Study-scoped PACS access is required', 403);
+    }
+    if (requested.length) {
+        await assertStudyAccess(db, req.user, requested);
     }
 };
 

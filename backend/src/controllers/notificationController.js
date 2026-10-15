@@ -58,7 +58,26 @@ const matchesNotificationSearch = (row, q) => {
     ].some(value => normalizeSearch(value).includes(term));
 };
 
+const addNotificationScope = (filters, values, param, req) => {
+    const organizationId = req.user?.organization_id || req.branchContext?.organizationId || null;
+    const userId = getUserId(req);
+    filters += ` AND (n.organization_id = $${param} OR (n.organization_id IS NULL AND n.recipient_user_id = $${param + 1}))`;
+    values.push(organizationId, userId);
+    param += 2;
+    const branchId = req.branchContext?.branchId || null;
+    if (branchId) {
+        filters += ` AND (n.branch_id = $${param} OR (n.branch_id IS NULL AND n.recipient_user_id = $${param + 1}))`;
+        values.push(branchId, userId);
+        param += 2;
+    } else if (!req.user?.is_org_admin && req.user?.role !== 'Developer') {
+        filters += ` AND n.branch_id IS NULL AND n.recipient_user_id = $${param++}`;
+        values.push(userId);
+    }
+    return { filters, values, param };
+};
+
 const addStaffVisibilityFilter = (filters, values, param, req) => {
+    ({ filters, values, param } = addNotificationScope(filters, values, param, req));
     if (FULL_NOTIFICATION_ROLES.has(req.user?.role)) return { filters, values, param };
 
     const role = req.user?.role || '';
@@ -103,7 +122,7 @@ const getNotifications = (db) => async (req, res, next) => {
         const explicitBranch = getRequestQuery(req).branchId || req.headers?.['x-branch-id'];
         if (explicitBranch) {
             if (!req.user?.is_org_admin) {
-                const ub = await branchService.getUserBranches(db, userId, false);
+                const ub = await branchService.getUserBranches(db, userId, false, req.user?.organization_id);
                 const userBranchIds = ub.branches.map(b => b.id);
                 if (!userBranchIds.includes(explicitBranch)) {
                     return next(new AppError('You do not have access to this branch | ليس لديك صلاحية لهذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));
@@ -269,13 +288,13 @@ const getMyNotifications = (db) => async (req, res, next) => {
         const userId = getUserId(req);
         const role = req.user?.role || '';
         const { limit = 50, offset = 0, q, channel, status, eventType, category, priority, readState } = getRequestQuery(req);
-        const values = [userId, role];
-        let param = 3;
+        let { filters: scopeFilter, values, param } = addNotificationScope('', [userId, role], 3, req);
         let filters = ` AND n.channel = 'InApp' AND (
             n.recipient_user_id = $1
             OR (n.audience_type = 'Global' AND $2::text IN ('Admin', 'Developer'))
             OR (n.audience_type = 'Staff' AND n.recipient_user_id IS NULL AND n.audience_role = $2)
         )`;
+        filters += scopeFilter;
         if (channel) { filters += ` AND n.channel = $${param++}`; values.push(channel); }
         if (status) { filters += ` AND n.status = $${param++}`; values.push(status); }
         if (eventType) { filters += ` AND n.event_type = $${param++}`; values.push(eventType); }
@@ -396,11 +415,13 @@ const markMyNotificationRead = (db) => async (req, res, next) => {
         const { id } = req.params;
         const userId = getUserId(req);
         const role = req.user?.role || '';
+        const scope = addNotificationScope('', [userId, id, role], 4, req);
         const result = await db.query(`
             INSERT INTO notification_reads (notification_id, user_id, read_at)
             SELECT n.notification_id, $1, NOW()
             FROM notifications n
             WHERE n.notification_id = $2
+              ${scope.filters}
               AND n.channel = 'InApp'
               AND (
                   n.recipient_user_id = $1
@@ -410,7 +431,7 @@ const markMyNotificationRead = (db) => async (req, res, next) => {
             ON CONFLICT (notification_id, user_id)
             DO UPDATE SET read_at = COALESCE(notification_reads.read_at, EXCLUDED.read_at)
             RETURNING notification_id, TRUE AS is_read, read_at
-        `, [userId, id, role]);
+        `, scope.values);
 
         if (result.rows.length === 0) {
             return next(new AppError('Notification not found', 404));
@@ -426,11 +447,13 @@ const markAllMyNotificationsRead = (db) => async (req, res, next) => {
     try {
         const userId = getUserId(req);
         const role = req.user?.role || '';
+        const scope = addNotificationScope('', [userId, role], 3, req);
         const result = await db.query(`
             INSERT INTO notification_reads (notification_id, user_id, read_at)
             SELECT n.notification_id, $1, NOW()
             FROM notifications n
             WHERE n.channel = 'InApp'
+              ${scope.filters}
               AND (
                 n.recipient_user_id = $1
                 OR (n.audience_type = 'Global' AND $2::text IN ('Admin', 'Developer'))
@@ -443,7 +466,7 @@ const markAllMyNotificationsRead = (db) => async (req, res, next) => {
             ON CONFLICT (notification_id, user_id)
             DO UPDATE SET read_at = COALESCE(notification_reads.read_at, EXCLUDED.read_at)
             RETURNING notification_id
-        `, [userId, role]);
+        `, scope.values);
         res.json({ message: 'All notifications marked as read', count: result.rowCount });
     } catch (error) {
         next(error);

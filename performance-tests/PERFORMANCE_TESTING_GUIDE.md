@@ -1,491 +1,146 @@
 # VIARA Performance Testing Guide
 
-This guide covers how to prepare the environment, run every performance scenario, interpret results, and debug failures. It is the operational companion to `PERFORMANCE_TEST_PLAN.md`.
-
----
-
-## Table of Contents
-
-1. [Prerequisites](#1-prerequisites)
-2. [Seed Data Setup](#2-seed-data-setup)
-3. [Running Scenarios](#3-running-scenarios)
-4. [Acceptance Criteria](#4-acceptance-criteria)
-5. [Interpreting Results](#5-interpreting-results)
-6. [Debugging Failures](#6-debugging-failures)
-7. [Reset Between Runs](#7-reset-between-runs)
-
----
-
-## 1. Prerequisites
-
-### 1.1 Clean Environment Checklist
-
-Before starting any performance run, verify each item:
-
-| Check | Command | Expected |
-|---|---|---|
-| Docker stack healthy | `docker compose ps` | All services `Up (healthy)` |
-| Backend reachable | `curl http://localhost:3000/health/ready` | `200 OK` |
-| No background load | `docker stats --no-stream` | CPU < 10% at idle |
-| Redis reachable | `docker compose exec redis redis-cli ping` | `PONG` |
-| Database reachable | `docker compose exec postgres pg_isready` | `accepting connections` |
-
-A service that is merely `Up` but not `healthy` will produce misleading results — wait for all health checks to pass.
-
-### 1.2 Required Tools
-
-The harness runs on **Node.js v20 or later** with no external npm dependencies (it uses the built-in `fetch` API). No additional tools need to be installed for the custom Node.js harness.
-
-For the optional k6 script (`performance-tests/k6/viara_load_test.js`), install k6 separately:
-
-```bash
-# macOS
-brew install k6
-
-# Windows (Chocolatey)
-choco install k6
-
-# Linux
-sudo apt-get install k6
-```
-
-Check versions:
-
-```bash
-node --version   # must be >= 20.0.0
-k6 version       # optional, only for k6 scenarios
-```
-
-### 1.3 Environment Variables
-
-The harness reads its configuration from the root `.env` file at `d:\VIARA\.env`. The following variables are recognised:
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `PERF_BASE_URL` | `http://localhost:3000` | Target API base URL |
-| `PERF_ADMIN_EMAIL` | `developer@viara.com` | Admin/Developer account email |
-| `PERF_ADMIN_PASSWORD` | *(TEST_USER_PASSWORD)* | Admin password |
-| `PERF_RECEPTION_EMAIL` | `reception@viara.com` | Receptionist account email |
-| `PERF_RECEPTION_PASSWORD` | *(TEST_USER_PASSWORD)* | Receptionist password |
-| `PERF_RADIOLOGIST_EMAIL` | `alice@viara.com` | Radiologist account email |
-| `PERF_RADIOLOGIST_PASSWORD` | *(TEST_USER_PASSWORD)* | Radiologist password |
-| `PERF_CASHIER_EMAIL` | `cashier@viara.com` | Cashier account email |
-| `PERF_CASHIER_PASSWORD` | *(TEST_USER_PASSWORD)* | Cashier password |
-| `PERF_PATIENT_MRN` | `MRN-000001` | Patient MRN for portal tests |
-| `PERF_PATIENT_PASSWORD` | `Patient@123` | Patient portal password |
-| `TEST_USER_PASSWORD` | *(required by seed)* | Master password used by seed.js |
-| `DATABASE_URL` | *(required by seed)* | PostgreSQL connection string |
-| `PERF_TIMEOUT_MS` | `15000` | Per-request HTTP timeout in ms |
-| `PERF_THINK_MIN_MS` | `500` | Minimum think time between actions |
-| `PERF_THINK_MAX_MS` | `2000` | Maximum think time between actions |
-
-Override any variable on the command line:
-
-```bash
-PERF_BASE_URL=http://staging.viara.internal:3000 node performance-tests/run.js --scenario=08 --users=25
-```
-
----
-
-## 2. Seed Data Setup
-
-Performance tests require seeded users and at least one existing patient, exam, and invoice to exercise read and update paths.
-
-### 2.1 Seed the database
-
-Run the seed script from the `backend/` directory:
-
-```bash
-cd d:\VIARA\backend
-TEST_USER_PASSWORD=ViaraAdmin@2026 node seed.js
-```
-
-> The seed script will exit with an error if `TEST_USER_PASSWORD` or `DATABASE_URL` is not set.
-> Both must be present in your shell or in `backend/.env` / root `.env`.
-
-### 2.2 Verify seeded accounts
-
-After seeding, confirm the performance test accounts exist:
-
-```bash
-# Verify staff login works
-curl -s -X POST http://localhost:3000/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"reception@viara.com","password":"ViaraAdmin@2026"}' | jq .token
-
-# Verify patient login works
-curl -s -X POST http://localhost:3000/api/portal/login \
-  -H "Content-Type: application/json" \
-  -d '{"mrn":"MRN-000001","password":"Patient@123"}' | jq .token
-```
-
-Both commands should return a non-null token.
-
-### 2.3 Minimum data requirements
-
-| Entity | Minimum count | Why |
-|---|---|---|
-| Patients | ≥ 50 | Receptionist search scenarios need varied results |
-| Exams | ≥ 20 with `Draft` report status | Clinical worklist and report-save scenarios |
-| Invoices | ≥ 10 | Cashier and billing scenarios |
-| Rooms & machines | ≥ 3 rooms, ≥ 2 machines | Booking and matrix scenarios |
-
-The default seed script creates sufficient data for all scenarios. If re-running on a fresh database, run seed once; do not run it multiple times without truncating tables first (duplicate key errors will appear in logs, which is harmless, but indicates redundant runs).
-
----
-
-## 3. Running Scenarios
-
-All commands are run from the **workspace root** `d:\VIARA`.
-
-### 3.1 Quick smoke test (single VU, 5 seconds)
-
-```bash
-node performance-tests/run.js --quick
-```
-
-Use this to verify connectivity and that all accounts authenticate before investing time in heavier runs.
-
-### 3.2 Baseline — 5 virtual users (smoke / baseline)
-
-```bash
-node performance-tests/run.js --scenario=08 --users=5 --duration=30
-```
-
-Establishes the single-digit-VU baseline for comparison against higher-load runs.
-
-### 3.3 Normal load — 25 virtual users
-
-```bash
-node performance-tests/run.js --scenario=08 --users=25 --duration=60
-```
-
-Simulates a typical operational shift with all staff roles active.
-
-### 3.4 Peak load — 50 virtual users
-
-```bash
-node performance-tests/run.js --scenario=08 --users=50 --duration=120
-```
-
-Simulates peak clinic hours. All acceptance thresholds must pass at this level.
-
-### 3.5 Stress test — 100 virtual users
-
-```bash
-node performance-tests/run.js --scenario=08 --users=100 --duration=120
-```
-
-Pushes beyond the stated SLA ceiling to find the breaking point. Threshold failures at this level are expected and informative, not blocking.
-
-### 3.6 Peak Load scenario — 50 VU × 5 minutes (Scenario 12)
-
-This scenario implements a realistic clinical workflow across all staff roles. It is intended to run with 50 concurrent users for a sustained 5-minute window.
-
-```bash
-# 360 s = 30 s ramp-up buffer + 300 s sustained + 30 s ramp-down buffer
-node performance-tests/run.js --scenario=12 --users=50 --duration=360
-```
-
-Workflow covered per VU:
-- Receptionist (30%): patient search → queue view → shift status
-- Radiologist (20%): worklist → exam detail → report draft save
-- Cashier (10%): invoice list → cashier shift
-- Mixed reads (40%): room matrix, exam types catalog, modalities list
-
-### 3.7 Soak Test — 20 VU × 30 minutes (Scenario 13)
-
-This scenario detects memory leaks and connection-pool exhaustion by running the same clinical workflow at a moderate load for an extended period.
-
-```bash
-# 1920 s = 60 s ramp-up buffer + 1800 s sustained + 60 s ramp-down buffer
-node performance-tests/run.js --scenario=13 --users=20 --duration=1920
-```
-
-Compare the p95 values at the beginning of the run against those at the end of the run in the generated Markdown report. Growing p95 over time is the primary indicator of resource leakage.
-
-### 3.8 Run all scenarios sequentially
-
-```bash
-node performance-tests/run.js --users=10 --duration=30
-```
-
-Runs every registered scenario in sequence (01 through 13) and produces both per-scenario and combined summary reports.
-
-### 3.9 Run a specific scenario by name
-
-```bash
-node performance-tests/run.js --scenario=01 --users=5 --duration=30
-node performance-tests/run.js --scenario=03 --users=10 --duration=60
-```
-
-Scenario IDs and names:
-
-| ID | Name | Focus |
-|---|---|---|
-| `01` | Auth & Session Lifecycle | Login, token refresh, logout |
-| `02` | Receptionist & Patient Booking | Patient search, rooms, appointments |
-| `03` | Clinical Worklist & Reporting | Radiologist worklist, exam detail, report draft |
-| `04` | Billing & Idempotent Payments | Invoice lookup, payment idempotency |
-| `05` | Patient Portal & Case Status | Portal login, case tracking |
-| `06` | Admin Analytics & Audits | Statistics, audit logs |
-| `07` | PACS Studies & Modalities | Orthanc study queries |
-| `08` | Blended Multi-Role Concurrency | All roles, Section 4 distribution |
-| `09` | Concurrency Collision (PF-13) | Race conditions, double-booking, double-payment |
-| `10` | Spike & Surge Load (PF-05) | Rapid burst handling and recovery |
-| `11` | Endurance & Token Storms (PF-06/PF-12) | Long-running soak + token refresh |
-| `12` | Peak Load — Clinical Workflow (H-04) | 50 VU realistic clinical workflow |
-| `13` | Soak Test — Stability (H-04) | 20 VU × 30 min memory leak detection |
-
-### 3.10 Targeting a different server
-
-```bash
-node performance-tests/run.js --target=http://staging.viara.internal:3000 --scenario=12 --users=50 --duration=360
-```
-
----
-
-## 4. Acceptance Criteria
-
-These thresholds are evaluated in every generated report. A measured threshold violation exits with code `1`; a required measurement that was not collected is reported as `NOT MEASURED` and exits with code `2`. A `PASS` requires every configured measurement to be present and within limits.
-
-| Metric | Threshold | Notes |
-|---|---|---|
-| **Error rate** | < 1% | Unexpected errors (5xx, timeouts). 4xx from intentional collision tests are excluded. |
-| **Read API p95** | ≤ 500 ms | All GET requests |
-| **Read API p99** | ≤ 1500 ms | Slowest 1% of GET requests |
-| **Write/Search API p95** | ≤ 1000 ms | POST, PUT, PATCH, DELETE |
-| **Write/Search API p99** | ≤ 2500 ms | Slowest 1% of writes |
-| **Diagnostic image load p95** | ≤ 5000 ms | PACS / Orthanc study fetch |
-| **Memory stability (soak)** | p95 must not grow > 20% | Compare start vs end of Scenario 13 |
-| **Zero 5xx for normal workflows** | 0 | Scenarios 01–08, 12, 13 must have 0 server errors |
-
-The current scenarios do not yet collect diagnostic first-image render time from the imaging viewer. Therefore, a run remains `INCOMPLETE` for acceptance until that metric is instrumented. Quick smoke runs are exploratory only, not performance acceptance evidence.
-
----
-
-## 5. Interpreting Results
-
-### 5.1 Console output
-
-When a scenario finishes, the harness prints a summary table:
-
-```
-================================================================================
- 📊 Scenario [12_peak_load] Results
-================================================================================
-⏱️  Duration: 360s | 🔄 Total Requests: 18430 | 🚀 Throughput: 51.19 req/s
-✅ Success: 18421 | ❌ Failed: 9 | ⚠️ Error Rate: 0.05%
-
---- ⏱️  Overall Latency (Response Times) ---
-   Min: 8ms | Avg: 145ms | Median (p50): 112ms
-   p75: 180ms | p90: 290ms | p95: 380ms | p99: 890ms | Max: 3210ms
-
---- 🎯 SLA Thresholds Evaluation ---
-   ✅ PASS [Error Rate < 1%]: Actual 0.05% (Target: < 1%)
-   ✅ PASS [Read API Latency (p95)]: Actual 380.0ms (Target: <= 500ms)
-   ✅ PASS [Write & Mutation Latency (p95)]: Actual 620.0ms (Target: <= 1000ms)
-
---- 🔍 Top Endpoints by Latency (p95) ---
-Method  | Endpoint                              | Count | p50 (ms) | p95 (ms) | p99 (ms) | Err %
---------------------------------------------------------------------------------
-PUT     | /api/exams/:id/report                 |  1840 |      320 |      620 |     1190 |  0.1%
-GET     | /api/exams/worklist                   |  2210 |      180 |      380 |      760 |  0.0%
-...
-================================================================================
-```
-
-Key fields to check:
-- **Error Rate**: must be < 1%; investigate if it approaches 0.5%.
-- **p95 / p99**: compare against the thresholds above.
-- **Top Endpoints by Latency**: the slowest endpoint is listed first — this is where to focus optimisation effort.
-
-### 5.2 Report files
-
-After each scenario, two files are written to `performance-tests/reports/`:
-
-| File | Format | Use |
-|---|---|---|
-| `report_<scenario>_<timestamp>.md` | Markdown | Human-readable summary for commit or review |
-| `report_<scenario>_<timestamp>.json` | JSON | Machine-readable; use for CI trend comparison |
-
-Open the Markdown report to see the full endpoint breakdown table. For soak tests, check that no endpoint's p95 value grows significantly from one run segment to the next.
-
-### 5.3 Spotting a memory leak in soak results
-
-Run Scenario 13 and compare results in the report:
-
-1. Note the overall `p95` in the console at the **5-minute mark** (first batch of workers completing their first few iterations).
-2. Compare with the `p95` printed at the **end of the 30-minute run**.
-3. A steady increase (> 20% growth in p95 over 30 minutes) suggests a memory leak or connection-pool saturation.
-
-To get finer time-series data, check the backend process memory while the test runs:
-
-```bash
-# In a separate terminal — sample every 30 seconds
-while ($true) {
-    docker stats --no-stream --format "{{.Name}}\t{{.MemUsage}}" | Select-String "backend"
-    Start-Sleep 30
+This guide describes the implemented harness, synthetic fixture requirements, and release acceptance evidence. Run commands from the repository root. Successful unit tests or container builds do not establish performance acceptance.
+
+## Prepare an isolated target
+
+Use a separate deployment with synthetic data, separate PostgreSQL and Redis storage, and a test PACS archive. Scenarios can create patients, book appointments, collect payments, and replace report drafts. Even a quick run can write data.
+
+Every run requires --synthetic to confirm that the selected deployment is suitable for these operations. This is an operator assertion; the flag cannot inspect the target's data. The harness checks /health/ready and stops before load if readiness is not 200. Also verify frontend, portal, OHIF, PostgreSQL, Redis, and Orthanc health and available host resources. Backend readiness alone does not prove the imaging workflow works.
+
+Provision fixtures into a new disposable database. Never seed, truncate, flush Redis, rotate keys, or restart a shared deployment to prepare a benchmark. Restore the disposable fixture snapshot between comparable runs. Record the source snapshot, image digests, configuration, fixture size, and generator/server hardware.
+
+Use Node.js 22 or later for the complete harness. Browser observations use Node's WebSocket API and an installed Chrome, Chromium, or Edge. The harness does not download browser packages or open your regular browser profile.
+
+## Configure accounts and fixtures
+
+The harness reads the repository-root .env without overriding variables already set in the process environment. Prefer a dedicated shell with explicit values for the isolated target. Do not publish credentials, tokens, cookies, or credential-pool files.
+
+| Variable | Purpose |
+|---|---|
+| PERF_BASE_URL | Backend origin; default http://localhost:3000 |
+| PERF_BRANCH_ID | Authorized active branch sent as x-branch-id |
+| PERF_ADMIN_EMAIL / PERF_ADMIN_PASSWORD | Synthetic administrator |
+| PERF_RECEPTION_EMAIL / PERF_RECEPTION_PASSWORD | Synthetic receptionist |
+| PERF_RADIOLOGIST_EMAIL / PERF_RADIOLOGIST_PASSWORD | Synthetic radiologist |
+| PERF_CASHIER_EMAIL / PERF_CASHIER_PASSWORD | Synthetic cashier |
+| PERF_PATIENT_MRN / PERF_PATIENT_PASSWORD | Synthetic portal patient |
+| PERF_USER_POOL_FILE | Optional local JSON file of independent accounts per role |
+| PERF_TIMEOUT_MS | API timeout; default 15000 ms |
+| PERF_THINK_MIN_MS / PERF_THINK_MAX_MS | Think time; defaults 500–2000 ms |
+| PERF_METRICS_TOKEN | Backend /metrics token; falls back to METRICS_TOKEN |
+| PERF_VIEWER_URL | Actual OHIF viewer route, for example http://localhost:3005/viewer |
+| PERF_VIEWER_STUDY_UID | Reconciled synthetic study accessible to the test radiologist |
+| PERF_BROWSER_EXECUTABLE | Installed Chrome/Chromium/Edge; common paths are also checked |
+| PERF_IMAGE_SAMPLES | Browser observations per imaging scenario; default 20, maximum 100 |
+
+Each role uses one cached account by default. Fifty VUs then mean fifty simulated clients, not fifty independently authenticated people. For independent sessions, provide enough accounts per role in a credential pool. Accounts need active memberships, the correct role in PERF_BRANCH_ID, any required attendance, and completed password changes.
+
+The pool maps configured role names to arrays. Keep the real file outside version control. Values below are placeholders:
+
+~~~json
+{
+  "radiologist": [
+    { "email": "synthetic-radio-1@example.invalid", "password": "REPLACE_IN_LOCAL_FIXTURE" },
+    { "email": "synthetic-radio-2@example.invalid", "password": "REPLACE_IN_LOCAL_FIXTURE" }
+  ],
+  "patient": [
+    { "mrn": "SYNTHETIC-001", "password": "REPLACE_IN_LOCAL_FIXTURE" }
+  ]
 }
-```
+~~~
 
----
+Assignment is stable per VU and role. Insufficient accounts produce a recorded worker failure instead of silently sharing an account. Browser observations reuse the first radiologist account.
 
-## 6. Debugging Failures
+Prepare at least 50 synthetic patients, 20 reportable examinations with unlocked draft reports assigned to the test radiologists, 10 payable invoices, three rooms, two machines, and a reconciled DICOM study. These are fixture requirements, not a guarantee made by seed.js. Verify the worklist and payment fixture. Locked/finalized examinations are unsuitable for draft saves. Check stored business results as well as HTTP response codes.
 
-### 6.1 High error rate (> 1%)
+## Run the scenarios
 
-1. Check backend logs:
-   ```bash
-   docker compose logs --tail=100 backend
-   ```
-2. Look for `500 Internal Server Error` or `503 Service Unavailable` lines.
-3. Common causes:
-   - Database connection pool exhausted: increase `DB_POOL_MAX` in backend config.
-   - Redis unavailable: `docker compose restart redis`.
-   - JWT secret mismatch after container restart: re-run seed and re-start backend.
+PowerShell setup for an already provisioned isolated deployment:
 
-### 6.2 Slow p95 (GET > 500 ms)
+~~~powershell
+$env:PERF_BASE_URL = 'http://localhost:3000'
+$env:PERF_BRANCH_ID = 'REPLACE_WITH_SYNTHETIC_BRANCH_UUID'
+$env:PERF_USER_POOL_FILE = 'D:\benchmark-private\synthetic-users.json'
+$env:PERF_VIEWER_URL = 'http://localhost:3005/viewer'
+$env:PERF_VIEWER_STUDY_UID = 'REPLACE_WITH_SYNTHETIC_STUDY_UID'
+~~~
 
-1. Enable slow-query logging in PostgreSQL:
-   ```bash
-   docker compose exec postgres psql -U viara -c "ALTER SYSTEM SET log_min_duration_statement = 100;"
-   docker compose exec postgres psql -U viara -c "SELECT pg_reload_conf();"
-   docker compose logs postgres | Select-String "duration"
-   ```
-2. Check connection pool utilisation:
-   ```bash
-   docker compose exec postgres psql -U viara -c "SELECT count(*) FROM pg_stat_activity WHERE state='active';"
-   ```
-3. If the pool is at max, reduce `--users` or increase `DB_POOL_MAX`.
-4. Check for missing indexes on `exams.worklist` query by looking at `EXPLAIN ANALYZE` output for the top slow query.
+Configure credentials, metrics token, and any browser path in that private environment. Help does not start load:
 
-### 6.3 Memory growth (soak test p95 creeping up)
+~~~powershell
+node performance-tests/run.js --help
+node performance-tests/run.js --synthetic --quick
+node performance-tests/run.js --synthetic --scenario=08 --users=5 --duration=30
+node performance-tests/run.js --synthetic --scenario=08 --users=25 --duration=60
+node performance-tests/run.js --synthetic --scenario=08 --users=50 --duration=120
+node performance-tests/run.js --synthetic --scenario=12 --users=50 --duration=360
+node performance-tests/run.js --synthetic --scenario=13 --users=20 --duration=1920
+~~~
 
-1. Take a Node.js heap snapshot before and after:
-   ```bash
-   # Trigger heap dump via the backend's diagnostic endpoint (if enabled):
-   curl http://localhost:3000/admin/heap-dump
-   ```
-2. If no endpoint is available, attach the Node.js inspector:
-   ```bash
-   docker compose exec backend node --inspect=0.0.0.0:9229 ...
-   ```
-   Then open `chrome://inspect` to capture a heap snapshot.
-3. Look for growing `Array`, `Buffer`, or event-listener counts between snapshots.
+Scenario 12 ramps up across 30 seconds and scenario 13 across 60 seconds. Workers loop until the shared deadline and finish their current operation; there is no separate staged ramp-down. These commands leave at least five minutes and thirty minutes after ramp-up. Fewer than 50 VUs or less than 330 seconds in scenario 12, and fewer than 20 VUs or less than 1860 seconds in scenario 13, remain exploratory and cannot produce acceptance PASS.
 
-### 6.4 Auth failures (scenario exits early)
+Scenario 08 implements 30% reception, 20% reporting, 10% billing, 20% patient portal, 10% administration, and 10% PACS across groups of ten VU IDs. Small runs do not cover that whole distribution. Scenarios 12/13 use 30% reception, 20% reporting, 10% cashier, and 40% reference-data reads. Record the model; it does not automatically represent a site's staff mix.
 
-Symptoms: scenario logs show `Authentication failed for receptionist` and requests stop.
+| ID | Focus |
+|---|---|
+| 01 | Authentication, refresh, logout |
+| 02 | Reception, patient search, booking |
+| 03 | Worklist and report saving |
+| 04 | Billing and payment idempotency |
+| 05 | Patient portal |
+| 06 | Administration and analytics |
+| 07 | PACS metadata/system queries and configured browser observations |
+| 08 | Mixed operational workload |
+| 09 | Intentional concurrency collisions |
+| 10 | Spike/surge |
+| 11 | Endurance and refresh storms |
+| 12 | Clinical peak load |
+| 13 | Clinical soak |
 
-1. Verify the seed accounts exist and use the correct password:
-   ```bash
-   curl -s -X POST http://localhost:3000/api/auth/login \
-     -H "Content-Type: application/json" \
-     -d '{"email":"reception@viara.com","password":"ViaraAdmin@2026"}' | jq .
-   ```
-2. If the token is null or 401 is returned, re-run `node backend/seed.js`.
-3. Check that `TEST_USER_PASSWORD` in your `.env` matches the password used in the scenario config (`config.js` → `users` section).
-4. If running against a staging server, ensure the accounts have been seeded there too.
+Run --scenario=all for sequential coverage. Stress discovery at 100 VUs is separate from normal-load acceptance and requires infrastructure allocated for that load.
 
-### 6.5 Connection refused (cannot reach server)
+## Measure the first diagnostic image
 
-```bash
-# Confirm backend container is healthy
-docker compose ps
-# Restart if stopped
-docker compose up -d backend
-# Tail logs for startup errors
-docker compose logs -f backend
-```
+OHIF exports window.__viaraFirstDiagnosticImage after a Cornerstone render event on a visible canvas at least 256 by 256 CSS pixels, excluding viewport IDs marked thumbnail/preview/prefetch. Time starts at navigation and includes application loading and rendering. Metadata, iframe load, and thumbnail success do not substitute for this observation.
 
-### 6.6 Scenario reports 0 requests
+Configure PERF_VIEWER_URL and PERF_VIEWER_STUDY_UID for scenarios 07/08/12/13. The harness requests a study-scoped token, starts an isolated headless browser with its cache disabled, and reads the render observation. Samples are spread over the configured workload duration. Reports contain elapsed times and generic endpoint labels, without study UIDs, tokens, images, or browser storage. Only the newly created temporary browser profile is removed.
 
-This means the scenario function errored before recording anything. Run with a single VU and a short duration to see the raw error:
+At least twenty successful observations are required. A render failure fails the imaging criterion. Missing configuration, too few samples, or an absent signal leaves acceptance incomplete; it is not a passing zero. Verify this signal on the actual packaged OHIF image. A unit test of the hook does not prove a real study rendered.
 
-```bash
-node performance-tests/run.js --scenario=12 --users=1 --duration=10 --quick
-```
+Use a separate generator host for capacity measurements. Browser observations consume client resources and may continue after API workers finish. Check timestamps and actual duration to confirm overlap with sustained load.
 
-Check for `❌ Fatal execution error` or `unhandled_worker_error` in the console output.
+## Acceptance and reports
 
----
+| Criterion | Required result |
+|---|---|
+| Unexpected request error rate | Strictly below 1%; exactly 1% fails |
+| GET p95 / p99 | At most 500 / 1500 ms |
+| Mutation p95 / p99 | At most 1000 / 2500 ms |
+| Diagnostic first-image p95 | At most 5000 ms and at least twenty successful observations |
+| Normal-workflow server errors | Zero 5xx in scenarios 01–08, 12, and 13 |
+| Soak read-latency growth | At most 20% between first and last five-minute windows |
+| Soak duration/samples | At least 1800 measured seconds and twenty successful GET samples per window |
+| Backend memory observations | At least two valid RSS/heap samples per soak window |
 
-## 7. Reset Between Runs
+Imaging requirements apply to imaging scenarios. Write-latency requirements are omitted for the read-only administration and PACS scenarios. Other configured but unmeasured operations remain incomplete. Known collision outcomes must be explicitly accepted by that scenario's assertions; unrelated 4xx responses are not automatically excluded.
 
-When running multiple successive test rounds, reset shared state to avoid result contamination.
+The collector uses nearest-rank percentiles and preserves original timestamps in combined reports. API timing includes response-body reading. Browser observations have separate counts instead of inflating API throughput. Overall mixed API p95 is descriptive; read, mutation, and imaging criteria determine acceptance.
 
-### 7.1 Flush Redis cache and rate-limit counters
+The harness samples /metrics every thirty seconds for backend RSS, heap use, and waiting database clients. Missing/unauthorized telemetry is not reported as zero. Scenario 13 stores latency windows and memory averages in JSON. Latency growth can indicate saturation; it does not by itself prove a memory leak. Inspect the memory trend and use heap snapshots only in the isolated environment if further investigation is needed.
 
-```bash
-docker compose exec redis redis-cli FLUSHDB
-```
+Markdown and JSON reports are written to performance-tests/reports/. Inspect thresholdEvaluations, thresholdStatus, diagnosticImageSamples, diagnosticImageFailures, stability, serverSamples, virtualUsers, identityModel, and exploratory. No intermediate five-minute console summary is implemented: inspect the final recorded windows. An empty, quick, or short run does not prove site acceptance.
 
-> This clears the current database only. Session tokens cached by the test harness are in-process; they are cleared automatically by `userPool.invalidate()` between scenarios.
+| Exit | Meaning |
+|---|---|
+| 0 | Every required measurement in this run passed |
+| 1 | A measured criterion, setup/readiness, or execution failed |
+| 2 | No measured criterion failed, but required evidence/profile is incomplete |
 
-### 7.2 Reset rate limits
+## Investigate failures and repeat safely
 
-If the backend enforces per-IP or per-user rate limits that trigger during load tests, flush them from Redis:
+For authentication failures, check fixture credentials, branch membership/role, password-change state, attendance, and license availability. Do not reseed shared storage or change JWT/encryption keys. For slow reads, inspect the actual query plan under the restricted application role with the same authorized data scope; an owner query seeing different rows is not an equivalent baseline.
 
-```bash
-# Clear rate-limit keys (adjust the key prefix to match your backend's config)
-docker compose exec redis redis-cli --scan --pattern "rate:*" | ForEach-Object { docker compose exec redis redis-cli DEL $_ }
-```
+Correlate errors and waits with backend logs, PostgreSQL activity, and Redis health. Preserve production security and rate-limit behavior in release acceptance: disabling controls measures another configuration. For absent image observations, verify the study, scoped viewer authorization, OHIF health, installed browser, and actual viewport event.
 
-### 7.3 Purge generated synthetic patients (optional)
-
-The `02_reception_booking.js` scenario creates synthetic patients when a search returns no results. On repeated runs these accumulate. To clean up:
-
-```bash
-docker compose exec postgres psql -U viara -c \
-  "DELETE FROM patients WHERE first_name LIKE 'TestPatient_%';"
-```
-
-### 7.4 Restart backend to reset in-process state
-
-Between a soak test and the next run, restart the backend to reset Node.js heap and connection pools to their initial state:
-
-```bash
-docker compose restart backend
-# Wait for healthy status
-docker compose ps
-```
-
-### 7.5 Clear old reports (optional)
-
-```bash
-# Windows PowerShell — remove reports older than 7 days
-Get-ChildItem d:\VIARA\performance-tests\reports -File |
-  Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
-  Remove-Item
-```
-
----
-
-## Quick Reference
-
-```bash
-# Smoke test — single user, 5 seconds
-node performance-tests/run.js --quick
-
-# Baseline — 5 VUs, 30 seconds
-node performance-tests/run.js --scenario=08 --users=5 --duration=30
-
-# Normal load — 25 VUs, 60 seconds
-node performance-tests/run.js --scenario=08 --users=25 --duration=60
-
-# Peak load — 50 VUs, 120 seconds
-node performance-tests/run.js --scenario=08 --users=50 --duration=120
-
-# Stress test — 100 VUs, 120 seconds
-node performance-tests/run.js --scenario=08 --users=100 --duration=120
-
-# Peak load scenario (H-04) — 50 VUs × 5 minutes + ramp buffers
-node performance-tests/run.js --scenario=12 --users=50 --duration=360
-
-# Soak test (H-04) — 20 VUs × 30 minutes + ramp buffers
-node performance-tests/run.js --scenario=13 --users=20 --duration=1920
-
-# All scenarios — 10 VUs, 30 seconds each
-node performance-tests/run.js --users=10 --duration=30
-```
+Between comparable runs, restore only the named disposable deployment and preserve the evidence. This guide provides no shared FLUSHDB, table truncation, patient deletion, or public inspector command. Never expose a Node inspector publicly to collect benchmark diagnostics.

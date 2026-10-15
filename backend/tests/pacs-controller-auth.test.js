@@ -130,7 +130,7 @@ describe('PACS controller authorization', () => {
     it('audits broad study searches before forwarding their query to Orthanc', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
-        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies' },
             query: { PatientID: 'private-patient-id' },
@@ -139,9 +139,7 @@ describe('PACS controller authorization', () => {
             user: {
                 role: 'Admin',
                 user_id: 'admin-1',
-                emergencyAccessId: 'break-glass-1',
-                elevatedPermissions: ['VIEW_PACS_IMAGES'],
-                breakGlassExpiry: Date.now() + 60000
+                permissions: ['MANAGE_PACS']
             },
             headers: {},
             setTimeout: jest.fn()
@@ -243,20 +241,19 @@ describe('PACS controller authorization', () => {
         expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403 });
     });
 
-    it('allows audited emergency access to browse PACS studies', async () => {
+    it('denies unconstrained emergency access to browse PACS studies without study scope', async () => {
         const db = { query: jest.fn() };
         const req = {
-        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
-        headers: {},
+            branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+            headers: {},
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies' },
             query: {},
             originalUrl: '/api/pacs/dicom-web/studies',
             authType: 'jwt',
             user: {
-                role: 'Admin',
+                role: 'EmergencyClinicalViewer',
                 user_id: '00000000-0000-0000-0000-000000000002',
-                permissions: ['MANAGE_PACS'],
                 emergencyAccessId: '00000000-0000-4000-8000-000000000099',
                 elevatedPermissions: ['VIEW_PACS_IMAGES'],
                 breakGlassExpiry: Date.now() + 60000
@@ -267,8 +264,8 @@ describe('PACS controller authorization', () => {
 
         await dicomWebProxy(db)(req, makeRes(), next);
 
-        expect(next).not.toHaveBeenCalled();
-        expect(proxyToOrthanc).toHaveBeenCalledWith(req, expect.any(Object), '/dicom-web/studies');
+        expect(proxyToOrthanc).not.toHaveBeenCalled();
+        expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403 });
     });
 
     it('does not return imaging metadata for an unassigned exam', async () => {

@@ -1,4 +1,5 @@
 import { api, baseQueryWithReauth } from './baseApi';
+import { setAccessToken } from './authSlice';
 
 // Inject all modular domain endpoints
 import './api/authApi';
@@ -42,6 +43,21 @@ export const rehydrateSession = () => (dispatch) => {
     }
 
     return sessionRehydrationPromise;
+};
+
+export const restoreStaffSession = () => async (dispatch) => {
+    const token = await dispatch(rehydrateSession());
+    dispatch(setAccessToken(token));
+    const profileRequest = dispatch(api.endpoints.getProfile.initiate(undefined, { forceRefetch: true }));
+    try {
+        const profile = await profileRequest.unwrap();
+        return {
+            token,
+            user: { ...profile, user_id: profile.id, full_name: profile.fullName || profile.name || '' },
+        };
+    } finally {
+        profileRequest.unsubscribe();
+    }
 };
 
 export const {

@@ -111,6 +111,12 @@ describe('quotaService', () => {
             await expect(assertQuota(pool, 'patients')).resolves.toBeUndefined();
             expect(pool.query).not.toHaveBeenCalled();
         });
+        it('enforces a finite paid-license user limit across the deployment', async () => {
+            setLicense('enterprise', 5);
+            const pool = mockPool(5);
+            await expect(assertQuota(pool, 'users')).rejects.toMatchObject({ statusCode: 402 });
+            expect(pool.query).toHaveBeenCalledWith('SELECT public.license_quota_usage($1) AS n', ['users']);
+        });
 
         it('is a no-op for enterprise edition', async () => {
             setLicense('enterprise');
@@ -175,7 +181,7 @@ describe('quotaService', () => {
             expect(client.query.mock.calls[0]).toEqual([
                 'SELECT pg_advisory_xact_lock($1, $2)', [867421, 2],
             ]);
-            expect(client.query.mock.calls[1][0]).toContain('COUNT(*)');
+            expect(client.query.mock.calls[1]).toEqual(['SELECT public.license_quota_usage($1) AS n', ['users']]);
         });
         it('rejects the operation when the transaction lock fails', async () => {
             setLicense('trial');

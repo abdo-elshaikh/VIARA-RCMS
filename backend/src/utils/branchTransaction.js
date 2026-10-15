@@ -65,6 +65,7 @@ async function setBranchContext(client, reqOrContext) {
         branchId = reqOrContext.branchContext?.branchId || reqOrContext.user?.branch_id || null;
         userId = reqOrContext.user?.user_id || reqOrContext.user?.userId || reqOrContext.user?.doctorId || null;
         actorKind = ['Patient','Doctor'].includes(reqOrContext.user?.role) ? reqOrContext.user.role : 'Staff';
+        if (reqOrContext.branchContext?.isEmergency) actorKind = `Emergency:${reqOrContext.branchContext.emergencyAccessId}:${reqOrContext.user?.session_id || ''}`;
         isOrgAdmin = Boolean(
             reqOrContext.branchContext?.isOrgAdmin ||
             reqOrContext.branchContext?.isAllBranches ||

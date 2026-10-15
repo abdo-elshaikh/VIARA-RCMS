@@ -316,6 +316,7 @@ describe('Phase 3 Remediation Suite: Distributed Pub/Sub, Native S3 Replicator &
 
     describe('MWL Service: Debounced Regeneration Trigger', () => {
         test('triggerMwlRegeneration delays and coalesces multiple rapid calls', async () => {
+            process.env.TEST_MWL_TIMER = 'true';
             jest.useFakeTimers();
 
             const mockDb = {
@@ -337,6 +338,7 @@ describe('Phase 3 Remediation Suite: Distributed Pub/Sub, Native S3 Replicator &
             await Promise.resolve();
 
             jest.useRealTimers();
+            delete process.env.TEST_MWL_TIMER;
         });
     });
 });

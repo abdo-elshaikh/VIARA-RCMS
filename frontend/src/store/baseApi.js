@@ -10,13 +10,16 @@ const getCsrfToken = () => {
 const baseQuery = fetchBaseQuery({
     baseUrl: import.meta.env.VITE_API_URL || '/api',
     credentials: 'include',
-    prepareHeaders: (headers, { getState }) => {
+    prepareHeaders: (headers, { getState, endpoint }) => {
         const token = getState().auth.token;
         if (token) {
             headers.set('authorization', `Bearer ${token}`);
         }
-        const activeBranchId = getState().auth.activeBranchId || (typeof localStorage !== 'undefined' ? localStorage.getItem('viara_active_branch_id') : null);
-        if (activeBranchId) {
+        const activeBranchId = getState().auth.activeBranchId;
+        if (endpoint === 'getProfile') {
+            // Identity recovery must work after a branch membership is revoked.
+            headers.delete('x-branch-id');
+        } else if (activeBranchId) {
             headers.set('x-branch-id', activeBranchId);
         }
         return headers;

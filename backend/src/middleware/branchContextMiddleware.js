@@ -149,9 +149,12 @@ const requireBranchContext = (db, options = {}) => {
 
                             if (isBranchMatch) {
                                 const isMutating = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method);
-                                const isRevokeEndpoint = (req.originalUrl || req.path || '').includes('/break-glass');
+                                const requestPath = (req.originalUrl || req.path || '').split('?')[0];
+                                const isRevokeEndpoint = requestPath === '/api/rbac/break-glass/revoke';
+                                const isViewerCredentialEndpoint = req.method === 'POST' &&
+                                    ['/api/pacs/viewer-session', '/api/pacs/viewer-renew'].includes(requestPath);
 
-                                if (isMutating && !isRevokeEndpoint) {
+                                if (isMutating && !isRevokeEndpoint && !isViewerCredentialEndpoint) {
                                     logSecurityEvent(db, {
                                         eventType: 'CROSS_BRANCH_ACCESS_DENIED',
                                         severity: 'warning',

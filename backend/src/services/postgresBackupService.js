@@ -213,7 +213,8 @@ const createPostgresBackup = async () => {
     const filepath = path.join(backupDir, filename);
     const temporaryPath = filepath.replace(/\.dump\.enc$/, '.dump.tmp');
     const encryptedTemporaryPath = `${filepath}.tmp`;
-    const environment = buildPgEnvironment();
+    if (!process.env.BACKUP_DATABASE_URL) throw new Error('BACKUP_DATABASE_URL is required for complete backups with row-level security');
+    const environment = buildPgEnvironment(process.env.BACKUP_DATABASE_URL);
     const pgDump = process.env.PG_DUMP_PATH || 'pg_dump';
     const pgRestore = process.env.PG_RESTORE_PATH || 'pg_restore';
 
@@ -374,7 +375,9 @@ const restorePostgresBackup = async (filename, options = {}) => {
         throw new Error('PostgreSQL restore only supports .dump and .dump.enc archives');
     }
 
-    const environment = buildPgEnvironment(options.databaseUrl);
+    const restoreUrl = options.databaseUrl || process.env.RESTORE_DATABASE_URL;
+    if (!restoreUrl) throw new Error('RESTORE_DATABASE_URL is required for an authorized database restore');
+    const environment = buildPgEnvironment(restoreUrl);
     const pgRestore = process.env.PG_RESTORE_PATH || 'pg_restore';
     const runner = options.runProcess || runProcess;
     const backupDir = getBackupDir();

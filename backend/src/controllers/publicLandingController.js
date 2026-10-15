@@ -833,20 +833,20 @@ const getPublicLandingOverview = (db) => async (req, res, next) => {
 };
 
 /**
- * Public report digital signature verification
+ * Public lookup of a finalized report's approval record
  * GET /api/public/reports/verify/:hash
- * Allows anyone scanning the report QR code to verify the report authenticity,
- * status, center endorsement, and digital signature match without logging in.
+ * A QR reference confirms the approval metadata recorded by the center.
+ * It does not compare a supplied document or verify a cryptographic signature.
  */
 const verifyReportAuthenticity = (db) => async (req, res, next) => {
     try {
         const rawCode = String(req.params.hash || getRequestQuery(req).code || getRequestQuery(req).hash || '').trim();
-        // Digital signature verification requires a cryptographically secure hash (min 16 chars).
+        // Require an unguessable report reference (min 16 chars).
         // Guessable sequential order numbers or predictable IDs are prohibited to protect PHI against IDOR scraping.
         if (!rawCode || rawCode.length < 16) {
             return res.status(400).json({
                 verified: false,
-                error: 'Valid digital signature verification hash is required.'
+                error: 'A valid report verification reference is required.'
             });
         }
 
@@ -901,7 +901,9 @@ const verifyReportAuthenticity = (db) => async (req, res, next) => {
         res.setHeader('Cache-Control', 'public, max-age=60');
         return res.json({
             verified: true,
-            status: 'Finalized & Authenticated',
+            status: row.report_status,
+            verificationMethod: 'CenterRecordLookup',
+            recordConfirmed: true,
             orderNumber: row.order_number,
             patientMasked: maskedPatient,
             mrn: row.mrn,
@@ -914,7 +916,9 @@ const verifyReportAuthenticity = (db) => async (req, res, next) => {
             centerName: centerMap['center.name'] || centerMap['center_name'] || 'VIARA DIAGNOSTIC CENTER',
             branchName: centerMap['center.branch_name'] || 'Main Hospital Branch',
             verificationHash: row.digital_signature_hash,
-            integrityConfirmed: true
+            integrityConfirmed: false,
+            contentIntegrityVerified: false,
+            cryptographicSignatureVerified: false
         });
     } catch (error) {
         next(error);

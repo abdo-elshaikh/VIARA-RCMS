@@ -110,3 +110,16 @@ docker compose exec postgres psql -U viara -d viara -c "
 2. تشغيل أمر التحقق `--verify-only` والاستعادة إليها.
 3. قياس وتسجيل زمن الاستعادة الفعلي (RTO - Recovery Time Objective) ونقطة الاستعادة (RPO - Recovery Point Objective).
 4. التحقق من عرض تقارير الأشعة وصور DICOM في عارض OHIF والتأكد من تطابق بيانات المرضى.
+
+---
+
+## 7. حدود الاستعادة وسياق المهام الخلفية (Restore Limitations & Job RLS Scope)
+
+> ⚠️ **محددات معمارية واجبة المراعاة لمديري النظام:**
+> 1. **الاستعادة على مستوى الخادم بالكامل (Full Instance Restore Only):**
+>    - النسخ الاحتياطي والاستعادة يتمان على مستوى قاعدة البيانات بالكامل (`PostgreSQL Instance/Database Dump`).
+>    - **استعادة فرع منفرد (`Branch-Level Restore`) غير مدعومة معمارياً:** نظراً لكون الجداول المركزية (سجل المرضى العام `patients`، المستخدمين `users`، إعدادات النظام `system_settings`، والمؤسسات `organizations`) مشتركة بين الفروع ومرتبطة بقيود تكامل ومفاتيح أجنبية (`Foreign Keys`)، فإن استعادة نسخة احتياطية تعيد الحالة الزمنية لكافة الفروع مجتمعة، ولا يمكن استرجاع بيانات فرع واحد فقط بمعزل عن بقية فروع المركز.
+> 2. **سياق RLS للمهام المؤتمتة (Background Jobs RLS Context):**
+>    - تعمل كافة الخدمات الخلفية والعاملة الدورية (`Background Workers & Cron Jobs`) تحت حساب خدمة داخلي (`is_service_account = true`) وسياق مميز `actorKind = 'Service'` ومستوى `is_org_admin = true`.
+>    - يتولى [contextualPool.js](file:///d:/VIARA/backend/src/utils/contextualPool.js) و [databaseContext.js](file:///d:/VIARA/backend/src/utils/databaseContext.js) توقيع وتطبيق سياق الخدمة تلقائياً عبر `workerPool` على كافة استعلامات المهام لمنع حظرها تحت سياسات RLS الانغلاقية (`Fail-Closed`).
+

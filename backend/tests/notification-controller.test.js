@@ -125,7 +125,10 @@ describe('notification controller hardening', () => {
 
         expect(db.query.mock.calls[0][0]).toContain('INSERT INTO notification_reads');
         expect(db.query.mock.calls[0][0]).not.toContain('UPDATE notifications');
-        expect(db.query.mock.calls[0][1]).toEqual(['user-1', 'n-1', 'user-1', 'HR']);
+        expect(db.query.mock.calls[0][0]).toContain('n.organization_id =');
+        expect(db.query.mock.calls[0][0]).toContain('n.branch_id =');
+        expect(db.query.mock.calls[0][1]).toEqual(['user-1', 'n-1', null, 'user-1',
+            '00000000-0000-4000-8000-000000000001', 'user-1', 'user-1', 'HR']);
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
             notification: expect.objectContaining({ is_read: true })
         }));

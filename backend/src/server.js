@@ -308,7 +308,7 @@ const checkClamAv = async () => {
 };
 
 // Test database connection
-if (process.env.NODE_ENV !== 'test') {
+if (require.main === module && process.env.NODE_ENV !== 'test') {
     waitForDatabaseConnection(pool)
         .then(async (client) => {
             try {
@@ -864,7 +864,12 @@ app.use('/api', chatRoutes(pool, auditService));
 // purpose-scoped SSE session token. The frontend must call this before
 // opening the EventSource stream to avoid placing the access JWT in the URL.
 app.post('/api/realtime/session', authenticateToken, (req, res) => {
-    const sessionToken = realtimeService.createSseSession(req.user);
+    const sessionToken = realtimeService.createSseSession({
+        ...req.user,
+        branchId: req.branchContext?.branchId || null,
+        branchIds: req.branchContext?.branchId ? [req.branchContext.branchId] : [],
+        organizationId: req.user.organization_id || req.branchContext?.organizationId || null
+    });
     res.cookie('viaraSseSession', sessionToken, {
         httpOnly: true,
         sameSite: 'lax',
@@ -883,7 +888,7 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Graceful Shutdown
-if (process.env.NODE_ENV !== 'test') {
+if (require.main === module && process.env.NODE_ENV !== 'test') {
     const shutdown = (signal) => {
         lifecycle.shutdown(signal)
             .then(() => process.exit(0))
@@ -894,26 +899,27 @@ if (process.env.NODE_ENV !== 'test') {
     };
     process.once('SIGTERM', () => shutdown('SIGTERM'));
     process.once('SIGINT', () => shutdown('SIGINT'));
+
+    // Process-level unhandled exception and rejection handlers
+    process.on('unhandledRejection', (reason, promise) => {
+        logger.error('Unhandled promise rejection; terminating process', {
+            reason: reason instanceof Error ? reason.message : String(reason),
+            stack: reason instanceof Error ? reason.stack : undefined,
+            promise: String(promise),
+        });
+        // Continuing after an unknown asynchronous failure risks serving requests
+        // from a partially corrupted process. The service manager is responsible
+        // for restarting the container/process.
+        process.exit(1);
+    });
+
+    process.on('uncaughtException', (error) => {
+        logger.error('Uncaught exception; terminating process', {
+            error: error.message,
+            stack: error.stack,
+        });
+        process.exit(1);
+    });
 }
 
 module.exports = app;
-// Process-level unhandled exception and rejection handlers
-process.on('unhandledRejection', (reason, promise) => {
-    logger.error('Unhandled promise rejection; terminating process', {
-        reason: reason instanceof Error ? reason.message : String(reason),
-        stack: reason instanceof Error ? reason.stack : undefined,
-        promise: String(promise),
-    });
-    // Continuing after an unknown asynchronous failure risks serving requests
-    // from a partially corrupted process. The service manager is responsible
-    // for restarting the container/process.
-    process.exit(1);
-});
-
-process.on('uncaughtException', (error) => {
-    logger.error('Uncaught exception; terminating process', {
-        error: error.message,
-        stack: error.stack,
-    });
-    process.exit(1);
-});

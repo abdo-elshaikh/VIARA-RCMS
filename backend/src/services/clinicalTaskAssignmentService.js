@@ -249,35 +249,47 @@ const completeTask = async (client, row, role, performedBy) => {
 };
 
 const assignTask = async (client, { examId, targetUserId, actor, reason }) => {
+    const row = await selectTaskForUpdate(client, examId);
+    if (!row) throw new AppError('Clinical task not found', 404, true, 'TASK_NOT_FOUND');
+    await assertClinicalTaskBranchAccess(client, actor, row.branch_id);
+
+    const { DEFAULT_HQ_BRANCH_ID } = require('./branchService');
+    const effectiveBranchId = row.branch_id || DEFAULT_HQ_BRANCH_ID;
+
     const targetResult = await client.query(`
-        SELECT user_id, role
-        FROM users
-        WHERE user_id = $1 AND is_active = TRUE
-    `, [targetUserId]);
+        SELECT u.user_id, u.role, u.organization_id, u.is_active,
+               ubm.role AS branch_role, ubm.is_active AS membership_active
+        FROM users u
+        LEFT JOIN user_branch_memberships ubm
+               ON ubm.user_id = u.user_id
+              AND ubm.branch_id = $2
+              AND ubm.is_active = TRUE
+        WHERE u.user_id = $1 AND u.is_active = TRUE
+          AND NOT u.is_service_account
+          AND u.organization_id = (SELECT organization_id FROM branches WHERE id = $2 AND status = 'active')
+    `, [targetUserId, effectiveBranchId]);
     const target = targetResult.rows[0];
-    if (!target || !CLINICAL_TASK_ROLES.includes(target.role)) {
+    if (!target) {
         throw new AppError('Target user is not an active eligible clinical user', 422, true, 'ROLE_NOT_ELIGIBLE');
     }
 
-    const row = await selectTaskForUpdate(client, examId);
-    if (!row) throw new AppError('Clinical task not found', 404, true, 'TASK_NOT_FOUND');
-    assertTaskMatchesRole(row, target.role);
-    await assertClinicalTaskBranchAccess(client, actor, row.branch_id);
-
-    const { getUserBranches, DEFAULT_HQ_BRANCH_ID } = require('./branchService');
-    const targetBranches = await getUserBranches(client, target.user_id, false, target.organization_id);
-    const targetBranchIds = new Set((targetBranches.branches || []).map(b => b.id));
-    const effectiveBranchId = row.branch_id || DEFAULT_HQ_BRANCH_ID;
-    if (!targetBranchIds.has(effectiveBranchId)) {
+    if (!target.branch_role) {
         throw new AppError('Target user does not have an active membership in the branch of this task', 422, true, 'TARGET_NOT_IN_BRANCH');
     }
 
-    const current = assignmentFromRow(row, target.role);
+    const effectiveTargetRole = target.branch_role;
+    if (!CLINICAL_TASK_ROLES.includes(effectiveTargetRole)) {
+        throw new AppError('Target user is not an active eligible clinical user for this branch', 422, true, 'ROLE_NOT_ELIGIBLE');
+    }
+
+    assertTaskMatchesRole(row, effectiveTargetRole);
+
+    const current = assignmentFromRow(row, effectiveTargetRole);
     if (String(current.assignedUserId || '') === String(target.user_id)) {
         return {
             exam_id: row.exam_id,
             appointment_id: row.appointment_id,
-            task_role: target.role,
+            task_role: effectiveTargetRole,
             assigned_user_id: current.assignedUserId,
             assigned_at: current.assignedAt,
             assignment_version: current.version,
@@ -289,10 +301,10 @@ const assignTask = async (client, { examId, targetUserId, actor, reason }) => {
         throw new AppError('A transfer reason is required', 422, true, 'REASON_REQUIRED');
     }
 
-    const assignment = await updateAssignment(client, row, target.role, target.user_id);
+    const assignment = await updateAssignment(client, row, effectiveTargetRole, target.user_id);
     await writeAssignmentEvent(client, {
         row,
-        role: target.role,
+        role: effectiveTargetRole,
         action: current.assignedUserId ? 'Transfer' : 'Assign',
         previousUserId: current.assignedUserId,
         newUserId: target.user_id,
@@ -304,7 +316,7 @@ const assignTask = async (client, { examId, targetUserId, actor, reason }) => {
     return {
         exam_id: row.exam_id,
         appointment_id: row.appointment_id,
-        task_role: target.role,
+        task_role: effectiveTargetRole,
         previous_user_id: current.assignedUserId,
         ...assignment,
         assignment_status: 'Assigned'

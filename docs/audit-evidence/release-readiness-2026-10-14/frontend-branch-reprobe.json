@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-14",
+  "syntheticOnly": true,
+  "crossTab": {
+    "reduxBranch": "A",
+    "standaloneFetchBranch": "B",
+    "sameBranch": false
+  },
+  "rehydrate": {
+    "activeBranch": "B",
+    "availableBranches": [
+      "A"
+    ],
+    "activeBranchAuthorized": false,
+    "effectiveRole": "Unassigned"
+  }
+}

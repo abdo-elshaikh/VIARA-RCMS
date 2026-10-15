@@ -92,7 +92,9 @@ const getNotificationContextValues = (context = {}) => {
         context.recipientUserId || null,
         audienceType,
         context.audienceRole || null,
-        context.priority || 'Normal'
+        context.priority || 'Normal',
+        context.branchId || context.branch_id || require('../utils/databaseContext').currentContext()?.branchId || null,
+        context.organizationId || context.organization_id || require('../utils/databaseContext').currentContext()?.organizationId || null
     ];
 };
 
@@ -174,8 +176,9 @@ const computeActionUrl = (item = {}, context = {}) => {
 const notifyClients = async (db, notificationId) => {
     try {
         const { rows } = await db.query(`
-            SELECT n.*, p.mrn AS patient_mrn
+            SELECT n.*, COALESCE(n.organization_id, b.organization_id) AS organization_id, p.mrn AS patient_mrn
             FROM notifications n
+            LEFT JOIN branches b ON b.id = n.branch_id
             LEFT JOIN patients p ON n.patient_id = p.patient_id
             WHERE n.notification_id = $1
         `, [notificationId]);
@@ -238,7 +241,9 @@ const notifyClients = async (db, notificationId) => {
                 channel: notification.channel,
                 status: notification.status,
                 event_type: notification.event_type,
-                created_at: notification.created_at
+                created_at: notification.created_at,
+                branch_id: notification.branch_id || null,
+                organization_id: notification.organization_id || null
             });
         }
     } catch (err) {
@@ -272,8 +277,8 @@ const sendEmail = async (to, subject, body, db, context = {}) => {
             const result = await db.query(`
                 INSERT INTO notifications
                     (recipient, type, channel, subject, content, status, event_type, entity_id, patient_id,
-                     referring_doctor_id, recipient_user_id, audience_type, audience_role, priority, sent_at)
-                VALUES ($1, $2, 'Email', $3, $4, 'Sent', $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+                     referring_doctor_id, recipient_user_id, audience_type, audience_role, priority, branch_id, organization_id, sent_at)
+                VALUES ($1, $2, 'Email', $3, $4, 'Sent', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
                 RETURNING notification_id
             `, [
                 encrypt(to), notifType,
@@ -294,8 +299,8 @@ const sendEmail = async (to, subject, body, db, context = {}) => {
             const result = await db.query(`
                 INSERT INTO notifications
                     (recipient, type, channel, subject, content, status, event_type, entity_id, patient_id,
-                     referring_doctor_id, recipient_user_id, audience_type, audience_role, priority, error_message)
-                VALUES ($1, 'Email', 'Email', $2, $3, 'Failed', $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                     referring_doctor_id, recipient_user_id, audience_type, audience_role, priority, branch_id, organization_id, error_message)
+                VALUES ($1, 'Email', 'Email', $2, $3, 'Failed', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
                 RETURNING notification_id
             `, [
                 encrypt(to), encrypt(resolvedSubject), encrypt(resolvedBody),
@@ -354,9 +359,9 @@ const sendSms = async (to, body, db, context = {}) => {
         const result = await db.query(`
             INSERT INTO notifications
                 (recipient, type, channel, content, status, event_type, entity_id, patient_id,
-                 referring_doctor_id, recipient_user_id, audience_type, audience_role, priority,
+                 referring_doctor_id, recipient_user_id, audience_type, audience_role, priority, branch_id, organization_id,
                  error_message, provider_message_id, sent_at)
-            VALUES ($1, $2, 'SMS', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+            VALUES ($1, $2, 'SMS', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
                     CASE WHEN $4::text = 'Sent' THEN NOW() ELSE NULL END)
             RETURNING notification_id
         `, [
@@ -416,9 +421,9 @@ const sendWhatsApp = async (to, body, db, context = {}) => {
         const result = await db.query(`
             INSERT INTO notifications
                 (recipient, type, channel, content, status, event_type, entity_id, patient_id,
-                 referring_doctor_id, recipient_user_id, audience_type, audience_role, priority,
+                 referring_doctor_id, recipient_user_id, audience_type, audience_role, priority, branch_id, organization_id,
                  error_message, provider_message_id, sent_at)
-            VALUES ($1, $2, 'WhatsApp', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
+            VALUES ($1, $2, 'WhatsApp', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
                     CASE WHEN $4::text = 'Sent' THEN NOW() ELSE NULL END)
             RETURNING notification_id
         `, [
@@ -444,8 +449,8 @@ const sendInApp = async (to, subject, body, db, context = {}) => {
             const result = await db.query(`
                 INSERT INTO notifications
                     (recipient, type, channel, subject, content, status, event_type, entity_id, patient_id,
-                     referring_doctor_id, recipient_user_id, audience_type, audience_role, priority, sent_at)
-                VALUES ($1, 'InApp', 'InApp', $2, $3, 'Sent', $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+                     referring_doctor_id, recipient_user_id, audience_type, audience_role, priority, branch_id, organization_id, sent_at)
+                VALUES ($1, 'InApp', 'InApp', $2, $3, 'Sent', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
                 RETURNING notification_id
             `, [
                 encrypt(to),

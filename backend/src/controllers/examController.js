@@ -14,6 +14,7 @@ const { getReportStatusForSave, getReportTransitionError } = require('../utils/r
 const { assertReportReadyForFinalization } = require('../services/pacsStudyReadinessService');
 const branchService = require('../services/branchService');
 const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
+const logger = require('../config/logger');
 
 const parseJSONSafe = (value) => {
     if (!value) return null;
@@ -1003,9 +1004,11 @@ const updateReport = (db) => async (req, res, next) => {
                     FROM users u
                     JOIN user_branch_memberships ubm ON ubm.user_id = u.user_id
                     WHERE u.is_active = TRUE
-                      AND u.role = 'Nurse'
+                      AND NOT u.is_service_account
+                      AND (ubm.role = 'Nurse' OR u.role = 'Nurse')
                       AND ubm.branch_id = $2
                       AND ubm.is_active = TRUE
+                      AND (u.organization_id IS NULL OR u.organization_id = (SELECT organization_id FROM branches WHERE id = $2 AND status = 'active'))
                     ON CONFLICT DO NOTHING
                     RETURNING acknowledgement_id, recipient_user_id, recipient_role
                 `, [examId, examBranchId]);
@@ -1085,37 +1088,43 @@ const updateReport = (db) => async (req, res, next) => {
             }
         }
 
-        await client.query('COMMIT');
-        committed = true;
-
-        // Non-critical notifications remain fire-and-forget after the transaction.
+        // Queue jobs and their audit before committing the report. Delivery is
+        // performed by the retrying worker, never by this clinical transaction.
         if (newStatus === 'Finalized') {
-            const examInfo = await db.query(
-                'SELECT patient_id, order_number, external_referring_doctor_id FROM examinations WHERE exam_id = $1',
+            const examInfo = await client.query(
+                'SELECT patient_id, order_number, external_referring_doctor_id, branch_id FROM examinations WHERE exam_id = $1',
                 [examId]
             );
             if (examInfo.rows.length > 0) {
                 const e = examInfo.rows[0];
-                triggerEvent(db, 'ReportReady', {
-                    doctorId: e.external_referring_doctor_id,
-                    entityType: 'Exam',
-                    entityId: examId,
-                    channels: ['Email', 'SMS'],
-                    variables: { order_number: e.order_number }
-                });
+                if (e.external_referring_doctor_id) {
+                    await triggerEvent(client, 'ReportReady', {
+                        doctorId: e.external_referring_doctor_id,
+                        entityType: 'Exam',
+                        entityId: examId,
+                        branchId: e.branch_id || req.branchContext?.branchId || null,
+                        organizationId: req.user?.organization_id || null,
+                        channels: ['Email', 'SMS'],
+                        variables: { order_number: e.order_number },
+                        required: true
+                    });
+                }
             }
 
             if (patientPortalRelease?.newly_released) {
-                triggerEvent(db, 'ReportReady', {
+                await triggerEvent(client, 'ReportReady', {
                     patientId: patientPortalRelease.patient_id,
                     entityType: 'Exam',
                     entityId: patientPortalRelease.exam_id,
+                    branchId: patientPortalRelease.branch_id || req.branchContext?.branchId || null,
+                    organizationId: req.user?.organization_id || null,
                     channels: ['Email', 'SMS'],
-                    variables: { order_number: patientPortalRelease.order_number || '' }
-                }).catch(() => {});
+                    variables: { order_number: patientPortalRelease.order_number || '' },
+                    required: true
+                });
             }
 
-            await logAction(db, {
+            await logAction(client, {
                 userId: req.user?.user_id,
                 action: 'REPORT_FINALIZED',
                 resourceId: examId,
@@ -1124,6 +1133,9 @@ const updateReport = (db) => async (req, res, next) => {
                 details: { status: 'Finalized' }
             });
         }
+
+        await client.query('COMMIT');
+        committed = true;
 
         if (checkResult.rows[0].status !== newStatus) {
             const examInfo = await db.query(
@@ -1911,7 +1923,7 @@ const transferExamBranch = (db) => async (req, res, next) => {
 
         // 2. Validate caller has access to the source branch
         if (!req.user?.is_org_admin) {
-            const userBranches = await branchService.getUserBranches(client, currentUserId, false);
+            const userBranches = await branchService.getUserBranches(client, currentUserId, false, req.user?.organization_id);
             const allowedBranchIds = userBranches.branches.map(b => b.id);
             if (!allowedBranchIds.includes(sourceBranchId)) {
                 if (ownsTransaction) await client.query('ROLLBACK');
@@ -2047,7 +2059,7 @@ const getExamBranchTransfers = (db) => async (req, res, next) => {
         if (!exam) return next(new AppError('Examination not found', 404));
 
         if (!req.user?.is_org_admin) {
-            const userBranches = await branchService.getUserBranches(db, currentUserId, false);
+            const userBranches = await branchService.getUserBranches(db, currentUserId, false, req.user?.organization_id);
             const allowedBranchIds = userBranches.branches.map(b => b.id);
             const hasAccess = allowedBranchIds.includes(exam.branch_id) || (exam.original_branch_id && allowedBranchIds.includes(exam.original_branch_id));
             if (!hasAccess) {

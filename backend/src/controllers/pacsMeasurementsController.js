@@ -66,12 +66,18 @@ const saveMeasurements = db => async (req, res, next) => {
     } catch (error) { next(error); }
 };
 
-const renewViewerSession = () => async (req, res, next) => {
+const renewViewerSession = (db) => async (req, res, next) => {
     try {
         const user = req.user;
         const remaining = Number(user.parent_session_expires_at) - Math.floor(Date.now() / 1000);
         if (user.scope !== 'pacs-viewer' || !Number.isFinite(remaining) || remaining <= 0) throw new AppError('Reopen the viewer from an active staff session', 401);
-        const token = jwt.sign({ user_id: user.user_id, session_id: user.session_id, role: user.role, scope: 'pacs-viewer',
+        if (db) await assertStudyAccess(db, user, user.study_instance_uids);
+        const token = jwt.sign({ user_id: user.user_id, session_id: user.session_id,
+            role: user.identity_role || user.role, scope: 'pacs-viewer',
+            branch_id: req.branchContext?.branchId || user.branch_id || null,
+            exam_id: user.exam_id || null, order_number: user.order_number || null,
+            ...(user.emergencyAccessId ? { emergencyAccessId: user.emergencyAccessId,
+                elevatedPermissions: user.elevatedPermissions, breakGlassExpiry: user.breakGlassExpiry } : {}),
             study_instance_uids: user.study_instance_uids, parent_session_expires_at: user.parent_session_expires_at }, getJwtSecret(), { expiresIn: Math.min(600, remaining) });
         res.set('Cache-Control', 'no-store');
         res.json({ viewerToken: token });

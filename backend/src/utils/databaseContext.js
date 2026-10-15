@@ -10,14 +10,17 @@ const serviceActorId = (organizationId = DEFAULT_ORGANIZATION) => {
 const serviceContext = () => {
     let organizationId = process.env.ORGANIZATION_ID || DEFAULT_ORGANIZATION;
     try { organizationId = require('../services/licenseService').getLicense()?.organizationId || organizationId; } catch {}
-    return { userId: serviceActorId(organizationId), branchId: null, actorKind: 'Service', isOrgAdmin: true };
+    return { userId: serviceActorId(organizationId), organizationId, branchId: null, actorKind: 'Service', isOrgAdmin: true };
 };
-const fromRequest = req => req.user ? {
+const fromRequest = req => req.databaseContext || (req.user ? {
     userId: req.user.user_id || req.user.userId || req.user.patientId || req.user.doctorId || req.user.doctor_id,
+    organizationId: req.user.organization_id || req.branchContext?.organizationId || null,
     branchId: req.branchContext?.branchId || null,
-    actorKind: ['Patient','Doctor'].includes(req.user.role) ? req.user.role : 'Staff',
+    actorKind: req.branchContext?.isEmergency
+        ? `Emergency:${req.branchContext.emergencyAccessId}:${req.user.session_id || ''}`
+        : ['Patient','Doctor'].includes(req.user.role) ? req.user.role : 'Staff',
     isOrgAdmin: Boolean(req.user.is_org_admin || req.user.role === 'Developer'),
-} : null;
+} : null);
 const currentContext = () => {
     const value = storage.getStore();
     return value?.request ? fromRequest(value.request) : value?.context || null;

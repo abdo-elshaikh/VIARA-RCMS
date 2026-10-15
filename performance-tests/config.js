@@ -25,8 +25,17 @@ if (fs.existsSync(rootEnvPath)) {
 
 const config = {
     // Target Base URL (defaults to backend port 3000 or Vite proxy 5173)
-    baseUrl: process.env.PERF_BASE_URL || process.env.VITE_API_URL || 'http://localhost:3000',
+    baseUrl: process.env.PERF_BASE_URL || 'http://localhost:3000',
     
+    branchId: process.env.PERF_BRANCH_ID || null,
+    metricsToken: process.env.PERF_METRICS_TOKEN || process.env.METRICS_TOKEN || '',
+    viewer: {
+        url: process.env.PERF_VIEWER_URL || '',
+        studyUid: process.env.PERF_VIEWER_STUDY_UID || '',
+        executable: process.env.PERF_BROWSER_EXECUTABLE || '',
+        samples: Number(process.env.PERF_IMAGE_SAMPLES) || 20
+    },
+
     // Default Timeout per HTTP request (ms)
     timeoutMs: Number(process.env.PERF_TIMEOUT_MS) || 15000,
 
@@ -87,7 +96,8 @@ const config = {
         diagnosticImageFirstLoad: {
             p95: 5000     // ms
         },
-        maxErrorRatePercent: 1.0 // <1% unexpected errors
+        maxErrorRatePercent: 1.0,
+        minDiagnosticImageSamples: 20
     },
 
     // Think time between user actions (simulates human pauses)
@@ -100,4 +110,14 @@ const config = {
     outputDir: path.resolve(__dirname, 'reports')
 };
 
+if (process.env.PERF_USER_POOL_FILE) {
+    const pools = JSON.parse(fs.readFileSync(path.resolve(process.env.PERF_USER_POOL_FILE), 'utf8'));
+    for (const [role, entries] of Object.entries(pools)) {
+        if (!config.users[role] || !Array.isArray(entries) || entries.length === 0
+            || entries.some(entry => !entry?.password || !(role === 'patient' ? entry.mrn : entry.email))) {
+            throw new Error('Invalid synthetic credential pool for role ' + role);
+        }
+        config.users[role] = entries;
+    }
+}
 module.exports = config;

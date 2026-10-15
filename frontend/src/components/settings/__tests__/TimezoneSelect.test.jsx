@@ -1,7 +1,8 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import TimezoneSelect, { isValidTimezone, getTimezoneOffsetString } from '../TimezoneSelect';
+import TimezoneSelect from '../TimezoneSelect';
+import { isValidTimezone, getTimezoneOffsetString } from '../../../utils/timezone';
 import i18n from '../../../i18n';
 
 describe('TimezoneSelect Component', () => {

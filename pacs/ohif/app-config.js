@@ -45,7 +45,21 @@ const notifyParent = (state, message = '') => {
   }
 };
 let imageRendered = false;
-document.addEventListener('CORNERSTONE_IMAGE_RENDERED', () => {
+document.addEventListener('CORNERSTONE_IMAGE_RENDERED', event => {
+  const canvas = event.target?.tagName === 'CANVAS' ? event.target : event.target?.querySelector?.('canvas');
+  const bounds = canvas?.getBoundingClientRect();
+  // Metadata and small thumbnail canvases do not prove a diagnostic viewport
+  // was displayed. Export timings only, never image data or study identifiers.
+  if (!(bounds?.width >= 256 && bounds?.height >= 256)
+      || /thumbnail|prefetch|preview/i.test(String(event.detail?.viewportId || ''))
+      || document.visibilityState !== 'visible') return;
+  if (!window.__viaraFirstDiagnosticImage) {
+    window.__viaraFirstDiagnosticImage = {
+      durationMs: performance.now(),
+      timeOrigin: performance.timeOrigin,
+      source: 'cornerstone-visible-viewport-render'
+    };
+  }
   imageRendered = true;
   window.__viaraImageRendered = true;
   notifyParent('ready');

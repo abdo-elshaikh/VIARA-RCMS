@@ -1,0 +1,22 @@
+// Run from repository root. Synthetic audit only; no production database writes.
+import fs from 'node:fs';
+fs.mkdirSync('scratch',{recursive:true});
+import {createRequire} from 'node:module';
+const require=createRequire(new URL('../../frontend/package.json',import.meta.url));
+const {configureStore}=require('@reduxjs/toolkit');
+const storage=new Map();
+globalThis.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)};
+globalThis.sessionStorage={getItem:()=>null,setItem:()=>{},removeItem:()=>{}};
+globalThis.window={dispatchEvent:()=>{}};globalThis.CustomEvent=class{};
+const slice=await import('../../frontend/src/store/authSlice.js');
+const branch=await import('../../frontend/src/utils/branchContext.js');
+const store=configureStore({reducer:{auth:slice.default}});
+store.dispatch(slice.setCredentials({user:{user_id:'synthetic',role:'Receptionist',defaultBranchId:'A',branches:[{id:'A',branch_role:'Admin'},{id:'B',branch_role:'Receptionist'}]},token:'synthetic'}));
+localStorage.setItem('viara_active_branch_id','B');
+const crossTab={reduxBranch:store.getState().auth.activeBranchId,standaloneFetchBranch:branch.getActiveBranchId(),sameBranch:store.getState().auth.activeBranchId===branch.getActiveBranchId()};
+store.dispatch(slice.setActiveBranch('B'));
+const payload=Buffer.from(JSON.stringify({user_id:'synthetic',role:'Receptionist'})).toString('base64url');
+store.dispatch(slice.rehydrateUser({token:'e30.'+payload+'.synthetic',user:{user_id:'synthetic',role:'Receptionist',defaultBranchId:'A',branches:[{id:'A',branch_role:'Admin'}]}}));
+const rehydrate={activeBranch:store.getState().auth.activeBranchId,availableBranches:store.getState().auth.user.branches.map(b=>b.id),activeBranchAuthorized:store.getState().auth.user.branches.some(b=>b.id===store.getState().auth.activeBranchId),effectiveRole:slice.selectCurrentUser(store.getState()).role};
+const result={date:'2026-10-14',syntheticOnly:true,crossTab,rehydrate};
+fs.writeFileSync('scratch/multibranch-deep-postfix-frontend-evidence-20261014.json',JSON.stringify(result,null,2));console.log(JSON.stringify(result));

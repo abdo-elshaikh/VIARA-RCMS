@@ -154,6 +154,7 @@ const authenticateToken = async (req, res, next) => {
                 user.must_change_password = owner.must_change_password;
                 user.organization_id = owner.organization_id || null;
                 user.is_org_admin = Boolean(owner.is_org_admin);
+                if (tableName === 'users') user.identity_role = owner.role;
             }
         }
 
@@ -168,7 +169,11 @@ const authenticateToken = async (req, res, next) => {
                 user.breakGlassExpiry = new Date(emergencyGrant.expires_at).getTime();
                 req.emergencyAccessVerified = {
                     grantId: emergencyGrant.grant_id,
-                    permissions: emergencyGrant.permissions
+                    permissions: emergencyGrant.permissions,
+                    organizationId: emergencyGrant.organization_id,
+                    targetBranchId: emergencyGrant.target_branch_id || null,
+                    targetResourceId: emergencyGrant.target_resource_id || null,
+                    targetResourceType: emergencyGrant.target_resource_type || null
                 };
             }
         }
@@ -194,6 +199,26 @@ const authorizeRole = (roles) => (req, res, next) => {
     const role = require('../utils/effectiveRole')(req);
     if (role === 'Developer' || (Array.isArray(roles) && roles.includes(role))) {
         return next();
+    }
+    const emergency = req.emergencyAccessVerified;
+    const verifiedEmergency = role === 'EmergencyClinicalViewer'
+        && Boolean(req.branchContext?.isEmergency)
+        && Boolean(req.branchContext?.emergencyAccessId)
+        && Boolean(emergency)
+        && emergency.grantId === req.branchContext.emergencyAccessId
+        && emergency.organizationId === req.user?.organization_id
+        && Boolean(emergency.organizationId)
+        && Number(req.user?.breakGlassExpiry) > Date.now();
+    if (verifiedEmergency) {
+        const requestPath = String(req.originalUrl || req.path || '').split('?')[0];
+        const clinicalReads = [
+            ['/api/patients', 'VIEW_PATIENTS'], ['/api/appointments', 'VIEW_APPOINTMENTS'],
+            ['/api/exams', 'VIEW_EXAMS'], ['/api/reports', 'VIEW_REPORTS'], ['/api/pacs', 'VIEW_PACS_IMAGES']
+        ];
+        const required = clinicalReads.find(([prefix]) => requestPath === prefix || requestPath.startsWith(prefix + '/'))?.[1];
+        if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) && required && emergency.permissions.includes(required)) return next();
+        if ((requestPath === '/api/rbac/break-glass/status' && req.method === 'GET')
+            || (requestPath === '/api/rbac/break-glass/revoke' && req.method === 'POST')) return next();
     }
     return res.status(403).json({ error: 'Access Denied: Insufficient Permissions' });
 };
@@ -232,8 +257,23 @@ const acceptViewerSession = async (decoded, req, res, next, authType) => {
         return res.status(401).json({ error: 'Viewer session revoked', code: 'VIEWER_SESSION_REVOKED' });
     }
     req.user = decoded;
+    req.user.identity_role = owner.role;
     req.user.organization_id = owner.organization_id;
     req.user.is_org_admin = Boolean(owner.is_org_admin);
+    if (decoded.parent_session_expires_at !== undefined && Number(decoded.parent_session_expires_at) <= Math.floor(Date.now() / 1000)) {
+        return res.status(401).json({ error: 'Parent login expired', code: 'VIEWER_SESSION_REVOKED' });
+    }
+    if (decoded.emergencyAccessId) {
+        const grant = await getActiveEmergencyGrant(authDatabase, req.user);
+        if (!grant || !grant.organization_id || grant.organization_id !== owner.organization_id) {
+            return res.status(401).json({ error: 'Emergency viewer session revoked', code: 'VIEWER_SESSION_REVOKED' });
+        }
+        req.user.elevatedPermissions = grant.permissions;
+        req.user.breakGlassExpiry = new Date(grant.expires_at).getTime();
+        req.emergencyAccessVerified = { grantId: grant.grant_id, permissions: grant.permissions,
+            organizationId: grant.organization_id, targetBranchId: grant.target_branch_id || null,
+            targetResourceId: grant.target_resource_id || null, targetResourceType: grant.target_resource_type || null };
+    }
     if (decoded.branch_id) {
         if (req.headers['x-branch-id'] && req.headers['x-branch-id'] !== decoded.branch_id) {
             return res.status(403).json({ error: 'Viewer branch mismatch', code: 'BRANCH_ACCESS_DENIED' });

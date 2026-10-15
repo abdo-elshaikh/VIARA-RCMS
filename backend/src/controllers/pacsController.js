@@ -81,6 +81,7 @@ const verifyPacsWebhook = (req, res, next) => {
     if (!provided || !safeEqual(provided, configured)) {
         return next(new AppError('Invalid PACS webhook signature', 401));
     }
+    req.databaseContext = require('../utils/databaseContext').serviceContext();
     next();
 };
 
@@ -1895,6 +1896,9 @@ const exportPacsStudy = (db) => async (req, res, next) => {
 const createViewerSession = (db) => async (req, res, next) => {
     try {
         if (!req.user.session_id) throw new AppError('An active staff login is required for the viewer', 401);
+        const parentRemaining = Number(req.user.exp) - Math.floor(Date.now() / 1000);
+        if (!Number.isFinite(parentRemaining) || parentRemaining <= 0) throw new AppError('An unexpired staff login is required for the viewer', 401);
+        const expiresInSeconds = Math.min(600, parentRemaining);
         const requestedUids = parseStudyUidList(req.body?.studyInstanceUids || req.body?.StudyInstanceUIDs);
         const accessionNumber =
             req.body?.accessionNumber ||
@@ -1920,10 +1924,12 @@ const createViewerSession = (db) => async (req, res, next) => {
                 branch_id: req.branchContext?.branchId || examContext?.branch_id || null,
                 study_instance_uids: studyUids,
                 exam_id: examContext?.exam_id || null,
-                order_number: examContext?.order_number || null
+                order_number: examContext?.order_number || null,
+                ...(req.user.emergencyAccessId ? { emergencyAccessId: req.user.emergencyAccessId,
+                    elevatedPermissions: req.user.elevatedPermissions, breakGlassExpiry: req.user.breakGlassExpiry } : {})
             },
             process.env.JWT_SECRET,
-            { expiresIn: 10 * 60 }
+            { expiresIn: expiresInSeconds }
         );
         res.set('Cache-Control', 'no-store');
         res.json({
@@ -1932,7 +1938,7 @@ const createViewerSession = (db) => async (req, res, next) => {
             viewerSessionReady: true,
             authMode: 'scopedBearer',
             viewerToken: token,
-            expiresInSeconds: 10 * 60,
+            expiresInSeconds,
             exam: examContext || null
         });
     } catch (error) {

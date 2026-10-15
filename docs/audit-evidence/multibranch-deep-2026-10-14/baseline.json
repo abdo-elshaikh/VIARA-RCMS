@@ -1,0 +1,13 @@
+{
+  "backend": {
+    "suites": 171,
+    "passed": 1370,
+    "failed": 0
+  },
+  "frontend": {
+    "files": 133,
+    "passed": 784,
+    "failed": 0
+  },
+  "additionalAudit": "Separate reproduction probes found issues despite passing baseline tests."
+}

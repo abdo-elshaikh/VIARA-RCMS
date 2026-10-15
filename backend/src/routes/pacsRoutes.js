@@ -143,7 +143,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
     const { readMeasurements, saveMeasurements, renewViewerSession } = require('../controllers/pacsMeasurementsController');
     router.get('/viewer-state/:studyInstanceUid/measurements', authenticateDicomWeb, hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), readMeasurements(pool));
     router.put('/viewer-state/:studyInstanceUid/measurements', authenticateDicomWeb, hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), saveMeasurements(pool));
-    router.post('/viewer-renew', authenticateDicomWeb, hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), renewViewerSession());
+    router.post('/viewer-renew', authenticateDicomWeb, hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), renewViewerSession(pool));
     // --- Authenticated VIARA API ---
     router.use(authenticateToken);
     router.get('/studies/:studyInstanceUid/bookmarks', hasAnyPermission(pool, ['VIEW_PACS_IMAGES', 'MANAGE_PACS']), getBookmarks(pool));

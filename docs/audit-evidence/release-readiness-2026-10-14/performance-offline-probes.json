@@ -1,0 +1,802 @@
+{
+  "evidenceType": "Offline mocked probes of harness behavior; no server performance measurements",
+  "actualWorklistResponseShape": "Array, as returned by backend/src/controllers/examController.js:289. The items response at line 536 belongs to getCaseReports, not getWorklist.",
+  "correctionNote": "Object-shaped probes below are unsupported hypothetical inputs and do not establish an API-contract defect. The original API-shape inference was withdrawn. The script was updated but could not be rerun after execution-tool failures.",
+  "peakEmptyWorklist": {
+    "requests": [
+      {
+        "method": "GET",
+        "endpoint": "/api/exams/worklist?scope=mine&limit=20"
+      },
+      {
+        "method": "GET",
+        "endpoint": "/api/queue"
+      }
+    ],
+    "summary": {
+      "startTime": "2026-10-14T17:16:00.412Z",
+      "endTime": "2026-10-14T17:16:00.413Z",
+      "durationSeconds": 1,
+      "totalRequests": 2,
+      "successfulRequests": 2,
+      "failedRequests": 0,
+      "errorRatePercent": 0,
+      "throughputRps": 2,
+      "latency": {
+        "min": 1,
+        "p50": 1,
+        "p75": 1,
+        "p90": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "avg": 1
+      },
+      "thresholdEvaluations": [
+        {
+          "name": "Request Error Rate",
+          "target": "<= 1%",
+          "actual": "0.00%",
+          "passed": true
+        },
+        {
+          "name": "Read API Latency (p95)",
+          "target": "<= 500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p95)",
+          "target": "<= 1000ms",
+          "actual": "Not measured",
+          "passed": null
+        },
+        {
+          "name": "Read API Latency (p99)",
+          "target": "<= 1500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p99)",
+          "target": "<= 2500ms",
+          "actual": "Not measured",
+          "passed": null
+        },
+        {
+          "name": "Diagnostic Image First Load (p95)",
+          "target": "<= 5000ms",
+          "actual": "Not measured",
+          "passed": null
+        }
+      ],
+      "thresholdStatus": "INCOMPLETE",
+      "endpoints": [
+        {
+          "key": "GET /api/exams/worklist",
+          "method": "GET",
+          "endpoint": "/api/exams/worklist",
+          "action": "Peak Load — Clinical Worklist",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        },
+        {
+          "key": "GET /api/queue",
+          "method": "GET",
+          "endpoint": "/api/queue",
+          "action": "Peak Load — Clinical Queue",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        }
+      ]
+    }
+  },
+  "peakUnsupportedObjectShape": {
+    "requests": [
+      {
+        "method": "GET",
+        "endpoint": "/api/exams/worklist?scope=mine&limit=20"
+      },
+      {
+        "method": "GET",
+        "endpoint": "/api/queue"
+      }
+    ],
+    "summary": {
+      "startTime": "2026-10-14T17:16:00.413Z",
+      "endTime": "2026-10-14T17:16:00.413Z",
+      "durationSeconds": 1,
+      "totalRequests": 2,
+      "successfulRequests": 2,
+      "failedRequests": 0,
+      "errorRatePercent": 0,
+      "throughputRps": 2,
+      "latency": {
+        "min": 1,
+        "p50": 1,
+        "p75": 1,
+        "p90": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "avg": 1
+      },
+      "thresholdEvaluations": [
+        {
+          "name": "Request Error Rate",
+          "target": "<= 1%",
+          "actual": "0.00%",
+          "passed": true
+        },
+        {
+          "name": "Read API Latency (p95)",
+          "target": "<= 500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p95)",
+          "target": "<= 1000ms",
+          "actual": "Not measured",
+          "passed": null
+        },
+        {
+          "name": "Read API Latency (p99)",
+          "target": "<= 1500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p99)",
+          "target": "<= 2500ms",
+          "actual": "Not measured",
+          "passed": null
+        },
+        {
+          "name": "Diagnostic Image First Load (p95)",
+          "target": "<= 5000ms",
+          "actual": "Not measured",
+          "passed": null
+        }
+      ],
+      "thresholdStatus": "INCOMPLETE",
+      "endpoints": [
+        {
+          "key": "GET /api/exams/worklist",
+          "method": "GET",
+          "endpoint": "/api/exams/worklist",
+          "action": "Peak Load — Clinical Worklist",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        },
+        {
+          "key": "GET /api/queue",
+          "method": "GET",
+          "endpoint": "/api/queue",
+          "action": "Peak Load — Clinical Queue",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        }
+      ]
+    }
+  },
+  "peakFinalizedWorklist": {
+    "requests": [
+      {
+        "method": "GET",
+        "endpoint": "/api/exams/worklist?scope=mine&limit=20"
+      },
+      {
+        "method": "GET",
+        "endpoint": "/api/exams/synthetic-finalized"
+      },
+      {
+        "method": "PUT",
+        "endpoint": "/api/exams/synthetic-finalized/report",
+        "body": {
+          "reportContent": "Peak load draft by VU-3 at 2026-10-14T17:16:00.414Z",
+          "findings": "Peak load findings by VU-3",
+          "impression": "Unremarkable examination. Normal study findings.",
+          "reportStatus": "Finalized",
+          "status": "Reporting"
+        }
+      },
+      {
+        "method": "GET",
+        "endpoint": "/api/queue"
+      }
+    ],
+    "summary": {
+      "startTime": "2026-10-14T17:16:00.413Z",
+      "endTime": "2026-10-14T17:16:00.414Z",
+      "durationSeconds": 1,
+      "totalRequests": 4,
+      "successfulRequests": 4,
+      "failedRequests": 0,
+      "errorRatePercent": 0,
+      "throughputRps": 4,
+      "latency": {
+        "min": 1,
+        "p50": 1,
+        "p75": 1,
+        "p90": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "avg": 1
+      },
+      "thresholdEvaluations": [
+        {
+          "name": "Request Error Rate",
+          "target": "<= 1%",
+          "actual": "0.00%",
+          "passed": true
+        },
+        {
+          "name": "Read API Latency (p95)",
+          "target": "<= 500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p95)",
+          "target": "<= 1000ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Read API Latency (p99)",
+          "target": "<= 1500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p99)",
+          "target": "<= 2500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Diagnostic Image First Load (p95)",
+          "target": "<= 5000ms",
+          "actual": "Not measured",
+          "passed": null
+        }
+      ],
+      "thresholdStatus": "INCOMPLETE",
+      "endpoints": [
+        {
+          "key": "GET /api/exams/worklist",
+          "method": "GET",
+          "endpoint": "/api/exams/worklist",
+          "action": "Peak Load — Clinical Worklist",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        },
+        {
+          "key": "GET /api/exams/:id",
+          "method": "GET",
+          "endpoint": "/api/exams/:id",
+          "action": "Peak Load — Exam Detail",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        },
+        {
+          "key": "PUT /api/exams/:id/report",
+          "method": "PUT",
+          "endpoint": "/api/exams/:id/report",
+          "action": "Peak Load — Save Report Draft",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        },
+        {
+          "key": "GET /api/queue",
+          "method": "GET",
+          "endpoint": "/api/queue",
+          "action": "Peak Load — Clinical Queue",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        }
+      ]
+    }
+  },
+  "soakEmptyWorklist": {
+    "requests": [
+      {
+        "method": "GET",
+        "endpoint": "/api/exams/worklist?scope=mine&limit=20"
+      },
+      {
+        "method": "GET",
+        "endpoint": "/api/exam-types?limit=50"
+      }
+    ],
+    "summary": {
+      "startTime": "2026-10-14T17:16:00.414Z",
+      "endTime": "2026-10-14T17:16:00.415Z",
+      "durationSeconds": 1,
+      "totalRequests": 2,
+      "successfulRequests": 2,
+      "failedRequests": 0,
+      "errorRatePercent": 0,
+      "throughputRps": 2,
+      "latency": {
+        "min": 1,
+        "p50": 1,
+        "p75": 1,
+        "p90": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "avg": 1
+      },
+      "thresholdEvaluations": [
+        {
+          "name": "Request Error Rate",
+          "target": "<= 1%",
+          "actual": "0.00%",
+          "passed": true
+        },
+        {
+          "name": "Read API Latency (p95)",
+          "target": "<= 500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p95)",
+          "target": "<= 1000ms",
+          "actual": "Not measured",
+          "passed": null
+        },
+        {
+          "name": "Read API Latency (p99)",
+          "target": "<= 1500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p99)",
+          "target": "<= 2500ms",
+          "actual": "Not measured",
+          "passed": null
+        },
+        {
+          "name": "Diagnostic Image First Load (p95)",
+          "target": "<= 5000ms",
+          "actual": "Not measured",
+          "passed": null
+        }
+      ],
+      "thresholdStatus": "INCOMPLETE",
+      "endpoints": [
+        {
+          "key": "GET /api/exams/worklist",
+          "method": "GET",
+          "endpoint": "/api/exams/worklist",
+          "action": "Soak — Clinical Worklist",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        },
+        {
+          "key": "GET /api/exam-types",
+          "method": "GET",
+          "endpoint": "/api/exam-types",
+          "action": "Soak — Exam Types Catalog",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        }
+      ]
+    }
+  },
+  "soakUnsupportedObjectShape": {
+    "requests": [
+      {
+        "method": "GET",
+        "endpoint": "/api/exams/worklist?scope=mine&limit=20"
+      },
+      {
+        "method": "GET",
+        "endpoint": "/api/exam-types?limit=50"
+      }
+    ],
+    "summary": {
+      "startTime": "2026-10-14T17:16:00.415Z",
+      "endTime": "2026-10-14T17:16:00.415Z",
+      "durationSeconds": 1,
+      "totalRequests": 2,
+      "successfulRequests": 2,
+      "failedRequests": 0,
+      "errorRatePercent": 0,
+      "throughputRps": 2,
+      "latency": {
+        "min": 1,
+        "p50": 1,
+        "p75": 1,
+        "p90": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "avg": 1
+      },
+      "thresholdEvaluations": [
+        {
+          "name": "Request Error Rate",
+          "target": "<= 1%",
+          "actual": "0.00%",
+          "passed": true
+        },
+        {
+          "name": "Read API Latency (p95)",
+          "target": "<= 500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p95)",
+          "target": "<= 1000ms",
+          "actual": "Not measured",
+          "passed": null
+        },
+        {
+          "name": "Read API Latency (p99)",
+          "target": "<= 1500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p99)",
+          "target": "<= 2500ms",
+          "actual": "Not measured",
+          "passed": null
+        },
+        {
+          "name": "Diagnostic Image First Load (p95)",
+          "target": "<= 5000ms",
+          "actual": "Not measured",
+          "passed": null
+        }
+      ],
+      "thresholdStatus": "INCOMPLETE",
+      "endpoints": [
+        {
+          "key": "GET /api/exams/worklist",
+          "method": "GET",
+          "endpoint": "/api/exams/worklist",
+          "action": "Soak — Clinical Worklist",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        },
+        {
+          "key": "GET /api/exam-types",
+          "method": "GET",
+          "endpoint": "/api/exam-types",
+          "action": "Soak — Exam Types Catalog",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        }
+      ]
+    }
+  },
+  "pacsMetadataOnly": {
+    "requests": [
+      {
+        "method": "GET",
+        "endpoint": "/api/machines"
+      },
+      {
+        "method": "GET",
+        "endpoint": "/api/pacs/settings/system"
+      },
+      {
+        "method": "GET",
+        "endpoint": "/api/pacs/storage"
+      },
+      {
+        "method": "GET",
+        "endpoint": "/api/pacs/worklist/preview"
+      }
+    ],
+    "summary": {
+      "startTime": "2026-10-14T17:16:00.415Z",
+      "endTime": "2026-10-14T17:16:00.416Z",
+      "durationSeconds": 1,
+      "totalRequests": 4,
+      "successfulRequests": 4,
+      "failedRequests": 0,
+      "errorRatePercent": 0,
+      "throughputRps": 4,
+      "latency": {
+        "min": 1,
+        "p50": 1,
+        "p75": 1,
+        "p90": 1,
+        "p95": 1,
+        "p99": 1,
+        "max": 1,
+        "avg": 1
+      },
+      "thresholdEvaluations": [
+        {
+          "name": "Request Error Rate",
+          "target": "<= 1%",
+          "actual": "0.00%",
+          "passed": true
+        },
+        {
+          "name": "Read API Latency (p95)",
+          "target": "<= 500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p95)",
+          "target": "<= 1000ms",
+          "actual": "Not measured",
+          "passed": null
+        },
+        {
+          "name": "Read API Latency (p99)",
+          "target": "<= 1500ms",
+          "actual": "1.0ms",
+          "passed": true
+        },
+        {
+          "name": "Write & Mutation Latency (p99)",
+          "target": "<= 2500ms",
+          "actual": "Not measured",
+          "passed": null
+        },
+        {
+          "name": "Diagnostic Image First Load (p95)",
+          "target": "<= 5000ms",
+          "actual": "Not measured",
+          "passed": null
+        }
+      ],
+      "thresholdStatus": "INCOMPLETE",
+      "endpoints": [
+        {
+          "key": "GET /api/machines",
+          "method": "GET",
+          "endpoint": "/api/machines",
+          "action": "Query Imaging Machines",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        },
+        {
+          "key": "GET /api/pacs/settings/system",
+          "method": "GET",
+          "endpoint": "/api/pacs/settings/system",
+          "action": "Query PACS Orthanc Status",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        },
+        {
+          "key": "GET /api/pacs/storage",
+          "method": "GET",
+          "endpoint": "/api/pacs/storage",
+          "action": "Query PACS Storage Summary",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        },
+        {
+          "key": "GET /api/pacs/worklist/preview",
+          "method": "GET",
+          "endpoint": "/api/pacs/worklist/preview",
+          "action": "Query PACS Worklist Preview",
+          "totalRequests": 1,
+          "successCount": 1,
+          "failCount": 0,
+          "errorRatePercent": 0,
+          "statuses": {
+            "200": 1
+          },
+          "min": 1,
+          "p50": 1,
+          "p75": 1,
+          "p90": 1,
+          "p95": 1,
+          "p99": 1,
+          "max": 1,
+          "avg": 1
+        }
+      ]
+    }
+  }
+}

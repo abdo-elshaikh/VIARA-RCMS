@@ -8,13 +8,20 @@ const {
 } = require('../utils/roleGovernance');
 const { triggerEventForRole } = require('../services/notificationJobService');
 const { assertQuota } = require('../services/quotaService');
+const { organizationId, requireIdentityManager } = require('../utils/organizationIdentityScope');
 
 const getAllStaff = (db) => async (req, res, next) => {
     try {
         const canManage = ['Developer', 'Admin', 'HR'].includes(req.user.role);
+        const org = organizationId(req);
+        const wholeOrganization = req.user.is_org_admin || (req.user.identity_role || req.user.role) === 'Developer';
+        const branchId = req.branchContext?.branchId;
+        if (!wholeOrganization && !branchId) throw new AppError('A selected branch is required', 400);
+        const scope = `organization_id = $1 AND NOT is_service_account AND ($2::boolean OR EXISTS (
+            SELECT 1 FROM user_branch_memberships m WHERE m.user_id = users.user_id AND m.branch_id = $3 AND m.is_active))`;
         const result = await db.query(canManage
-            ? "SELECT user_id, full_name, email, role, is_active, created_at FROM users WHERE role != 'Referring_Doctor' ORDER BY created_at DESC"
-            : "SELECT user_id, full_name, role FROM users WHERE role != 'Referring_Doctor' AND is_active = TRUE ORDER BY full_name ASC");
+            ? `SELECT user_id, full_name, email, role, is_active, created_at FROM users WHERE ${scope} AND role != 'Referring_Doctor' ORDER BY created_at DESC`
+            : `SELECT user_id, full_name, role FROM users WHERE ${scope} AND role != 'Referring_Doctor' AND is_active = TRUE ORDER BY full_name ASC`, [org, Boolean(wholeOrganization), branchId || null]);
         res.json(result.rows);
     } catch (error) {
         next(error);
@@ -25,6 +32,7 @@ const createStaff = (db) => async (req, res, next) => {
     let client;
     try {
         const data = req.body;
+        const org = requireIdentityManager(req);
         const fullName = (data.fullName || data.full_name || '').trim();
         const email = (data.email || '').trim().toLowerCase();
         const role = data.role;
@@ -43,9 +51,13 @@ const createStaff = (db) => async (req, res, next) => {
         await client.query('BEGIN');
         await assertQuota(client, 'users', { transaction: true });
         const result = await client.query(
-            "INSERT INTO users (full_name, email, password_hash, role, must_change_password) VALUES ($1, $2, $3, $4, TRUE) RETURNING user_id, full_name, email, role",
-            [fullName, email, hashedPassword, role]
+            "INSERT INTO users (full_name, email, password_hash, role, must_change_password, organization_id, is_org_admin) VALUES ($1, $2, $3, $4, TRUE, $5, FALSE) RETURNING user_id, full_name, email, role",
+            [fullName, email, hashedPassword, role, org]
         );
+        if (req.branchContext?.branchId && role !== 'Developer') {
+            await client.query(`INSERT INTO user_branch_memberships(user_id, branch_id, role, is_active, is_default)
+                VALUES($1, $2, $3, TRUE, TRUE)`, [result.rows[0].user_id, req.branchContext.branchId, role]);
+        }
         // Payroll, attendance, and leave all key off employee_profiles; create
         // it in the same transaction so a new hire can never be invisible to
         // payroll until someone remembers to fill the HR form.
@@ -97,13 +109,15 @@ const updateStaff = (db) => async (req, res, next) => {
     let client;
     try {
         const { id } = req.params;
+        const org = requireIdentityManager(req);
         const { fullName, email, role, isActive, password } = req.body;
         client = await db.connect();
         await client.query('BEGIN');
         const targetResult = await client.query(
-            'SELECT user_id, role, is_active FROM users WHERE user_id = $1 FOR UPDATE', [id]
+            'SELECT user_id, role, is_active, organization_id FROM users WHERE user_id = $1 AND organization_id = $2 AND NOT is_service_account FOR UPDATE', [id, org]
         );
         if (!targetResult.rows.length) throw new AppError('User not found', 404);
+        if (targetResult.rows[0].organization_id !== org) throw new AppError('User not found', 404);
         await assertProtectedUserMutation(client, req.user, targetResult.rows[0], role, isActive);
 
         // Dynamic update fields
@@ -203,12 +217,14 @@ const deleteStaff = (db) => async (req, res, next) => {
     let client;
     try {
         const { id } = req.params;
+        const org = requireIdentityManager(req);
         client = await db.connect();
         await client.query('BEGIN');
         const targetResult = await client.query(
-            'SELECT user_id, role, is_active FROM users WHERE user_id = $1 FOR UPDATE', [id]
+            'SELECT user_id, role, is_active, organization_id FROM users WHERE user_id = $1 AND organization_id = $2 AND NOT is_service_account FOR UPDATE', [id, org]
         );
         if (!targetResult.rows.length) throw new AppError('User not found', 404);
+        if (targetResult.rows[0].organization_id !== org) throw new AppError('User not found', 404);
         await assertProtectedUserMutation(client, req.user, targetResult.rows[0], targetResult.rows[0].role, false);
         const result = await client.query(
             "UPDATE users SET is_active = false, current_session_id = NULL WHERE user_id = $1 RETURNING user_id",

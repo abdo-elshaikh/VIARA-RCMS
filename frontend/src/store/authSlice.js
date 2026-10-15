@@ -1,4 +1,5 @@
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, createSelector } from '@reduxjs/toolkit';
+import { configureActiveBranchProvider } from '../utils/branchContext.js';
 
 export const STAFF_ROLES = new Set([
     'Admin', 'Radiologist', 'Receptionist', 'Cashier', 'Accountant',
@@ -72,7 +73,6 @@ const syncEmergencyClaims = (user = {}, decodedUser = null) => {
 
 const persistUser = (user) => {
     if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('user', JSON.stringify(user));
-    if (typeof localStorage !== 'undefined') localStorage.setItem('user', JSON.stringify(user));
 };
 
 const readStoredUser = () => {
@@ -82,19 +82,13 @@ const readStoredUser = () => {
             const sessionUser = sessionStorage.getItem('user');
             if (sessionUser) stored = JSON.parse(sessionUser);
         }
-        if (!stored && typeof localStorage !== 'undefined') {
-            const localUser = localStorage.getItem('user');
-            if (localUser) stored = JSON.parse(localUser);
-        }
         if (stored?.role && !isStaffRole(stored.role)) {
             if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
-            if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
             return null;
         }
         return stored;
     } catch {
         if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
-        if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
     }
     return null;
 };
@@ -106,15 +100,70 @@ const readStoredBranchId = () => {
         if (typeof localStorage !== 'undefined') {
             return localStorage.getItem('viara_active_branch_id') || null;
         }
-    } catch {}
+    } catch {
+        // Browser storage is optional; the workspace keeps its own selection.
+    }
     return null;
+};
+
+let currentActiveBranchId = readStoredBranchId();
+configureActiveBranchProvider(() => currentActiveBranchId);
+
+const resolveSessionBranch = (user, previousBranchId) => {
+    const branches = Array.isArray(user?.branches) ? user.branches : [];
+    return branches.find(branch => branch.id === previousBranchId)?.id
+        || branches.find(branch => branch.id === user?.defaultBranchId)?.id
+        || branches.find(branch => branch.is_default)?.id
+        || (branches.length === 1 ? branches[0].id : null);
+};
+
+const persistBranchSelection = (branchId) => {
+    currentActiveBranchId = branchId || null;
+    try {
+        if (branchId) localStorage.setItem('viara_active_branch_id', String(branchId));
+        else localStorage.removeItem('viara_active_branch_id');
+    } catch {
+        // Shared storage is a startup hint, not the active workspace state.
+    }
+};
+
+const applySessionUser = (state, user, token, decodedUser = null) => {
+    const previousId = state.user?.user_id || state.user?.id;
+    const nextId = user.user_id || user.id;
+    const previousOrganization = state.user?.organization_id || state.user?.organizationId || null;
+    const organizationId = user.organization_id || user.organizationId || null;
+    const sameIdentity = (!previousId || previousId === nextId) && previousOrganization === organizationId;
+    const resolvedBranch = resolveSessionBranch(user, sameIdentity ? state.activeBranchId : null);
+    state.user = syncEmergencyClaims({
+        ...user,
+        organization_id: organizationId,
+        is_org_admin: Boolean(user.is_org_admin ?? user.isOrgAdmin),
+        // Re-fetch branch permissions from the server after restoring identity.
+        permissions: [],
+        permissionsBranchId: null,
+    }, decodedUser);
+    state.token = token;
+    state.isAuthenticated = true;
+    state.activeBranchId = resolvedBranch;
+    persistBranchSelection(resolvedBranch);
+    persistUser(state.user);
+};
+
+const clearSession = (state) => {
+    state.user = null;
+    state.token = null;
+    state.isAuthenticated = false;
+    state.activeBranchId = null;
+    persistBranchSelection(null);
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
+    clearLegacyTokenStorage();
 };
 
 const initialState = {
     user: null,
     token: null,
     isAuthenticated: false,
-    activeBranchId: readStoredBranchId(),
+    activeBranchId: currentActiveBranchId,
 };
 
 const authSlice = createSlice({
@@ -124,55 +173,30 @@ const authSlice = createSlice({
         setCredentials: (state, action) => {
             const { user, token } = action.payload;
             if (user?.role && !isStaffRole(user.role)) {
-                state.user = null;
-                state.token = null;
-                state.isAuthenticated = false;
-                if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
-                if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
-                clearLegacyTokenStorage();
+                clearSession(state);
                 return;
             }
-            state.user = syncEmergencyClaims({
-                ...user,
-                organization_id: user.organization_id || user.organizationId || null,
-                is_org_admin: Boolean(user.is_org_admin ?? user.isOrgAdmin),
-                permissions: user.permissions || []
-            }, decodeUserFromToken(token));
-            state.token = token;
-            state.isAuthenticated = true;
-
-            const branches = Array.isArray(user?.branches) ? user.branches : [];
-            const resolvedBranch = branches.find(branch => branch.id === state.activeBranchId)?.id
-                || branches.find(branch => branch.id === user?.defaultBranchId)?.id
-                || (branches.length === 1 ? branches[0].id : null);
-            state.activeBranchId = resolvedBranch;
-            try {
-                if (resolvedBranch) localStorage.setItem('viara_active_branch_id', resolvedBranch);
-                else localStorage.removeItem('viara_active_branch_id');
-            } catch {}
-
-            persistUser(state.user);
+            applySessionUser(state, user, token, decodeUserFromToken(token));
             clearLegacyTokenStorage();
         },
         // Live-sync effective permissions (e.g. after an RBAC policy change)
         // without waiting for the next login.
         permissionsUpdated: (state, action) => {
-            const permissions = Array.isArray(action.payload) ? action.payload : [];
+            const legacy = Array.isArray(action.payload);
+            if (!legacy && (action.payload?.branchId || null) !== (state.activeBranchId || null)) return;
+            const permissions = legacy ? action.payload : action.payload?.permissions;
+            if (!Array.isArray(permissions)) return;
             if (state.user) {
-                state.user = { ...state.user, permissions };
+                state.user = { ...state.user, permissions, permissionsBranchId: state.activeBranchId || null };
+                if (!legacy && action.payload.role && Array.isArray(state.user.branches)) {
+                    const branch = state.user.branches.find(item => item.id === state.activeBranchId);
+                    if (branch) branch.branch_role = action.payload.role;
+                }
                 persistUser(state.user);
             }
         },
         logOut: (state) => {
-            state.user = null;
-            state.token = null;
-            state.isAuthenticated = false;
-            state.activeBranchId = null;
-            if (typeof localStorage !== 'undefined') localStorage.removeItem('viara_active_branch_id');
-
-            if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
-            if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
-            clearLegacyTokenStorage();
+            clearSession(state);
         },
         rehydrateUser: (state, action) => {
             const token = typeof action.payload === 'string'
@@ -189,16 +213,12 @@ const authSlice = createSlice({
             const resolvedUser = explicitUser || storedUser || decodedUser;
 
             if (resolvedUser?.role && !isStaffRole(resolvedUser.role)) {
-                state.user = null;
-                state.token = null;
-                state.isAuthenticated = false;
-                if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
-                if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
+                clearSession(state);
                 return;
             }
 
             if (resolvedUser && token) {
-                state.user = syncEmergencyClaims({
+                applySessionUser(state, {
                     ...resolvedUser,
                     ...(decodedUser ? {
                         user_id: decodedUser.user_id,
@@ -207,20 +227,18 @@ const authSlice = createSlice({
                         email: decodedUser.email || resolvedUser.email,
                         full_name: decodedUser.full_name || resolvedUser.full_name,
                     } : {}),
-                    permissions: resolvedUser.permissions || []
-                }, decodedUser);
-                state.token = token;
-                state.isAuthenticated = true;
-
-                persistUser(state.user);
+                }, token, decodedUser);
             }
         },
         updateCurrentUser: (state, action) => {
-            state.user = {
-                ...state.user,
-                ...action.payload
-            };
-            persistUser(state.user);
+            const updatedUser = { ...state.user, ...action.payload };
+            if (['branches', 'defaultBranchId', 'organization_id', 'organizationId', 'role', 'is_org_admin', 'isOrgAdmin']
+                .some(key => Object.prototype.hasOwnProperty.call(action.payload, key))) {
+                applySessionUser(state, updatedUser, state.token, decodeUserFromToken(state.token));
+            } else {
+                state.user = updatedUser;
+                persistUser(state.user);
+            }
         },
         setAccessToken: (state, action) => {
             state.token = action.payload;
@@ -229,11 +247,7 @@ const authSlice = createSlice({
                 const storedUser = readStoredUser();
                 const resolvedUser = storedUser || decodedUser;
                 if (resolvedUser) {
-                    state.user = syncEmergencyClaims({
-                        ...resolvedUser,
-                        permissions: resolvedUser.permissions || []
-                    }, decodedUser);
-                    state.isAuthenticated = true;
+                    applySessionUser(state, resolvedUser, state.token, decodedUser);
                 }
             } else if (state.user) {
                 state.user = syncEmergencyClaims(state.user, decodedUser);
@@ -247,14 +261,13 @@ const authSlice = createSlice({
             persistUser(state.user);
         },
         setActiveBranch: (state, action) => {
+            if (state.activeBranchId !== (action.payload || null) && state.user) {
+                state.user.permissions = [];
+                state.user.permissionsBranchId = null;
+                persistUser(state.user);
+            }
             state.activeBranchId = action.payload || null;
-            try {
-                if (action.payload) {
-                    localStorage.setItem('viara_active_branch_id', String(action.payload));
-                } else {
-                    localStorage.removeItem('viara_active_branch_id');
-                }
-            } catch {}
+            persistBranchSelection(state.activeBranchId);
             if (typeof window !== 'undefined') {
                 window.dispatchEvent(new CustomEvent('viara:branch-changed', { detail: { branchId: action.payload } }));
             }
@@ -266,7 +279,15 @@ export const { setCredentials, logOut, rehydrateUser, updateCurrentUser, setAcce
 
 export default authSlice.reducer;
 
-export const selectCurrentUser = (state) => state.auth.user;
+const selectEffectiveUser = createSelector(
+    [(user) => user, (_user, branchId) => branchId],
+    (user, branchId) => {
+        if (!user || user.is_org_admin || user.isOrgAdmin || user.role === 'Developer' || !Array.isArray(user.branches)) return user;
+        const role = user.branches.find(branch => branch.id === branchId)?.branch_role;
+        return { ...user, identity_role: user.role, role: role && role !== 'Developer' ? role : 'Unassigned' };
+    }
+);
+export const selectCurrentUser = (state) => selectEffectiveUser(state.auth.user, state.auth.activeBranchId);
 export const selectCurrentToken = (state) => state.auth.token;
 export const selectIsAuthenticated = (state) => state.auth.isAuthenticated;
 export const selectActiveBranchId = (state) => state.auth.activeBranchId;
