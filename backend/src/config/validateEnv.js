@@ -217,6 +217,25 @@ function validateEnv() {
         }
     }
 
+    // JWT_EXPIRY upper-bound: warn when expiry exceeds 24 h (in production, treat as invalid)
+    if (process.env.JWT_EXPIRY) {
+        const jwtExpiry = String(process.env.JWT_EXPIRY).trim().toLowerCase();
+        let exceedsDay = false;
+        const daysMatch = jwtExpiry.match(/^(\d+)d$/);
+        const hoursMatch = jwtExpiry.match(/^(\d+)h$/);
+        const secondsMatch = jwtExpiry.match(/^(\d+)s?$/);
+        if (daysMatch && Number(daysMatch[1]) > 1) exceedsDay = true;
+        else if (hoursMatch && Number(hoursMatch[1]) > 24) exceedsDay = true;
+        else if (secondsMatch && Number(secondsMatch[1]) > 86400) exceedsDay = true;
+        if (exceedsDay) {
+            if (process.env.NODE_ENV === 'production') {
+                invalid.push(`JWT_EXPIRY (${process.env.JWT_EXPIRY}) exceeds 24 hours — reduce to 15m–24h for production`);
+            } else {
+                console.warn(`⚠️  JWT_EXPIRY (${process.env.JWT_EXPIRY}) exceeds 24 hours — consider a shorter expiry for production`);
+            }
+        }
+    }
+
     const WEAK_PASSWORD_PATTERNS = [
         /dev_pacs_webhook_secret_change_this/i,
         /dev_blind_index_key_change_this/i,
