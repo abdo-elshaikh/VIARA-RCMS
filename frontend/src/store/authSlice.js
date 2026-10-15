@@ -73,7 +73,6 @@ const syncEmergencyClaims = (user = {}, decodedUser = null) => {
 
 const persistUser = (user) => {
     if (typeof sessionStorage !== 'undefined') sessionStorage.setItem('user', JSON.stringify(user));
-    if (typeof localStorage !== 'undefined') localStorage.setItem('user', JSON.stringify(user));
 };
 
 const readStoredUser = () => {
@@ -83,19 +82,13 @@ const readStoredUser = () => {
             const sessionUser = sessionStorage.getItem('user');
             if (sessionUser) stored = JSON.parse(sessionUser);
         }
-        if (!stored && typeof localStorage !== 'undefined') {
-            const localUser = localStorage.getItem('user');
-            if (localUser) stored = JSON.parse(localUser);
-        }
         if (stored?.role && !isStaffRole(stored.role)) {
             if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
-            if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
             return null;
         }
         return stored;
     } catch {
         if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
-        if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
     }
     return null;
 };
@@ -163,7 +156,6 @@ const clearSession = (state) => {
     state.activeBranchId = null;
     persistBranchSelection(null);
     if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('user');
-    if (typeof localStorage !== 'undefined') localStorage.removeItem('user');
     clearLegacyTokenStorage();
 };
 
