@@ -241,7 +241,9 @@ const notifyClients = async (db, notificationId) => {
                 channel: notification.channel,
                 status: notification.status,
                 event_type: notification.event_type,
-                created_at: notification.created_at
+                created_at: notification.created_at,
+                branch_id: notification.branch_id || null,
+                organization_id: notification.organization_id || null
             });
         }
     } catch (err) {

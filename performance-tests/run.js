@@ -10,6 +10,8 @@ const config = require('./config');
 const UserPool = require('./lib/userPool');
 const MetricsCollector = require('./lib/metricsCollector');
 const ReportGenerator = require('./lib/reportGenerator');
+const { collectFirstImages } = require('./lib/browserFirstImage');
+const { collectServerTelemetry } = require('./lib/serverTelemetry');
 
 // Available scenarios
 const SCENARIOS = {
@@ -35,7 +37,8 @@ function parseArgs() {
         users: 1,
         duration: 15,
         target: config.baseUrl,
-        quick: false
+        quick: false,
+        synthetic: false
     };
 
     for (const arg of args) {
@@ -47,6 +50,8 @@ function parseArgs() {
             parsed.duration = Math.max(2, parseInt(arg.split('=')[1].trim(), 10) || 15);
         } else if (arg.startsWith('--target=')) {
             parsed.target = arg.split('=')[1].trim();
+        } else if (arg === '--synthetic') {
+            parsed.synthetic = true;
         } else if (arg === '--quick') {
             parsed.quick = true;
             parsed.duration = 5;
@@ -84,6 +89,7 @@ Options:
   --duration=<N>            Test duration in seconds (default: 15)
   --target=<url>            Target API server (default: ${config.baseUrl})
   --quick                   Runs a quick 5-second smoke pass (1 VU)
+  --synthetic               Confirm this target contains isolated synthetic test data
   --help, -h                Show this help message
 
 Examples:
@@ -95,6 +101,9 @@ Examples:
 
 async function main() {
     const args = parseArgs();
+    if (!args.synthetic) throw new Error('Confirm an isolated synthetic target with --synthetic. Scenarios can create patients, book appointments, take payments and overwrite draft reports.');
+    const targetUrl = new URL(args.target);
+    if (!['http:', 'https:'].includes(targetUrl.protocol) || targetUrl.username || targetUrl.password) throw new Error('Target must be an HTTP(S) origin without credentials');
     config.baseUrl = args.target;
 
     console.log('\n🚀 Starting VIARA Performance Testing Harness');
@@ -105,9 +114,9 @@ async function main() {
 
     // 1. Health check probe
     try {
-        const probeRes = await fetch(`${config.baseUrl}/health/ready`);
+        const probeRes = await fetch(`${config.baseUrl}/health/ready`, { signal: AbortSignal.timeout(config.timeoutMs) });
         if (!probeRes.ok) {
-            console.warn(`⚠️  Target server readiness check returned status ${probeRes.status}. Continuing...`);
+            throw new Error(`Target readiness returned ${probeRes.status}; no load was started`);
         } else {
             console.log('✅ Target server readiness check: 200 OK');
         }
@@ -142,16 +151,38 @@ async function main() {
     for (const sc of selectedScenarios) {
         console.log(`\n▶️  Executing Scenario: [${sc.name}] ${sc.label} (${args.users} VU(s), ${args.duration}s)...`);
         userPool.invalidate();
-        const scCollector = new MetricsCollector(config.thresholds);
+        const imaging = ['07_pacs_imaging', '08_concurrency_stress', '12_peak_load', '13_soak_test'].includes(sc.name);
+        const normal = /^0[1-8]_/.test(sc.name) || /^(12|13)_/.test(sc.name);
+        const thresholds = { ...config.thresholds,
+            diagnosticImageFirstLoad: imaging ? config.thresholds.diagnosticImageFirstLoad : undefined,
+            minDiagnosticImageSamples: imaging ? config.thresholds.minDiagnosticImageSamples : undefined,
+            apiWriteAndSearch: ['06_admin_analytics','07_pacs_imaging'].includes(sc.name) ? undefined : config.thresholds.apiWriteAndSearch,
+            maxServerErrors: normal ? 0 : undefined,
+            ...(sc.name === '13_soak_test' ? { stability: { windowSeconds: 300, minDurationSeconds: 1800, minSamples: 20, maxP95GrowthPercent: 20 } } : {})
+        };
+        const scCollector = new MetricsCollector(thresholds);
 
-        await userPool.runConcurrently({
+        const workload = userPool.runConcurrently({
             scenarioFn: sc.fn,
             vus: args.users,
             durationSeconds: args.duration,
-            metricsCollector: scCollector
+            metricsCollector: scCollector,
+            rampUpSeconds: sc.name === '12_peak_load' ? 30 : sc.name === '13_soak_test' ? 60 : 0
         });
+        const monitor = new AbortController();
+        const telemetry = collectServerTelemetry(config, scCollector, monitor.signal);
+        try {
+            await Promise.all([workload, imaging && !args.quick ? collectFirstImages(config, userPool, scCollector, sc.name, args.duration) : Promise.resolve()]);
+        } finally { monitor.abort(); await telemetry; scCollector.stop(); }
 
         const summary = scCollector.getSummary();
+        summary.virtualUsers = args.users;
+        summary.identityModel = Object.values(config.users).some(value => Array.isArray(value)) ? 'synthetic-credential-pools' : 'shared-role-accounts';
+        summary.syntheticTargetConfirmed = true;
+        summary.exploratory = args.quick || args.users < (sc.name === '12_peak_load' ? 50 : sc.name === '13_soak_test' ? 20 : 1)
+            || (sc.name === '12_peak_load' && args.duration < 330)
+            || (sc.name === '13_soak_test' && args.duration < 1860);
+        if (summary.exploratory && summary.thresholdStatus === 'PASS') summary.thresholdStatus = 'INCOMPLETE';
         thresholdFailure = thresholdFailure || summary.thresholdStatus === 'FAIL';
         thresholdIncomplete = thresholdIncomplete || summary.thresholdStatus === 'INCOMPLETE';
         ReportGenerator.printConsoleSummary(summary, `Scenario [${sc.name}] Results`);
@@ -169,6 +200,7 @@ async function main() {
         for (const rec of scCollector.records) {
             metricsCollector.record(rec);
         }
+        for (const sample of scCollector.serverSamples) metricsCollector.recordServerSample(sample);
     }
 
     if (selectedScenarios.length > 1) {

@@ -141,6 +141,7 @@ const createSseSession = (decoded) => {
         nonce: crypto.randomBytes(16).toString('hex'),
         userId: isPatient || isDoctorPortal ? null : (decoded.user_id || decoded.userId || null),
         role: decoded.role || null,
+        identityRole: decoded.identity_role || decoded.role || null,
         branchId: decoded.branch_id || decoded.branchId || null,
         branchIds,
         organizationId: decoded.organization_id || decoded.organizationId || null,
@@ -148,7 +149,7 @@ const createSseSession = (decoded) => {
         sessionId: decoded.session_id || null,
         patientId,
         doctorId,
-        exp: Date.now() + SSE_SESSION_TTL_MS
+        exp: Math.min(Date.now() + SSE_SESSION_TTL_MS, decoded.exp ? Number(decoded.exp) * 1000 : Infinity)
     });
 };
 
@@ -167,7 +168,7 @@ const broadcastToStaffMatching = (predicate, event, data) => {
             branchIds: client.branchIds,
             organizationId: client.organizationId,
             isOrgAdmin: client.isOrgAdmin
-        }))
+        }) && isClientInScope(client, event, data))
         .forEach(client => writeSse(client, { event, data }));
 };
 
@@ -182,12 +183,49 @@ const removeClient = (clientInfo) => {
         broadcastToStaffMatching(
             c => String(c.userId) !== String(userId),
             'USER_PRESENCE',
-            { userId: String(userId), online: false }
+            { userId: String(userId), online: false, organizationId: clientInfo.organizationId, branchId: clientInfo.branchId }
         );
     }
 };
 
-const writeSse = (clientInfo, payload) => {
+const isClientInScope = (client, event, data) => {
+    // Portal delivery is already addressed to one patient/doctor identity;
+    // branch selection applies to staff workspaces, not to portal ownership.
+    if (!client.userId) return true;
+    const organizationId = data?.organization_id || data?.organizationId;
+    const branchId = data?.branch_id || data?.branchId;
+    if (organizationId && organizationId !== client.organizationId) return false;
+    if (branchId && branchId !== client.branchId && !(client.isOrgAdmin && !client.branchId)) return false;
+    // Clinical notification contents must never fall back to an unscoped role
+    // broadcast. Old rows without a proven tenant remain available via API only.
+    if (['NEW_NOTIFICATION', 'NOTIFICATION_LOG_UPDATE'].includes(event) && !organizationId) return false;
+    return true;
+};
+
+const revalidateClient = async client => {
+    if (client.expiresAt <= Date.now()) return false;
+    if (!dbPool || !client.userId) return true;
+    const { rows } = await dbPool.query(`
+        SELECT u.role AS identity_role, u.organization_id, u.is_org_admin,
+               u.current_session_id, u.must_change_password, u.is_active, u.is_service_account,
+               m.role AS branch_role, m.is_active AS membership_active, b.status AS branch_status
+        FROM users u
+        LEFT JOIN branches b ON b.id = $2 AND b.organization_id = u.organization_id
+        LEFT JOIN user_branch_memberships m ON m.user_id = u.user_id AND m.branch_id = b.id
+        WHERE u.user_id = $1
+    `, [client.userId, client.branchId || null]);
+    const user = rows[0];
+    if (!user?.is_active || user.is_service_account || user.must_change_password
+        || !client.sessionId || String(user.current_session_id) !== String(client.sessionId)
+        || user.organization_id !== client.organizationId || user.identity_role !== client.identityRole) return false;
+    const elevated = user.identity_role === 'Developer' || user.is_org_admin === true;
+    if (client.isOrgAdmin && !elevated) return false;
+    if (client.branchId && (user.branch_status !== 'active'
+        || (!elevated && (!user.membership_active || user.branch_role !== client.role)))) return false;
+    return true;
+};
+
+const writeSseUnchecked = (clientInfo, payload) => {
     const { res } = clientInfo;
     if (res.writableEnded || res.destroyed) {
         removeClient(clientInfo);
@@ -204,6 +242,21 @@ const writeSse = (clientInfo, payload) => {
         }
         return false;
     }
+};
+
+const writeSse = (clientInfo, payload) => {
+    if (clientInfo.expiresAt <= Date.now()) {
+        clientInfo.res.end?.();
+        removeClient(clientInfo);
+        return false;
+    }
+    if (!isClientInScope(clientInfo, payload.event, payload.data)) return false;
+    if (!dbPool || !clientInfo.userId) return writeSseUnchecked(clientInfo, payload);
+    revalidateClient(clientInfo).then(allowed => {
+        if (allowed) writeSseUnchecked(clientInfo, payload);
+        else { clientInfo.res.end?.(); removeClient(clientInfo); }
+    }).catch(() => { clientInfo.res.end?.(); removeClient(clientInfo); });
+    return true;
 };
 
 /**
@@ -238,6 +291,8 @@ const registerClient = (req, res) => {
             res,
             userId: session.userId,
             role: session.role,
+            identityRole: session.identityRole,
+            expiresAt: session.exp,
             branchId: session.branchId || null,
             branchIds: session.branchIds || (session.branchId ? [session.branchId] : []),
             organizationId: session.organizationId || null,
@@ -264,7 +319,7 @@ const registerClient = (req, res) => {
             broadcastToStaffMatching(
                 c => String(c.userId) !== String(session.userId),
                 'USER_PRESENCE',
-                { userId: String(session.userId), online: true }
+                { userId: String(session.userId), online: true, organizationId: session.organizationId, branchId: session.branchId }
             );
         }
 
@@ -366,9 +421,7 @@ const sendToRoleLocal = (role, event, data) => {
     const targetClients = clients.filter(c => {
         if (c.role !== role) return false;
         if (targetBranchId) {
-            if (c.isOrgAdmin) return true;
-            const clientBranches = c.branchIds || (c.branchId ? [c.branchId] : []);
-            return clientBranches.includes(targetBranchId);
+            return c.branchId === targetBranchId || (c.isOrgAdmin && !c.branchId);
         }
         return true;
     });

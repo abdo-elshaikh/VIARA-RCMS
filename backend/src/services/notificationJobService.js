@@ -1209,7 +1209,7 @@ const triggerEventForRole = async (db, eventType, role, payload = {}) => {
         const scope = require('../utils/databaseContext').currentContext();
         const branchId = payload.branchId || scope?.branchId || null;
         const organizationId = payload.organizationId || scope?.organizationId || null;
-        if (!organizationId && process.env.NODE_ENV !== 'test') throw new Error('Notification audience organization is required');
+        if (!organizationId) throw new Error('Notification audience organization is required');
         const usersResult = branchId
             ? await db.query(`
                 SELECT u.user_id FROM users u

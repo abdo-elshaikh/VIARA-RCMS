@@ -81,7 +81,7 @@ const getChannelAccess = async (db, channelId, user) => {
     const userId = user.user_id || user.userId;
     let userBranchIds = [];
     if (!user.is_org_admin) {
-        const ub = await branchService.getUserBranches(db, userId, false);
+        const ub = await branchService.getUserBranches(db, userId, false, req.user?.organization_id);
         userBranchIds = ub.branches.map(b => b.id);
     }
     const membership = await db.query(
@@ -145,7 +145,7 @@ const getChatUsers = (db) => async (req, res, next) => {
 
         if (explicitBranch) {
             if (!req.user?.is_org_admin) {
-                const ub = await branchService.getUserBranches(db, currentUserId, false);
+                const ub = await branchService.getUserBranches(db, currentUserId, false, req.user?.organization_id);
                 const userBranchIds = ub.branches.map(b => b.id);
                 if (!userBranchIds.includes(explicitBranch)) {
                     return next(new AppError('You do not have access to this branch | ليس لديك صلاحية لهذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));
@@ -649,7 +649,7 @@ const getChannels = (db) => async (req, res, next) => {
 
         let userBranchIds = [];
         if (!req.user?.is_org_admin) {
-            const ub = await branchService.getUserBranches(db, currentUserId, false);
+            const ub = await branchService.getUserBranches(db, currentUserId, false, req.user?.organization_id);
             userBranchIds = ub.branches.map(b => b.id);
             if (explicitBranch && !userBranchIds.includes(explicitBranch)) {
                 return next(new AppError('You do not have access to this branch | ليس لديك صلاحية لهذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));
@@ -729,7 +729,7 @@ const createChannel = (db) => async (req, res, next) => {
         const targetBranchId = branchId || req.body?.branch_id || null;
         if (targetBranchId) {
             if (!req.user?.is_org_admin) {
-                const ub = await branchService.getUserBranches(db, currentUserId, false);
+                const ub = await branchService.getUserBranches(db, currentUserId, false, req.user?.organization_id);
                 const userBranchIds = ub.branches.map(b => b.id);
                 if (!userBranchIds.includes(targetBranchId)) {
                     return next(new AppError('You do not have access to create a channel in this branch | ليس لديك صلاحية لإنشاء قناة في هذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED'));

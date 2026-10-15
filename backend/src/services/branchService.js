@@ -41,15 +41,12 @@ function invalidateUserMembershipCache() {}
 async function getUserBranches(db, userId, isOrgAdmin = false, orgId = null) {
     let resolvedOrgId = orgId;
     if (!resolvedOrgId) {
-        try {
-            const userRes = await db.query(
-                'SELECT organization_id FROM users WHERE user_id = $1 AND is_active = TRUE AND NOT is_service_account',
-                [userId]
-            );
-            resolvedOrgId = userRes.rows[0]?.organization_id || DEFAULT_ORG_ID;
-        } catch {
-            resolvedOrgId = DEFAULT_ORG_ID;
-        }
+        const userRes = await db.query(
+            'SELECT organization_id FROM users WHERE user_id = $1 AND is_active = TRUE AND NOT is_service_account',
+            [userId]
+        );
+        resolvedOrgId = userRes.rows[0]?.organization_id;
+        if (!resolvedOrgId) return { branches: [], defaultBranchId: null, isOrgAdmin: false };
     }
 
     if (isOrgAdmin) {

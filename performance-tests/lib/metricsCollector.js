@@ -9,6 +9,7 @@ class MetricsCollector {
         this.endTime = null;
         this.records = [];
         this.endpointStats = new Map();
+        this.serverSamples = [];
     }
 
     start() {
@@ -16,13 +17,20 @@ class MetricsCollector {
         this.endTime = null;
         this.records = [];
         this.endpointStats.clear();
+        this.serverSamples = [];
     }
 
     stop() {
         this.endTime = Date.now();
     }
 
-    record({ scenario, action, method, endpoint, duration, status, ok, error, metric }) {
+    recordServerSample(sample) {
+        if (Number.isFinite(sample.rssBytes) && Number.isFinite(sample.heapUsedBytes)) {
+            this.serverSamples.push({ ...sample, timestamp: Number.isFinite(sample.timestamp) ? sample.timestamp : Date.now() });
+        }
+    }
+
+    record({ scenario, action, method, endpoint, duration, status, ok, error, metric, timestamp }) {
         const item = {
             scenario: scenario || 'default',
             action: action || `${method} ${endpoint}`,
@@ -33,7 +41,7 @@ class MetricsCollector {
             status: Number(status) || 0,
             ok: Boolean(ok),
             error: error || null,
-            timestamp: Date.now()
+            timestamp: Number.isFinite(timestamp) ? timestamp : Date.now()
         };
 
         this.records.push(item);
@@ -68,7 +76,7 @@ class MetricsCollector {
 
         const count = sortedValues.length;
         const getP = (p) => {
-            const index = Math.min(Math.floor((p / 100) * count), count - 1);
+            const index = Math.min(Math.ceil((p / 100) * count) - 1, count - 1);
             return sortedValues[index];
         };
 
@@ -89,11 +97,12 @@ class MetricsCollector {
 
     getSummary() {
         const elapsedSeconds = Math.max(1, ((this.endTime || Date.now()) - (this.startTime || Date.now())) / 1000);
-        const allDurations = this.records.map(r => r.duration).sort((a, b) => a - b);
+        const apiRecords = this.records.filter(r => r.metric !== 'diagnosticImageFirstLoad');
+        const allDurations = apiRecords.map(r => r.duration).sort((a, b) => a - b);
         const overallLatency = this._calculatePercentiles(allDurations);
 
-        const totalRequests = this.records.length;
-        const successfulRequests = this.records.filter(r => r.ok).length;
+        const totalRequests = apiRecords.length;
+        const successfulRequests = apiRecords.filter(r => r.ok).length;
         const failedRequests = totalRequests - successfulRequests;
         const errorRatePercent = totalRequests > 0 ? (failedRequests / totalRequests) * 100 : 0;
         const throughputRps = Math.round((totalRequests / elapsedSeconds) * 100) / 100;
@@ -139,9 +148,9 @@ class MetricsCollector {
         if (this.thresholds.maxErrorRatePercent !== undefined) {
             thresholdEvaluations.push({
                 name: 'Request Error Rate',
-                target: `<= ${this.thresholds.maxErrorRatePercent}%`,
+                target: `< ${this.thresholds.maxErrorRatePercent}%`,
                 actual: totalRequests ? `${errorRatePercent.toFixed(2)}%` : 'Not measured',
-                passed: totalRequests ? errorRatePercent <= this.thresholds.maxErrorRatePercent : null
+                passed: totalRequests ? errorRatePercent < this.thresholds.maxErrorRatePercent : null
             });
         }
 
@@ -154,7 +163,7 @@ class MetricsCollector {
             .map(r => r.duration)
             .sort((a, b) => a - b);
         const imageLoadDurations = this.records
-            .filter(r => r.metric === 'diagnosticImageFirstLoad')
+            .filter(r => r.metric === 'diagnosticImageFirstLoad' && r.ok)
             .map(r => r.duration)
             .sort((a, b) => a - b);
 
@@ -168,6 +177,51 @@ class MetricsCollector {
             'p95',
             this.thresholds.diagnosticImageFirstLoad?.p95
         );
+        const imageObservations = this.records.filter(r => r.metric === 'diagnosticImageFirstLoad');
+        const imageFailures = imageObservations.filter(r => !r.ok).length;
+        if (this.thresholds.diagnosticImageFirstLoad) {
+            thresholdEvaluations.push({ name: 'Diagnostic viewport render failures', target: '0',
+                actual: imageObservations.length ? String(imageFailures) : 'Not measured',
+                passed: imageObservations.length ? imageFailures === 0 : null });
+        }
+
+        const serverErrors = this.records.filter(r => r.status >= 500 && r.status < 600).length;
+        if (this.thresholds.maxServerErrors !== undefined) {
+            thresholdEvaluations.push({ name: 'Server errors (5xx)', target: `<= ${this.thresholds.maxServerErrors}`,
+                actual: totalRequests ? String(serverErrors) : 'Not measured',
+                passed: totalRequests ? serverErrors <= this.thresholds.maxServerErrors : null });
+        }
+        if (this.thresholds.minDiagnosticImageSamples !== undefined) {
+            thresholdEvaluations.push({ name: 'Diagnostic image sample count', target: `>= ${this.thresholds.minDiagnosticImageSamples}`,
+                actual: String(imageLoadDurations.length),
+                passed: imageLoadDurations.length >= this.thresholds.minDiagnosticImageSamples ? true : null });
+        }
+        let stability = null;
+        const limits = this.thresholds.stability;
+        if (limits) {
+            const windowMs = limits.windowSeconds * 1000;
+            const end = this.endTime || Date.now();
+            const first = this.records.filter(r => r.method === 'GET' && !r.metric && r.ok && r.timestamp < this.startTime + windowMs);
+            const last = this.records.filter(r => r.method === 'GET' && !r.metric && r.ok && r.timestamp >= end - windowMs);
+            const percentile = records => this._calculatePercentiles(records.map(r => r.duration).sort((a,b) => a-b)).p95;
+            const baseline = percentile(first), final = percentile(last);
+            const complete = elapsedSeconds >= limits.minDurationSeconds && first.length >= (limits.minSamples || 20)
+                && last.length >= (limits.minSamples || 20) && end - windowMs >= this.startTime + windowMs && baseline > 0;
+            const growthPercent = complete ? (final - baseline) / baseline * 100 : null;
+            stability = { firstWindowP95: baseline, lastWindowP95: final, firstSamples: first.length, lastSamples: last.length,
+                windowSeconds: limits.windowSeconds, growthPercent };
+            thresholdEvaluations.push({ name: 'Soak read latency stability', target: `<= ${limits.maxP95GrowthPercent}% p95 growth over >= ${limits.minDurationSeconds}s`,
+                actual: complete ? `${growthPercent.toFixed(2)}%` : 'Not measured',
+                passed: complete ? growthPercent <= limits.maxP95GrowthPercent : null });
+            const initialMemory = this.serverSamples.filter(s => s.timestamp < this.startTime + windowMs);
+            const finalMemory = this.serverSamples.filter(s => s.timestamp >= end - windowMs);
+            const mean = (samples, key) => samples.length ? samples.reduce((sum, s) => sum + s[key], 0) / samples.length : null;
+            stability.memory = { firstRssBytes: mean(initialMemory, 'rssBytes'), lastRssBytes: mean(finalMemory, 'rssBytes'),
+                firstHeapUsedBytes: mean(initialMemory, 'heapUsedBytes'), lastHeapUsedBytes: mean(finalMemory, 'heapUsedBytes') };
+            const hasMemory = complete && initialMemory.length >= 2 && finalMemory.length >= 2;
+            thresholdEvaluations.push({ name: 'Backend memory telemetry', target: '>= 2 samples in both soak windows',
+                actual: hasMemory ? `${initialMemory.length}/${finalMemory.length} samples` : 'Not measured', passed: hasMemory ? true : null });
+        }
 
         const failedThresholds = thresholdEvaluations.filter(evaluation => evaluation.passed === false).length;
         const unmeasuredThresholds = thresholdEvaluations.filter(evaluation => evaluation.passed === null).length;
@@ -185,6 +239,11 @@ class MetricsCollector {
             successfulRequests,
             failedRequests,
             errorRatePercent: Math.round(errorRatePercent * 100) / 100,
+            serverErrors,
+            diagnosticImageSamples: imageLoadDurations.length,
+            diagnosticImageFailures: imageFailures,
+            stability,
+            serverSamples: this.serverSamples,
             throughputRps,
             latency: overallLatency,
             thresholdEvaluations,

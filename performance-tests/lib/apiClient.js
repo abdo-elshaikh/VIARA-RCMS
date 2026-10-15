@@ -11,6 +11,7 @@ class ApiClient {
         this.token = null;
         this.cookies = new Map();
         this.csrfToken = null;
+        this.branchId = null;
     }
 
     setToken(token) {
@@ -58,6 +59,7 @@ class ApiClient {
             'Accept': 'application/json',
             ...(options.headers || {})
         };
+        if (this.branchId) headers['x-branch-id'] = this.branchId;
 
         if (this.token && !headers['Authorization']) {
             headers['Authorization'] = `Bearer ${this.token}`;
@@ -85,42 +87,33 @@ class ApiClient {
         let data = null;
         let error = null;
 
+        let timeoutHandle;
         try {
             const controller = new AbortController();
-            const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+            timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
 
             const res = await fetch(url, {
                 method,
                 headers,
                 body,
                 signal: controller.signal
-            }).finally(() => clearTimeout(timeoutHandle));
+            });
 
-            const endTime = performance.now();
-            const duration = Math.round((endTime - startTime) * 100) / 100;
             status = res.status;
             ok = res.ok;
             this._updateCookies(res);
 
             const contentType = res.headers.get('content-type') || '';
             if (contentType.includes('application/json')) {
-                try {
-                    data = await res.json();
-                } catch {
-                    data = null;
-                }
+                data = await res.json();
             } else {
-                try {
-                    data = await res.text();
-                } catch {
-                    data = null;
-                }
+                data = await res.text();
             }
 
             return {
                 ok,
                 status,
-                duration,
+                duration: Math.round((performance.now() - startTime) * 100) / 100,
                 data,
                 headers: Object.fromEntries(res.headers.entries()),
                 error: ok ? null : (data?.message || data?.error || `HTTP ${status}`)
@@ -138,6 +131,8 @@ class ApiClient {
                 headers: {},
                 error: isTimeout ? `Request timed out after ${timeoutMs}ms` : err.message
             };
+        } finally {
+            clearTimeout(timeoutHandle);
         }
     }
 

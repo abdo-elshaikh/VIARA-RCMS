@@ -849,7 +849,7 @@ const clockIn = (db) => async (req, res, next) => {
 
         const requestedBranchId = data.branchId || req.branchContext?.branchId;
         if (requestedBranchId && !req.user?.is_org_admin) {
-            const userBranches = await branchService.getUserBranches(client, userId, false);
+            const userBranches = await branchService.getUserBranches(client, userId, false, req.user?.organization_id);
             const hasAccess = userBranches.branches.some(b => b.id === requestedBranchId);
             if (!hasAccess) {
                 throw new AppError('You are not assigned to work at this branch | لست مسجلاً للعمل في هذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED');
@@ -958,7 +958,7 @@ const clockIn = (db) => async (req, res, next) => {
 
         const targetBranchId = shift?.branch_id || data.branchId || req.branchContext?.branchId || req.user?.branch_id || '00000000-0000-4000-8000-000000000001';
         if (!req.user?.is_org_admin) {
-            const userBranches = await branchService.getUserBranches(client, userId, false);
+            const userBranches = await branchService.getUserBranches(client, userId, false, req.user?.organization_id);
             const hasAccess = userBranches.branches.some(b => b.id === targetBranchId);
             if (!hasAccess) {
                 throw new AppError('You are not assigned to work at this branch | لست مسجلاً للعمل في هذا الفرع', 403, true, 'BRANCH_ACCESS_DENIED');
