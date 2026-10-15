@@ -1,0 +1,20 @@
+﻿{
+    "success":  true,
+    "suites":  171,
+    "tests":  1370,
+    "failed":  0,
+    "pending":  0,
+    "observedExitCode":  1,
+    "coverage":  {
+                     "statements":  54.01,
+                     "branches":  41.91,
+                     "functions":  62.15,
+                     "lines":  55.1
+                 },
+    "thresholds":  {
+                       "statements":  50,
+                       "branches":  40,
+                       "functions":  60,
+                       "lines":  50
+                   }
+}

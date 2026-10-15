@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const issuer = 'https://identity.example.test/realms/viara';
 const audience = 'viara-pacs';
 const userId = '4a8cc118-1d4e-4411-bbf7-6e9464fce34e';
+const branchId = '00000000-0000-4000-8000-000000000001';
 const privateKey = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const jwks = {
     keys: [{
@@ -37,7 +38,7 @@ const signToken = (claims = {}, options = {}) => jwt.sign({
 });
 
 const makeRequest = (token) => ({
-    headers: { authorization: `Bearer ${token}` },
+    headers: { authorization: `Bearer ${token}`, 'x-branch-id': branchId },
     method: 'GET',
     path: '/api/pacs/dicom-web/studies/1.2.3/metadata',
     originalUrl: '/api/pacs/dicom-web/studies/1.2.3/metadata'
@@ -56,10 +57,15 @@ describe('PACS OIDC DICOMweb authentication', () => {
     const activeUser = {
         user_id: userId,
         role: 'Radiologist',
+        organization_id: '00000000-0000-4000-8000-000000000000',
+        is_org_admin: false,
         email: 'reader@example.test',
         full_name: 'Test Reader',
         must_change_password: false
     };
+    const activeRows = async sql => ({ rows: sql.includes('FROM user_branch_memberships')
+        ? [{ id: branchId, branch_role: 'Radiologist', is_default: true, organization_id: activeUser.organization_id }]
+        : [activeUser] });
 
     beforeEach(() => {
         jwks.keys = [originalJwk];
@@ -87,7 +93,7 @@ describe('PACS OIDC DICOMweb authentication', () => {
     });
 
     test('accepts a valid OIDC token and resolves current identity and role from VIARA', async () => {
-        const db = { query: jest.fn(async () => ({ rows: [activeUser] })) };
+        const db = { query: jest.fn(activeRows) };
         configureAuthDatabase(db);
         const req = makeRequest(signToken());
         const next = jest.fn();
@@ -96,7 +102,7 @@ describe('PACS OIDC DICOMweb authentication', () => {
 
         expect(next).toHaveBeenCalledWith();
         expect(req.authType).toBe('pacs_oidc');
-        expect(req.user).toEqual(activeUser);
+        expect(req.user).toMatchObject(activeUser);
         expect(db.query).toHaveBeenCalledWith(expect.stringContaining('is_active = TRUE'), [userId]);
     });
 
@@ -113,7 +119,7 @@ describe('PACS OIDC DICOMweb authentication', () => {
             expiresIn: '5m',
             keyid: 'viara-test-key'
         });
-        configureAuthDatabase({ query: jest.fn(async () => ({ rows: [activeUser] })) });
+        configureAuthDatabase({ query: jest.fn(activeRows) });
         const next = jest.fn();
 
         await authenticateDicomWeb(makeRequest(localToken), makeResponse(), next);
@@ -127,7 +133,7 @@ describe('PACS OIDC DICOMweb authentication', () => {
 
     test('keeps standard VIARA JWT authentication working when PACS OIDC is enabled', async () => {
         configureAuthDatabase({
-            query: jest.fn(async () => ({ rows: [{ current_session_id: 'session-1', is_active: true, role: 'Radiologist', must_change_password: false }] }))
+            query: jest.fn(async sql => sql.includes('FROM user_branch_memberships') ? activeRows(sql) : ({ rows: [{ ...activeUser, current_session_id: 'session-1', is_active: true }] }))
         });
         const token = jwt.sign({
             user_id: userId,
@@ -212,7 +218,7 @@ describe('PACS OIDC DICOMweb authentication', () => {
                 keys: global.fetch.mock.calls.length === 1 ? [originalJwk] : [originalJwk, rotatedJwk]
             })
         }));
-        configureAuthDatabase({ query: jest.fn(async () => ({ rows: [activeUser] })) });
+        configureAuthDatabase({ query: jest.fn(activeRows) });
         const initialNext = jest.fn();
         await authenticateDicomWeb(makeRequest(signToken()), makeResponse(), initialNext);
         expect(initialNext).toHaveBeenCalledWith();

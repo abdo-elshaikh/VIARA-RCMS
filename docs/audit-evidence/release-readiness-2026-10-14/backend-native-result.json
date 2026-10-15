@@ -1,0 +1,44 @@
+{
+  "status": 1,
+  "signal": null,
+  "error": null,
+  "durationSeconds": 106.033,
+  "success": true,
+  "suites": 171,
+  "totalSuites": 171,
+  "tests": 1370,
+  "failed": 0,
+  "pending": 0,
+  "coverage": {
+    "lines": {
+      "total": 23039,
+      "covered": 12696,
+      "skipped": 0,
+      "pct": 55.1
+    },
+    "statements": {
+      "total": 25843,
+      "covered": 13958,
+      "skipped": 0,
+      "pct": 54.01
+    },
+    "functions": {
+      "total": 3229,
+      "covered": 2007,
+      "skipped": 0,
+      "pct": 62.15
+    },
+    "branches": {
+      "total": 22658,
+      "covered": 9499,
+      "skipped": 0,
+      "pct": 41.92
+    },
+    "branchesTrue": {
+      "total": 0,
+      "covered": 0,
+      "skipped": 0,
+      "pct": 100
+    }
+  }
+}

@@ -22,7 +22,9 @@ const canManageRolePermissions = (actor, targetRole) => {
     if (isDeveloper(actor)) return true;
     if (isProtectedRole(targetRole)) return false;
     if (isPortalRole(targetRole)) return false;
-    return actor?.role === 'Admin';
+    if (actor?.is_org_admin === true) return true;
+    if (actor?.identity_role === 'Developer') return true;
+    return false;
 };
 
 const canAssignRole = (actor, nextRole) => {
@@ -41,7 +43,7 @@ const assertCanManageRolePermissions = (actor, targetRole) => {
         throw new AppError(
             isPortalRole(targetRole)
                 ? 'Portal role permissions are system-governed; only a Developer may change them'
-                : 'Only a Developer may manage protected role permissions',
+                : 'Only an Organization Administrator or Developer may manage role permissions',
             403
         );
     }

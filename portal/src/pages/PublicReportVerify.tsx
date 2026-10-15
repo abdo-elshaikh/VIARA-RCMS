@@ -35,7 +35,10 @@ interface VerificationResult {
   centerName: string;
   branchName: string;
   verificationHash: string;
-  integrityConfirmed: boolean;
+  recordConfirmed: boolean;
+  verificationMethod: "CenterRecordLookup";
+  contentIntegrityVerified: false;
+  cryptographicSignatureVerified: false;
   error?: string;
 }
 
@@ -131,13 +134,13 @@ export const PublicReportVerify: React.FC = () => {
             </div>
             <h1 className="mt-5 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl dark:text-white">
               {isRtl
-                ? "التحقق من صحة التقرير الطبي الرقمي"
-                : "Diagnostic Report Authenticity Verification"}
+                ? "التحقق من اعتماد التقرير الطبي"
+                : "Medical Report Approval Lookup"}
             </h1>
             <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
               {isRtl
-                ? "خدمة التحقق الفوري والمشفر من صحة تقارير الأشعة المعتمدة ومطابقتها للسجل الطبي الرسمي."
-                : "Instant cryptographic verification of finalized radiology reports against the official PACS archive."}
+                ? "تحقق من بيانات اعتماد التقرير المسجلة لدى المركز باستخدام رمز التحقق الموجود على التقرير."
+                : "Look up the report approval recorded by the center using the reference printed on the report."}
             </p>
           </div>
 
@@ -146,12 +149,13 @@ export const PublicReportVerify: React.FC = () => {
             <div className="relative flex items-center">
               <input
                 type="text"
+                aria-label={isRtl ? "رمز التحقق من التقرير" : "Report verification reference"}
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder={
                   isRtl
-                    ? "أدخل رمز التحقق (Hash) أو رقم الطلب..."
-                    : "Enter verification hash code or Order number..."
+                    ? "أدخل رمز التحقق الموجود على التقرير..."
+                    : "Enter the reference printed on the report..."
                 }
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3.5 ps-12 text-sm font-medium text-slate-900 shadow-sm outline-none transition focus:border-primary-500 focus:ring-4 focus:ring-primary-100 dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:focus:ring-primary-900/30"
               />
@@ -185,19 +189,21 @@ export const PublicReportVerify: React.FC = () => {
                     <div>
                       <h2 className="text-base font-black text-emerald-950 dark:text-emerald-200">
                         {isRtl
-                          ? "وثيقة طبية معتمدة ومطابقة للأصل"
-                          : "Authenticated & Certified Medical Report"}
+                          ? "يوجد سجل اعتماد لهذا التقرير"
+                          : "Report approval record found"}
                       </h2>
                       <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
                         {isRtl
-                          ? "تم التحقق من التوقيع الرقمي بنجاح 100%"
-                          : "Cryptographic signature confirmed intact"}
+                          ? "رمز التحقق يطابق تقريراً معتمداً في سجل المركز"
+                          : "The reference matches an approved report in the center's records"}
                       </p>
                     </div>
                   </div>
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
                     <Lock className="h-3.5 w-3.5" />
-                    {result.status}
+                    {result.status === "Amended"
+                      ? isRtl ? "معدل ومعتمد" : "Amended and approved"
+                      : isRtl ? "معتمد" : "Approved"}
                   </span>
                 </div>
               </div>
@@ -256,12 +262,12 @@ export const PublicReportVerify: React.FC = () => {
                   </div>
                 </div>
 
-                {/* Finalization Timestamp & Cryptographic Hash */}
+                {/* Approval timestamp and lookup reference */}
                 <div className="rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-slate-800 dark:bg-slate-950/60 space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                     <span className="flex items-center gap-1 text-slate-500">
                       <Calendar className="h-3.5 w-3.5" />
-                      {isRtl ? "تاريخ الاعتماد الرسمي:" : "Officially Signed At:"}
+                      {isRtl ? "تاريخ الاعتماد المسجل:" : "Recorded approval time:"}
                     </span>
                     <strong className="text-slate-800 dark:text-slate-200">
                       {formatDate(result.finalizedAt)}
@@ -270,8 +276,8 @@ export const PublicReportVerify: React.FC = () => {
                   <div>
                     <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
                       {isRtl
-                        ? "بصمة التشفير الرقمية (SHA-256 Digest)"
-                        : "Cryptographic Digital Hash (SHA-256)"}
+                        ? "رمز التحقق من التقرير"
+                        : "Report verification reference"}
                     </span>
                     <p className="mt-1 font-mono text-[11px] font-bold text-primary-700 dark:text-primary-400 break-all leading-relaxed bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-slate-200/60 dark:border-slate-800">
                       {result.verificationHash}
@@ -282,8 +288,8 @@ export const PublicReportVerify: React.FC = () => {
                 {/* Footer Legal Assurance */}
                 <p className="text-center text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                   {isRtl
-                    ? "شهادة التحقق هذه صادرة آلياً من نظام VIARA وتؤكد أن النسخة المطبوعة مطابقة تماماً للملف الإلكتروني المعتمد والمحفوظ في أرشيف المستشفى دون أي تحريف."
-                    : "This certificate is automatically generated by VIARA to confirm that the printed paper matches the immutable encrypted report on file in the hospital archive."}
+                    ? "تؤكد هذه الخدمة بيانات الاعتماد المسجلة فقط. لا تثبت مطابقة محتوى النسخة المطبوعة أو سلامة توقيع تشفيري. لعرض محتوى التقرير المعتمد، افتح التقرير الأصلي من بوابة المريض."
+                    : "This lookup confirms recorded approval details only. It does not verify printed document contents or a cryptographic signature. View the original approved report in the patient portal."}
                 </p>
 
                 {/* Portal Access CTA */}

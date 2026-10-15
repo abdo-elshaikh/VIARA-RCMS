@@ -15,7 +15,7 @@ const stage = testStartHere ? path.join(testDir, 'package') : sourceStage;
 if (testStartHere) fs.cpSync(sourceStage,stage,{recursive:true});
 const envFile = path.join(testStartHere ? stage : testDir, '.env');
 const project = 'viara-release-test-' + crypto.randomBytes(4).toString('hex');
-const keys = ['POSTGRES_PASSWORD','APP_DB_PASSWORD','JWT_SECRET','ENCRYPTION_KEY','BACKUP_ENCRYPTION_KEY','BLIND_INDEX_KEY','METRICS_TOKEN','REDIS_PASSWORD','ORTHANC_PASSWORD','PACS_WEBHOOK_SECRET'];
+const keys = ['POSTGRES_PASSWORD','APP_DB_PASSWORD', 'BACKUP_DB_PASSWORD','JWT_SECRET','ENCRYPTION_KEY','BACKUP_ENCRYPTION_KEY','BLIND_INDEX_KEY','METRICS_TOKEN','REDIS_PASSWORD','ORTHANC_PASSWORD','PACS_WEBHOOK_SECRET'];
 const reservePort = () => new Promise(resolve => { const server = net.createServer(); server.listen(0,'127.0.0.1',()=>{ const port=server.address().port; server.close(()=>resolve(port)); }); });
 let launched = false;
 const override = path.join(testDir, 'override.json');

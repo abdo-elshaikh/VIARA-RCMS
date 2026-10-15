@@ -14,6 +14,7 @@ const { getReportStatusForSave, getReportTransitionError } = require('../utils/r
 const { assertReportReadyForFinalization } = require('../services/pacsStudyReadinessService');
 const branchService = require('../services/branchService');
 const { setBranchContext, clearBranchContext } = require('../utils/branchTransaction');
+const logger = require('../config/logger');
 
 const parseJSONSafe = (value) => {
     if (!value) return null;
@@ -1003,9 +1004,11 @@ const updateReport = (db) => async (req, res, next) => {
                     FROM users u
                     JOIN user_branch_memberships ubm ON ubm.user_id = u.user_id
                     WHERE u.is_active = TRUE
-                      AND u.role = 'Nurse'
+                      AND NOT u.is_service_account
+                      AND (ubm.role = 'Nurse' OR u.role = 'Nurse')
                       AND ubm.branch_id = $2
                       AND ubm.is_active = TRUE
+                      AND (u.organization_id IS NULL OR u.organization_id = (SELECT organization_id FROM branches WHERE id = $2 AND status = 'active'))
                     ON CONFLICT DO NOTHING
                     RETURNING acknowledgement_id, recipient_user_id, recipient_role
                 `, [examId, examBranchId]);
@@ -1088,31 +1091,41 @@ const updateReport = (db) => async (req, res, next) => {
         await client.query('COMMIT');
         committed = true;
 
-        // Non-critical notifications remain fire-and-forget after the transaction.
+        // Non-critical notifications are queued durably after the transaction.
         if (newStatus === 'Finalized') {
             const examInfo = await db.query(
-                'SELECT patient_id, order_number, external_referring_doctor_id FROM examinations WHERE exam_id = $1',
+                'SELECT patient_id, order_number, external_referring_doctor_id, branch_id FROM examinations WHERE exam_id = $1',
                 [examId]
             );
             if (examInfo.rows.length > 0) {
                 const e = examInfo.rows[0];
-                triggerEvent(db, 'ReportReady', {
-                    doctorId: e.external_referring_doctor_id,
-                    entityType: 'Exam',
-                    entityId: examId,
-                    channels: ['Email', 'SMS'],
-                    variables: { order_number: e.order_number }
-                });
+                if (e.external_referring_doctor_id) {
+                    await triggerEvent(db, 'ReportReady', {
+                        doctorId: e.external_referring_doctor_id,
+                        entityType: 'Exam',
+                        entityId: examId,
+                        branchId: e.branch_id || req.branchContext?.branchId || null,
+                        organizationId: req.user?.organization_id || null,
+                        channels: ['Email', 'SMS'],
+                        variables: { order_number: e.order_number }
+                    }).catch((err) => {
+                        logger.error(`[ExamController] Failed to queue doctor ReportReady notification for exam ${examId}: ${err.message}`);
+                    });
+                }
             }
 
             if (patientPortalRelease?.newly_released) {
-                triggerEvent(db, 'ReportReady', {
+                await triggerEvent(db, 'ReportReady', {
                     patientId: patientPortalRelease.patient_id,
                     entityType: 'Exam',
                     entityId: patientPortalRelease.exam_id,
+                    branchId: patientPortalRelease.branch_id || req.branchContext?.branchId || null,
+                    organizationId: req.user?.organization_id || null,
                     channels: ['Email', 'SMS'],
                     variables: { order_number: patientPortalRelease.order_number || '' }
-                }).catch(() => {});
+                }).catch((err) => {
+                    logger.error(`[ExamController] Failed to queue patient ReportReady notification for exam ${examId}: ${err.message}`);
+                });
             }
 
             await logAction(db, {

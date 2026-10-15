@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const root = path.resolve(__dirname, '..');
 const temp = fs.mkdtempSync(path.join(root, 'scratch/production-access-check-'));
 const template = path.join(root, 'viara-production-package/.env.example');
-const secrets = ['POSTGRES_PASSWORD', 'JWT_SECRET', 'ENCRYPTION_KEY', 'BACKUP_ENCRYPTION_KEY', 'BLIND_INDEX_KEY', 'METRICS_TOKEN', 'REDIS_PASSWORD', 'ORTHANC_PASSWORD', 'PACS_WEBHOOK_SECRET'];
+const secrets = ['POSTGRES_PASSWORD', 'APP_DB_PASSWORD', 'BACKUP_DB_PASSWORD', 'JWT_SECRET', 'ENCRYPTION_KEY', 'BACKUP_ENCRYPTION_KEY', 'BLIND_INDEX_KEY', 'METRICS_TOKEN', 'REDIS_PASSWORD', 'ORTHANC_PASSWORD', 'PACS_WEBHOOK_SECRET'];
 const env = { ...process.env };
 for (const key of secrets) delete env[key];
 let checks = 0;
@@ -43,6 +43,7 @@ try {
   content ||= linuxContent;
   // Synthetic digests validate interpolation only; no images are pulled or run.
   content = content.replace(/^([A-Z0-9_]*IMAGE)=.*$/gm, (_, key) => `${key}=example.invalid/viara/test@sha256:${'a'.repeat(64)}`);
+  content = content.replace(/^LICENSE_KEY=.*$/gm, 'LICENSE_KEY=synthetic-license-key-for-config-validation');
   const envFile = path.join(temp, 'compose.env');
   fs.writeFileSync(envFile, content);
   const args = ['compose', '--env-file', envFile, '-f', path.join(root, 'viara-production-package/docker-compose.yml'), '--profile', 'caddy-ssl', 'config', '--format', 'json'];

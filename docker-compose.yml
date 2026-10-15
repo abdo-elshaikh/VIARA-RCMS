@@ -26,6 +26,7 @@ services:
 
   migrate:
     build: ./backend
+    image: viara-backend:multibranch-final-20261014
     restart: "no"
     command: ["npm", "run", "migrate"]
     environment:
@@ -33,6 +34,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
       BRANCH_CONTEXT_SECRET: ${BRANCH_CONTEXT_SECRET:-}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Generate APP_DB_PASSWORD for the unprivileged application role}
+      BACKUP_DB_PASSWORD: ${BACKUP_DB_PASSWORD:?Generate BACKUP_DB_PASSWORD for the readonly backup role}
     volumes:
       - ./database:/database:ro
     networks: [data]
@@ -81,7 +83,7 @@ services:
   # Backend API
   backend:
     build: ./backend
-    image: viara-backend:local
+    image: viara-backend:multibranch-final-20261014
     container_name: VIARA_backend
     restart: unless-stopped
     ports:
@@ -107,6 +109,8 @@ services:
       PACS_OIDC_REQUIRED_SCOPE: ${PACS_OIDC_REQUIRED_SCOPE:-pacs.read}
       PACS_OIDC_MAX_TOKEN_TTL_SECONDS: ${PACS_OIDC_MAX_TOKEN_TTL_SECONDS:-300}
       DATABASE_URL: postgresql://rcms_app_user:${APP_DB_PASSWORD:?Generate APP_DB_PASSWORD for the unprivileged application role}@postgres:5432/${POSTGRES_DB:-VIARA}
+      BACKUP_DATABASE_URL: postgresql://viara_backup_reader:${BACKUP_DB_PASSWORD:?Generate BACKUP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-VIARA}
+      RESTORE_DATABASE_URL: postgresql://${POSTGRES_USER:-VIARA}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-VIARA}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in the root .env file}
       BRANCH_CONTEXT_SECRET: ${BRANCH_CONTEXT_SECRET:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in the root .env file}

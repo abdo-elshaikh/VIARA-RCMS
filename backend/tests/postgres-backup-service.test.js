@@ -200,7 +200,7 @@ describe('PostgresBackupService', () => {
 
     describe('restorePostgresBackup', () => {
         beforeEach(() => {
-            process.env.DATABASE_URL = 'postgresql://viara_user:secret_pass@127.0.0.1:5432/viara_db';
+            process.env.RESTORE_DATABASE_URL = 'postgresql://viara_user:secret_pass@127.0.0.1:5432/viara_db';
         });
 
         it('rejects invalid or unsafe filenames', async () => {

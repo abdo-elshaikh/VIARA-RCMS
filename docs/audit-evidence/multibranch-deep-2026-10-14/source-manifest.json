@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-14",
+  "hashes": {
+    "backend/src/utils/effectiveRole.js": "645bcd2dad19d50518770ae380c87f443ad58a3888bfffb3f230e7bf171ed207",
+    "backend/src/utils/contextualPool.js": "1945c56b26a9c5f0a19b6e2d4e090c33a299dc07298cf9b1d7dd9380ef00343e",
+    "backend/src/utils/databaseContext.js": "a30b2e07c7faeb78897409956934256c12f5a22280babf734060ae63313f5678",
+    "backend/src/utils/branchTransaction.js": "fa400ad256e76f0f3b80b7a0fbea1d12191e88c9982a951cb8226fe178b47bc9",
+    "backend/src/middleware/branchContextMiddleware.js": "f07c22eda9933094d316bbb7011d686740a63884b8bfa916e9978f007961ad1a",
+    "backend/src/middleware/authMiddleware.js": "ca37429c1d39bbd88fda5b63f860bc35e36bc695333aceaded964593b161c954",
+    "backend/src/middleware/rbacMiddleware.js": "a51ec54732a9fe84d2ca4d5e5be500bd4bf32e6afffe7789e88bd8aacb4c3e8e",
+    "backend/src/controllers/rbacController.js": "afa6024eae0b06a084d01f056a946eb800f114fa702a1cbdca2940a63cd9a942",
+    "backend/src/controllers/examController.js": "0d78a0fd4b5f3c2b2b96bd9973342bc7caf0f8e3ad8e2866a4e07bc73e46c1c1",
+    "backend/src/controllers/chatController.js": "d2da81a5b32a69d9287bb0343e0ebf5bf55e75e9d3d11fa1b61b6818f0f3e70f",
+    "backend/src/controllers/notificationController.js": "956ca7c864737dab7baf519c1bb41178ae87dd256b3c29f8feab157d95854d61",
+    "backend/src/services/branchService.js": "3c9755f8b773de3925d1f02dfc6196d872b152acd6687235611fc4dc56ceec1d",
+    "backend/src/services/clinicalTaskAssignmentService.js": "ea88e98fb47891b352b1c1733bb6896fd1ccd114a3c9a797c993b22600f6bd3c",
+    "backend/src/services/realtimeService.js": "d91e5b3e4e3a2df8badd927db795ee2ed4d63932acfdc57fdd56206c05bcf443",
+    "backend/src/services/notificationService.js": "77c78cd3a54fccd435fa9727b10688fb8f8de937d54d0d4d3ec5031140280062",
+    "backend/src/services/postgresBackupService.js": "874aba7c8531160826db3d787a98fc751d5610409f048b377aa7676efa2606c2",
+    "backend/src/services/quotaService.js": "2feecd1ee1cf11fc401d437bb5016efcf01d777656f3fa9caae8a6f96b6c5b8a",
+    "database/migrate.js": "cc43a95ead70610a3ef5f74f8bbb8920626d461ffa124f4e7acc214248db0e15",
+    "database/migrations/206_multibranch_row_level_security.sql": "91a741179349fa5fb7f057eeccf0c27c57cc26d8f521aa412b66628c0b47fb70",
+    "database/migrations/208_signed_branch_context.sql": "2942b10febae94ee29f1b9340fda62a0664167ae625f40afafe314e4e22b7cab",
+    "database/migrations/209_portal_and_service_rls_context.sql": "d35d4d283bcfee0958929641f73b0f48b7a80efa54e918973bd4880b464f4d18",
+    "database/migrations/211_emergency_readonly_rls_context.sql": "be8263dad61498162c068e84846f92d6877c287f47bb1b7583d088b9a9903a18",
+    "database/migrations/212_license_quota_aggregate.sql": "a455125984c24634576a8e23584eef8d3623b8dfedf18aba61885e2a35a76bf3",
+    "frontend/src/store/authSlice.js": "68d41ef5640c09e99bb881bd597cc2ebc08bf0bd9d3bb2e4590275300f4590bd",
+    "frontend/src/store/store.js": "0baede3721b60161eaf3dd951ebf2a6cb39e96c80b922807c5c6abc64639ce5f",
+    "frontend/src/store/baseApi.js": "1ab585cf567c82e3d5f1b205a33d198b1a6cff3a2398b848e516f39e3a941d64",
+    "frontend/src/utils/branchContext.js": "432d695163fb0b7f9ad7d84cb2991499c9bd0bce35948df6e6d22729d5cc9b3b"
+  }
+}

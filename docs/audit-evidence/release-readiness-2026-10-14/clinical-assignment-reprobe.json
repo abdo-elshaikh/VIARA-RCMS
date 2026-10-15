@@ -1,0 +1,29 @@
+{
+  "date": "2026-10-14",
+  "syntheticOnly": true,
+  "realDatabaseUsed": false,
+  "membershipServiceStubbed": true,
+  "results": [
+    {
+      "identityRole": "Receptionist",
+      "branchRole": "Nurse",
+      "accepted": false,
+      "errorCode": "ROLE_NOT_ELIGIBLE",
+      "statusCode": 422,
+      "mockQueryCount": 1
+    },
+    {
+      "identityRole": "Nurse",
+      "branchRole": "Receptionist",
+      "accepted": true,
+      "taskRole": "Nurse",
+      "mockQueryCount": 4
+    }
+  ],
+  "membershipCalls": [
+    {
+      "userId": "synthetic-target",
+      "organizationId": null
+    }
+  ]
+}

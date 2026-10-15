@@ -38,7 +38,19 @@ function invalidateUserMembershipCache() {}
  * @param {string} [orgId] - Organization UUID
  * @returns {Promise<{ branches: Array, defaultBranchId: string|null }>}
  */
-async function getUserBranches(db, userId, isOrgAdmin = false, orgId = DEFAULT_ORG_ID) {
+async function getUserBranches(db, userId, isOrgAdmin = false, orgId = null) {
+    let resolvedOrgId = orgId;
+    if (!resolvedOrgId) {
+        try {
+            const userRes = await db.query(
+                'SELECT organization_id FROM users WHERE user_id = $1 AND is_active = TRUE AND NOT is_service_account',
+                [userId]
+            );
+            resolvedOrgId = userRes.rows[0]?.organization_id || DEFAULT_ORG_ID;
+        } catch {
+            resolvedOrgId = DEFAULT_ORG_ID;
+        }
+    }
 
     if (isOrgAdmin) {
         // Org admins can see and switch to all non-archived branches in their organization
@@ -76,7 +88,7 @@ async function getUserBranches(db, userId, isOrgAdmin = false, orgId = DEFAULT_O
                 ON ubm.branch_id = b.id AND ubm.user_id = $1 AND ubm.is_active = TRUE
             WHERE b.organization_id = $2 AND b.status != 'archived'
             ORDER BY b.is_main DESC, b.name ASC
-        `, [userId, orgId]);
+        `, [userId, resolvedOrgId]);
 
         const branches = orgBranchesRes.rows;
         let defaultBranchId = branches.find(b => b.is_default)?.id || branches.find(b => b.is_main)?.id || branches[0]?.id || null;
@@ -122,7 +134,7 @@ async function getUserBranches(db, userId, isOrgAdmin = false, orgId = DEFAULT_O
           AND b.organization_id = $2
           AND b.status = 'active'
         ORDER BY ubm.is_default DESC, b.is_main DESC, b.name ASC
-    `, [userId, orgId]);
+    `, [userId, resolvedOrgId]);
 
     const branches = memberBranchesRes.rows;
     let defaultBranchId = branches.find(b => b.is_default)?.id || (branches.length === 1 ? branches[0].id : null);

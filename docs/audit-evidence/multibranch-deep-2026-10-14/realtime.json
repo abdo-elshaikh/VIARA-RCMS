@@ -1,0 +1,10 @@
+{
+  "syntheticOnly": true,
+  "identityKeys": [
+    "userId",
+    "role"
+  ],
+  "branchChannelReachedA": false,
+  "branchBNotificationReachedA": true,
+  "branchBNotificationReachedB": true
+}

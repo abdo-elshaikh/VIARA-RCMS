@@ -55,7 +55,7 @@ const DEVELOPER_ONLY_PERMISSIONS = [
 ];
 
 const signAccessToken = (user, extraClaims = {}, expiresIn = process.env.JWT_EXPIRY || '1h') => jwt.sign(
-    { ...stripEmergencyClaims(user), ...extraClaims },
+    { ...stripEmergencyClaims(user), ...extraClaims, role: user.identity_role || user.role },
     getJwtSecret(),
     { expiresIn }
 );
@@ -371,7 +371,11 @@ const requestBreakGlass = (db) => async (req, res, next) => {
             ? Math.max(1, req.user.exp - Math.floor(Date.now() / 1000))
             : durationMinutes * 60;
         const tokenTtlSeconds = Math.min(durationMinutes * 60, originalTtlSeconds);
-        const token = signAccessToken(req.user, {
+        const tokenUser = {
+            ...req.user,
+            role: account.role || req.user.identity_role || req.user.role
+        };
+        const token = signAccessToken(tokenUser, {
             emergencyAccessId: grant.grant_id,
             elevatedPermissions: permissions,
             breakGlassExpiry: new Date(grant.expires_at).getTime(),

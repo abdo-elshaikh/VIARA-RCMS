@@ -1,0 +1,206 @@
+{
+  "date": "2026-10-14",
+  "syntheticOnly": true,
+  "isolatedDatabase": true,
+  "checks": {
+    "baseline": {
+      "visibleExams": 1
+    },
+    "optionalBranchRole": {
+      "allowed": true,
+      "branchId": null,
+      "role": "Admin",
+      "memberRoles": [
+        "Receptionist",
+        "Nurse"
+      ],
+      "adminRoleAllowed": true
+    },
+    "emergencyRoleRoute": {
+      "allowed": false,
+      "status": 403
+    },
+    "emergencyTokenIdentity": {
+      "accountRole": "Technician",
+      "tokenRole": "Radiologist",
+      "allowed": false,
+      "status": 401,
+      "code": "INVALID_ACCESS_TOKEN"
+    },
+    "branchAdminGlobalRbac": {
+      "permissionPassed": true,
+      "status": 200,
+      "remainingNursePermissions": 0
+    },
+    "nonDefaultOrganization": {
+      "implicitOrganizationBranches": 0,
+      "explicitOrganizationBranches": 1
+    },
+    "notificationBranchPersistence": {
+      "requestedBranch": "00000000-0000-4000-8000-000000000002",
+      "result": {
+        "success": true,
+        "notificationId": "56c513b6-7853-4da8-8c2f-78dacbeabf89"
+      },
+      "persistedBranches": [
+        null
+      ]
+    },
+    "patientQuota": {
+      "works": false,
+      "code": "42703",
+      "error": "column \"is_active\" does not exist"
+    },
+    "branchTransfer": {
+      "works": false,
+      "code": "42501",
+      "error": "new row violates row-level security policy for table \"examinations\"",
+      "bothBranchMemberships": true,
+      "allBranchesAdminCanTransfer": true
+    },
+    "branchClinicalAssignment": {
+      "eligibleBranchRoleAccepted": false,
+      "branchRole": "Nurse",
+      "accountRole": "Receptionist",
+      "code": "ROLE_NOT_ELIGIBLE",
+      "error": "Target user is not an active eligible clinical user",
+      "ineligibleBranchRoleAssigned": {
+        "succeeded": true,
+        "branchRole": "Receptionist",
+        "assignedRole": "Nurse"
+      }
+    },
+    "databasePrivileges": {
+      "can_truncate": false,
+      "can_read_context_secret": false,
+      "can_edit_memberships": true
+    },
+    "performance": {
+      "samples": [
+        {
+          "owner": {
+            "ms": 2.36,
+            "rows": 6001
+          },
+          "rls": {
+            "ms": 1242.36,
+            "rows": 3001
+          }
+        },
+        {
+          "owner": {
+            "ms": 2.33,
+            "rows": 6001
+          },
+          "rls": {
+            "ms": 1258.12,
+            "rows": 3001
+          }
+        },
+        {
+          "owner": {
+            "ms": 2.25,
+            "rows": 6001
+          },
+          "rls": {
+            "ms": 1397.21,
+            "rows": 3001
+          }
+        }
+      ],
+      "datasetRows": 6001,
+      "plan": {
+        "Plan": {
+          "Node Type": "Aggregate",
+          "Strategy": "Plain",
+          "Partial Mode": "Simple",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 592.67,
+          "Total Cost": 592.68,
+          "Plan Rows": 1,
+          "Plan Width": 8,
+          "Actual Startup Time": 1498.488,
+          "Actual Total Time": 1498.488,
+          "Actual Rows": 1,
+          "Actual Loops": 1,
+          "Shared Hit Blocks": 33159,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0,
+          "Plans": [
+            {
+              "Node Type": "Seq Scan",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Relation Name": "appointments",
+              "Alias": "appointments",
+              "Startup Cost": 0,
+              "Total Cost": 592.41,
+              "Plan Rows": 103,
+              "Plan Width": 0,
+              "Actual Startup Time": 0.852,
+              "Actual Total Time": 1496.966,
+              "Actual Rows": 3001,
+              "Actual Loops": 1,
+              "Filter": "(valid_branch_context() AND (branch_row_access(branch_id) OR portal_row_access(patient_id, appointment_id, NULL::uuid) OR emergency_row_access(branch_id, patient_id, appointment_id, NULL::uuid)))",
+              "Rows Removed by Filter": 3000,
+              "Shared Hit Blocks": 33159,
+              "Shared Read Blocks": 0,
+              "Shared Dirtied Blocks": 0,
+              "Shared Written Blocks": 0,
+              "Local Hit Blocks": 0,
+              "Local Read Blocks": 0,
+              "Local Dirtied Blocks": 0,
+              "Local Written Blocks": 0,
+              "Temp Read Blocks": 0,
+              "Temp Written Blocks": 0
+            }
+          ]
+        },
+        "Planning": {
+          "Shared Hit Blocks": 3,
+          "Shared Read Blocks": 0,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        },
+        "Planning Time": 0.104,
+        "Triggers": [],
+        "Execution Time": 1498.654
+      }
+    },
+    "beforeRestore": {
+      "appointments_read": true,
+      "context_secret_read": false,
+      "portal_acl_write": false
+    },
+    "afterRestore": {
+      "appointments_read": true,
+      "context_secret_read": true,
+      "portal_acl_write": true
+    },
+    "afterRestoreAndMigrate": {
+      "appointments_read": true,
+      "context_secret_read": true,
+      "portal_acl_write": true
+    },
+    "afterRestoreForgedContext": {
+      "succeeded": true,
+      "visibleAppointments": 6001
+    }
+  },
+  "migrations": 212
+}

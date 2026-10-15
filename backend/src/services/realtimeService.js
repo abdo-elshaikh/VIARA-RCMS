@@ -134,10 +134,17 @@ const createSseSession = (decoded) => {
     const doctorId = isDoctorPortal
         ? (decoded.doctorId || decoded.doctor_id || null)
         : null;
+    const branchIds = Array.isArray(decoded.branchIds)
+        ? decoded.branchIds
+        : (decoded.branch_id || decoded.branchId ? [decoded.branch_id || decoded.branchId] : []);
     return signSsePayload({
         nonce: crypto.randomBytes(16).toString('hex'),
         userId: isPatient || isDoctorPortal ? null : (decoded.user_id || decoded.userId || null),
         role: decoded.role || null,
+        branchId: decoded.branch_id || decoded.branchId || null,
+        branchIds,
+        organizationId: decoded.organization_id || decoded.organizationId || null,
+        isOrgAdmin: Boolean(decoded.is_org_admin || decoded.isOrgAdmin || decoded.role === 'Developer'),
         sessionId: decoded.session_id || null,
         patientId,
         doctorId,
@@ -155,7 +162,11 @@ const broadcastToStaffMatching = (predicate, event, data) => {
     clients
         .filter(client => Boolean(client.userId) && predicate({
             userId: client.userId,
-            role: client.role
+            role: client.role,
+            branchId: client.branchId,
+            branchIds: client.branchIds,
+            organizationId: client.organizationId,
+            isOrgAdmin: client.isOrgAdmin
         }))
         .forEach(client => writeSse(client, { event, data }));
 };
@@ -227,6 +238,10 @@ const registerClient = (req, res) => {
             res,
             userId: session.userId,
             role: session.role,
+            branchId: session.branchId || null,
+            branchIds: session.branchIds || (session.branchId ? [session.branchId] : []),
+            organizationId: session.organizationId || null,
+            isOrgAdmin: Boolean(session.isOrgAdmin),
             sessionId: session.sessionId,
             patientId: session.patientId,
             doctorId: session.doctorId
@@ -347,7 +362,16 @@ const sendToDoctor = (doctorId, event, data) => {
  */
 const sendToRoleLocal = (role, event, data) => {
     if (!role) return;
-    const targetClients = clients.filter(c => c.role === role);
+    const targetBranchId = data && typeof data === 'object' ? (data.branch_id || data.branchId || null) : null;
+    const targetClients = clients.filter(c => {
+        if (c.role !== role) return false;
+        if (targetBranchId) {
+            if (c.isOrgAdmin) return true;
+            const clientBranches = c.branchIds || (c.branchId ? [c.branchId] : []);
+            return clientBranches.includes(targetBranchId);
+        }
+        return true;
+    });
     targetClients.forEach(client => {
         writeSse(client, { event, data });
     });

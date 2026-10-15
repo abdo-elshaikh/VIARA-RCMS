@@ -58,6 +58,35 @@ async function runPacsImagingScenario({ vuId, userPool, metricsCollector }) {
         ok: res.ok,
         error: res.error
     });
+
+    // 5. Query PACS Study Series & TTFI (Time to First Image Diagnostic Retrieval)
+    res = await client.get('/api/pacs/dicom-web/studies?limit=1');
+    metricsCollector.record({
+        scenario,
+        action: 'Query PACS Studies (TTFI Search)',
+        method: 'GET',
+        endpoint: '/api/pacs/dicom-web/studies',
+        duration: res.duration,
+        status: res.status,
+        ok: res.ok,
+        error: res.error
+    });
+    if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+        const studyUid = res.data[0]?.['0020000D']?.Value?.[0] || res.data[0]?.studyInstanceUid;
+        if (studyUid) {
+            const seriesRes = await client.get(`/api/pacs/dicom-web/studies/${studyUid}/series`);
+            metricsCollector.record({
+                scenario,
+                action: 'Query PACS Series (TTFI First Metadata)',
+                method: 'GET',
+                endpoint: '/api/pacs/dicom-web/studies/:studyUid/series',
+                duration: seriesRes.duration,
+                status: seriesRes.status,
+                ok: seriesRes.ok,
+                error: seriesRes.error
+            });
+        }
+    }
 }
 
 module.exports = runPacsImagingScenario;

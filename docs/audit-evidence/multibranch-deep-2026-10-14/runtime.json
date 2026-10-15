@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-14",
+  "readOnly": true,
+  "backend": {
+    "mode": "development",
+    "status": "restarting",
+    "restarting": true,
+    "restartCount": 62,
+    "imageId": "sha256:4b889d42e2eb12035a3d9c367552023a27d3ddd9cd451e499c2cd1b05d1ec6fb",
+    "isReviewedImage": false,
+    "applicationRole": false,
+    "keys": {
+      "ENCRYPTION_KEY": {
+        "configured": true,
+        "validHex256": false
+      },
+      "BACKUP_ENCRYPTION_KEY": {
+        "configured": true,
+        "validHex256": false
+      },
+      "JWT_SECRET": {
+        "configured": true,
+        "strongFormat": false
+      }
+    }
+  },
+  "ohif": {
+    "status": "running",
+    "health": "unhealthy"
+  }
+}

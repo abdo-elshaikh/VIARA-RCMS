@@ -38,30 +38,22 @@ const UPGRADE_URL = process.env.UPGRADE_URL || 'https://viara.net/upgrade';
 // ---------------------------------------------------------------------------
 
 async function _countPatients(pool) {
-    const r = await pool.query('SELECT COUNT(*) AS n FROM patients WHERE is_active = TRUE');
+    const r = await pool.query('SELECT public.license_quota_usage($1) AS n', ['patients']);
     return parseInt(r.rows[0]?.n || '0', 10);
 }
 
 async function _countAppointmentsThisMonth(pool) {
-    const r = await pool.query(`
-        SELECT COUNT(*) AS n
-        FROM   appointments
-        WHERE  DATE_TRUNC('month', created_at) = DATE_TRUNC('month', NOW())
-    `);
+    const r = await pool.query('SELECT public.license_quota_usage($1) AS n', ['appointments']);
     return parseInt(r.rows[0]?.n || '0', 10);
 }
 
 async function _countActiveUsers(pool) {
-    const r = await pool.query('SELECT COUNT(*) AS n FROM users WHERE is_active = TRUE');
+    const r = await pool.query('SELECT public.license_quota_usage($1) AS n', ['users']);
     return parseInt(r.rows[0]?.n || '0', 10);
 }
 
 async function _countReportsToday(pool) {
-    const r = await pool.query(`
-        SELECT COUNT(*) AS n
-        FROM   examinations
-        WHERE  report_finalized_at >= CURRENT_DATE
-    `);
+    const r = await pool.query('SELECT public.license_quota_usage($1) AS n', ['reports']);
     return parseInt(r.rows[0]?.n || '0', 10);
 }
 
@@ -113,7 +105,7 @@ async function assertQuota(pool, quotaName, { transaction = false } = {}) {
     const license = getLicense();
 
     // Only enforce quotas for trial edition
-    if (!license || license.edition !== 'trial') return;
+    if (!license || (license.edition !== 'trial' && !(quotaName === 'users' && license.maxUsers > 0))) return;
 
     const quota = QUOTA_REGISTRY[quotaName];
     if (!quota) {
@@ -208,7 +200,8 @@ async function getQuotaStats(pool) {
 }
 
 async function withQuotaTransaction(pool, name, operation) {
-    if (getLicense()?.edition !== 'trial') return operation(pool);
+    // User creation also inserts branch membership, even on unlimited licenses.
+    if (name !== 'users' && getLicense()?.edition !== 'trial') return operation(pool);
     const client = await pool.connect();
     try {
         await client.query('BEGIN');

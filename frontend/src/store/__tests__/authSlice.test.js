@@ -1,6 +1,7 @@
 /* eslint-disable no-undef */
 import { configureStore } from '@reduxjs/toolkit';
-import authReducer, { clearEmergencyAccess, decodeUserFromToken, logOut, rehydrateUser, setAccessToken, setCredentials, setActiveBranch } from '../authSlice';
+import authReducer, { clearEmergencyAccess, decodeUserFromToken, logOut, rehydrateUser, setAccessToken, setCredentials, setActiveBranch, permissionsUpdated, selectCurrentUser } from '../authSlice';
+import { getActiveBranchId } from '../../utils/branchContext';
 
 const makeStore = () => configureStore({ reducer: { auth: authReducer } });
 
@@ -11,6 +12,58 @@ const createMockJwt = (payload) => {
 };
 
 describe('staff access token storage', () => {
+    it('keeps the tab branch authoritative when another tab changes shared storage, including a cleared selection', () => {
+        const store = makeStore();
+        store.dispatch(setActiveBranch('A'));
+        localStorage.setItem('viara_active_branch_id', 'B');
+        expect(getActiveBranchId()).toBe('A');
+        store.dispatch(setActiveBranch(null));
+        localStorage.setItem('viara_active_branch_id', 'B');
+        expect(getActiveBranchId()).toBeNull();
+    });
+    it('revalidates revoked branch membership and clears old permissions on restoration', () => {
+        const store = makeStore();
+        store.dispatch(setCredentials({ user: { id: 'staff', role: 'Admin', branches: [{ id: 'A' }, { id: 'B' }] }, token: 'token' }));
+        store.dispatch(setActiveBranch('B'));
+        store.dispatch(permissionsUpdated({ branchId: 'B', permissions: ['VIEW_REPORTS'] }));
+        store.dispatch(rehydrateUser({ token: 'new-token', user: { id: 'staff', role: 'Admin', branches: [{ id: 'A', branch_role: 'Receptionist' }] } }));
+        expect(store.getState().auth.activeBranchId).toBe('A');
+        expect(store.getState().auth.user.permissions).toEqual([]);
+        expect(selectCurrentUser(store.getState()).role).toBe('Receptionist');
+        expect(getActiveBranchId()).toBe('A');
+    });
+    it('requires a new choice when the previous branch is revoked and multiple memberships have no default', () => {
+        const store = makeStore();
+        store.dispatch(setActiveBranch('revoked'));
+        store.dispatch(rehydrateUser({ token: 'token', user: { id: 'staff', role: 'Admin', branches: [{ id: 'A' }, { id: 'B' }] } }));
+        expect(store.getState().auth.activeBranchId).toBeNull();
+        expect(getActiveBranchId()).toBeNull();
+        expect(selectCurrentUser(store.getState()).role).toBe('Unassigned');
+    });
+    it('drops a selection when all memberships have been revoked', () => {
+        const store = makeStore();
+        store.dispatch(setActiveBranch('revoked'));
+        store.dispatch(rehydrateUser({ token: 'token', user: { id: 'staff', role: 'Admin', branches: [] } }));
+        expect(store.getState().auth.activeBranchId).toBeNull();
+        expect(localStorage.getItem('viara_active_branch_id')).toBeNull();
+    });
+    it('uses the selected branch role and discards permission responses for a previous branch', () => {
+        const store = makeStore();
+        store.dispatch(setCredentials({ user: { user_id: 'staff', role: 'Admin', defaultBranchId: 'A', permissions: ['GLOBAL'], branches: [{ id: 'A', branch_role: 'Radiologist' }, { id: 'B', branch_role: 'Receptionist' }] }, token: 'token' }));
+        expect(selectCurrentUser(store.getState()).role).toBe('Radiologist');
+        store.dispatch(setActiveBranch('B'));
+        expect(selectCurrentUser(store.getState()).role).toBe('Receptionist');
+        expect(selectCurrentUser(store.getState()).permissions).toEqual([]);
+        store.dispatch(permissionsUpdated({ branchId: 'A', role: 'Admin', permissions: ['STALE'] }));
+        expect(selectCurrentUser(store.getState()).permissions).toEqual([]);
+        store.dispatch(permissionsUpdated({ branchId: 'B', role: 'Receptionist', permissions: ['VIEW_APPOINTMENTS'] }));
+        expect(selectCurrentUser(store.getState()).permissions).toEqual(['VIEW_APPOINTMENTS']);
+    });
+    it('does not promote an ordinary user through a Developer branch role', () => {
+        const store = makeStore();
+        store.dispatch(setCredentials({ user: { role: 'Admin', branches: [{ id: 'A', branch_role: 'Developer' }] }, token: 'token' }));
+        expect(selectCurrentUser(store.getState()).role).toBe('Unassigned');
+    });
     it('drops a previous user branch and requires a choice for multiple branches without a default', () => {
         const store = makeStore();
         store.dispatch(setActiveBranch('old-branch'));

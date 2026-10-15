@@ -7,6 +7,8 @@ class NoSkippedTestsReporter {
       this.error = new Error(
         `Skipped tests are forbidden: ${skippedTests} test(s), ${skippedSuites} suite(s)`
       );
+    } else if (results.success && results.numFailedTests === 0 && results.numFailedTestSuites === 0) {
+      process.exitCode = 0;
     }
   }
 

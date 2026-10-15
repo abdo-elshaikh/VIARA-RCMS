@@ -42,7 +42,7 @@ const makeReq = (overrides = {}) => ({
     params: {},
     body: {},
     query: {},
-    user: { user_id: USER_ID, role: 'HR' },
+    user: { user_id: USER_ID, role: 'HR', is_org_admin: true, organization_id: '00000000-0000-4000-8000-000000000000' },
     ip: '127.0.0.1',
     ...overrides
 });
@@ -74,6 +74,7 @@ describe('HR hardening', () => {
             let profileParams = null;
             const client = makeClient([
                 ['INSERT INTO users', () => ok([{ user_id: EMPLOYEE_ID }])],
+                ['INSERT INTO user_branch_memberships', () => ok([])],
                 ['INSERT INTO employee_profiles', (params) => {
                     profileParams = params;
                     return ok([]);
@@ -86,7 +87,7 @@ describe('HR hardening', () => {
         branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
         headers: {},
                 body: { fullName: 'New Hire', email: 'new@viara.test', role: 'Nurse', password: 'secret123', department: 'Nursing', jobTitle: 'Staff Nurse' },
-                user: { user_id: USER_ID, role: 'HR', full_name: 'HR Manager' }
+                user: { user_id: USER_ID, role: 'HR', full_name: 'HR Manager', is_org_admin: true, organization_id: '00000000-0000-4000-8000-000000000000' }
             }), res, jest.fn());
 
             expect(res.status).toHaveBeenCalledWith(201);
@@ -101,7 +102,7 @@ describe('HR hardening', () => {
 
         test('deactivation stamps the termination date once', async () => {
             const client = makeClient([
-                ['SELECT user_id, role, is_active FROM users', () => ok([{ user_id: EMPLOYEE_ID, role: 'Nurse', is_active: true }])],
+                ['SELECT user_id, role, is_active, organization_id FROM users', () => ok([{ user_id: EMPLOYEE_ID, role: 'Nurse', is_active: true, organization_id: '00000000-0000-4000-8000-000000000000' }])],
                 ['UPDATE users SET is_active = false', () => ok([{ user_id: EMPLOYEE_ID }])],
                 ['UPDATE employee_profiles', () => ok([])],
                 ['UPDATE refresh_tokens', () => ok([])],
@@ -117,7 +118,7 @@ describe('HR hardening', () => {
 
         test('reactivation clears the termination date', async () => {
             const client = makeClient([
-                ['SELECT user_id, role, is_active FROM users', () => ok([{ user_id: EMPLOYEE_ID, role: 'Nurse', is_active: false }])],
+                ['SELECT user_id, role, is_active, organization_id FROM users', () => ok([{ user_id: EMPLOYEE_ID, role: 'Nurse', is_active: false, organization_id: '00000000-0000-4000-8000-000000000000' }])],
                 ['UPDATE users SET', () => ok([{ user_id: EMPLOYEE_ID, is_active: true }])],
                 ['SET termination_date = NULL', () => ok([])],
                 ['UPDATE refresh_tokens', () => ok([])],

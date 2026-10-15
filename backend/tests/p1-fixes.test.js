@@ -131,7 +131,7 @@ describe('Phase 2 (P1 & P2) Defect Remediation Suite', () => {
             expect(res.status).toHaveBeenCalledWith(400);
             expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
                 verified: false,
-                error: expect.stringContaining('Valid digital signature verification hash is required')
+                error: expect.stringContaining('valid report verification reference is required')
             }));
             expect(db.query).not.toHaveBeenCalled();
         });
@@ -173,7 +173,12 @@ describe('Phase 2 (P1 & P2) Defect Remediation Suite', () => {
             expect(querySql).not.toContain('e.exam_id::text = UPPER($1)');
             expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
                 verified: true,
-                integrityConfirmed: true
+                status: 'Finalized',
+                recordConfirmed: true,
+                verificationMethod: 'CenterRecordLookup',
+                integrityConfirmed: false,
+                contentIntegrityVerified: false,
+                cryptographicSignatureVerified: false
             }));
         });
     });

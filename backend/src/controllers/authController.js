@@ -52,17 +52,33 @@ const generateTokens = async (db, userPayload, ownerId, ownerTypeOrIsPatient = f
 const register = (db) => async (req, res, next) => {
     try {
         const { fullName, email, password, role } = req.body;
+        const identityRole = req.user?.identity_role || req.user?.role;
+        if (!req.user?.is_org_admin && identityRole !== 'Developer') {
+            return next(new AppError('User creation requires an organization administrator', 403));
+        }
+        if (role === 'Developer' && identityRole !== 'Developer') {
+            return next(new AppError('Only a technical administrator can create a Developer account', 403));
+        }
+        const organizationId = req.user?.organization_id;
+        if (!organizationId) return next(new AppError('Verified organization context is required', 403));
         await assertQuota(db, 'users');
 
         const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
 
         const query = `
-      INSERT INTO users (full_name, email, password_hash, role)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO users (full_name, email, password_hash, role, organization_id, is_org_admin)
+      VALUES ($1, $2, $3, $4, $5, FALSE)
       RETURNING user_id, full_name, email, role, created_at
     `;
 
-        const result = await withQuotaTransaction(db, 'users', client => client.query(query, [fullName, email, hashedPassword, role]));
+        const result = await withQuotaTransaction(db, 'users', async client => {
+            const created = await client.query(query, [fullName, email, hashedPassword, role, organizationId]);
+            if (req.branchContext?.branchId && role !== 'Developer') {
+                await client.query(`INSERT INTO user_branch_memberships(user_id, branch_id, role, is_active, is_default)
+                    VALUES($1, $2, $3, TRUE, TRUE)`, [created.rows[0].user_id, req.branchContext.branchId, role]);
+            }
+            return created;
+        });
 
         res.status(201).json({ message: 'User registered successfully', user: result.rows[0] });
 

@@ -3,6 +3,8 @@ const { runSeeds, runMigrations } = require('../../database/migrate');
 test('pending historical migrations retain schema but omit demo inserts in production', async () => {
     const original = process.env.NODE_ENV;
     const originalAppPassword = process.env.APP_DB_PASSWORD;
+    const originalBackupPassword = process.env.BACKUP_DB_PASSWORD;
+    process.env.BACKUP_DB_PASSWORD = 'b'.repeat(64);
     process.env.APP_DB_PASSWORD = 'a'.repeat(64);
     process.env.NODE_ENV = 'production';
     const client = { query: jest.fn(async sql => ({ rows: sql.includes("SELECT format('ALTER ROLE") ? [{ sql: 'ALTER ROLE rcms_app_user LOGIN' }] : [] })), release: jest.fn() };
@@ -16,7 +18,7 @@ test('pending historical migrations retain schema but omit demo inserts in produ
         expect(inventory).toContain('CREATE TABLE IF NOT EXISTS inventory_items');
         expect(inventory).not.toContain('INSERT INTO inventory_items');
         expect(statements.some(sql => /DELETE FROM (users|inventory_items)/i.test(sql))).toBe(false);
-    } finally { process.env.NODE_ENV = original; if (originalAppPassword === undefined) delete process.env.APP_DB_PASSWORD; else process.env.APP_DB_PASSWORD = originalAppPassword; }
+    } finally { process.env.NODE_ENV = original; if (originalAppPassword === undefined) delete process.env.APP_DB_PASSWORD; else process.env.APP_DB_PASSWORD = originalAppPassword; if (originalBackupPassword === undefined) delete process.env.BACKUP_DB_PASSWORD; else process.env.BACKUP_DB_PASSWORD = originalBackupPassword; }
 });
 
 test('production bootstrap seeds RBAC without adding demo accounts or operational records', async () => {

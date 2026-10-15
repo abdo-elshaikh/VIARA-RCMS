@@ -1,0 +1,114 @@
+{
+  "date": "2026-10-14",
+  "head": "dc1d0ab9d40e8b2a4296160c077a7fafded10d35",
+  "workingTreeIncluded": true,
+  "tests": {
+    "frontend": {
+      "success": true,
+      "totalTests": 784,
+      "passedTests": 784,
+      "failedTests": 0,
+      "pendingTests": 0,
+      "fileCount": 133,
+      "startTime": 1791997826897
+    },
+    "portal": {
+      "success": true,
+      "totalTests": 26,
+      "passedTests": 26,
+      "failedTests": 0,
+      "pendingTests": 0,
+      "fileCount": 6,
+      "startTime": 1791997853979
+    }
+  },
+  "checks": {
+    "frontendBuild": {
+      "exitCode": 0,
+      "outputDirectory": "C:/WINDOWS/TEMP/viara-release-readiness-frontend-20261014",
+      "durationSeconds": 45.54
+    },
+    "portalBuild": {
+      "exitCode": 0,
+      "outputDirectory": "C:/WINDOWS/TEMP/viara-release-readiness-portal-20261014",
+      "durationSeconds": 22.76
+    },
+    "portalTypecheck": {
+      "exitCode": 0
+    },
+    "portalLint": {
+      "exitCode": 0
+    },
+    "localeContract": {
+      "exitCode": 0
+    },
+    "frontendLint": {
+      "exitCode": 1,
+      "errors": [
+        {
+          "path": "frontend/src/store/authSlice.js",
+          "lines": [
+            109,
+            152,
+            269
+          ],
+          "rule": "no-empty"
+        }
+      ],
+      "warnings": [
+        {
+          "path": "frontend/src/components/settings/TimezoneSelect.jsx",
+          "lines": [
+            74,
+            84,
+            97,
+            112
+          ],
+          "rule": "react-refresh/only-export-components"
+        }
+      ]
+    }
+  },
+  "sourceHashes": [
+    {
+      "path": "frontend/src/App.jsx",
+      "sha256": "5ce0f94ff61db7536771a61c2d7db7c1d8c3427257e06834bd583127fd4b35c4"
+    },
+    {
+      "path": "frontend/src/store/authSlice.js",
+      "sha256": "68d41ef5640c09e99bb881bd597cc2ebc08bf0bd9d3bb2e4590275300f4590bd"
+    },
+    {
+      "path": "frontend/src/utils/branchContext.js",
+      "sha256": "432d695163fb0b7f9ad7d84cb2991499c9bd0bce35948df6e6d22729d5cc9b3b"
+    },
+    {
+      "path": "frontend/src/store/baseApi.js",
+      "sha256": "1ab585cf567c82e3d5f1b205a33d198b1a6cff3a2398b848e516f39e3a941d64"
+    },
+    {
+      "path": "frontend/src/utils/authenticatedFetch.js",
+      "sha256": "2c4e1825135664edb42260b9229a8a9ce2f6c037231dd80d915469ed6db22313"
+    },
+    {
+      "path": "backend/src/services/clinicalTaskAssignmentService.js",
+      "sha256": "ea88e98fb47891b352b1c1733bb6896fd1ccd114a3c9a797c993b22600f6bd3c"
+    },
+    {
+      "path": "backend/src/controllers/examController.js",
+      "sha256": "0d78a0fd4b5f3c2b2b96bd9973342bc7caf0f8e3ad8e2866a4e07bc73e46c1c1"
+    },
+    {
+      "path": "backend/src/controllers/queueController.js",
+      "sha256": "60d0b90338086f28ccaccb2f1ec3c24ef294b51daa80c61e6508729c979f7901"
+    },
+    {
+      "path": "backend/src/controllers/publicLandingController.js",
+      "sha256": "ab11b2e620ebc0d3c22def1459fde48b5e84b28974604696e6f1daf5b4a3072f"
+    },
+    {
+      "path": "portal/src/pages/PublicReportVerify.tsx",
+      "sha256": "04b12b65568ce6b438f28f1faa719aba47c55271b21f400765f05527a785c61d"
+    }
+  ]
+}

@@ -48,6 +48,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set a unique JWT_SECRET in .env}
       BRANCH_CONTEXT_SECRET: ${BRANCH_CONTEXT_SECRET:-}
       APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Generate the separate application database password}
+      BACKUP_DB_PASSWORD: ${BACKUP_DB_PASSWORD:?Generate the separate readonly backup database password}
     volumes:
       - ./database:/database:ro
     networks: [data]
@@ -144,6 +145,8 @@ services:
       NODE_ENV: production
       LICENSE_KEY: ${LICENSE_KEY:?Set the vendor-issued LICENSE_KEY in the protected .env file}
       DATABASE_URL: postgresql://rcms_app_user:${APP_DB_PASSWORD:?Generate the separate application database password}@postgres:5432/${POSTGRES_DB:-viara}
+      BACKUP_DATABASE_URL: postgresql://viara_backup_reader:${BACKUP_DB_PASSWORD:?Generate the readonly backup database password}@postgres:5432/${POSTGRES_DB:-viara}
+      RESTORE_DATABASE_URL: postgresql://${POSTGRES_USER:-viara}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-viara}
       JWT_SECRET: ${JWT_SECRET:?Set a unique JWT_SECRET in .env}
       BRANCH_CONTEXT_SECRET: ${BRANCH_CONTEXT_SECRET:-}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set a unique ENCRYPTION_KEY in .env}

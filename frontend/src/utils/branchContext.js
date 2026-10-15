@@ -5,16 +5,17 @@
  * frontend, supporting both standalone fetch helpers and Redux state.
  */
 
-let branchProvider = () => null;
+let branchProvider = null;
 
 export const configureActiveBranchProvider = (provider) => {
-    branchProvider = typeof provider === 'function' ? provider : () => null;
+    branchProvider = typeof provider === 'function' ? provider : null;
 };
 
 export const getActiveBranchId = () => {
     try {
-        const fromProvider = branchProvider();
-        if (fromProvider) return fromProvider;
+        // A cleared workspace selection is authoritative, even when another
+        // tab still has a branch in shared browser storage.
+        if (branchProvider) return branchProvider() || null;
         if (typeof localStorage !== 'undefined') {
             return localStorage.getItem('viara_active_branch_id') || null;
         }

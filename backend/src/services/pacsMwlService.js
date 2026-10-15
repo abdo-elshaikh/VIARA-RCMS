@@ -315,6 +315,7 @@ let mwlPendingRegen = false;
  */
 const triggerMwlRegeneration = (pool, delayMs = 2000) => {
     if (!pool) return;
+    if (process.env.NODE_ENV === 'test' && !process.env.TEST_MWL_TIMER) return;
     if (mwlRegenTimeout) {
         clearTimeout(mwlRegenTimeout);
     }
