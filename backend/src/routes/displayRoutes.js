@@ -1,6 +1,7 @@
 const express = require('express');
 const { displayBoardLimiter } = require('../middleware/rateLimiters');
 const { hasPermission } = require('../middleware/rbacMiddleware');
+const { validateRequest } = require('../middleware/validateRequest');
 const { getDisplayBoard, broadcastPatientCall } = require('../controllers/displayBoardController');
 const { getQueueDisplay } = require('../controllers/queueDisplayController');
 const { serviceContext } = require('../utils/databaseContext');
@@ -12,6 +13,11 @@ const {
     updateDisplayAnnouncement,
     deleteDisplayAnnouncement
 } = require('../controllers/displayBoardAdminController');
+const {
+    displayConfigSchema,
+    createAnnouncementSchema,
+    updateAnnouncementSchema
+} = require('../schemas/displayBoardSchema');
 
 module.exports = (pool, authenticateToken, authorizeRole) => {
     const router = express.Router();
@@ -53,6 +59,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
         authenticateToken,
         authorizeRole(['Admin', 'Receptionist']),
         hasPermission(pool, 'MANAGE_DISPLAY_BOARD'),
+        validateRequest(displayConfigSchema),
         updateDisplayConfig(pool)
     );
 
@@ -60,6 +67,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
         authenticateToken,
         authorizeRole(['Admin', 'Receptionist']),
         hasPermission(pool, 'MANAGE_DISPLAY_BOARD'),
+        validateRequest(createAnnouncementSchema),
         createDisplayAnnouncement(pool)
     );
 
@@ -67,6 +75,7 @@ module.exports = (pool, authenticateToken, authorizeRole) => {
         authenticateToken,
         authorizeRole(['Admin', 'Receptionist']),
         hasPermission(pool, 'MANAGE_DISPLAY_BOARD'),
+        validateRequest(updateAnnouncementSchema),
         updateDisplayAnnouncement(pool)
     );
 
