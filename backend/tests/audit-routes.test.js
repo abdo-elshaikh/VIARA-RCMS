@@ -10,10 +10,12 @@ jest.mock('../src/middleware/rbacMiddleware', () => ({
 }));
 
 jest.mock('../src/controllers/auditController', () => ({
-    getAuditLogs: jest.fn(() => (req, res) => res.json({ route: 'logs', checkedAnyPermissions: req.checkedAnyPermissions })),
+    getAuditLogs: jest.fn(() => (req, res) => res.json({ route: 'logs', checkedPermissions: req.checkedPermissions, checkedAnyPermissions: req.checkedAnyPermissions })),
+    getStaffActivityLogs: jest.fn(() => (req, res) => res.json({ route: 'activity', checkedPermissions: req.checkedPermissions })),
+    exportStaffActivityLogs: jest.fn(() => (req, res) => res.json({ route: 'activity_export', checkedPermissions: req.checkedPermissions })),
     exportAuditLogs: jest.fn(() => (req, res) => res.json({ route: 'export', checkedPermissions: req.checkedPermissions })),
     verifyAuditChain: jest.fn(() => (req, res) => res.json({ route: 'verify', checkedPermissions: req.checkedPermissions })),
-    getAuditAlerts: jest.fn(() => (req, res) => res.json({ route: 'alerts', checkedAnyPermissions: req.checkedAnyPermissions })),
+    getAuditAlerts: jest.fn(() => (req, res) => res.json({ route: 'alerts', checkedPermissions: req.checkedPermissions, checkedAnyPermissions: req.checkedAnyPermissions })),
     reviewAuditAlert: jest.fn(() => (req, res) => res.json({ route: 'review', checkedPermissions: req.checkedPermissions })),
     runAuditDetections: jest.fn(() => (req, res) => res.json({ route: 'detect', checkedPermissions: req.checkedPermissions })),
 }));
@@ -36,10 +38,10 @@ describe('audit routes permissions', () => {
     it('uses granular permissions for sensitive audit operations', async () => {
         const app = buildApp();
 
-        await expect(request(app).get('/audit/').then(res => res.body.checkedAnyPermissions[0]))
-            .resolves.toEqual(['VIEW_AUDIT_TRAILS', 'VIEW_AUDIT_LOGS']);
-        await expect(request(app).get('/audit/alerts').then(res => res.body.checkedAnyPermissions[0]))
-            .resolves.toEqual(['VIEW_AUDIT_TRAILS', 'VIEW_AUDIT_LOGS']);
+        await expect(request(app).get('/audit/').then(res => res.body.checkedPermissions[0]))
+            .resolves.toBe('VIEW_AUDIT_TRAILS');
+        await expect(request(app).get('/audit/alerts').then(res => res.body.checkedPermissions[0]))
+            .resolves.toBe('VIEW_AUDIT_TRAILS');
         await expect(request(app).get('/audit/export').then(res => res.body.checkedPermissions[0]))
             .resolves.toBe('EXPORT_AUDIT_TRAILS');
         await expect(request(app).get('/audit/verify').then(res => res.body.checkedPermissions[0]))

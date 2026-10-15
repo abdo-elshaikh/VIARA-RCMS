@@ -1,22 +1,21 @@
--- Initial Seed Data for RCMS
+-- Initial Seed Data for VIARA
 
 -- 1. Insert demo users
--- All demo users use password 'password123'.
+-- Demo user passwords are provisioned by deployment/CI and must not be committed as plaintext.
+-- Each demo account uses a per-user bcrypt hash generated at deployment time; this file only
+-- provisions a random, non-login placeholder that is force-replaced by scripts/resetDemoAccounts.js
+-- (or the JS seeders) before the environment is handed to any human.
 INSERT INTO users (full_name, email, password_hash, role, is_active)
-VALUES 
-('System Admin', 'admin@rcms.com', '***REMOVED***', 'Admin', TRUE), -- admin@rcms.com uses password 'password123'
-('Dr. Alice Smith', 'alice@rcms.com', '***REMOVED***', 'Radiologist', TRUE), -- alice@rcms.com uses password 'password123'
-('Front Desk', 'reception@rcms.com', '***REMOVED***', 'Receptionist', TRUE), -- reception@rcms.com uses password 'password123'
-('Cashier Desk', 'cashier@rcms.com', '***REMOVED***', 'Cashier', TRUE), -- cashier@rcms.com uses password 'password123'
-('Finance User', 'accountant@rcms.com', '***REMOVED***', 'Accountant', TRUE), -- accountant@rcms.com uses password 'password123'
-('HR Manager', 'hr@rcms.com', '***REMOVED***', 'HR', TRUE), -- hr@rcms.com uses password 'password123'
-('Lead Technician', 'tech@rcms.com', '***REMOVED***', 'Technician', TRUE), -- tech@rcms.com uses password 'password123'
-('Charge Nurse', 'nurse@rcms.com', '***REMOVED***', 'Nurse', TRUE) -- nurse@rcms.com uses password 'password123'
-ON CONFLICT (email) DO UPDATE SET
-    full_name = EXCLUDED.full_name,
-    password_hash = EXCLUDED.password_hash,
-    role = EXCLUDED.role,
-    is_active = EXCLUDED.is_active;
+VALUES
+('System Admin', 'admin@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Admin', FALSE),
+('Dr. Alice Smith', 'alice@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Radiologist', FALSE),
+('Front Desk', 'reception@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Receptionist', FALSE),
+('Cashier Desk', 'cashier@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Cashier', FALSE),
+('Finance User', 'accountant@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Accountant', FALSE),
+('HR Manager', 'hr@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'HR', FALSE),
+('Lead Technician', 'tech@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Technician', FALSE),
+('Charge Nurse', 'nurse@VIARA.com', '$2b$12$ DISABLED-PLACEHOLDER-RUN-SEEDER', 'Nurse', FALSE)
+ON CONFLICT (email) DO NOTHING;
 
 -- 2. Insert Modalities (Machines)
 INSERT INTO modalities (name, type, room_number, status)

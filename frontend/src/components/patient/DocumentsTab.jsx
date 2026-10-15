@@ -67,11 +67,11 @@ const DocumentsTab = ({ patient }) => {
     }, [previewUrl]);
 
     const fetchDocumentBlob = async (doc) => {
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+        const baseUrl = import.meta.env.VITE_API_URL || '/api';
         const response = await authenticatedFetch(`${baseUrl}/documents/${doc.document_id}/download`);
 
         if (!response.ok) {
-            throw new Error('Document could not be loaded');
+            throw new Error(t('documents.loadError'));
         }
 
         return response.blob();
@@ -81,7 +81,7 @@ const DocumentsTab = ({ patient }) => {
         if (e.target.files && e.target.files[0]) {
             const selected = e.target.files[0];
             if (selected.size > 10 * 1024 * 1024) {
-                toast.error('File size exceeds 10MB limit.');
+                toast.error(t('documents.fileTooLarge'));
                 return;
             }
             setFile(selected);
@@ -91,7 +91,7 @@ const DocumentsTab = ({ patient }) => {
     const handleUpload = async (e) => {
         e.preventDefault();
         if (!file) {
-            toast.error('Please select a file to upload');
+            toast.error(t('documents.selectFile'));
             return;
         }
 
@@ -103,13 +103,13 @@ const DocumentsTab = ({ patient }) => {
 
         try {
             await uploadDocument(formData).unwrap();
-            toast.success('Document uploaded successfully');
+            toast.success(t('documents.uploaded'));
             setFile(null);
             setDocType('Patient ID');
             setNotes('');
             if (fileInputRef.current) fileInputRef.current.value = '';
         } catch (error) {
-            toast.error(error?.data?.error || 'Failed to upload document');
+            toast.error(error?.data?.error || t('documents.uploadError'));
         }
     };
 
@@ -131,7 +131,7 @@ const DocumentsTab = ({ patient }) => {
             setPreviewUrl(URL.createObjectURL(blob));
             setPreviewType(doc.mime_type);
         } catch (error) {
-            toast.error(error.message || 'Failed to preview document');
+            toast.error(error.message || t('documents.previewError'));
         }
     };
 
@@ -147,7 +147,7 @@ const DocumentsTab = ({ patient }) => {
             link.remove();
             URL.revokeObjectURL(url);
         } catch (error) {
-            toast.error(error.message || 'Failed to download document');
+            toast.error(error.message || t('documents.downloadError'));
         }
     };
 
@@ -158,24 +158,24 @@ const DocumentsTab = ({ patient }) => {
                 {/* Upload Section */}
                 {canUpload && <div className="md:col-span-1 bg-slate-50 border border-slate-200 rounded-xl p-5 shadow-sm">
                     <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                        <Upload size={20} className="text-indigo-600" /> Upload Document
+                        <Upload size={20} className="text-indigo-600" /> {t('documents.uploadTitle')}
                     </h3>
                     <form onSubmit={handleUpload} className="space-y-4">
                         <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-1">Document Type</label>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">{t('documents.type')}</label>
                             <select 
                                 value={docType}
                                 onChange={(e) => setDocType(e.target.value)}
                                 className="input-field w-full"
                             >
                                 {DOCUMENT_TYPES.map(type => (
-                                    <option key={type} value={type}>{type}</option>
+                                    <option key={type} value={type}>{t(`documents.types.${type}`, { defaultValue: type })}</option>
                                 ))}
                             </select>
                         </div>
 
                         <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-1">File</label>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">{t('documents.file')}</label>
                             <input 
                                 type="file" 
                                 ref={fileInputRef}
@@ -188,17 +188,17 @@ const DocumentsTab = ({ patient }) => {
                                     file:bg-indigo-50 file:text-indigo-700
                                     hover:file:bg-indigo-100"
                             />
-                            {file && <p className="text-xs text-slate-500 mt-1 pl-1">Selected: {file.name} ({formatBytes(file.size)})</p>}
+                            {file && <p className="text-xs text-slate-500 mt-1 pl-1">{t('documents.selected', { name: file.name, size: formatBytes(file.size) })}</p>}
                         </div>
 
                         <div>
-                            <label className="block text-sm font-bold text-slate-700 mb-1">Notes (Optional)</label>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">{t('documents.notes')}</label>
                             <textarea 
                                 value={notes}
                                 onChange={(e) => setNotes(e.target.value)}
                                 className="input-field w-full text-sm"
                                 rows="2"
-                                placeholder="Add any details about this document..."
+                                placeholder={t('documents.notesPlaceholder')}
                             />
                         </div>
 
@@ -207,7 +207,7 @@ const DocumentsTab = ({ patient }) => {
                             disabled={!file || isUploading}
                             className="w-full bg-indigo-600 text-white font-bold py-2 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
                         >
-                            {isUploading ? 'Uploading...' : 'Upload'}
+                            {isUploading ? t('documents.uploading') : t('documents.upload')}
                         </button>
                     </form>
                 </div>}
@@ -215,15 +215,15 @@ const DocumentsTab = ({ patient }) => {
                 {/* List Section */}
                 <div className={`${canUpload ? 'md:col-span-2' : 'md:col-span-3'} bg-white border border-slate-200 rounded-xl p-5 shadow-sm`}>
                     <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                        <File size={20} className="text-emerald-600" /> Patient Documents
+                        <File size={20} className="text-emerald-600" /> {t('documents.title')}
                     </h3>
 
                     {isLoading ? (
-                        <div className="text-center py-8 text-slate-500 font-medium">Loading documents...</div>
+                        <div className="text-center py-8 text-slate-500 font-medium">{t('documents.loading')}</div>
                     ) : documents?.length === 0 ? (
                         <div className="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50">
                             <FileText size={48} className="mx-auto text-slate-300 mb-3" />
-                            <p className="text-slate-500 font-medium">No documents uploaded yet.</p>
+                            <p className="text-slate-500 font-medium">{t('documents.empty')}</p>
                         </div>
                     ) : (
                         <div className="overflow-x-auto">
@@ -262,29 +262,31 @@ const DocumentsTab = ({ patient }) => {
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    {canDelete && <button 
+                                                    <button
                                                         onClick={() => handlePreview(doc)}
                                                         className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                                        title="Preview"
+                                                        title={t('documents.preview')}
+                                                        aria-label={t('documents.previewAction', { name: doc.file_name })}
                                                     >
                                                         <Eye size={16} />
-                                                    </button>}
+                                                    </button>
                                                     <button 
                                                         onClick={() => handleDownload(doc)}
                                                         className="p-1.5 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                                                        title="Download"
+                                                        title={t('documents.download')}
+                                                        aria-label={t('documents.downloadAction', { name: doc.file_name })}
                                                     >
                                                         <Download size={16} />
                                                     </button>
-                                                    <button 
+                                                    {canDelete && <button
                                                         onClick={() => setDocumentToDelete(doc)}
                                                         disabled={isDeleting}
                                                         className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-50"
-                                                        title="Delete"
+                                                        title={t('documents.delete')}
                                                         aria-label={t('documents.deleteAction', { name: doc.file_name })}
                                                     >
                                                         <Trash2 size={16} />
-                                                    </button>
+                                                    </button>}
                                                 </div>
                                             </td>
                                         </tr>

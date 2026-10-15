@@ -31,7 +31,7 @@ export const listFaqTool = {
   name: "list_faq",
   title: "List frequently asked questions",
   description:
-    "List the RCMS radiology center's frequently asked questions, optionally filtered by keyword.",
+    "List the VIARA radiology center's frequently asked questions, optionally filtered by keyword.",
   inputSchema: {
     keyword: z
       .string()

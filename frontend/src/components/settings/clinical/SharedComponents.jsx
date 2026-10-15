@@ -1,5 +1,6 @@
 import React from 'react';
 import { Activity, AlertTriangle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 export const Signal = ({ icon: Icon, label, value }) => (
     <div className="flex min-w-[140px] flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
@@ -13,7 +14,10 @@ export const Signal = ({ icon: Icon, label, value }) => (
     </div>
 );
 
-export const CatalogState = ({ loading, error, empty, retry, t, children }) => {
+export const CatalogState = ({ loading, error, empty, retry, t: propT, children }) => {
+    const { t: hookT } = useTranslation('settings');
+    const t = typeof propT === 'function' ? propT : hookT;
+
     if (loading) {
         return (
             <div className="flex flex-col items-center gap-3 p-16 text-center">
@@ -61,7 +65,10 @@ export const Detail = ({ label, value, wide }) => (
     </div>
 );
 
-export const Status = ({ value, t }) => {
+export const Status = ({ value, t: propT }) => {
+    const { t: hookT } = useTranslation('settings');
+    const t = typeof propT === 'function' ? propT : hookT;
+
     const activeStyles = value === 'Active'
         ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-800/50'
         : value === 'Under Maintenance'
@@ -93,25 +100,29 @@ export const Field = ({ label, value, onChange, required, type = 'text', placeho
     </label>
 );
 
-export const Select = ({ label, value, onChange, options, render = value => value, required }) => (
-    <label className="block">
-        <span className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">
-            {label}
-            {required && <span className="text-rose-500"> *</span>}
-        </span>
-        <select
-            required={required}
-            value={value}
-            onChange={event => onChange(event.target.value)}
-            className="min-h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200"
-        >
-            <option value="" disabled>Select option</option>
-            {options.map(option => (
-                <option key={option} value={option}>{render(option)}</option>
-            ))}
-        </select>
-    </label>
-);
+export const Select = ({ label, value, onChange, options, render = value => value, required }) => {
+    const { t } = useTranslation('settings');
+
+    return (
+        <label className="block">
+            <span className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300">
+                {label}
+                {required && <span className="text-rose-500"> *</span>}
+            </span>
+            <select
+                required={required}
+                value={value}
+                onChange={event => onChange(event.target.value)}
+                className="min-h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-900 outline-none transition focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-200"
+            >
+                <option value="" disabled>{t('settings.clinical.selectOption')}</option>
+                {options.map(option => (
+                    <option key={option} value={option}>{render(option)}</option>
+                ))}
+            </select>
+        </label>
+    );
+};
 
 export const Check = ({ label, checked, onChange }) => (
     <label className="flex cursor-pointer items-center justify-between rounded-xl border border-slate-200 p-4 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800/60">
@@ -125,25 +136,30 @@ export const Check = ({ label, checked, onChange }) => (
     </label>
 );
 
-export const Actions = ({ busy, onClose, t }) => (
-    <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 dark:border-slate-800 sm:flex-row sm:justify-end">
-        <button
-            type="button"
-            onClick={onClose}
-            disabled={busy}
-            className="min-h-[42px] rounded-xl px-5 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-        >
-            {t('settings.clinical.cancel', { defaultValue: 'Cancel' })}
-        </button>
-        <button
-            type="submit"
-            disabled={busy}
-            className="min-h-[42px] rounded-xl bg-cyan-700 px-6 text-xs font-bold text-white shadow-sm transition-all hover:bg-cyan-600 active:scale-95 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
-        >
-            {busy
-                ? t('settings.clinical.saving', { defaultValue: 'Applying Changes...' })
-                : t('settings.clinical.save', { defaultValue: 'Apply Configurations' })
-            }
-        </button>
-    </div>
-);
+export const Actions = ({ busy, onClose, t: propT }) => {
+    const { t: hookT } = useTranslation('settings');
+    const t = typeof propT === 'function' ? propT : hookT;
+
+    return (
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 dark:border-slate-800 sm:flex-row sm:justify-end">
+            <button
+                type="button"
+                onClick={onClose}
+                disabled={busy}
+                className="min-h-[42px] rounded-xl px-5 text-xs font-bold text-slate-500 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+                {t('settings.clinical.cancel', { defaultValue: 'Cancel' })}
+            </button>
+            <button
+                type="submit"
+                disabled={busy}
+                className="min-h-[42px] rounded-xl bg-cyan-700 px-6 text-xs font-bold text-white shadow-sm transition-all hover:bg-cyan-600 active:scale-95 disabled:opacity-50 dark:bg-cyan-600 dark:hover:bg-cyan-500"
+            >
+                {busy
+                    ? t('settings.clinical.saving', { defaultValue: 'Applying Changes...' })
+                    : t('settings.clinical.save', { defaultValue: 'Apply Configurations' })
+                }
+            </button>
+        </div>
+    );
+};

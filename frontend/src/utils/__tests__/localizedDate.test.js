@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { formatLocalizedDate, getPreferredTimeZone, withPreferredTimeZone } from '../localizedDate';
 
 describe('localized date preferences', () => {
-    afterEach(() => localStorage.removeItem('rcms_preferences'));
+    afterEach(() => localStorage.removeItem('VIARA_preferences'));
 
     it('applies the authenticated workspace timezone to operational timestamps', () => {
-        localStorage.setItem('rcms_preferences', JSON.stringify({ timezone: 'Africa/Cairo' }));
+        localStorage.setItem('VIARA_preferences', JSON.stringify({ timezone: 'Africa/Cairo' }));
 
         expect(getPreferredTimeZone()).toBe('Africa/Cairo');
         expect(withPreferredTimeZone({ hour: '2-digit' })).toMatchObject({ timeZone: 'Africa/Cairo' });

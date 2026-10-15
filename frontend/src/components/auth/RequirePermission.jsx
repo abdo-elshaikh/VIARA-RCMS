@@ -1,6 +1,7 @@
 import React from 'react';
 import { useSelector } from 'react-redux';
 import { selectCurrentUser } from '../../store/authSlice';
+import { hasEffectivePermission } from '../../utils/effectivePermissions';
 
 /**
  * RequirePermission Component
@@ -12,15 +13,7 @@ const RequirePermission = ({ permission, children, fallback = null }) => {
 
     if (!user) return fallback;
 
-    if (user.role === 'Developer') return children;
-
-    // Check elevated permissions first (Break-Glass)
-    if (user.elevatedPermissions && user.elevatedPermissions.includes(permission)) {
-        return children;
-    }
-
-    // Check standard permissions
-    if (user.permissions && user.permissions.includes(permission)) {
+    if (hasEffectivePermission(user, permission)) {
         return children;
     }
 

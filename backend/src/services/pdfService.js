@@ -1,9 +1,28 @@
+const { resolveDocumentIdentity } = require('./documentIdentityService');
+const { getLicense } = require('./licenseService');
+
 const escapeHtml = (value = '') => String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+
+/**
+ * Returns true when the currently loaded license is a trial edition.
+ * Used to inject a non-removable "TRIAL" overlay on every printed report so
+ * trial output can never be mistaken for a production clinical document.
+ *
+ * @returns {boolean}
+ */
+const isTrialEdition = () => {
+    try {
+        const lic = getLicense();
+        return !!(lic && lic.edition === 'trial');
+    } catch {
+        return false;
+    }
+};
 
 const parseJSONSafe = (value) => {
     if (!value) return null;
@@ -19,7 +38,7 @@ const safeArray = (val, fallback = []) => Array.isArray(val) ? val : fallback;
 
 const safeObject = (val, fallback = {}) => (val && typeof val === 'object' && !Array.isArray(val)) ? val : fallback;
 
-const normalizeCenterSettings = (settings = {}) => {
+const normalizeCenterSettings = (settings = {}, entity = {}) => {
     const print = parseJSONSafe(settings.print_settings) || settings.print_settings || {};
     let enabled = settings.enabledFields || print.enabledFields;
     if (typeof enabled === 'string') {
@@ -29,19 +48,45 @@ const normalizeCenterSettings = (settings = {}) => {
     if (typeof visibleSections === 'string') {
         visibleSections = visibleSections.split(',').map(s => s.trim()).filter(Boolean);
     }
+    const hasArabicText = (text = '') => /[\u0600-\u06FF]/.test(String(text));
+    const isArabic = Boolean(
+        String(settings.language || settings.lang || print.language || '').toLowerCase().startsWith('ar')
+        || (settings['center.default_language'] === 'ar')
+        || (settings.center_name_ar && hasArabicText(entity.patient_name || ''))
+        || hasArabicText(entity.patient_name || '')
+        || hasArabicText(entity.first_name || '')
+        || hasArabicText(entity.patient_name_enc || '')
+    );
+    const language = isArabic ? 'ar' : (settings.language || 'en');
+    const identity = resolveDocumentIdentity(settings, entity, { language });
     return {
-        center_name: settings.center_name || settings['center.name'] || 'RCMS Radiology Center',
-        branch_name: settings.branch_name || settings['center.branch'] || '',
-        logo_url: settings.logo_url || settings['center.logo_url'] || '',
-        phone: settings.phone || settings['center.phone'] || '',
-        email: settings.email || settings['center.email'] || '',
-        address: settings.address || settings['center.address'] || '',
+        ...settings,
+        isArabic,
+        language,
+        center_name: identity.centerName,
+        center_name_ar: identity.centerNameAr,
+        center_name_en: identity.centerNameEn,
+        branch_name: identity.branchName,
+        branch_name_ar: identity.branchNameAr,
+        branch_name_en: identity.branchNameEn,
+        display_name: identity.displayName,
+        display_name_ar: identity.displayNameAr,
+        display_name_en: identity.displayNameEn,
+        logo_url: identity.logoUrl,
+        phone: identity.phone,
+        email: identity.email,
+        address: identity.address,
+        hotline: identity.hotline,
+        website: identity.website,
+        tax_id: identity.taxNumber,
+        commercial_registration: identity.commercialRegistration,
+        medical_license: identity.medicalLicense,
         report_header: settings.report_header || settings['center.report_header'] || '',
         report_footer: settings.report_footer || settings['center.report_footer'] || '',
-        themeColor: settings.themeColor || print.themeColor || '#0ea5e9',
-        fontFamily: settings.fontFamily || print.fontFamily || 'Inter',
+        themeColor: settings.themeColor || print.themeColor || identity.primaryColor,
+        fontFamily: settings.fontFamily || print.fontFamily || (isArabic ? 'Cairo, Tajawal, Inter' : 'Inter'),
         templateStyle: settings.templateStyle || print.templateStyle || 'modern',
-        enabledFields: safeArray(enabled, ['patient_name', 'mrn', 'study_date', 'referring_doctor']),
+        enabledFields: safeArray(enabled, ['patient_name', 'mrn', 'dob', 'gender', 'study_date', 'accession', 'modality', 'referring_doctor']),
         customFields: safeObject(settings.customFields || print.customFields, {}),
         customLabels: safeObject(settings.customLabels || print.customLabels, {}),
         visibleSections: safeArray(visibleSections, [
@@ -56,14 +101,63 @@ const normalizeCenterSettings = (settings = {}) => {
     };
 };
 
-const reportHeaderText = (center) => center.report_header || [
+const cleanTemplateText = (value = '') => String(value)
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+const renderCenterTemplate = (template, center) => {
+    const values = {
+        center_name: center.center_name,
+        branch_name: center.branch_name,
+        phone: center.phone,
+        hotline: center.hotline,
+        email: center.email,
+        website: center.website,
+        address: center.address,
+        tax_id: center.tax_id,
+        commercial_registration: center.commercial_registration,
+        medical_license: center.medical_license,
+    };
+
+    return cleanTemplateText(String(template || '')
+        .replace(/\{\{?\s*([a-z0-9_.]+)\s*\}?\}/gi, (_match, key) => values[key] || '')
+        .replace(/\{[^{}]+\}/g, ''));
+};
+
+const stripHeaderIdentity = (value, center) => {
+    const names = [
+        center.display_name_ar,
+        center.display_name_en,
+        center.display_name,
+        [center.center_name, center.branch_name].filter(Boolean).join(' - '),
+        center.center_name_ar,
+        center.center_name,
+    ].filter(Boolean).sort((a, b) => b.length - a.length);
+
+    return cleanTemplateText(String(value || '').split('\n').map((line) => {
+        const trimmed = line.trim();
+        const match = names.find((name) => trimmed.toLowerCase().startsWith(String(name).toLowerCase()));
+        return match ? trimmed.slice(String(match).length).replace(/^[\s|,;:-]+/, '').trim() : trimmed;
+    }).filter(Boolean).join('\n'));
+};
+
+const defaultHeaderText = (center) => [
     center.address,
     center.phone && `Tel: ${center.phone}`,
+    center.hotline && `Hotline: ${center.hotline}`,
     center.email && `Email: ${center.email}`
 ].filter(Boolean).join('\n');
 
-const reportFooterText = (center) => center.report_footer
-    || `${center.center_name} • Diagnostic Medical Imaging Report • Confidential`;
+const reportHeaderText = (center) => {
+    const configured = stripHeaderIdentity(renderCenterTemplate(center.report_header, center), center);
+    return configured || defaultHeaderText(center);
+};
+
+const reportFooterText = (center) => renderCenterTemplate(center.report_footer, center)
+    || [center.website, center.phone && `Tel: ${center.phone}`, center.address].filter(Boolean).join(' | ')
+    || `${center.display_name || center.center_name} | Confidential diagnostic imaging report`;
 
 const reportSections = (report) => {
     const sections = report.report_sections || {};
@@ -91,6 +185,41 @@ const reportSections = (report) => {
     return { standard, customSections };
 };
 
+const BODY_REGION_TERMS = [
+    { key: 'spine', label: 'spine', terms: ['spine', 'spinal', 'lumbar', 'thoracic', 'cervical', 'vertebra'] },
+    { key: 'knee', label: 'knee', terms: ['knee', 'patella', 'tibiofemoral'] },
+    { key: 'chest', label: 'chest', terms: ['chest', 'lung', 'pulmonary', 'pleural'] },
+    { key: 'brain', label: 'brain/head', terms: ['brain', 'cranial', 'intracranial', 'head'] },
+    { key: 'shoulder', label: 'shoulder', terms: ['shoulder', 'glenohumeral'] },
+    { key: 'hip', label: 'hip/pelvis', terms: ['hip', 'pelvis', 'acetabul'] },
+    { key: 'ankle', label: 'ankle', terms: ['ankle', 'tibiotalar'] },
+    { key: 'wrist', label: 'wrist', terms: ['wrist', 'carpal'] },
+    { key: 'breast', label: 'breast/mammography', terms: ['breast', 'mammograph', 'bi-rads', 'fibroglandular', 'nipple', 'areola'] },
+    { key: 'abdomen', label: 'abdomen/pelvis/biliary', terms: ['liver', 'gallbladder', 'spleen', 'pancreas', 'biliary', 'mrcp', 'kidney', 'urinary', 'renal'] },
+];
+
+const countTermMatches = (text, terms) => terms.reduce((total, term) => {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return total + ((text.match(new RegExp(`\\b${escaped}`, 'gi')) || []).length);
+}, 0);
+
+const detectClinicalContentMismatch = (examTitle, sections) => {
+    const title = String(examTitle || '').toLowerCase();
+    const expected = BODY_REGION_TERMS.find((region) => countTermMatches(title, region.terms) > 0);
+    if (!expected) return null;
+
+    const narrative = Object.values(sections || {}).filter(Boolean).join(' ').toLowerCase();
+    if (!narrative || countTermMatches(narrative, expected.terms) > 0) return null;
+
+    const unexpected = BODY_REGION_TERMS
+        .filter((region) => region.key !== expected.key)
+        .map((region) => ({ ...region, score: countTermMatches(narrative, region.terms) }))
+        .sort((a, b) => b.score - a.score)[0];
+
+    if (!unexpected || unexpected.score < 2) return null;
+    return `The study is labeled ${examTitle}, while the report narrative repeatedly references the ${unexpected.label}. Clinical review is required before relying on this document.`;
+};
+
 const formatDate = (value) => {
     if (!value) return '';
     const date = new Date(value);
@@ -107,21 +236,40 @@ const formatDateOnly = (value) => {
     });
 };
 
+const calculateAge = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const ageDiffMs = Date.now() - date.getTime();
+    const ageDate = new Date(ageDiffMs);
+    const years = Math.abs(ageDate.getUTCFullYear() - 1970);
+    return years > 0 ? `${years} Y` : '< 1 Y';
+};
+
 const METADATA_CATALOG = [
-    { id: 'patient_name', defaultLabel: 'Patient Name', group: 'patient', getValue: r => r.patient_name },
-    { id: 'mrn', defaultLabel: 'MRN', group: 'patient', getValue: r => r.mrn },
-    { id: 'patient_id', defaultLabel: 'Patient ID', group: 'patient', getValue: r => r.patient_id },
-    { id: 'dob', defaultLabel: 'Date of Birth', group: 'patient', getValue: r => formatDateOnly(r.date_of_birth) },
-    { id: 'gender', defaultLabel: 'Sex', group: 'patient', getValue: r => r.gender },
-    { id: 'study_date', defaultLabel: 'Study Date', group: 'exam', getValue: r => formatDate(r.start_time || r.created_at) },
-    { id: 'referring_doctor', defaultLabel: 'Referring Physician', group: 'exam', getValue: r => r.referring_doctor_name },
-    { id: 'modality', defaultLabel: 'Modality', group: 'exam', getValue: r => r.modality_type || r.modality_name },
-    { id: 'body_part', defaultLabel: 'Body Part / Region', group: 'exam', getValue: r => r.body_part || r.body_region },
-    { id: 'priority', defaultLabel: 'Priority', group: 'exam', getValue: r => r.priority },
-    { id: 'accession', defaultLabel: 'Order / Accession #', group: 'exam', getValue: r => r.order_number || r.accession_number },
-    { id: 'exam_id', defaultLabel: 'Exam ID', group: 'exam', getValue: r => r.exam_id },
-    { id: 'room', defaultLabel: 'Room / Suite', group: 'exam', getValue: r => r.room_number },
-    { id: 'radiologist', defaultLabel: 'Reporting Radiologist', group: 'exam', getValue: r => r.radiologist_name || r.digital_signature_name }
+    { id: 'patient_name', defaultLabel: 'Patient Name', arLabel: 'اسم المريض', group: 'patient', getValue: r => r.patient_name },
+    { id: 'mrn', defaultLabel: 'MRN', arLabel: 'الرقم الطبي', group: 'patient', getValue: r => r.mrn },
+    { id: 'patient_id', defaultLabel: 'Patient ID', arLabel: 'معرّف المريض', group: 'patient', getValue: r => r.patient_id },
+    { id: 'dob', defaultLabel: 'Date of Birth', arLabel: 'تاريخ الميلاد والعمر', group: 'patient', getValue: r => {
+        const d = formatDateOnly(r.date_of_birth);
+        const age = calculateAge(r.date_of_birth);
+        return d ? (age ? `${d} (${age})` : d) : '';
+    }},
+    { id: 'gender', defaultLabel: 'Sex', arLabel: 'النوع', group: 'patient', getValue: r => {
+        const g = String(r.gender || '').trim();
+        if (/^m(ale)?$/i.test(g)) return 'Male · ذكر';
+        if (/^f(emale)?$/i.test(g)) return 'Female · أنثى';
+        return g;
+    }},
+    { id: 'study_date', defaultLabel: 'Study Date', arLabel: 'تاريخ الفحص', group: 'exam', getValue: r => formatDate(r.start_time || r.created_at) },
+    { id: 'referring_doctor', defaultLabel: 'Referring Physician', arLabel: 'الطبيب المحول', group: 'exam', getValue: r => r.referring_doctor_name },
+    { id: 'modality', defaultLabel: 'Modality', arLabel: 'التقنية / الجهاز', group: 'exam', getValue: r => r.modality_type || r.modality_name },
+    { id: 'body_part', defaultLabel: 'Body Part / Region', arLabel: 'المنطقة المراد فحصها', group: 'exam', getValue: r => r.body_part || r.body_region },
+    { id: 'priority', defaultLabel: 'Priority', arLabel: 'درجة الأولوية', group: 'exam', getValue: r => r.priority },
+    { id: 'accession', defaultLabel: 'Order / Accession #', arLabel: 'رقم الطلب والفحص', group: 'exam', getValue: r => r.order_number || r.accession_number },
+    { id: 'exam_id', defaultLabel: 'Exam ID', arLabel: 'معرف الفحص', group: 'exam', getValue: r => r.exam_id },
+    { id: 'room', defaultLabel: 'Room / Suite', arLabel: 'غرفة الفحص', group: 'exam', getValue: r => r.room_number },
+    { id: 'radiologist', defaultLabel: 'Reporting Radiologist', arLabel: 'طبيب الأشعة', group: 'exam', getValue: r => r.radiologist_name || r.digital_signature_name }
 ];
 
 const SECTION_CATALOG = [
@@ -140,17 +288,17 @@ const SECTION_CATALOG = [
 const THEMES = {
     modern: {
         name: 'Modern Executive', group: 'light',
-        primary: '#0ea5e9', primaryDark: '#0284c7', border: '#e2e8f0',
-        cardBg: '#f8fafc', impressionBg: '#f0f9ff', impressionBorder: '#0ea5e9',
-        metaBg: '#ffffff', accentSoft: 'rgba(14, 165, 233, 0.08)',
+        primary: '#087F5B', primaryDark: '#064E3B', border: '#DCE7E3',
+        cardBg: '#F7FAF9', impressionBg: '#DDF4EA', impressionBorder: '#087F5B',
+        metaBg: '#ffffff', accentSoft: 'rgba(8, 127, 91, 0.08)',
         font: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         radius: '12px', headerStyle: 'underline'
     },
     teal: {
-        name: 'Teal Clinical', group: 'light',
-        primary: '#0d9488', primaryDark: '#0f766e', border: '#99f6e4',
-        cardBg: '#f0fdfa', impressionBg: '#ccfbf1', impressionBorder: '#0d9488',
-        metaBg: '#ffffff', accentSoft: 'rgba(13, 148, 136, 0.08)',
+        name: 'Clinical Emerald', group: 'light',
+        primary: '#087F5B', primaryDark: '#064E3B', border: '#9CDCC1',
+        cardBg: '#F7FAF9', impressionBg: '#DDF4EA', impressionBorder: '#087F5B',
+        metaBg: '#ffffff', accentSoft: 'rgba(8, 127, 91, 0.08)',
         font: "'Inter', system-ui, sans-serif",
         radius: '10px', headerStyle: 'underline'
     },
@@ -259,11 +407,11 @@ const sectionBlock = (id, title, value, options = {}) => {
     const hidden = options.hidden ? ' style="display:none"' : '';
     return `
         <section class="report-section ${isImportant ? 'important-section' : ''}" id="sec-${escapeHtml(id)}" data-section-id="${escapeHtml(id)}" data-section="${escapeHtml(title)}"${hidden}>
-            <h2 class="section-title">
+            <h2 class="section-title" dir="auto">
                 <span class="title-bar" aria-hidden="true"></span>
                 <span class="title-text">${escapeHtml(title)}</span>
             </h2>
-            <div class="section-body"${isImportant ? ' role="status"' : ''}>${lineBreaks(String(value).trim())}</div>
+            <div class="section-body"${isImportant ? ' role="status"' : ''} dir="auto">${lineBreaks(String(value).trim())}</div>
         </section>
     `;
 };
@@ -281,13 +429,13 @@ const computeChecksum = (value = '') => {
 
 /**
  * Build a stable verification payload for QR + hash display.
- * Format: RCMS1|<hash>|E:<exam>|O:<order>|MRN:<mrn>|TS:<iso>|C:<checksum>
+ * Format: VIARA1|<hash>|E:<exam>|O:<order>|MRN:<mrn>|TS:<iso>|C:<checksum>
  * Checksum covers everything before the C: segment for offline integrity checks.
  */
 const buildVerificationPayload = (report, verificationHash) => {
     const ts = new Date().toISOString().slice(0, 19) + 'Z';
     const body = [
-        'RCMS1',
+        'VIARA1',
         String(verificationHash || ''),
         report.exam_id ? `E:${report.exam_id}` : '',
         (report.order_number || report.accession_number)
@@ -309,9 +457,24 @@ const parseVerificationPayload = (payload = '') => {
     if (!raw) {
         return { valid: false, errors: ['Empty payload'] };
     }
+    if (raw.startsWith('http://') || raw.startsWith('https://') || raw.includes('/verify') || raw.includes('code=')) {
+        const codeMatch = raw.match(/[?&]code=([^&#]+)/);
+        const codeVal = codeMatch ? decodeURIComponent(codeMatch[1]) : '';
+        return {
+            valid: Boolean(codeVal),
+            version: 'URL',
+            hash: codeVal,
+            examId: '',
+            order: '',
+            mrn: '',
+            timestamp: '',
+            checksum: '',
+            errors: codeVal ? [] : ['Missing verification code in URL']
+        };
+    }
     const parts = raw.split('|');
-    if (parts[0] !== 'RCMS1' && parts[0] !== 'RCMS-VERIFY') {
-        errors.push('Unknown payload prefix (expected RCMS1)');
+    if (parts[0] !== 'VIARA1' && parts[0] !== 'VIARA-VERIFY') {
+        errors.push('Unknown payload prefix (expected VIARA1)');
     }
     const result = {
         valid: false,
@@ -324,7 +487,7 @@ const parseVerificationPayload = (payload = '') => {
         checksum: '',
         errors
     };
-    if (parts[0] === 'RCMS1') {
+    if (parts[0] === 'VIARA1') {
         result.hash = parts[1] || '';
         parts.slice(2).forEach(p => {
             if (p.startsWith('E:')) result.examId = p.slice(2);
@@ -340,7 +503,7 @@ const parseVerificationPayload = (payload = '') => {
             errors.push('Checksum mismatch — payload may be altered');
         }
         if (!result.hash) errors.push('Missing verification hash');
-    } else if (parts[0] === 'RCMS-VERIFY') {
+    } else if (parts[0] === 'VIARA-VERIFY') {
         // Legacy format without checksum
         result.hash = parts[1] || '';
         parts.slice(2).forEach(p => {
@@ -360,44 +523,59 @@ const validateVerificationPayload = (payload, expected = {}) => {
         parsed.errors.push('Hash does not match this report');
         parsed.valid = false;
     }
-    if (expected.examId && parsed.examId && expected.examId !== parsed.examId) {
-        parsed.errors.push('Exam ID does not match this report');
-        parsed.valid = false;
-    }
-    if (expected.order && parsed.order && expected.order !== parsed.order) {
-        parsed.errors.push('Order number does not match this report');
-        parsed.valid = false;
-    }
-    if (expected.mrn && parsed.mrn && expected.mrn !== parsed.mrn) {
-        parsed.errors.push('MRN does not match this report');
-        parsed.valid = false;
+    if (parsed.version !== 'URL') {
+        if (expected.examId && parsed.examId && expected.examId !== parsed.examId) {
+            parsed.errors.push('Exam ID does not match this report');
+            parsed.valid = false;
+        }
+        if (expected.order && parsed.order && expected.order !== parsed.order) {
+            parsed.errors.push('Order number does not match this report');
+            parsed.valid = false;
+        }
+        if (expected.mrn && parsed.mrn && expected.mrn !== parsed.mrn) {
+            parsed.errors.push('MRN does not match this report');
+            parsed.valid = false;
+        }
     }
     parsed.valid = parsed.errors.length === 0;
     return parsed;
 };
 
 const buildReportHtml = (report, centerSettings = {}) => {
-    const center = normalizeCenterSettings(centerSettings);
+    const center = normalizeCenterSettings(centerSettings, report);
     const { standard: sections, customSections } = reportSections(report);
     const styleKey = (center.templateStyle || report.template_style || 'modern').toLowerCase();
     const theme = THEMES[styleKey] || THEMES.modern;
     const primaryColor = /^#[0-9a-f]{6}$/i.test(center.themeColor) ? center.themeColor : theme.primary;
-    const facilityName = [center.center_name, center.branch_name].filter(Boolean).join(' — ');
-    const logoText = String(center.center_name || 'RCMS').trim().slice(0, 4).toUpperCase();
-    const finalized = ['Finalized', 'Amended', 'Signed'].includes(report.report_status)
-        || report.report_locked
-        || report.status === 'Finalized';
+    const facilityNameAr = center.display_name_ar || [center.center_name_ar, center.branch_name_ar].filter(Boolean).join(' - ');
+    const facilityNameEn = center.display_name_en || [center.center_name_en || center.center_name, center.branch_name_en || center.branch_name].filter(Boolean).join(' - ');
+
+    const primaryFacility = center.isArabic && facilityNameAr ? facilityNameAr : (facilityNameEn || facilityNameAr);
+    const secondaryFacility = (center.isArabic && facilityNameAr && facilityNameEn && facilityNameEn !== facilityNameAr)
+        ? facilityNameEn
+        : (!center.isArabic && facilityNameAr && facilityNameAr !== facilityNameEn ? facilityNameAr : '');
+    const facilityName = facilityNameEn || primaryFacility;
+    const logoText = String(center.center_name_en || center.center_name || 'Center').trim().slice(0, 4).toUpperCase();
+    const finalized = ['Finalized', 'Amended'].includes(report.report_status)
+        && Boolean(report.report_locked)
+        && Boolean(report.report_finalized_at);
     const verificationHash = report.digital_signature_hash || (finalized
-        ? `RCMS-VERIFIED-${String(report.exam_id || report.order_number || '').slice(0, 10).toUpperCase()}`
+        ? `VIARA-VERIFIED-${String(report.exam_id || report.order_number || '').slice(0, 10).toUpperCase()}`
         : 'Pending Signature');
     const verifyPayload = buildVerificationPayload(report, verificationHash);
+    const portalBaseUrl = (process.env.PORTAL_CLIENT_URL || process.env.PORTAL_PUBLIC_URL || center.website || 'http://localhost:5174').replace(/\/+$/, '');
+    const qrVerificationUrl = `${portalBaseUrl}/verify?code=${encodeURIComponent(verificationHash)}`;
+    const qrPayload = finalized ? qrVerificationUrl : verifyPayload;
     const statusLabel = report.report_status || report.status || (finalized ? 'Finalized' : 'Draft');
     const examTitle = report.exam_type_name || report.modality_name || 'Radiology Study';
     const generatedAt = formatDate(new Date());
+    const headerText = reportHeaderText(center);
+    const footerText = reportFooterText(center);
+    const clinicalContentWarning = detectClinicalContentMismatch(examTitle, sections);
 
     const rawCatalog = METADATA_CATALOG.map(f => ({
         id: f.id,
-        label: center.customLabels[f.id] || f.defaultLabel,
+        label: center.customLabels[f.id] || (center.isArabic && f.arLabel ? `${f.arLabel} · ${f.defaultLabel}` : f.defaultLabel),
         value: f.getValue(report) || '—',
         group: f.group || 'exam'
     }));
@@ -418,11 +596,11 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
     const visibleSet = new Set(center.visibleSections);
     const sectionDefs = [
-        { id: 'clinicalHistory', title: 'Clinical History', value: sections.clinicalHistory, important: false },
-        { id: 'technique', title: 'Technique & Protocol', value: sections.technique, important: false },
-        { id: 'findings', title: 'Findings', value: sections.findings, important: false },
-        { id: 'impression', title: 'Impression & Conclusion', value: sections.impression, important: true },
-        { id: 'recommendations', title: 'Recommendations', value: sections.recommendations, important: false },
+        { id: 'clinicalHistory', title: center.isArabic ? 'التاريخ المرضي والسريري · Clinical History' : 'Clinical History', value: sections.clinicalHistory, important: false },
+        { id: 'technique', title: center.isArabic ? 'التقنية والبروتوكول · Technique & Protocol' : 'Technique & Protocol', value: sections.technique, important: false },
+        { id: 'findings', title: center.isArabic ? 'النتائج والملاحظات الشعاعية · Findings' : 'Findings', value: sections.findings, important: false },
+        { id: 'impression', title: center.isArabic ? 'الخلاصة والتشخيص · Impression & Conclusion' : 'Impression & Conclusion', value: sections.impression, important: true },
+        { id: 'recommendations', title: center.isArabic ? 'التوصيات والمتابعة · Recommendations' : 'Recommendations', value: sections.recommendations, important: false },
         ...customSections.map(s => ({
             id: s.key,
             title: s.title,
@@ -432,7 +610,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
         }))
     ].filter(s => String(s.value || '').trim());
 
-    const offlineValidation = validateVerificationPayload(verifyPayload, {
+    const offlineValidation = validateVerificationPayload(qrPayload, {
         hash: verificationHash,
         examId: report.exam_id || '',
         order: report.order_number || report.accession_number || '',
@@ -457,9 +635,9 @@ const buildReportHtml = (report, centerSettings = {}) => {
     <meta name="color-scheme" content="light dark">
     <title>Diagnostic Report — ${escapeHtml(report.order_number || report.exam_id || examTitle)}</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&family=Roboto:wght@400;500;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&family=Roboto:wght@400;500;700&display=swap');
 
-        @page { size: A4; margin: 11mm 12mm 13mm; }
+        @page { size: A4 portrait; margin: 8mm 10mm 8mm 10mm; }
         * { box-sizing: border-box; }
 
         :root {
@@ -511,7 +689,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
         [contenteditable="true"]:focus-visible { outline: none; }
 
         /* ── Toast ──────────────────────────────────────────────────────── */
-        .rcms-toast {
+        .VIARA-toast {
             position: fixed; left: 50%; bottom: 26px; z-index: 10001;
             transform: translate(-50%, 16px); opacity: 0;
             background: rgba(15, 23, 42, 0.96); color: #f8fafc;
@@ -522,8 +700,8 @@ const buildReportHtml = (report, centerSettings = {}) => {
             transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.25s ease;
             pointer-events: none; max-width: 90vw; text-align: center;
         }
-        .rcms-toast.tone-error { background: rgba(153, 27, 27, 0.96); }
-        .rcms-toast.show { transform: translate(-50%, 0); opacity: 1; }
+        .VIARA-toast.tone-error { background: rgba(153, 27, 27, 0.96); }
+        .VIARA-toast.show { transform: translate(-50%, 0); opacity: 1; }
 
         /* ── Customizer ─────────────────────────────────────────────────── */
         .customize-panel {
@@ -707,6 +885,26 @@ const buildReportHtml = (report, centerSettings = {}) => {
             white-space: nowrap; user-select: none; z-index: 0;
         }
 
+        /* Trial edition overlay — printed on every page, cannot be removed by
+           the client customization panel, and never shown for paid editions.
+           position: fixed repeats the element on every printed page. */
+        .trial-watermark {
+            display: ${isTrialEdition() ? 'block' : 'none'};
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            color: #b91c1c;
+            font-size: 18px; font-weight: 900;
+            letter-spacing: 0.35em; pointer-events: none;
+            text-transform: uppercase;
+            white-space: nowrap; user-select: none; z-index: 3;
+            opacity: 0.55;
+            border: 2px solid #b91c1c;
+            border-radius: 6px;
+            padding: 4px 10px;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
         /* Zone 1: Identity */
         .zone-identity {
             display: grid; grid-template-columns: 1fr auto;
@@ -729,8 +927,12 @@ const buildReportHtml = (report, centerSettings = {}) => {
         }
         .brand-details { min-width: 0; }
         .brand-details h1 {
-            margin: 0; color: var(--text); font-size: clamp(15px, 1.4vw + 10px, 18px); font-weight: 800;
+            margin: 0; color: var(--text); font-size: clamp(15.5px, 1.4vw + 10px, 19px); font-weight: 800;
             letter-spacing: -0.025em; line-height: 1.25;
+        }
+        .brand-subname {
+            margin: 2px 0 0; color: var(--text-muted); font-size: 11px;
+            font-weight: 700; line-height: 1.35; letter-spacing: 0.01em;
         }
         .brand-details p {
             margin: 4px 0 0; color: var(--text-muted); font-size: 10.5px;
@@ -785,9 +987,29 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
         /* Zone 3: Clinical */
         .zone-clinical {
-            margin-top: var(--space-5); flex: 1;
+            margin-top: var(--space-5); flex: 0 0 auto;
             display: flex; flex-direction: column; min-height: 0;
         }
+        .clinical-consistency-alert {
+            margin-top: var(--space-4);
+            padding: 10px 12px;
+            border: 1px solid #f59e0b;
+            border-inline-start: 4px solid #d97706;
+            border-radius: calc(var(--radius) - 2px);
+            background: #fffbeb;
+            color: #78350f;
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+        .clinical-consistency-alert strong {
+            display: block;
+            margin-bottom: 2px;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+        .clinical-consistency-alert span { font-size: 11px; line-height: 1.5; font-weight: 600; }
         .report-section {
             margin-top: var(--space-4);
             page-break-inside: avoid; break-inside: avoid;
@@ -822,6 +1044,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
         }
 
         /* Zone 4: Signature + Digital Verification with QR */
+        .signature-block { flex-shrink: 0; }
         .zone-signature {
             margin-top: var(--space-6);
             padding-top: var(--space-5);
@@ -836,8 +1059,16 @@ const buildReportHtml = (report, centerSettings = {}) => {
         }
         .sig-details {
             display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            position: relative;
+            min-height: 84px;
+        }
+        .sig-author {
+            display: flex;
             flex-direction: column;
             justify-content: flex-end;
+            z-index: 1;
         }
         .sig-details h4 {
             margin: 0; color: var(--text); font-size: 13.5px;
@@ -847,8 +1078,22 @@ const buildReportHtml = (report, centerSettings = {}) => {
             margin: 3px 0 0; color: var(--text-muted); font-size: 11px; font-weight: 600;
         }
         .sig-line {
-            width: 180px; height: 36px; margin-top: 12px;
+            width: 170px; height: 32px; margin-top: 10px;
             border-bottom: 1.5px solid var(--text-soft);
+        }
+        .official-stamp-seal {
+            flex-shrink: 0;
+            color: #0284c7;
+            opacity: 0.88;
+            transform: rotate(-6deg);
+            pointer-events: none;
+            user-select: none;
+            margin-inline-start: 10px;
+        }
+        .official-stamp-seal svg {
+            display: block;
+            width: 82px;
+            height: 82px;
         }
 
         .verify-card {
@@ -958,7 +1203,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
         /* Zone 5: Footer */
         .zone-footer {
-            margin-top: var(--space-5); padding-top: var(--space-3);
+            margin-top: auto; padding-top: var(--space-3);
             border-top: 1px solid var(--border);
             display: flex; justify-content: space-between; align-items: center;
             gap: var(--space-3); color: var(--text-soft);
@@ -1005,30 +1250,224 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
         @media print {
             :root {
-                --text: #0f172a !important; --text-muted: #64748b !important; --text-soft: #94a3b8 !important;
-                --surface: #ffffff !important; --card-bg: #f8fafc !important; --meta-bg: #ffffff !important;
+                --text: #0f172a !important;
+                --text-muted: #475569 !important;
+                --text-soft: #64748b !important;
+                --surface: #ffffff !important;
+                --card-bg: #f8fafc !important;
+                --meta-bg: #ffffff !important;
+                --space-1: 2px !important;
+                --space-2: 4px !important;
+                --space-3: 6px !important;
+                --space-4: 8px !important;
+                --space-5: 10px !important;
+                --space-6: 12px !important;
+                --space-7: 16px !important;
             }
-            body { background: #fff !important; font-size: 11pt !important; }
-            .page-wrapper { padding: 0 !important; }
+            html, body {
+                background: #ffffff !important;
+                color: #0f172a !important;
+                font-size: 9.5pt !important;
+                line-height: 1.4 !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .page-wrapper {
+                padding: 0 !important;
+                min-height: auto !important;
+            }
             .sheet {
-                width: 100% !important; min-height: auto !important;
-                margin: 0 !important; box-shadow: none !important; border-radius: 0 !important;
-                background: #fff !important;
+                width: 100% !important;
+                min-height: auto !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+                border: 0 !important;
+                border-radius: 0 !important;
+                background: #ffffff !important;
+                overflow: visible !important;
             }
-            .sheet-body { padding: 0 !important; }
+            .sheet-body {
+                padding: 0 !important;
+                overflow: visible !important;
+            }
             .sheet-accent {
-                height: 4px !important;
+                height: 3.5px !important;
                 margin-bottom: 0 !important;
                 background-color: var(--primary) !important;
                 background: linear-gradient(90deg, var(--primary), var(--primary-dark), #2563eb) !important;
                 -webkit-print-color-adjust: exact !important;
                 print-color-adjust: exact !important;
-                border-top: 4px solid var(--primary);
+                border-top: 3.5px solid var(--primary);
             }
-            .customize-panel, .rcms-toast { display: none !important; }
-            .section-body { background: #fff !important; }
-            .important-section .section-body { background: #f8fafc !important; }
-            .verify-card { background: #f8fafc !important; box-shadow: none !important; }
+            .watermark {
+                opacity: 0.03 !important;
+                color: #000000 !important;
+                font-size: 60px !important;
+            }
+            .customize-panel, .VIARA-toast, .v-copy-btn, .btn-remove-custom {
+                display: none !important;
+            }
+            .zone-identity {
+                padding-bottom: 6px !important;
+                margin-bottom: 0 !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .brand-box { gap: 10px !important; }
+            .logo-img { max-height: 40px !important; }
+            .logo-avatar { width: 36px !important; height: 36px !important; font-size: 11px !important; }
+            .brand-details h1 { font-size: 13pt !important; }
+            .brand-details p { font-size: 8pt !important; margin-top: 2px !important; }
+            .doc-status { padding: 2px 7px !important; font-size: 7.5pt !important; }
+            .doc-exam-title { font-size: 10.5pt !important; margin-top: 3px !important; }
+
+            .zone-meta {
+                margin-top: 6px !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .meta-grid {
+                gap: 1px !important;
+                grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            }
+            .meta-item {
+                padding: 4px 7px !important;
+                min-height: 30px !important;
+                background: #f8fafc !important;
+            }
+            .meta-label {
+                font-size: 6.5pt !important;
+                margin-bottom: 1px !important;
+                color: #64748b !important;
+            }
+            .meta-val {
+                font-size: 8pt !important;
+                color: #0f172a !important;
+            }
+
+            .zone-clinical {
+                margin-top: 6px !important;
+            }
+            .clinical-consistency-alert {
+                padding: 5px 8px !important;
+                margin-top: 5px !important;
+                background: #fffbeb !important;
+                border: 1px solid #f59e0b !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .report-section {
+                margin-top: 5px !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .section-title {
+                font-size: 7.5pt !important;
+                margin-bottom: 2px !important;
+                break-after: avoid !important;
+                page-break-after: avoid !important;
+            }
+            .section-body {
+                padding: 5px 8px !important;
+                font-size: 8.5pt !important;
+                line-height: 1.4 !important;
+                background: #ffffff !important;
+                border: 1px solid #e2e8f0 !important;
+                border-radius: 4px !important;
+            }
+            .important-section .section-body {
+                background: #f8fafc !important;
+                border: 1.5px solid var(--primary) !important;
+                font-weight: 600 !important;
+            }
+
+            .signature-block {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .zone-signature {
+                margin-top: 8px !important;
+                padding-top: 6px !important;
+                border-top: 1px dashed #cbd5e1 !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .sig-details {
+                min-height: 52px !important;
+                display: flex !important;
+                align-items: flex-end !important;
+                justify-content: space-between !important;
+            }
+            .sig-details h4 { font-size: 8.5pt !important; }
+            .sig-details p { font-size: 7pt !important; margin-top: 1px !important; }
+            .sig-line { width: 110px !important; height: 14px !important; margin-top: 3px !important; }
+            .official-stamp-seal {
+                opacity: 0.95 !important;
+                color: #0369a1 !important;
+                transform: rotate(-6deg) !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            .official-stamp-seal svg {
+                width: 58px !important;
+                height: 58px !important;
+            }
+
+            .verify-card {
+                padding: 5px 7px !important;
+                background: #f8fafc !important;
+                border: 1px solid #cbd5e1 !important;
+                border-radius: 6px !important;
+                gap: 7px !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
+            .verify-qr-wrap {
+                width: 54px !important;
+                height: 54px !important;
+                padding: 2px !important;
+                border-radius: 4px !important;
+            }
+            .verify-qr-wrap canvas {
+                width: 50px !important;
+                height: 50px !important;
+            }
+            .verify-info .v-badge {
+                padding: 1px 5px !important;
+                font-size: 6.5pt !important;
+                margin-bottom: 2px !important;
+            }
+            .verify-info .v-label {
+                font-size: 6pt !important;
+            }
+            .verify-info .v-hash-row {
+                margin-top: 1px !important;
+                margin-bottom: 2px !important;
+            }
+            .verify-info .v-hash {
+                font-size: 7pt !important;
+                line-height: 1.15 !important;
+            }
+            .verify-info .v-meta {
+                gap: 3px 6px !important;
+                margin-top: 1px !important;
+            }
+            .verify-info .v-meta span {
+                font-size: 6.5pt !important;
+            }
+            .verify-offline-status {
+                margin-top: 2px !important;
+                font-size: 6.5pt !important;
+            }
+
+            .zone-footer {
+                margin-top: 6px !important;
+                padding-top: 3px !important;
+                font-size: 6.5pt !important;
+                border-top: 1px solid #e2e8f0 !important;
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+            }
             a { color: inherit; text-decoration: none; }
         }
         @media (prefers-reduced-motion: reduce) {
@@ -1157,6 +1596,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
             <div class="sheet-accent" aria-hidden="true"></div>
             <div class="sheet-body">
                 <div class="watermark" id="siteWatermark" aria-hidden="true">${escapeHtml(logoText)}</div>
+                ${isTrialEdition() ? '<div class="trial-watermark" id="trialWatermark" aria-hidden="true">TRIAL</div>' : ''}
 
                 ${center.includeHeader ? `
                 <header class="zone-identity" id="zoneIdentity">
@@ -1166,13 +1606,14 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 : `<div class="logo-avatar" id="brandLogoAvatar" aria-hidden="true">${escapeHtml(logoText)}</div>`
             }
                         <div class="brand-details">
-                            <h1 id="brandTitle">${escapeHtml(facilityName)}</h1>
-                            <p id="brandSubtitle">${lineBreaks(reportHeaderText(center))}</p>
+                            <h1 id="brandTitle" dir="auto">${escapeHtml(primaryFacility)}</h1>
+                            ${secondaryFacility ? `<div class="brand-subname" id="brandSubname" dir="auto">${escapeHtml(secondaryFacility)}</div>` : ''}
+                            ${headerText ? `<p id="brandSubtitle" dir="auto">${lineBreaks(headerText)}</p>` : ''}
                         </div>
                     </div>
                     <div class="doc-meta">
                         <span class="doc-status">${escapeHtml(statusLabel)}</span>
-                        <div class="doc-exam-title">${escapeHtml(examTitle)}</div>
+                        <div class="doc-exam-title" dir="auto">${escapeHtml(examTitle)}</div>
                     </div>
                 </header>
                 ` : ''}
@@ -1182,12 +1623,19 @@ const buildReportHtml = (report, centerSettings = {}) => {
                         ${initialMetaItems.map(item => `
                             <div class="meta-item" role="listitem" data-group="${escapeHtml(item.group || 'exam')}">
                                 ${item.isCustom ? `<button type="button" class="btn-remove-custom" onclick="removeCustomExtraField('${escapeHtml(item.label)}')" aria-label="Remove field">&times;</button>` : ''}
-                                <span class="meta-label">${escapeHtml(item.label)}</span>
-                                <strong class="meta-val">${escapeHtml(item.value)}</strong>
+                                <span class="meta-label" dir="auto">${escapeHtml(item.label)}</span>
+                                <strong class="meta-val" dir="auto">${escapeHtml(item.value)}</strong>
                             </div>
                         `).join('')}
                     </div>
                 </div>
+
+                ${clinicalContentWarning ? `
+                <aside class="clinical-consistency-alert" role="alert">
+                    <strong>Clinical consistency review required</strong>
+                    <span>${escapeHtml(clinicalContentWarning)}</span>
+                </aside>
+                ` : ''}
 
                 <main class="zone-clinical" id="zoneClinical">
                     ${sectionDefs.map(s => sectionBlock(
@@ -1205,12 +1653,39 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 <div class="signature-block">
                     <div class="zone-signature" id="zoneSignature">
                         <div class="sig-details">
-                            <h4 id="sigName">${escapeHtml(report.digital_signature_name || report.radiologist_name || 'Reporting Radiologist')}</h4>
-                            <p id="sigRole">${escapeHtml(report.digital_signature_role || 'Consultant Radiologist')}</p>
-                            <div class="sig-line" aria-hidden="true"></div>
+                            <div class="sig-author">
+                                <h4 id="sigName" dir="auto">${escapeHtml(report.digital_signature_name || report.radiologist_name || 'Reporting Radiologist')}</h4>
+                                <p id="sigRole" dir="auto">${escapeHtml(report.digital_signature_role || 'Consultant Radiologist')}</p>
+                                <div class="sig-line" aria-hidden="true"></div>
+                            </div>
+                            ${finalized ? `
+                            <div class="official-stamp-seal" title="Official Center Stamp & Digital Verification" aria-label="Official Digital Stamp">
+                                <svg viewBox="0 0 160 160" width="82" height="82" aria-hidden="true">
+                                    <defs>
+                                        <path id="stamp-arc-top" d="M 18,80 A 62,62 0 1,1 142,80" fill="none" />
+                                        <path id="stamp-arc-bottom" d="M 142,80 A 62,62 0 0,1 18,80" fill="none" />
+                                    </defs>
+                                    <circle cx="80" cy="80" r="74" fill="none" stroke="currentColor" stroke-width="2.5" />
+                                    <circle cx="80" cy="80" r="68" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4,2.5" />
+                                    <circle cx="80" cy="80" r="48" fill="none" stroke="currentColor" stroke-width="1.8" />
+                                    <text font-family="'Cairo', 'Inter', sans-serif" font-size="8" font-weight="bold" fill="currentColor" letter-spacing="1">
+                                        <textPath href="#stamp-arc-top" startOffset="50%" text-anchor="middle">★ ${escapeHtml((center.center_name || 'VIARA DIAGNOSTIC').toUpperCase().slice(0, 24))} ★</textPath>
+                                    </text>
+                                    <text font-family="'Inter', sans-serif" font-size="7" font-weight="bold" fill="currentColor" letter-spacing="0.8">
+                                        <textPath href="#stamp-arc-bottom" startOffset="50%" text-anchor="middle">OFFICIALLY VERIFIED</textPath>
+                                    </text>
+                                    <g transform="translate(80, 72) scale(0.9)">
+                                        <path d="M-12,-16 L12,-16 Q14,4 0,16 Q-14,4 -12,-16 Z" fill="none" stroke="currentColor" stroke-width="1.5" />
+                                        <path d="M-6,-2 L-2,3 L6,-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                    </g>
+                                    <text x="80" y="103" text-anchor="middle" font-family="'Cairo', sans-serif" font-size="9" font-weight="800" fill="currentColor">معتمد رسمياً</text>
+                                    <text x="80" y="115" text-anchor="middle" font-family="'Inter', sans-serif" font-size="6" font-weight="700" fill="currentColor" letter-spacing="0.5">DIGITAL SEAL</text>
+                                </svg>
+                            </div>
+                            ` : ''}
                         </div>
                         <div class="verify-card" id="verifyCard" role="group" aria-label="Digital verification">
-                            <div class="verify-qr-wrap" id="verifyQrWrap" title="Scan to verify authenticity (offline QR)">
+                            <div class="verify-qr-wrap" id="verifyQrWrap" title="Scan to verify authenticity via portal or camera">
                                 <canvas id="verifyQrCanvas" width="80" height="80" aria-label="Verification QR code"></canvas>
                             </div>
                             <div class="verify-info">
@@ -1223,14 +1698,14 @@ const buildReportHtml = (report, centerSettings = {}) => {
                                 <div class="v-meta">
                                     <span>Generated <strong>${escapeHtml(generatedAt)}</strong></span>
                                     ${report.order_number || report.exam_id
-                    ? `<span>Ref <strong>${escapeHtml(report.order_number || report.exam_id)}</strong></span>`
-                    : ''}
+                ? `<span>Ref <strong>${escapeHtml(report.order_number || report.exam_id)}</strong></span>`
+                : ''}
                                 </div>
                                 <div class="verify-offline-status ${offlineValidation.valid ? 'ok' : 'fail'}" id="verifyOfflineStatus" role="status" aria-live="polite" title="${escapeHtml((offlineValidation.errors || []).join('; '))}">
                                     <span class="dot" aria-hidden="true"></span>
                                     <span id="verifyOfflineLabel">${offlineValidation.valid
-                    ? 'Offline integrity OK'
-                    : 'Integrity check failed'}</span>
+                ? 'Offline integrity OK'
+                : 'Integrity check failed'}</span>
                                 </div>
                             </div>
                         </div>
@@ -1240,7 +1715,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
                 ${center.includeFooter ? `
                 <footer class="zone-footer" id="zoneFooter">
-                    <div id="footerText">${escapeHtml(reportFooterText(center))}</div>
+                    <div id="footerText" dir="auto">${escapeHtml(footerText)}</div>
                     <div>Order #${escapeHtml(report.order_number || report.exam_id || '—')}</div>
                 </footer>
                 ` : ''}
@@ -1255,7 +1730,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
         window.activeEnabledIds = ${JSON.stringify(center.enabledFields)};
         window.activeExtraFields = ${JSON.stringify(center.customFields)};
         window.activeVisibleSections = ${JSON.stringify([...visibleSet])};
-        window.VERIFY_PAYLOAD = ${JSON.stringify(verifyPayload)};
+        window.VERIFY_PAYLOAD = ${JSON.stringify(qrPayload)};
         window.VERIFY_EXPECTED = ${JSON.stringify({
                     hash: verificationHash,
                     examId: report.exam_id || '',
@@ -1276,11 +1751,11 @@ const buildReportHtml = (report, centerSettings = {}) => {
         /* ── Toast ─────────────────────────────────────────────────────── */
         window.showToast = function (message, opts) {
             opts = opts || {};
-            var existing = document.getElementById('rcmsToast');
+            var existing = document.getElementById('VIARAToast');
             if (existing) existing.remove();
             var toast = document.createElement('div');
-            toast.id = 'rcmsToast';
-            toast.className = 'rcms-toast' + (opts.tone === 'error' ? ' tone-error' : '');
+            toast.id = 'VIARAToast';
+            toast.className = 'VIARA-toast' + (opts.tone === 'error' ? ' tone-error' : '');
             toast.setAttribute('role', 'status');
             toast.setAttribute('aria-live', 'polite');
             toast.textContent = message;
@@ -1332,15 +1807,30 @@ const buildReportHtml = (report, centerSettings = {}) => {
             var errors = [];
             var raw = String(payload || '').trim();
             if (!raw) return { valid: false, errors: ['Empty payload'] };
+            if (raw.indexOf('/verify') !== -1 || raw.indexOf('code=') !== -1 || raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0) {
+                var codeMatch = raw.match(/[?&]code=([^&#]+)/);
+                var codeVal = codeMatch ? decodeURIComponent(codeMatch[1]) : '';
+                return {
+                    valid: !!codeVal,
+                    version: 'URL',
+                    hash: codeVal,
+                    examId: '',
+                    order: '',
+                    mrn: '',
+                    timestamp: '',
+                    checksum: '',
+                    errors: codeVal ? [] : ['Missing verification code in URL']
+                };
+            }
             var parts = raw.split('|');
             var result = {
                 valid: false, version: parts[0] || '', hash: '', examId: '',
                 order: '', mrn: '', timestamp: '', checksum: '', errors: errors
             };
-            if (parts[0] !== 'RCMS1' && parts[0] !== 'RCMS-VERIFY') {
-                errors.push('Unknown payload prefix (expected RCMS1)');
+            if (parts[0] !== 'VIARA1' && parts[0] !== 'VIARA-VERIFY') {
+                errors.push('Unknown payload prefix (expected VIARA1)');
             }
-            if (parts[0] === 'RCMS1') {
+            if (parts[0] === 'VIARA1') {
                 result.hash = parts[1] || '';
                 for (var i = 2; i < parts.length; i++) {
                     var p = parts[i];
@@ -1350,14 +1840,14 @@ const buildReportHtml = (report, centerSettings = {}) => {
                     else if (p.indexOf('TS:') === 0) result.timestamp = p.slice(3);
                     else if (p.indexOf('C:') === 0) result.checksum = p.slice(2);
                 }
-                var body = raw.replace(/\|C:[A-F0-9]+$/i, '');
+                var body = raw.replace(/\\|C:[A-F0-9]+$/i, '');
                 var expected = window.computeChecksum(body);
                 if (!result.checksum) errors.push('Missing checksum');
                 else if (result.checksum.toUpperCase() !== expected) {
                     errors.push('Checksum mismatch — payload may be altered');
                 }
                 if (!result.hash) errors.push('Missing verification hash');
-            } else if (parts[0] === 'RCMS-VERIFY') {
+            } else if (parts[0] === 'VIARA-VERIFY') {
                 result.hash = parts[1] || '';
                 for (var j = 2; j < parts.length; j++) {
                     var q = parts[j];
@@ -1377,14 +1867,16 @@ const buildReportHtml = (report, centerSettings = {}) => {
             if (expected.hash && parsed.hash && expected.hash !== parsed.hash) {
                 parsed.errors.push('Hash does not match this report');
             }
-            if (expected.examId && parsed.examId && expected.examId !== parsed.examId) {
-                parsed.errors.push('Exam ID does not match this report');
-            }
-            if (expected.order && parsed.order && expected.order !== parsed.order) {
-                parsed.errors.push('Order number does not match this report');
-            }
-            if (expected.mrn && parsed.mrn && expected.mrn !== parsed.mrn) {
-                parsed.errors.push('MRN does not match this report');
+            if (parsed.version !== 'URL') {
+                if (expected.examId && parsed.examId && expected.examId !== parsed.examId) {
+                    parsed.errors.push('Exam ID does not match this report');
+                }
+                if (expected.order && parsed.order && expected.order !== parsed.order) {
+                    parsed.errors.push('Order number does not match this report');
+                }
+                if (expected.mrn && parsed.mrn && expected.mrn !== parsed.mrn) {
+                    parsed.errors.push('MRN does not match this report');
+                }
             }
             parsed.valid = parsed.errors.length === 0;
             return parsed;
@@ -1408,9 +1900,9 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
         /* ── Offline QR code generator (pure JS, no network) ───────────────
            Compact QR encoder supporting byte mode, ECC level M, versions 1–10.
-           Sufficient for RCMS verification payloads (~80–150 chars).
+           Sufficient for VIARA verification payloads (~80–150 chars).
         ──────────────────────────────────────────────────────────────────── */
-        window.RCMS_QR = (function () {
+        window.VIARA_QR = (function () {
             // GF(256) tables for Reed-Solomon
             var EXP = new Array(512), LOG = new Array(256);
             (function () {
@@ -1742,7 +2234,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
             if (!canvas || !window.VERIFY_PAYLOAD) return;
             var ok = false;
             try {
-                ok = window.RCMS_QR.renderToCanvas(window.VERIFY_PAYLOAD, canvas, {
+                ok = window.VIARA_QR.renderToCanvas(window.VERIFY_PAYLOAD, canvas, {
                     size: 80,
                     margin: 2
                 });
@@ -1792,7 +2284,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 var checked = window.activeEnabledIds.indexOf(item.id) !== -1 ? 'checked' : '';
                 var label = document.createElement('label');
                 label.className = 'cp-checkbox-label';
-                label.innerHTML = '<input type="checkbox" ' + checked + ' onchange="window.toggleFieldId(\\'' + item.id + '\\', this.checked)"> ' + item.label;
+                label.innerHTML = '<input type="checkbox" ' + checked + ' onchange="window.toggleFieldId(\\'' + item.id + '\\', this.checked)"> ' + escapeHtml(item.label);
                 container.appendChild(label);
             });
         };
@@ -1810,7 +2302,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 }
                 var label = document.createElement('label');
                 label.className = 'cp-checkbox-label';
-                label.innerHTML = '<input type="checkbox" ' + checked + ' onchange="window.toggleSectionId(\\'' + sec.id + '\\', this.checked)"> ' + sec.title;
+                label.innerHTML = '<input type="checkbox" ' + checked + ' onchange="window.toggleSectionId(\\'' + sec.id + '\\', this.checked)"> ' + escapeHtml(sec.title);
                 container.appendChild(label);
             });
         };
@@ -2012,7 +2504,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
             window.renderMetaGridDOM();
             window.refreshFirstVisibleSection();
 
-            try { localStorage.removeItem('rcms_report_preset'); } catch (e) { /* ignore */ }
+            try { localStorage.removeItem('VIARA_report_preset'); } catch (e) { /* ignore */ }
             window.showToast('Reset to default appearance');
         };
 
@@ -2027,7 +2519,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
                 fontSize: document.getElementById('fontSizeVal').textContent
             };
             try {
-                localStorage.setItem('rcms_report_preset', JSON.stringify(preset));
+                localStorage.setItem('VIARA_report_preset', JSON.stringify(preset));
                 window.showToast('Preset saved');
             } catch (e) {
                 window.showToast('Could not save preset — storage unavailable', { tone: 'error' });
@@ -2036,7 +2528,7 @@ const buildReportHtml = (report, centerSettings = {}) => {
 
         function applySavedPreset() {
             try {
-                var raw = localStorage.getItem('rcms_report_preset');
+                var raw = localStorage.getItem('VIARA_report_preset');
                 if (!raw) return;
                 var preset = JSON.parse(raw);
                 if (preset.activeEnabledIds) window.activeEnabledIds = preset.activeEnabledIds;
@@ -2106,6 +2598,9 @@ const pdfService = {
     reportSections,
     formatDate,
     formatDateOnly,
+    reportHeaderText,
+    reportFooterText,
+    detectClinicalContentMismatch,
     buildVerificationPayload,
     parseVerificationPayload,
     validateVerificationPayload,

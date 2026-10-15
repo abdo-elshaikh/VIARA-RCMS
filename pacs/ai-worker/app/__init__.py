@@ -1,2 +1,2 @@
-"""RCMS PACS image-analysis worker."""
+"""VIARA PACS image-analysis worker."""
 

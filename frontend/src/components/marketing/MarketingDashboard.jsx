@@ -37,9 +37,10 @@ const toneClass = {
 
 const MarketingDashboard = ({ onOpenTab }) => {
     const { t, i18n } = useTranslation('workspace');
+    const isArabic = i18n.language?.startsWith('ar');
     const copy = useCallback((key, options) => t(`marketing.dashboard.${key}`, options), [t]);
     const user = useSelector(selectCurrentUser);
-    const locale = i18n.language?.startsWith('ar') ? 'ar-EG' : 'en-EG';
+    const locale = isArabic ? 'ar-EG' : 'en-EG';
     const hasSystemRole = hasDeveloperOrAdminRole(user?.role);
 
     const canCampaigns = hasSystemRole || ['Receptionist', 'Marketing'].includes(user?.role);
@@ -49,9 +50,10 @@ const MarketingDashboard = ({ onOpenTab }) => {
 
     const [rangeDays, setRangeDays] = useState(30);
     const referralRange = useMemo(() => ({
-        startDate: isoDate(new Date(Date.now() - rangeDays * DAY)),
+        startDate: isoDate(new Date(Date.now() - (rangeDays - 1) * DAY)),
         endDate: isoDate(new Date())
     }), [rangeDays]);
+
     const { data: campaigns = [], isLoading: campaignsLoading } = useGetCampaignsQuery(undefined, { skip: !canCampaigns });
     const { data: segments = [], isLoading: segmentsLoading } = useGetSegmentsQuery(undefined, { skip: !canCampaigns });
     const { data: activities = [], isLoading: tasksLoading } = useGetCrmActivitiesQuery({}, { skip: !canTasks });
@@ -60,7 +62,10 @@ const MarketingDashboard = ({ onOpenTab }) => {
 
     const now = Date.now();
     const number = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }), [locale]);
-    const money = useMemo(() => new Intl.NumberFormat(locale, { style: 'currency', currency: 'EGP', maximumFractionDigits: 0 }), [locale]);
+    const formatMoney = useCallback((val) => {
+        const formatted = new Intl.NumberFormat(locale, { style: 'currency', currency: 'EGP', maximumFractionDigits: 0 }).format(Number(val || 0));
+        return formatted.replace(/\s+/g, '\u00A0');
+    }, [locale]);
 
     const campaignStats = useMemo(() => {
         const total = campaigns.length;
@@ -149,63 +154,149 @@ const MarketingDashboard = ({ onOpenTab }) => {
             value: feedbackStats.low,
             label: copy('lowFeedback'),
             detail: copy('lowFeedbackDetail'),
-            tone: feedbackStats.low ? 'amber' : 'emerald',
+            tone: feedbackStats.low ? 'rose' : 'emerald',
             tab: 'feedback'
         }
     ], [campaignStats.draft, campaignStats.failed, copy, feedbackStats.low, taskStats.overdue]);
 
-    const recentCampaigns = useMemo(() => [...campaigns]
-        .sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))
-        .slice(0, 4), [campaigns]);
+    const recentCampaigns = useMemo(() => {
+        return [...campaigns]
+            .sort((a, b) => new Date(b.created_at || b.start_date || 0) - new Date(a.created_at || a.start_date || 0))
+            .slice(0, 5);
+    }, [campaigns]);
 
-    const nextTasks = useMemo(() => activities
-        .filter(item => item.status === 'Pending')
-        .sort((a, b) => new Date(a.due_date || '2999-12-31') - new Date(b.due_date || '2999-12-31'))
-        .slice(0, 5), [activities]);
+    const nextTasks = useMemo(() => {
+        return activities
+            .filter(item => item.status === 'Pending')
+            .sort((a, b) => {
+                if (!a.due_date) return 1;
+                if (!b.due_date) return -1;
+                return new Date(a.due_date) - new Date(b.due_date);
+            })
+            .slice(0, 5);
+    }, [activities]);
 
     const isLoading = campaignsLoading || segmentsLoading || tasksLoading || feedbackLoading || referralsLoading;
 
     return (
-        <div className="space-y-5">
-            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <Metric icon={Megaphone} label={copy('activeCampaigns')} value={number.format(campaignStats.active)} detail={copy('campaignDetail', { total: campaignStats.total, draft: campaignStats.draft })} tone="pink" loading={campaignsLoading} />
-                <Metric icon={Send} label={copy('deliveryHealth')} value={`${campaignStats.health}%`} detail={copy('deliveryDetail', { sent: campaignStats.sent, failed: campaignStats.failed })} tone={campaignStats.failed ? 'amber' : 'emerald'} loading={campaignsLoading} />
-                <Metric icon={CalendarClock} label={copy('pendingTasks')} value={number.format(taskStats.pending)} detail={copy('taskDetail', { overdue: taskStats.overdue })} tone={taskStats.overdue ? 'rose' : 'cyan'} loading={tasksLoading} />
-                <Metric icon={Star} label={copy('satisfaction')} value={feedbackStats.total ? feedbackStats.average.toFixed(1) : '-'} detail={copy('feedbackDetail', { count: feedbackStats.total, low: feedbackStats.low })} tone="amber" loading={feedbackLoading} />
+        <div className="space-y-6">
+            {/* Top KPI Metrics Row */}
+            <section className="grid grid-cols-2 gap-4 xl:grid-cols-4" aria-label={copy('pipelineTitle')}>
+                <Metric
+                    icon={Send}
+                    label={copy('deliveryHealth')}
+                    value={`${campaignStats.health}%`}
+                    detail={`${number.format(campaignStats.sent)} ${copy('sent')}`}
+                    tone={campaignStats.health >= 85 ? 'emerald' : campaignStats.health >= 60 ? 'amber' : 'cyan'}
+                    loading={campaignsLoading}
+                />
+                <Metric
+                    icon={CalendarClock}
+                    label={copy('pendingTasks')}
+                    value={taskStats.pending}
+                    detail={taskStats.overdue > 0 ? `${taskStats.overdue} ${isArabic ? 'متأخرة' : 'overdue'}` : (isArabic ? 'مكتملة ومحدثة' : 'On schedule')}
+                    tone={taskStats.overdue > 0 ? 'rose' : taskStats.pending > 0 ? 'amber' : 'emerald'}
+                    loading={tasksLoading}
+                />
+                <Metric
+                    icon={Star}
+                    label={copy('satisfaction')}
+                    value={feedbackStats.total ? `${feedbackStats.average.toFixed(1)} ★` : '-'}
+                    detail={`${feedbackStats.total} ${isArabic ? 'تقييم واستجابة' : 'reviews'}`}
+                    tone={feedbackStats.average >= 4 ? 'emerald' : feedbackStats.average >= 3 ? 'amber' : 'rose'}
+                    loading={feedbackLoading}
+                />
+                <Metric
+                    icon={Network}
+                    label={copy('referralRevenue')}
+                    value={formatMoney(referralStats.revenue)}
+                    detail={`${number.format(referralStats.referrals)} ${copy('referrals30')}`}
+                    tone="cyan"
+                    loading={referralsLoading}
+                />
             </section>
 
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,.75fr)]">
-                <Panel title={copy('pipelineTitle')} description={copy('pipelineDescription')} icon={BarChart3} action={<button type="button" onClick={() => onOpenTab?.('campaigns')} className="rounded-lg bg-pink-700 px-3 py-2 text-xs font-bold text-white hover:bg-pink-800">{copy('openCampaigns')}</button>}>
+            {/* Performance Panels */}
+            <section className="grid gap-5 xl:grid-cols-3">
+                <Panel
+                    title={copy('pipelineTitle')}
+                    description={copy('pipelineDescription')}
+                    icon={Megaphone}
+                    action={
+                        <button
+                            type="button"
+                            onClick={() => onOpenTab?.('campaigns')}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                        >
+                            {copy('openCampaigns')}
+                        </button>
+                    }
+                >
                     <div className="space-y-4">
-                        <Progress label={copy('queued')} value={campaignStats.queued} total={Math.max(campaignStats.recipients, 1)} tone="cyan" />
-                        <Progress label={copy('sent')} value={campaignStats.sent} total={Math.max(campaignStats.recipients, 1)} tone="emerald" />
-                        <Progress label={copy('failed')} value={campaignStats.failed} total={Math.max(campaignStats.recipients, 1)} tone="rose" />
-                        <Progress label={copy('skipped')} value={campaignStats.skipped} total={Math.max(campaignStats.recipients, 1)} tone="amber" />
-                    </div>
-                    <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                        <MiniStat label={copy('segments')} value={segments.length} loading={segmentsLoading} />
-                        <MiniStat label={copy('recipients')} value={campaignStats.recipients} loading={campaignsLoading} />
-                        <MiniStat label={copy('budget')} value={money.format(campaignStats.budget)} loading={campaignsLoading} />
+                        <Progress label={copy('sent')} value={campaignStats.sent} total={campaignStats.recipients || campaignStats.sent || 1} tone="emerald" />
+                        <Progress label={copy('queued')} value={campaignStats.queued} total={campaignStats.recipients || 1} tone="cyan" />
+                        <Progress label={copy('failed')} value={campaignStats.failed} total={campaignStats.recipients || 1} tone="rose" />
+                        <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs font-black dark:border-slate-800">
+                            <span className="text-slate-500">{copy('totalAudience')}</span>
+                            <span className="font-mono text-slate-900 dark:text-white">{number.format(campaignStats.recipients)}</span>
+                        </div>
                     </div>
                 </Panel>
 
-                <Panel title={copy('referralTitle')} description={copy('referralDescription', { days: rangeDays })} icon={Network} action={<button type="button" onClick={() => onOpenTab?.('referrals')} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">{copy('openReferrals')}</button>}>
-                    <div className="mb-4 flex rounded-xl bg-slate-100 p-1 dark:bg-slate-900" aria-label={copy('rangeLabel')}>
-                        {[7, 30, 90].map(days => (
-                            <button key={days} type="button" onClick={() => setRangeDays(days)} className={`min-h-9 flex-1 rounded-lg px-3 text-xs font-black transition ${rangeDays === days ? 'bg-white text-cyan-800 shadow-sm dark:bg-slate-800 dark:text-cyan-300' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}>
-                                {copy('rangeDays', { count: days })}
-                            </button>
-                        ))}
+                <Panel
+                    title={copy('taskPulse')}
+                    description={copy('taskPulseDescription')}
+                    icon={CalendarClock}
+                    action={
+                        <button
+                            type="button"
+                            onClick={() => onOpenTab?.('tasks')}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                        >
+                            {copy('openBoard')}
+                        </button>
+                    }
+                >
+                    <div className="space-y-4">
+                        <Progress label={copy('completed')} value={taskStats.completed} total={(taskStats.completed + taskStats.pending) || 1} tone="emerald" />
+                        <Progress label={copy('pending')} value={taskStats.pending} total={(taskStats.completed + taskStats.pending) || 1} tone="amber" />
+                        <Progress label={copy('overdue')} value={taskStats.overdue} total={(taskStats.completed + taskStats.pending) || 1} tone="rose" />
+                        <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs font-black dark:border-slate-800">
+                            <span className="text-slate-500">{copy('activeWorkflows')}</span>
+                            <span className="font-mono text-slate-900 dark:text-white">{number.format(activities.length)}</span>
+                        </div>
                     </div>
+                </Panel>
+
+                <Panel
+                    title={copy('referralTitle')}
+                    description={copy('referralDescription')}
+                    icon={Network}
+                    action={
+                        <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800 text-[11px] font-bold">
+                            {[7, 30, 90].map(days => (
+                                <button
+                                    key={days}
+                                    type="button"
+                                    onClick={() => setRangeDays(days)}
+                                    className={`rounded-lg px-2.5 py-1 transition ${rangeDays === days ? 'bg-white shadow-xs text-teal-700 dark:bg-slate-900 dark:text-teal-300 font-black' : 'text-slate-500'}`}
+                                >
+                                    {days} {isArabic ? 'يوم' : 'd'}
+                                </button>
+                            ))}
+                        </div>
+                    }
+                >
                     <div className="grid gap-3">
                         <MiniStat label={copy('referrals30')} value={number.format(referralStats.referrals)} loading={referralsLoading} />
-                        <MiniStat label={copy('referralRevenue')} value={money.format(referralStats.revenue)} loading={referralsLoading} />
+                        <MiniStat label={copy('referralRevenue')} value={formatMoney(referralStats.revenue)} loading={referralsLoading} />
                         <MiniStat label={copy('topDoctor')} value={referralStats.topDoctor} loading={referralsLoading} />
                         <MiniStat label={copy('topSource')} value={referralStats.topSource} loading={referralsLoading} />
                     </div>
                 </Panel>
             </section>
 
+            {/* Mix & Attention Rows */}
             <section className="grid gap-5 xl:grid-cols-[minmax(360px,.8fr)_minmax(0,1.2fr)]">
                 <Panel title={copy('mixTitle')} description={copy('mixDescription')} icon={BarChart3}>
                     <div className="space-y-5">
@@ -216,11 +307,12 @@ const MarketingDashboard = ({ onOpenTab }) => {
 
                 <Panel title={copy('attentionTitle')} description={copy('attentionDescription')} icon={AlertTriangle}>
                     <div className="grid gap-3 sm:grid-cols-2">
-                        {alerts.map(alert => <AlertCard key={alert.key} alert={alert} onOpenTab={onOpenTab} />)}
+                        {alerts.map(alert => <AlertCard key={alert.key} alert={alert} onOpenTab={onOpenTab} isArabic={isArabic} />)}
                     </div>
                 </Panel>
             </section>
 
+            {/* Recent Campaigns and Next Actions */}
             <section className="grid gap-5 xl:grid-cols-2">
                 <Panel title={copy('recentCampaigns')} description={copy('recentCampaignsDescription')} icon={Target}>
                     {recentCampaigns.length ? (
@@ -230,7 +322,20 @@ const MarketingDashboard = ({ onOpenTab }) => {
                     ) : <Empty icon={Megaphone} label={copy('noCampaigns')} />}
                 </Panel>
 
-                <Panel title={copy('nextActions')} description={copy('nextActionsDescription')} icon={CheckCircle2} action={<button type="button" onClick={() => onOpenTab?.('tasks')} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">{copy('openTasks')}</button>}>
+                <Panel
+                    title={copy('nextActions')}
+                    description={copy('nextActionsDescription')}
+                    icon={CheckCircle2}
+                    action={
+                        <button
+                            type="button"
+                            onClick={() => onOpenTab?.('tasks')}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 shadow-xs hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+                        >
+                            {copy('openTasks')}
+                        </button>
+                    }
+                >
                     {nextTasks.length ? (
                         <div className="space-y-3">
                             {nextTasks.map(task => <TaskRow key={task.activity_id} task={task} locale={locale} copy={copy} />)}
@@ -247,29 +352,31 @@ const MarketingDashboard = ({ onOpenTab }) => {
 const Metric = ({ icon: Icon, label, value, detail, tone, loading }) => (
     <article className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
         <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase leading-4 tracking-wider text-slate-400">{label}</p>
-                <p className={`mt-2 text-2xl font-black text-slate-950 dark:text-white ${loading ? 'animate-pulse text-slate-300 dark:text-slate-700' : ''}`}>{loading ? '-' : value}</p>
+            <div className="min-w-0 flex-1">
+                <p className="truncate text-[10px] font-black uppercase leading-4 tracking-wider text-slate-400">{label}</p>
+                <p className={`mt-2 font-mono text-2xl font-black text-slate-950 dark:text-white whitespace-nowrap ${loading ? 'animate-pulse text-slate-300 dark:text-slate-700' : ''}`}>{loading ? '-' : value}</p>
             </div>
             <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${toneClass[tone]}`}><Icon size={18} /></span>
         </div>
-        <p className="mt-2 text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400">{detail}</p>
+        <p className="mt-2 truncate text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400">{detail}</p>
     </article>
 );
 
 const Panel = ({ title, description, icon: Icon, action, children }) => (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-        <header className="flex flex-col gap-3 border-b border-slate-100 bg-slate-50/70 p-5 dark:border-slate-800 dark:bg-slate-900/70 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 dark:bg-cyan-400/10 dark:text-cyan-300"><Icon size={18} /></span>
-                <div>
-                    <h2 className="font-black text-slate-900 dark:text-white">{title}</h2>
-                    <p className="mt-1 text-sm leading-5 text-slate-500 dark:text-slate-400">{description}</p>
+        <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-900/70">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-cyan-50 text-cyan-700 dark:bg-cyan-400/10 dark:text-cyan-300">
+                    <Icon size={18} />
+                </span>
+                <div className="min-w-0 flex-1">
+                    <h2 className="truncate font-black text-slate-900 dark:text-white text-sm sm:text-base">{title}</h2>
+                    {description && <p className="truncate text-xs leading-5 text-slate-500 dark:text-slate-400">{description}</p>}
                 </div>
             </div>
-            {action}
+            {action && <div className="shrink-0">{action}</div>}
         </header>
-        <div className="p-5">{children}</div>
+        <div className="p-4 sm:p-5">{children}</div>
     </section>
 );
 
@@ -280,7 +387,7 @@ const Progress = ({ label, value, total, tone }) => {
         <div>
             <div className="mb-1.5 flex items-center justify-between gap-3 text-xs font-black">
                 <span className="text-slate-500 dark:text-slate-400">{label}</span>
-                <span className="text-slate-800 dark:text-slate-200">{value}</span>
+                <span className="font-mono text-slate-800 dark:text-slate-200 whitespace-nowrap">{value}</span>
             </div>
             <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} /></div>
         </div>
@@ -290,7 +397,7 @@ const Progress = ({ label, value, total, tone }) => {
 const MiniStat = ({ label, value, loading }) => (
     <div className="rounded-xl border border-slate-100 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
         <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
-        <p className={`mt-1 truncate text-sm font-black text-slate-900 dark:text-white ${loading ? 'animate-pulse text-slate-300' : ''}`}>{loading ? '-' : value}</p>
+        <p className={`mt-1 truncate font-mono text-sm font-black text-slate-900 dark:text-white whitespace-nowrap ${loading ? 'animate-pulse text-slate-300' : ''}`}>{loading ? '-' : value}</p>
     </div>
 );
 
@@ -300,79 +407,78 @@ const MixList = ({ title, items, empty }) => {
         <div>
             <h3 className="mb-3 text-xs font-black uppercase tracking-wider text-slate-400">{title}</h3>
             {items.length ? (
-                <div className="space-y-3">
+                <div className="space-y-2.5">
                     {items.map(item => {
-                        const value = Number(item.value || 0);
-                        const pct = total ? Math.max(5, Math.round((value / total) * 100)) : 0;
+                        const pct = total ? Math.round((Number(item.value || 0) / total) * 100) : 0;
                         return (
-                            <div key={item.label}>
-                                <div className="mb-1.5 flex items-center justify-between gap-3 text-xs font-bold">
-                                    <span className="truncate text-slate-600 dark:text-slate-300">{item.label}</span>
-                                    <span className="text-slate-500">{value}</span>
+                            <div key={item.label} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 text-xs dark:border-slate-800 dark:bg-slate-900">
+                                <span className="truncate font-bold text-slate-700 dark:text-slate-300">{item.label}</span>
+                                <div className="flex items-center gap-2 font-mono">
+                                    <span className="font-bold text-slate-500">{item.value}</span>
+                                    <span className="rounded-md bg-white px-1.5 py-0.5 text-[10px] font-black text-teal-700 shadow-2xs dark:bg-slate-800 dark:text-teal-300">{pct}%</span>
                                 </div>
-                                <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className="h-full rounded-full bg-cyan-500" style={{ width: `${pct}%` }} /></div>
                             </div>
                         );
                     })}
                 </div>
-            ) : <p className="rounded-xl bg-slate-50 p-4 text-sm font-bold text-slate-400 dark:bg-slate-900">{empty}</p>}
+            ) : <p className="text-xs font-bold text-slate-400">{empty}</p>}
         </div>
     );
 };
 
-const AlertCard = ({ alert, onOpenTab }) => {
+const AlertCard = ({ alert, onOpenTab, isArabic }) => {
     const Icon = alert.icon;
     return (
-        <button type="button" onClick={() => onOpenTab?.(alert.tab)} className="rounded-xl border border-slate-100 bg-slate-50 p-4 text-start transition hover:border-cyan-200 hover:bg-white hover:shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:hover:border-cyan-900 dark:hover:bg-slate-950">
-            <div className="flex items-start justify-between gap-3">
+        <article className="rounded-xl border border-slate-100 bg-slate-50/70 p-3.5 dark:border-slate-800 dark:bg-slate-900 flex flex-col justify-between">
+            <div className="flex items-start justify-between gap-2">
                 <div>
-                    <p className="text-sm font-black text-slate-900 dark:text-white">{alert.label}</p>
-                    <p className="mt-1 text-xs font-semibold leading-5 text-slate-500 dark:text-slate-400">{alert.detail}</p>
+                    <span className="font-mono text-xl font-black text-slate-900 dark:text-white">{alert.value}</span>
+                    <h4 className="mt-1 text-xs font-black text-slate-800 dark:text-slate-200">{alert.label}</h4>
+                    <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">{alert.detail}</p>
                 </div>
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${toneClass[alert.tone]}`}><Icon size={18} /></span>
+                <span className={`grid h-8 w-8 place-items-center rounded-lg ${toneClass[alert.tone]}`}><Icon size={16} /></span>
             </div>
-            <p className="mt-3 text-2xl font-black text-slate-950 dark:text-white">{alert.value}</p>
-        </button>
+            {alert.tab && (
+                <button
+                    type="button"
+                    onClick={() => onOpenTab?.(alert.tab)}
+                    className="mt-3 text-start text-[11px] font-black text-teal-700 hover:underline dark:text-teal-400"
+                >
+                    {isArabic ? 'عرض التفاصيل ←' : 'View Details →'}
+                </button>
+            )}
+        </article>
     );
 };
 
 const CampaignRow = ({ campaign, copy }) => (
-    <div className="rounded-xl border border-slate-100 p-3 dark:border-slate-800">
-        <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-                <p className="truncate text-sm font-black text-slate-900 dark:text-white">{campaign.name}</p>
-                <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{campaign.message_body || campaign.segment_name || copy('noMessage')}</p>
-            </div>
-            <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">{campaign.status || 'Draft'}</span>
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900">
+        <div className="min-w-0">
+            <p className="truncate text-xs font-black text-slate-900 dark:text-white">{campaign.name}</p>
+            <p className="text-[10px] text-slate-400">{campaign.channel} · {campaign.status}</p>
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[11px] font-bold text-slate-500">
-            <span>{copy('queued')}: {campaign.queued_count || 0}</span>
-            <span>{copy('sent')}: {campaign.sent_count || 0}</span>
-            <span>{copy('failed')}: {campaign.failed_count || 0}</span>
-        </div>
+        <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[10px] font-black text-teal-700 dark:bg-teal-950/40 dark:text-teal-300">
+            {campaign.status}
+        </span>
     </div>
 );
 
-const TaskRow = ({ task, locale, copy }) => {
-    const due = task.due_date ? new Date(task.due_date) : null;
-    const overdue = due && due.getTime() < Date.now();
-    return (
-        <div className="flex items-start gap-3 rounded-xl border border-slate-100 p-3 dark:border-slate-800">
-            <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${overdue ? toneClass.rose : toneClass.cyan}`}>
-                {overdue ? <AlertTriangle size={15} /> : <CalendarClock size={15} />}
-            </span>
-            <div className="min-w-0">
-                <p className="truncate text-sm font-black text-slate-900 dark:text-white">{task.patient_name || copy('unknownPatient')}</p>
-                <p className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">{task.activity_type || copy('task')} · {due ? due.toLocaleDateString(locale, { day: '2-digit', month: 'short' }) : copy('noDueDate')}</p>
-            </div>
+const TaskRow = ({ task, locale, copy }) => (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3 dark:border-slate-800 dark:bg-slate-900">
+        <div className="min-w-0">
+            <p className="truncate text-xs font-black text-slate-900 dark:text-white">{task.patient_name || task.activity_type}</p>
+            <p className="text-[10px] text-slate-400">{task.activity_type} · {task.status}</p>
         </div>
-    );
-};
+        <span className="text-[10px] font-semibold text-slate-500 font-mono">
+            {task.due_date ? new Date(task.due_date).toLocaleDateString(locale, { month: 'short', day: 'numeric' }) : '-'}
+        </span>
+    </div>
+);
 
 const Empty = ({ icon: Icon, label }) => (
-    <div className="flex min-h-36 flex-col items-center justify-center rounded-xl bg-slate-50 text-center dark:bg-slate-900">
-        <Icon size={28} className="text-slate-300 dark:text-slate-600" />
-        <p className="mt-3 text-sm font-bold text-slate-500 dark:text-slate-400">{label}</p>
+    <div className="p-8 text-center text-slate-400">
+        <Icon size={24} className="mx-auto text-slate-300" />
+        <p className="mt-2 text-xs font-bold">{label}</p>
     </div>
 );
 

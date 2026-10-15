@@ -21,13 +21,13 @@ ON CONFLICT DO NOTHING;
 -- Employee profile for demo HR user
 INSERT INTO employee_profiles (user_id, employee_id, department, job_title, hire_date, employment_status)
 SELECT user_id, 'EMP-HR-001', 'Human Resources', 'HR Manager', '2022-01-15', 'Active'
-FROM users WHERE email = 'hr@rcms.com'
+FROM users WHERE email = 'hr@VIARA.com'
 ON CONFLICT (user_id) DO NOTHING;
 
 -- CRM segment + campaign demo
 INSERT INTO patient_segments (name, description, created_by)
 SELECT 'Loyal Patients', 'Patients with repeat visits', user_id
-FROM users WHERE email = 'admin@rcms.com'
+FROM users WHERE email = 'admin@VIARA.com'
 ON CONFLICT DO NOTHING;
 
 INSERT INTO marketing_campaigns (name, target_segment, channel, status, budget, start_date, end_date, created_by)
@@ -35,12 +35,12 @@ SELECT 'Spring Checkup Promo', s.segment_id, 'Email', 'Draft', 500.00,
        CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', u.user_id
 FROM patient_segments s
 CROSS JOIN users u
-WHERE s.name = 'Loyal Patients' AND u.email = 'admin@rcms.com'
+WHERE s.name = 'Loyal Patients' AND u.email = 'admin@VIARA.com'
 ON CONFLICT DO NOTHING;
 
 -- Insurance staff demo user
 INSERT INTO users (full_name, email, password_hash, role, is_active)
-VALUES ('Insurance Clerk', 'insurance@rcms.com', '***REMOVED***', 'Insurance_Staff', TRUE)
+VALUES ('Insurance Clerk', 'insurance@VIARA.com', '***REMOVED***', 'Insurance_Staff', TRUE)
 ON CONFLICT (email) DO UPDATE SET role = EXCLUDED.role, is_active = TRUE;
 
 -- RBAC for Insurance Staff

@@ -1,13 +1,19 @@
 /**
  * Validate required environment variables on application startup
  * Throws error if any required variables are missing or invalid
+ * In non-production environments, generate safe defaults when placeholders are present
  */
+const crypto = require('crypto');
+const { getStaffOrigin } = require('./publicOrigin');
 
 const requiredEnvVars = [
     'DATABASE_URL',
     'JWT_SECRET',
     'ENCRYPTION_KEY',
-    'PORT'
+    'PORT',
+    'ORTHANC_PASSWORD',
+    'PACS_WEBHOOK_SECRET',
+    'BLIND_INDEX_KEY'
 ];
 
 const optionalEnvVars = [
@@ -24,6 +30,19 @@ function validateEnv() {
     const missing = [];
     const invalid = [];
 
+    // In development, allow REPLACE_ME placeholders by generating safe defaults
+    if (process.env.NODE_ENV !== 'production') {
+        if (!process.env.JWT_SECRET || String(process.env.JWT_SECRET).startsWith('REPLACE_ME')) {
+            process.env.JWT_SECRET = crypto.randomBytes(32).toString('hex');
+            console.warn('⚠️  Development: generated temporary JWT_SECRET (do NOT use in production)');
+        }
+        if (!process.env.ENCRYPTION_KEY || String(process.env.ENCRYPTION_KEY).startsWith('REPLACE_ME')) {
+            // AES-256 key: 32 bytes -> 64 hex chars
+            process.env.ENCRYPTION_KEY = crypto.randomBytes(32).toString('hex');
+            console.warn('⚠️  Development: generated temporary ENCRYPTION_KEY (do NOT use in production)');
+        }
+    }
+
     // Check required variables
     requiredEnvVars.forEach((envVar) => {
         if (!process.env[envVar]) {
@@ -32,10 +51,36 @@ function validateEnv() {
     });
 
     if (process.env.NODE_ENV === 'production') {
-        if (!process.env.BLIND_INDEX_KEY) missing.push('BLIND_INDEX_KEY');
+        if (process.env.PERF_TEST === 'true') invalid.push('PERF_TEST is forbidden in production');
+        if (process.env.EXPOSE_DEV_STACK === 'true') invalid.push('EXPOSE_DEV_STACK must not be enabled in production');
+        if (process.env.PACS_AI_ENABLED === 'true' && process.env.PACS_AI_RELEASE_APPROVED !== 'true') {
+            invalid.push('PACS AI requires a reviewed worker image and explicit PACS_AI_RELEASE_APPROVED=true');
+        }
+        if (!process.env.REDIS_URL) missing.push('REDIS_URL');
+        else {
+            try {
+                const redis = new URL(process.env.REDIS_URL);
+                if (!['redis:', 'rediss:'].includes(redis.protocol) || !redis.hostname) invalid.push('REDIS_URL must use redis:// or rediss://');
+            } catch { invalid.push('REDIS_URL must be a valid absolute URL'); }
+        }
+        if (process.env.RATE_LIMIT_STORE && process.env.RATE_LIMIT_STORE !== 'redis') invalid.push('Production requires RATE_LIMIT_STORE=redis');
+        if (/^(true|[0-9]+)$/i.test(process.env.TRUST_PROXY || '')) invalid.push('TRUST_PROXY must name trusted IP addresses or networks, not a hop count');
+        else {
+            try {
+                const proxyVal = (process.env.TRUST_PROXY || 'loopback').split(',').map(s => s.trim()).filter(Boolean);
+                require('proxy-addr').compile(proxyVal);
+            }
+            catch { invalid.push('TRUST_PROXY must contain valid trusted IP addresses or networks'); }
+        }
+        try { getStaffOrigin(); } catch (error) { invalid.push(error.message); }
         if (!process.env.BACKUP_ENCRYPTION_KEY) missing.push('BACKUP_ENCRYPTION_KEY');
+        if (!process.env.METRICS_TOKEN) missing.push('METRICS_TOKEN');
+        else if (process.env.METRICS_TOKEN.length < 32 || process.env.METRICS_TOKEN.startsWith('REPLACE_ME')) invalid.push('METRICS_TOKEN must be a private random value of at least 32 characters');
         if (!process.env.ALLOWED_ORIGINS) missing.push('ALLOWED_ORIGINS');
         if (!process.env.CLAMSCAN_PATH) missing.push('CLAMSCAN_PATH');
+        if (!process.env.WEBAUTHN_ORIGIN) missing.push('WEBAUTHN_ORIGIN');
+        if (!process.env.WEBAUTHN_RP_ID) missing.push('WEBAUTHN_RP_ID');
+        if (!process.env.WEBAUTHN_RP_NAME) missing.push('WEBAUTHN_RP_NAME');
 
         for (const variable of ['CLIENT_URL', 'PORTAL_CLIENT_URL']) {
             if (!process.env[variable]) {
@@ -48,6 +93,56 @@ function validateEnv() {
                 }
             } catch {
                 invalid.push(`${variable} must be a valid absolute URL`);
+            }
+        }
+
+        const pacsOidcConfig = ['PACS_OIDC_ISSUER', 'PACS_OIDC_AUDIENCE', 'PACS_OIDC_JWKS_URL'];
+        if (pacsOidcConfig.some((name) => process.env[name])) {
+            for (const name of pacsOidcConfig) {
+                if (!process.env[name]?.trim()) missing.push(name);
+            }
+            for (const name of ['PACS_OIDC_ISSUER', 'PACS_OIDC_JWKS_URL']) {
+                if (!process.env[name]) continue;
+                try {
+                    const url = new URL(process.env[name]);
+                    if (!['https:', ...(process.env.NODE_ENV === 'production' ? [] : ['http:'])].includes(url.protocol)
+                        || url.search || url.hash || url.username || url.password) {
+                        invalid.push(`${name} must be an HTTPS URL without credentials, query, or fragment`);
+                    }
+                    if (process.env.NODE_ENV !== 'production' && url.protocol === 'http:'
+                        && !(name === 'PACS_OIDC_JWKS_URL'
+                            ? ['localhost', '127.0.0.1', '::1', 'keycloak'].includes(url.hostname)
+                            : ['localhost', '127.0.0.1', '::1'].includes(url.hostname))) {
+                        invalid.push(`${name} may use HTTP only on loopback or the local Keycloak service outside production`);
+                    }
+                } catch {
+                    invalid.push(`${name} must be a valid absolute URL`);
+                }
+            }
+            if (process.env.PACS_OIDC_MAX_TOKEN_TTL_SECONDS) {
+                const ttl = Number.parseInt(process.env.PACS_OIDC_MAX_TOKEN_TTL_SECONDS, 10);
+                if (!Number.isInteger(ttl) || ttl < 60 || ttl > 600) {
+                    invalid.push('PACS_OIDC_MAX_TOKEN_TTL_SECONDS must be between 60 and 600');
+                }
+            }
+            if (process.env.PACS_OIDC_USER_ID_CLAIM
+                && !/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(process.env.PACS_OIDC_USER_ID_CLAIM)) {
+                invalid.push('PACS_OIDC_USER_ID_CLAIM must be a simple claim name or dotted path');
+            }
+        }
+
+        if (process.env.WEBAUTHN_ORIGIN && process.env.WEBAUTHN_RP_ID) {
+            try {
+                const webauthnUrl = new URL(process.env.WEBAUTHN_ORIGIN);
+                const rpId = process.env.WEBAUTHN_RP_ID.toLowerCase();
+                if (webauthnUrl.protocol !== 'https:' || webauthnUrl.origin !== process.env.WEBAUTHN_ORIGIN.replace(/\/$/, '')) {
+                    invalid.push('WEBAUTHN_ORIGIN must be an exact HTTPS origin');
+                }
+                if (webauthnUrl.hostname !== rpId && !webauthnUrl.hostname.endsWith(`.${rpId}`)) {
+                    invalid.push('WEBAUTHN_RP_ID must equal or be a parent domain of WEBAUTHN_ORIGIN');
+                }
+            } catch {
+                invalid.push('WEBAUTHN_ORIGIN must be a valid absolute URL');
             }
         }
 
@@ -81,6 +176,14 @@ function validateEnv() {
         invalid.push('BACKUP_ENCRYPTION_KEY must be exactly 64 hexadecimal characters');
     }
 
+    // Cryptographic Key Separation (Ensure no reuse of encryption keys)
+    if (process.env.ENCRYPTION_KEY && process.env.BLIND_INDEX_KEY && process.env.ENCRYPTION_KEY === process.env.BLIND_INDEX_KEY) {
+        invalid.push('BLIND_INDEX_KEY must be distinct from ENCRYPTION_KEY');
+    }
+    if (process.env.ENCRYPTION_KEY && process.env.BACKUP_ENCRYPTION_KEY && process.env.ENCRYPTION_KEY === process.env.BACKUP_ENCRYPTION_KEY) {
+        invalid.push('BACKUP_ENCRYPTION_KEY must be distinct from ENCRYPTION_KEY');
+    }
+
     if (process.env.ENCRYPTION_KEYS) {
         try {
             const keyring = JSON.parse(process.env.ENCRYPTION_KEYS);
@@ -101,6 +204,27 @@ function validateEnv() {
         const jwtPattern = /^[A-Za-z0-9\-_]{32,}$/;
         if (!jwtPattern.test(process.env.JWT_SECRET)) {
             invalid.push('JWT_SECRET must be at least 32 characters long and contain only safe characters (A-Z, a-z, 0-9, -, _)');
+        }
+        // Reject known weak/placeholder patterns
+        const WEAK_SECRET_PATTERNS = [
+            /dev_jwt_secret_change_this/i,
+            /replace_with/i,
+            /change_this/i,
+            /test_jwt_secret/i,
+        ];
+        if (WEAK_SECRET_PATTERNS.some(p => p.test(process.env.JWT_SECRET))) {
+            invalid.push('JWT_SECRET appears to be a weak/placeholder value — use a randomly generated secret');
+        }
+    }
+
+    const WEAK_PASSWORD_PATTERNS = [
+        /dev_pacs_webhook_secret_change_this/i,
+        /dev_blind_index_key_change_this/i,
+        /^admin$/i,
+    ];
+    for (const [name, value] of [['ORTHANC_PASSWORD', process.env.ORTHANC_PASSWORD], ['PACS_WEBHOOK_SECRET', process.env.PACS_WEBHOOK_SECRET], ['BLIND_INDEX_KEY', process.env.BLIND_INDEX_KEY]]) {
+        if (value && WEAK_PASSWORD_PATTERNS.some(p => p.test(value))) {
+            invalid.push(`${name} appears to be a weak/placeholder value — use a randomly generated secret`);
         }
     }
 
@@ -131,7 +255,7 @@ function validateEnv() {
         }
         
         console.error('=========================================');
-        process.exit(1);
+        throw new Error(`Invalid environment configuration. Missing: ${missing.join(', ') || 'none'}. Invalid: ${invalid.join('; ') || 'none'}`);
     }
 
     // Log success

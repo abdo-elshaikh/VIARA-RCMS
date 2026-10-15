@@ -1,4 +1,4 @@
-# RCMS Frontend
+# VIARA Frontend
 
 This directory contains the React.js frontend for the Radiology Center Management System.
 

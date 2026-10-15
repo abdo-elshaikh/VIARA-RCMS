@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import os
+import re
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -48,7 +49,7 @@ class Settings:
         return cls(
             worker_api_key=os.getenv("PACS_AI_WORKER_API_KEY", "").strip(),
             orthanc_url=os.getenv("ORTHANC_URL", "http://orthanc:8042").rstrip("/"),
-            orthanc_username=os.getenv("ORTHANC_USERNAME", "rcms"),
+            orthanc_username=os.getenv("ORTHANC_USERNAME", "VIARA"),
             orthanc_password=os.getenv("ORTHANC_PASSWORD", ""),
             model_backend=os.getenv("MODEL_BACKEND", "torchxrayvision").strip().lower(),
             model_id=os.getenv("MODEL_ID", "densenet121-res224-all").strip(),
@@ -76,4 +77,6 @@ class Settings:
             errors.append(
                 "MODEL_BACKEND must be torchxrayvision, medgemma, or safe-placeholder."
             )
+        if self.model_backend == "medgemma" and not re.fullmatch(r"[0-9a-f]{40}", self.model_revision):
+            errors.append("MedGemma MODEL_REVISION must pin a reviewed 40-character Hugging Face commit.")
         return errors

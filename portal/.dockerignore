@@ -5,5 +5,8 @@ npm-debug.log*
 !.env.example
 dist
 coverage
+test-results
+*.log
+.playwright-mcp
 .git
 .github

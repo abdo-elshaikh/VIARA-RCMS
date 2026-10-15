@@ -7,7 +7,8 @@ const { z } = require('zod');
 // Update exam report schema
 const updateExamReportSchema = z.object({
     examId: z.string()
-        .uuid('Invalid exam ID format'),
+        .uuid('Invalid exam ID format')
+        .optional(),  // examId comes from URL params; accepting it in body is optional for clients that echo it back
 
     status: z.enum(['Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Finalized'], {
         errorMap: () => ({ message: 'Invalid exam status' })
@@ -36,33 +37,22 @@ const updateExamReportSchema = z.object({
 
     impression: z.string()
         .max(2000, 'Impression must be less than 2000 characters')
-        .optional()
-}).refine((data) => {
-    // #24 — If status is Finalized, ensure report content OR at least one non-empty section is present
-    if (data.status === 'Finalized') {
-        if (data.reportContent && data.reportContent.trim().length >= 10) return true;
-        if (data.sections) {
-            const hasContent = Object.values(data.sections).some(
-                (v) => typeof v === 'string' && v.trim().length > 0
-            );
-            if (hasContent) return true;
-        }
-        if (data.findings && data.findings.trim().length > 0) return true;
-        if (data.impression && data.impression.trim().length > 0) return true;
-        return false;
-    }
-    return true;
-}, {
-    message: 'Report content or at least one section with content is required when finalizing an exam',
-    path: ['reportContent']
+        .optional(),
+
+    criticalResult: z.boolean().optional()
+});
+
+const acknowledgeCriticalResultSchema = z.object({
+    notes: z.string().trim().max(2000).optional()
 });
 
 // Get worklist query schema
 const getWorklistQuerySchema = z.object({
-    status: z.enum(['Scheduled', 'Checked-in', 'Scanning', 'Reporting', 'Finalized']).optional(),
+    status: z.enum(['Scheduled', 'Checked-in', 'Scanning', 'Completed', 'Reporting', 'Finalized']).optional(),
     modalityType: z.string().optional(),
     priority: z.enum(['Routine', 'Urgent', 'Emergency']).optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    scope: z.enum(['all', 'mine', 'available']).optional(),
     limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().int().min(1).max(500)).optional(),
     offset: z.string().regex(/^\d+$/).transform(Number).optional()
 });
@@ -96,10 +86,23 @@ const markAiReportDraftAppliedSchema = z.object({
     mode: z.enum(['fill_empty', 'replace']).optional()
 });
 
+const completeAcquisitionSchema = z.object({
+    resultMode: z.enum(['ReportAndImages', 'ImagesOnly']),
+    notes: z.string().trim().max(1000).optional()
+});
+
+const requestReportSchema = z.object({
+    source: z.enum(['Reception', 'Patient', 'Doctor', 'Automatic']).default('Reception'),
+    reason: z.string().trim().max(1000).optional()
+});
+
 module.exports = {
     updateExamReportSchema,
     getWorklistQuerySchema,
     improveReportSchema,
+    acknowledgeCriticalResultSchema,
     generatePreliminaryReportSchema,
-    markAiReportDraftAppliedSchema
+    markAiReportDraftAppliedSchema,
+    completeAcquisitionSchema,
+    requestReportSchema
 };

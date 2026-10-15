@@ -1,0 +1,171 @@
+name: CI
+
+on:
+  push:
+    branches: [main, spectacled-foundation, 'release/**']
+  pull_request:
+    branches: [main, spectacled-foundation, 'release/**']
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  database-migrations:
+    name: Database (fresh migrations)
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: VIARA
+          POSTGRES_PASSWORD: viara_ci_password
+          POSTGRES_DB: VIARA_release_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U VIARA -d VIARA"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+        working-directory: backend
+      - name: Apply schema and all migrations
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://VIARA:viara_ci_password@127.0.0.1:5432/VIARA_release_test
+        run: npm run migrate -- --fresh
+      - name: Verify migration idempotency and checksums
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql://VIARA:viara_ci_password@127.0.0.1:5432/VIARA_release_test
+        run: npm run migrate
+      - name: Verify recovery token concurrency and session revocation on PostgreSQL
+        env:
+          VIARA_RELEASE_TEST_DATABASE_URL: postgresql://VIARA:viara_ci_password@127.0.0.1:5432/VIARA_release_test
+        run: node scripts/verify-release-database.cjs
+      - name: Verify shared quotas across API replicas
+        env:
+          VIARA_RELEASE_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+        run: node scripts/verify-release-redis.cjs
+
+  backend:
+    name: Backend (tests + audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - name: Prepare test environment and vendor keys
+        working-directory: .
+        run: |
+          cp .env.example .env
+          node scripts/generate-keypair.js
+      - name: Dependency audit (fail on high/critical)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Tests
+        run: npm run test:ci -- --coverage
+
+  frontend:
+    name: Frontend (lint + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Lint (max-warnings 0)
+        run: npm run lint
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Locale contract
+        run: node ../scripts/check-locales.mjs
+      - name: Tests
+        run: npm run test:ci
+      - name: Production build
+        run: npm run build
+
+  portal:
+    name: Portal (typecheck + lint + tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+      - name: Verify public portal API policy
+        working-directory: .
+        run: node scripts/generate-portal-api-policy.cjs --check
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Lint
+        run: npm run lint
+      - name: Formatting
+        run: npm run format:check
+      - name: Production build
+        run: npm run build
+      - name: Tests
+        run: npm test
+
+  locales:
+    name: Locale contract (en/ar parity)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - name: Check locales
+        run: node scripts/check-locales.mjs
+
+  no-secrets:
+    name: Guard (no PHI uploads / no committed secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No patient upload artifacts tracked
+        run: |
+          if git ls-files -- 'backend/uploads/**' | grep -q .; then
+            echo "::error::backend/uploads contains tracked files (PHI risk)"
+            exit 1
+          fi
+      - name: No suspicious secret fallbacks in seeders
+        run: |
+          ! grep -RnE "ENCRYPTION_KEY \|\| '|BLIND_INDEX_KEY \|\| '|DATABASE_URL \|\| 'postgres" database/ backend/seed.js

@@ -13,7 +13,7 @@ const sanitizeObject = (obj) => {
     for (const key of Object.keys(obj)) {
         if (typeof obj[key] === 'string') {
             if (!PASSTHROUGH_KEYS.has(key)) {
-                obj[key] = obj[key].replace(/<\/?[^>]+(>|$)/g, "");
+                obj[key] = obj[key].replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/gi, "");
             }
         } else if (typeof obj[key] === 'object') {
             sanitizeObject(obj[key]);

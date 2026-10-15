@@ -1,0 +1,56 @@
+{
+  "passed": true,
+  "project": "viara-release-test-6349a374",
+  "checks": [
+    "fresh schema and migrations",
+    "container readiness",
+    "first administrator creation and login",
+    "existing accounts preserved",
+    "runtime portal origin",
+    "portal staff denial",
+    "portal authentication"
+  ],
+  "testLicensePublicKeyOverride": true,
+  "statuses": [
+    {
+      "service": "backend",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "clamav",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "postgres",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "frontend",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "ohif",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "orthanc",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "portal",
+      "state": "running",
+      "health": "healthy"
+    },
+    {
+      "service": "redis",
+      "state": "running",
+      "health": "healthy"
+    }
+  ]
+}

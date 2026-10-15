@@ -1,0 +1,14 @@
+# Local frontend tooling output
+node_modules/
+dist/
+coverage/
+test-results/
+.vite/
+.vite-temp/
+*.log
+.playwright-mcp/
+
+# Local environment files
+.env
+.env.*
+!.env.example

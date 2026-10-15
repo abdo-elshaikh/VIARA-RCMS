@@ -1,3 +1,7 @@
+// Prevent validateEnv from calling process.exit(1) when test env vars are absent.
+// server.js imports this as a callable function, so the mock must be one too.
+jest.mock('../../src/config/validateEnv', () => jest.fn());
+
 const request = require('supertest');
 const app = require('../../src/server');
 const { Pool } = require('pg');

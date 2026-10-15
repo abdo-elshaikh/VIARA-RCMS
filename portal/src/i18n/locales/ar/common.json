@@ -1,9 +1,9 @@
 {
   "app": {
-    "name": "RCMS",
+    "name": "VIARA",
     "tagline": "نظام الصحة",
-    "fullName": "RCMS للمؤسسات",
-    "copyright": "جميع الحقوق محفوظة {{year}} لأنظمة RCMS الطبية."
+    "fullName": "VIARA للمؤسسات",
+    "copyright": "جميع الحقوق محفوظة {{year}} لأنظمة VIARA الطبية."
   },
   "actions": {
     "save": "حفظ",

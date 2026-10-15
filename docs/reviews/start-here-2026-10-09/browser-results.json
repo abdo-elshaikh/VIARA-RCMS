@@ -1,0 +1,34 @@
+{
+  "passed": true,
+  "checks": [
+    "RTL, logo, no overflow and automated WCAG checks at 320px",
+    "RTL, logo, no overflow and automated WCAG checks at 390px",
+    "RTL, logo, no overflow and automated WCAG checks at 768px",
+    "RTL, logo, no overflow and automated WCAG checks at 1440px",
+    "native clipboard write/read, keyboard skip/Enter, platform selection, links, all copy buttons, denied/manual clipboard fallbacks, checklist/reset, FAQs, print/PDF, zero external requests/errors"
+  ],
+  "commands": [
+    {
+      "id": "cmd-tools",
+      "command": "docker compose version && python3 --version && openssl version && docker info --format '{{.OSType}}'"
+    },
+    {
+      "id": "cmd-setup",
+      "command": "bash setup.sh"
+    },
+    {
+      "id": "cmd-status",
+      "command": "docker compose ps"
+    },
+    {
+      "id": "cmd-config",
+      "command": "docker compose config --quiet"
+    },
+    {
+      "id": "cmd-logs",
+      "command": "docker compose logs --tail 80 backend"
+    }
+  ],
+  "errors": [],
+  "externalRequests": []
+}

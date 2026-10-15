@@ -1,54 +1,146 @@
-import { useMemo, useState } from 'react';
-import { AlertTriangle, Calendar, CreditCard, Plus, Receipt, RotateCcw, Tag, X } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { 
+    AlertTriangle, 
+    Calendar, 
+    CreditCard, 
+    Pencil,
+    Plus, 
+    Receipt, 
+    RotateCcw, 
+    Search, 
+    Tag
+} from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
-import { useCreateExpenseMutation, useDeleteExpenseMutation, useGetExpenseCategoriesQuery, useGetExpensesQuery, useGetSuppliersQuery } from '../../store/api';
-import { formatFinancialCurrency, formatFinancialDate } from '../../utils/financialFormat';
+import { useCreateExpenseMutation, useDeleteExpenseMutation, useGetExpenseCategoriesQuery, useGetExpensesQuery, useGetSuppliersQuery, useUpdateExpenseMutation } from '../../store/api';
+import { formatFinancialCurrency, formatFinancialDate, toFinancialDateInput } from '../../utils/financialFormat';
+import { generateUUID } from '../../utils/uuid';
+import Modal from '../ui/Modal';
 
 const initialForm = () => ({
     categoryId: '',
     supplierId: '',
     amount: '',
     taxAmount: '0',
-    expenseDate: new Date().toISOString().substring(0, 10),
+    expenseDate: toFinancialDateInput(),
     paymentMethod: 'Cash',
     referenceNumber: '',
     notes: ''
 });
 
-const ExpenseManager = () => {
+const ExpenseManager = ({ dateRange }) => {
     const { t, i18n } = useTranslation('workspace');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
-    const { data: expenses = [], isLoading, isError } = useGetExpensesQuery();
-    const { data: categories = [] } = useGetExpenseCategoriesQuery();
-    const { data: suppliers = [] } = useGetSuppliersQuery();
+    const { data: expenses = [], isLoading, isError } = useGetExpensesQuery(dateRange || undefined);
+    const categoryQuery = useGetExpenseCategoriesQuery();
+    const supplierQuery = useGetSuppliersQuery();
+    const categories = categoryQuery.data || [];
+    const suppliers = supplierQuery.data || [];
     const [createExpense, { isLoading: isCreating }] = useCreateExpenseMutation();
+    const [updateExpense, { isLoading: isUpdating }] = useUpdateExpenseMutation();
     const [deleteExpense, { isLoading: isReversing }] = useDeleteExpenseMutation();
-    const [showNew, setShowNew] = useState(false);
+    
+    const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+    const [editingExpense, setEditingExpense] = useState(null);
     const [form, setForm] = useState(initialForm);
     const [reverseDraft, setReverseDraft] = useState({ expense: null, reason: '' });
+    const [selectedCategory, setSelectedCategory] = useState('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const createAttemptRef = useRef(null);
+    const submittingRef = useRef(false);
+    const isEditing = Boolean(editingExpense);
+    const isSaving = isCreating || isUpdating;
+    const categoryUnavailable = !isEditing && (categoryQuery.isLoading || categoryQuery.isError || !categories.length);
+    const isAr = i18n.language?.startsWith('ar');
 
     const totals = useMemo(() => expenses.reduce((sum, expense) => ({
         amount: sum.amount + Number(expense.amount || 0),
-        tax: sum.tax + Number(expense.tax_amount || 0)
-    }), { amount: 0, tax: 0 }), [expenses]);
+        tax: sum.tax + Number(expense.tax_amount || 0),
+        cash: sum.cash + (expense.payment_method === 'Cash' ? Number(expense.amount || 0) : 0),
+        bank: sum.bank + (expense.payment_method === 'Bank Transfer' ? Number(expense.amount || 0) : 0),
+        card: sum.card + (expense.payment_method === 'Credit Card' ? Number(expense.amount || 0) : 0)
+    }), { amount: 0, tax: 0, cash: 0, bank: 0, card: 0 }), [expenses]);
+
+    const filteredExpenses = useMemo(() => {
+        return expenses.filter(expense => {
+            const matchesCategory = selectedCategory === 'all' || expense.category_id === selectedCategory;
+            const query = searchQuery.trim().toLowerCase();
+            const matchesSearch = !query || 
+                (expense.supplier_name || '').toLowerCase().includes(query) ||
+                (expense.category_name || '').toLowerCase().includes(query) ||
+                (expense.reference_number || '').toLowerCase().includes(query) ||
+                (expense.notes || '').toLowerCase().includes(query);
+            return matchesCategory && matchesSearch;
+        });
+    }, [expenses, selectedCategory, searchQuery]);
 
     const setField = (field, value) => setForm((current) => ({ ...current, [field]: value }));
 
+    const openCreateModal = () => {
+        createAttemptRef.current = null;
+        setEditingExpense(null);
+        setForm(initialForm());
+        setIsExpenseModalOpen(true);
+    };
+
+    const openEditModal = (expense) => {
+        setEditingExpense(expense);
+        setForm({
+            categoryId: expense.category_id || '',
+            supplierId: expense.supplier_id || '',
+            amount: String(expense.amount ?? ''),
+            taxAmount: String(expense.tax_amount ?? 0),
+            expenseDate: String(expense.expense_date || '').slice(0, 10),
+            paymentMethod: expense.payment_method || 'Cash',
+            referenceNumber: expense.reference_number || '',
+            notes: expense.notes || '',
+        });
+        setIsExpenseModalOpen(true);
+    };
+
+    const closeExpenseModal = () => {
+        if (isSaving) return;
+        setIsExpenseModalOpen(false);
+        setEditingExpense(null);
+        setForm(initialForm());
+    };
+
     const handleSubmit = async (event) => {
         event.preventDefault();
+        if (categoryUnavailable || isSaving || submittingRef.current) return;
+        submittingRef.current = true;
         try {
-            await createExpense({
-                ...form,
-                amount: parseFloat(form.amount),
-                taxAmount: parseFloat(form.taxAmount || 0),
-                supplierId: form.supplierId || null
-            }).unwrap();
-            toast.success(t('finance.expenses.success'));
-            setShowNew(false);
+            if (isEditing) {
+                await updateExpense({
+                    id: editingExpense.expense_id,
+                    categoryId: form.categoryId,
+                    supplierId: form.supplierId || null,
+                    referenceNumber: form.referenceNumber,
+                    notes: form.notes,
+                }).unwrap();
+                toast.success(t('finance.expenses.updateSuccess'));
+            } else {
+                const payload = {
+                    ...form,
+                    amount: parseFloat(form.amount),
+                    taxAmount: parseFloat(form.taxAmount || 0),
+                    supplierId: form.supplierId || null,
+                };
+                const fingerprint = JSON.stringify(payload);
+                if (createAttemptRef.current?.fingerprint !== fingerprint) {
+                    createAttemptRef.current = { fingerprint, key: generateUUID() };
+                }
+                await createExpense({ ...payload, idempotencyKey: createAttemptRef.current.key }).unwrap();
+                createAttemptRef.current = null;
+                toast.success(t('finance.expenses.success'));
+            }
+            setIsExpenseModalOpen(false);
+            setEditingExpense(null);
             setForm(initialForm());
         } catch (error) {
-            toast.error(error?.data?.message || t('finance.expenses.saveError'));
+            toast.error(error?.data?.message || t(isEditing ? 'finance.expenses.updateError' : 'finance.expenses.saveError'));
+        } finally {
+            submittingRef.current = false;
         }
     };
 
@@ -69,12 +161,12 @@ const ExpenseManager = () => {
     };
 
     return (
-        <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
+        <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
             {/* Header */}
-            <div className="flex flex-col gap-4 border-b border-slate-100/80 bg-slate-50/50 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6 dark:border-white/5 dark:bg-white/5">
+            <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6 dark:border-slate-800 dark:bg-slate-950/30">
                 <div className="flex items-start gap-4">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700 ring-1 ring-rose-200 shadow-md dark:bg-rose-500/20 dark:text-rose-300 dark:ring-rose-500/30">
-                        <Receipt size={22} />
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500/10 text-rose-700 dark:text-rose-300">
+                        <Receipt size={20} />
                     </span>
                     <div>
                         <h2 className="text-lg font-black tracking-tight text-slate-900 dark:text-white sm:text-xl">
@@ -88,28 +180,107 @@ const ExpenseManager = () => {
 
                 <button
                     type="button"
-                    onClick={() => setShowNew((value) => !value)}
-                    aria-expanded={showNew}
-                    className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-cyan-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                    onClick={openCreateModal}
+                    aria-haspopup="dialog"
+                    aria-expanded={isExpenseModalOpen}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 px-4 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition hover:brightness-110"
                 >
-                    {showNew ? <X size={16} /> : <Plus size={16} />}
-                    {showNew ? t('finance.expenses.closeForm') : t('finance.expenses.openForm')}
+                    <Plus size={16} />
+                    {t('finance.expenses.addExpense')}
                 </button>
             </div>
 
-            {/* Metrics */}
-            <div className="grid grid-cols-1 gap-4 border-b border-slate-100/80 p-5 dark:border-white/5 min-[480px]:grid-cols-3">
+            {/* Metrics Breakdown */}
+            <div className="grid grid-cols-1 gap-4 border-b border-slate-100/80 p-5 dark:border-white/5 sm:grid-cols-2 lg:grid-cols-4">
                 <ExpenseMetric label={t('finance.expenses.records')} value={expenses.length.toLocaleString(i18n.language)} />
                 <ExpenseMetric label={t('finance.expenses.recordedAmount')} value={money(totals.amount)} tone="rose" />
-                <ExpenseMetric label={t('finance.expenses.includedTax')} value={money(totals.tax)} />
+                <ExpenseMetric label={t('finance.expenses.cashOut')} value={money(totals.cash)} />
+                <ExpenseMetric label={t('finance.expenses.bankAndCards')} value={money(totals.bank + totals.card)} />
             </div>
 
-            {/* Form */}
-            {showNew && (
-                <form onSubmit={handleSubmit} className="border-b border-slate-200/80 bg-rose-50/40 p-5 backdrop-blur-md dark:border-white/5 dark:bg-rose-950/20 sm:p-6">
+            {/* Category Filter Chips & Search Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100/80 p-4 dark:border-slate-800">
+                <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto">
+                    <button
+                        type="button"
+                        onClick={() => setSelectedCategory('all')}
+                        className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
+                            selectedCategory === 'all'
+                                ? 'bg-rose-600 text-white shadow-sm font-black'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                        }`}
+                    >
+                        {t('finance.expenses.allCategories')} ({expenses.length})
+                    </button>
+                    {categories.map((cat) => (
+                        <button
+                            key={cat.category_id}
+                            type="button"
+                            onClick={() => setSelectedCategory(cat.category_id)}
+                            className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-all ${
+                                selectedCategory === cat.category_id
+                                    ? 'bg-rose-600 text-white shadow-sm font-black'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                            }`}
+                        >
+                            {cat.name}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="relative w-full sm:w-64">
+                    <Search size={14} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder={t('finance.expenses.searchPlaceholder')}
+                        className="h-9 w-full rounded-xl border border-slate-200 bg-white ps-8 pe-3 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                    />
+                </div>
+            </div>
+
+            <Modal
+                isOpen={isExpenseModalOpen}
+                onClose={closeExpenseModal}
+                title={t(isEditing ? 'finance.expenses.editTitle' : 'finance.expenses.newTitle')}
+                size="wide"
+                footer={(
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                        <button
+                            type="button"
+                            onClick={closeExpenseModal}
+                            disabled={isSaving}
+                            className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:text-slate-300 dark:hover:bg-white/5"
+                        >
+                            {t('finance.common.cancel')}
+                        </button>
+                        <button
+                            type="submit"
+                            form="expense-form"
+                            disabled={isSaving || categoryUnavailable}
+                            className="rounded-xl bg-rose-600 px-6 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition hover:bg-rose-700 disabled:opacity-50"
+                        >
+                            {isSaving
+                                ? t(isEditing ? 'finance.expenses.updating' : 'finance.expenses.saving')
+                                : t(isEditing ? 'finance.expenses.update' : 'finance.expenses.save')}
+                        </button>
+                    </div>
+                )}
+            >
+                <form id="expense-form" onSubmit={handleSubmit} className="p-5 sm:p-6">
+                    {categoryUnavailable && <div role="alert" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                        {categoryQuery.isLoading ? (isAr ? 'جار تحميل فئات المصروفات...' : 'Loading expense categories...') : categoryQuery.isError ? (isAr ? 'تعذر تحميل فئات المصروفات. أعد المحاولة قبل الحفظ.' : 'Expense categories could not be loaded. Retry before saving.') : (isAr ? 'لا توجد فئات مصروفات. اطلب من المسؤول إعداد الفئات قبل تسجيل المصروف.' : 'No expense categories are available. Ask an administrator to configure them before recording an expense.')}
+                        {categoryQuery.isError && typeof categoryQuery.refetch === 'function' && <button type="button" onClick={() => categoryQuery.refetch()} className="ms-2 underline">{isAr ? 'إعادة المحاولة' : 'Retry'}</button>}
+                    </div>}
+                    {supplierQuery.isError && <div role="alert" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                        {isAr ? 'تعذر تحميل الموردين. يمكنك إعادة المحاولة أو التسجيل بدون مورد.' : 'Suppliers could not be loaded. Retry or record the expense without a supplier.'}
+                        {typeof supplierQuery.refetch === 'function' && <button type="button" onClick={() => supplierQuery.refetch()} className="ms-2 underline">{isAr ? 'إعادة المحاولة' : 'Retry'}</button>}
+                    </div>}
                     <div className="mb-5">
-                        <h3 className="font-black text-slate-900 dark:text-white text-base">{t('finance.expenses.newTitle')}</h3>
-                        <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{t('finance.expenses.formHelp')}</p>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                            {isEditing ? t('finance.expenses.immutableFieldsNote') : t('finance.expenses.formHelp')}
+                        </p>
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -121,6 +292,9 @@ const ExpenseManager = () => {
                                 onChange={(event) => setField('categoryId', event.target.value)}
                             >
                                 <option value="">{t('finance.expenses.selectCategory')}</option>
+                                {isEditing && form.categoryId && !categories.some((category) => category.category_id === form.categoryId) ? (
+                                    <option value={form.categoryId}>{editingExpense.category_name || t('finance.expenses.uncategorized')}</option>
+                                ) : null}
                                 {categories.map((category) => (
                                     <option key={category.category_id} value={category.category_id}>{category.name}</option>
                                 ))}
@@ -133,7 +307,8 @@ const ExpenseManager = () => {
                                 min="0.01"
                                 step="0.01"
                                 required
-                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 font-mono text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
+                                disabled={isEditing}
+                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 font-mono text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
                                 value={form.amount}
                                 onChange={(event) => setField('amount', event.target.value)}
                                 placeholder="0.00"
@@ -144,8 +319,10 @@ const ExpenseManager = () => {
                             <input
                                 type="number"
                                 min="0"
+                                max={form.amount || undefined}
                                 step="0.01"
-                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 font-mono text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
+                                disabled={isEditing}
+                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 font-mono text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
                                 value={form.taxAmount}
                                 onChange={(event) => setField('taxAmount', event.target.value)}
                             />
@@ -158,6 +335,9 @@ const ExpenseManager = () => {
                                 onChange={(event) => setField('supplierId', event.target.value)}
                             >
                                 <option value="">{t('finance.expenses.noSupplier')}</option>
+                                {isEditing && form.supplierId && !suppliers.some((supplier) => supplier.supplier_id === form.supplierId) ? (
+                                    <option value={form.supplierId}>{editingExpense.supplier_name || t('finance.expenses.noSupplier')}</option>
+                                ) : null}
                                 {suppliers.map((supplier) => (
                                     <option key={supplier.supplier_id} value={supplier.supplier_id}>{supplier.name}</option>
                                 ))}
@@ -168,7 +348,8 @@ const ExpenseManager = () => {
                             <input
                                 type="date"
                                 required
-                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
+                                disabled={isEditing}
+                                className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
                                 value={form.expenseDate}
                                 onChange={(event) => setField('expenseDate', event.target.value)}
                             />
@@ -176,6 +357,7 @@ const ExpenseManager = () => {
 
                         <Field label={t('finance.expenses.paymentMethod')}>
                             <select
+                                disabled={isEditing}
                                 className="mt-1.5 h-10 w-full rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-none focus:border-rose-400 focus:ring-4 focus:ring-rose-100 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-rose-500 dark:focus:ring-rose-500/20"
                                 value={form.paymentMethod}
                                 onChange={(event) => setField('paymentMethod', event.target.value)}
@@ -211,43 +393,30 @@ const ExpenseManager = () => {
                         </div>
                     </div>
 
-                    <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                        <button
-                            type="button"
-                            onClick={() => setShowNew(false)}
-                            className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-white dark:text-slate-400 dark:hover:bg-white/5"
-                        >
-                            {t('finance.common.cancel')}
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={isCreating}
-                            className="rounded-xl bg-rose-600 px-6 py-2.5 text-xs font-bold text-white shadow-md shadow-rose-600/20 transition hover:bg-rose-700 disabled:opacity-50"
-                        >
-                            {isCreating ? t('finance.expenses.saving') : t('finance.expenses.save')}
-                        </button>
-                    </div>
                 </form>
-            )}
+            </Modal>
 
             {/* List */}
             {isLoading ? (
                 <div className="animate-pulse p-12 text-center text-sm font-bold text-slate-400">{t('finance.expenses.loading')}</div>
             ) : isError ? (
                 <div role="alert" className="p-12 text-center text-sm font-bold text-rose-600 dark:text-rose-400">{t('finance.expenses.error')}</div>
-            ) : expenses.length === 0 ? (
+            ) : filteredExpenses.length === 0 ? (
                 <div className="p-12 text-center">
                     <Receipt className="mx-auto text-slate-300 dark:text-slate-600" size={40} />
-                    <p className="mt-3 font-black text-slate-700 dark:text-slate-300">{t('finance.expenses.emptyTitle')}</p>
+                    <p className="mt-3 font-black text-slate-700 dark:text-slate-300">
+                        {searchQuery ? t('finance.expenses.noSearchResults') : t('finance.expenses.emptyTitle')}
+                    </p>
                     <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t('finance.expenses.emptyDescription')}</p>
                 </div>
             ) : (
                 <>
                     <div className="divide-y divide-slate-100/80 dark:divide-white/5 md:hidden">
-                        {expenses.map((expense) => (
+                        {filteredExpenses.map((expense) => (
                             <ExpenseCard
                                 key={expense.expense_id}
                                 expense={expense}
+                                onEdit={() => openEditModal(expense)}
                                 onReverse={() => setReverseDraft({ expense, reason: '' })}
                             />
                         ))}
@@ -263,10 +432,11 @@ const ExpenseManager = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100/80 dark:divide-white/5">
-                                {expenses.map((expense) => (
+                                {filteredExpenses.map((expense) => (
                                     <ExpenseRow
                                         key={expense.expense_id}
                                         expense={expense}
+                                        onEdit={() => openEditModal(expense)}
                                         onReverse={() => setReverseDraft({ expense, reason: '' })}
                                     />
                                 ))}
@@ -275,8 +445,10 @@ const ExpenseManager = () => {
                     </div>
                 </>
             )}
+
+            {/* Reversal Confirmation Dialog */}
             {reverseDraft.expense ? (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+                <Modal isOpen onClose={isReversing ? undefined : () => setReverseDraft({ expense: null, reason: '' })} size="sm" ariaLabel={t('finance.expenses.reverseTitle', { defaultValue: 'Reverse expense' })}>
                     <form onSubmit={handleReverse} className="w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-950">
                         <div className="flex items-start gap-3 border-b border-slate-100 p-5 dark:border-white/10">
                             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">
@@ -309,6 +481,7 @@ const ExpenseManager = () => {
                             <button
                                 type="button"
                                 onClick={() => setReverseDraft({ expense: null, reason: '' })}
+                                disabled={isReversing}
                                 className="rounded-xl px-4 py-2.5 text-xs font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/5"
                             >
                                 {t('finance.common.cancel')}
@@ -325,7 +498,7 @@ const ExpenseManager = () => {
                             </button>
                         </div>
                     </form>
-                </div>
+                </Modal>
             ) : null}
         </div>
     );
@@ -345,7 +518,7 @@ const ExpenseMetric = ({ label, value, tone }) => (
     </div>
 );
 
-const ExpenseCard = ({ expense, onReverse }) => {
+const ExpenseCard = ({ expense, onEdit, onReverse }) => {
     const { t, i18n } = useTranslation('workspace');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
     return (
@@ -374,6 +547,17 @@ const ExpenseCard = ({ expense, onReverse }) => {
                 ) : null}
             </div>
             {expense.notes ? <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">{expense.notes}</p> : null}
+            {!expense.reversed_at ? (
+                <button
+                    type="button"
+                    onClick={onEdit}
+                    aria-label={t('finance.expenses.editExpense')}
+                    className="mt-4 inline-flex min-h-9 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                    <Pencil size={14} />
+                    {t('finance.expenses.editExpense')}
+                </button>
+            ) : null}
             <button
                 type="button"
                 onClick={onReverse}
@@ -387,7 +571,7 @@ const ExpenseCard = ({ expense, onReverse }) => {
     );
 };
 
-const ExpenseRow = ({ expense, onReverse }) => {
+const ExpenseRow = ({ expense, onEdit, onReverse }) => {
     const { t, i18n } = useTranslation('workspace');
     const money = (value) => formatFinancialCurrency(value, i18n.language);
     const method = expense.payment_method ? t(`finance.methods.${expense.payment_method}`, { defaultValue: expense.payment_method }) : '';
@@ -413,6 +597,17 @@ const ExpenseRow = ({ expense, onReverse }) => {
                 <p className="font-mono font-black text-rose-600 dark:text-rose-400">{money(expense.amount)}</p>
                 {Number(expense.tax_amount) > 0 ? (
                     <p className="mt-1 text-[10px] font-semibold text-slate-400">{t('finance.expenses.includesTax', { amount: money(expense.tax_amount) })}</p>
+                ) : null}
+                {!expense.reversed_at ? (
+                    <button
+                        type="button"
+                        onClick={onEdit}
+                        aria-label={t('finance.expenses.editExpense')}
+                        className="mt-2 inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] font-black text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                    >
+                        <Pencil size={13} />
+                        {t('finance.expenses.editExpense')}
+                    </button>
                 ) : null}
                 <button
                     type="button"

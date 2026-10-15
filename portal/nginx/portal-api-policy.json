@@ -1,0 +1,175 @@
+[
+  {
+    "path": "/api/csrf-token",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/profile",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/exam-types",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/settings/(?:public/home|center)",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/(?:portal|doctor-portal)/login",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/portal/auth/(?:refresh|logout)",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/auth/(?:logout|change-password)",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/portal/(?:records|profile|invoices|documents|appointment-requests)",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/portal/(?:appointment-requests|profile-update-requests)",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/portal/documents/[A-Za-z0-9_-]+/download",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/(?:portal|doctor-portal)/messages",
+    "methods": [
+      "GET",
+      "HEAD",
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/doctor-portal/messages/unread-count",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/(?:portal|doctor-portal)/notifications(?:/unread-count)?",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/(?:portal|doctor-portal)/notifications/(?:mark-all-read|[A-Za-z0-9_-]+/read)",
+    "methods": [
+      "PUT"
+    ]
+  },
+  {
+    "path": "/api/doctor-portal/notifications/[A-Za-z0-9_-]+/critical-result/acknowledge",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/doctor-portal/cases",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/doctor-portal/reports/[A-Za-z0-9_-]+(?:/pdf)?",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/doctor-portal/orders",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/exams/[A-Za-z0-9_-]+/report/pdf",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/portal/invoices/[A-Za-z0-9_-]+/pdf",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/realtime/session",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/realtime/stream",
+    "methods": [
+      "GET"
+    ]
+  },
+  {
+    "path": "/api/public/landing-overview",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/public/(?:case-status(?:/verify|/status)?|appointment-requests|final-report)",
+    "methods": [
+      "POST"
+    ]
+  },
+  {
+    "path": "/api/public/final-report/[A-Za-z0-9_.~-]+",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  },
+  {
+    "path": "/api/public/reports/verify/[A-Za-z0-9_-]+",
+    "methods": [
+      "GET",
+      "HEAD"
+    ]
+  }
+]

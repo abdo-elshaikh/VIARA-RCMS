@@ -1,9 +1,9 @@
 {
   "app": {
-    "name": "RCMS",
+    "name": "VIARA",
     "tagline": "Health OS",
-    "fullName": "RCMS Enterprise",
-    "copyright": "Copyright {{year}} RCMS Medical Systems. All rights reserved."
+    "fullName": "VIARA Enterprise",
+    "copyright": "Copyright {{year}} VIARA Medical Systems. All rights reserved."
   },
   "actions": {
     "save": "Save",

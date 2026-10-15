@@ -10,7 +10,10 @@ const getReportTransitionError = (currentStatus = 'Draft', nextStatus, { finaliz
         return 'Unknown report workflow status';
     }
 
-    if (finalizing && nextStatus === 'Finalized') return null;
+    // Finalization is a real workflow transition, not an escape hatch.
+    if (finalizing && nextStatus === 'Finalized' && current !== 'Approved') {
+        return 'Report must be Approved before it can be Finalized';
+    }
     if (nextIndex < currentIndex) {
         return `Report status cannot move backward from ${current} to ${nextStatus}`;
     }

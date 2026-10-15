@@ -1,0 +1,294 @@
+/* ==========================================================================
+   VIARA Landing — Modern layer (load AFTER LandingIllustrative.css)
+   - Re-themes via the existing --vlp-* tokens, so every section follows.
+   - Logical properties + --d (1 / -1) keep RTL/LTR mirrored automatically.
+   - Motion uses translate/rotate/scale props (never `transform`) so it
+     never fights Framer Motion's inline transforms.
+   ========================================================================== */
+
+/* ── Tokens: light ── */
+.vlp {
+    --vlp-bg: #f2f9f8;
+    --vlp-paper: #ffffff;
+    --vlp-ink: #08232d;
+    --vlp-muted: #53707a;
+    --vlp-line: #d6e7e8;
+    --vlp-soft: #e4f4f2;
+    --vlp-green: #0a8f7a;
+    --vlp-button: #067a68;
+    --vlp-deep: #04252c;
+    --vlp-accent: #19c3a8;
+    --vlp-cyan: #0ea5c6;
+    --vlp-heading-accent: #0a8f7a;
+    --vlp-heading-cyan: #0b87a8;
+    --vlp-glow: rgba(14, 165, 198, 0.16);
+    --vlp-grid: rgba(8, 100, 110, 0.07);
+    --vlp-shadow: rgba(4, 50, 60, 0.28);
+    --v-violet: #7566f0;
+    --v-grad: linear-gradient(120deg, #0a8f7a 0%, #0ea5c6 55%, #5b8def 100%);
+    --v-glass: rgba(255, 255, 255, 0.72);
+    --d: 1;
+}
+.vlp[dir='rtl'] { --d: -1; }
+
+/* ── Tokens: dark ── */
+.vlp.vlp--dark {
+    --vlp-bg: #050e13;
+    --vlp-paper: #0b1a21;
+    --vlp-ink: #e8f6f4;
+    --vlp-muted: #9db9bf;
+    --vlp-line: #1b3a43;
+    --vlp-soft: #10303a;
+    --vlp-green: #2dd4bf;
+    --vlp-button: #0c8f86;
+    --vlp-deep: #062a31;
+    --vlp-accent: #5eead4;
+    --vlp-cyan: #38bdf8;
+    --vlp-heading-accent: #5eead4;
+    --vlp-heading-cyan: #7dd3fc;
+    --vlp-glow: rgba(45, 212, 191, 0.14);
+    --vlp-grid: rgba(94, 234, 212, 0.06);
+    --vlp-shadow: rgba(0, 0, 0, 0.6);
+    --v-violet: #a5b4fc;
+    --v-grad: linear-gradient(120deg, #5eead4 0%, #38bdf8 55%, #a5b4fc 100%);
+    --v-glass: rgba(9, 22, 28, 0.72);
+}
+
+/* ── Ambient backdrop ── */
+.vlp .vlp__grid {
+    mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, #000 30%, transparent 75%);
+    animation: v-grid-pan 40s linear infinite;
+}
+.vlp .vlp__aurora { filter: blur(70px); opacity: 0.55; }
+.vlp .vlp__aurora--a { background: radial-gradient(circle, var(--vlp-accent), transparent 65%); animation: v-drift 18s ease-in-out infinite alternate; }
+.vlp .vlp__aurora--b { background: radial-gradient(circle, var(--v-violet), transparent 65%); animation: v-drift 24s ease-in-out infinite alternate-reverse; }
+.vlp .vlp--dark .vlp__aurora { opacity: 0.32; }
+
+@keyframes v-drift { to { translate: calc(80px * var(--d)) 60px; scale: 1.18; } }
+@keyframes v-grid-pan { to { background-position: 56px 56px; } }
+
+/* ── Scroll progress ── */
+.vlp .vlp__progress { background: var(--v-grad); height: 3px; box-shadow: 0 0 14px var(--vlp-accent); }
+
+/* ── Header ── */
+.vlp .vlp__header--stuck {
+    background: var(--v-glass);
+    backdrop-filter: blur(18px) saturate(1.6);
+    -webkit-backdrop-filter: blur(18px) saturate(1.6);
+    box-shadow: 0 1px 0 var(--vlp-line), 0 18px 40px -26px var(--vlp-shadow);
+}
+.vlp .vlp__nav a,.vlp  .vlp__nav-portal {
+    background: linear-gradient(var(--vlp-green), var(--vlp-green)) no-repeat 50% 100% / 0 2px;
+    transition: background-size 0.35s var(--vlp-ease), color 0.25s;
+}
+.vlp .vlp__nav a:hover { background-size: 70% 2px; color: var(--vlp-green); }
+
+.vlp .vlp__util-service,.vlp  .vlp__util-icon,.vlp  .vlp__util-lang {
+    background: var(--v-glass);
+    border: 1px solid var(--vlp-line);
+    backdrop-filter: blur(10px);
+    transition: border-color 0.25s, box-shadow 0.25s, color 0.25s;
+}
+.vlp .vlp__util-service:hover,.vlp  .vlp__util-icon:hover,.vlp  .vlp__util-lang:hover {
+    border-color: var(--vlp-accent);
+    color: var(--vlp-green);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--vlp-accent) 18%, transparent);
+}
+.vlp .vlp__util-service svg { color: var(--vlp-accent); animation: v-beat 2.4s ease-in-out infinite; }
+@keyframes v-beat { 50% { scale: 1.25; opacity: 0.7; } }
+
+/* ── Buttons: gradient + shine sweep ── */
+.vlp .vlp__button:not(.vlp__button--light) {
+    color: #fff;
+    border: 0;
+    background: linear-gradient(110deg, #067a68 0%, #0a9aa8 38%, #38bdf8 50%, #0a9aa8 62%, #067a68 100%) 100% 0 / 280% 100%;
+    box-shadow: 0 12px 28px -12px color-mix(in srgb, var(--vlp-cyan) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    transition: background-position 0.8s var(--vlp-ease), box-shadow 0.3s;
+}
+.vlp .vlp__button:not(.vlp__button--light):hover {
+    background-position: 0 0;
+    box-shadow: 0 18px 38px -12px color-mix(in srgb, var(--vlp-cyan) 85%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+.vlp .vlp__button--light { background: #fff; color: #04353a; box-shadow: 0 14px 34px -14px rgba(0, 0, 0, 0.5); }
+.vlp .vlp__button--large svg,.vlp  .vlp__explore svg,.vlp  .vlp__portal-links svg { transition: translate 0.3s var(--vlp-ease); }
+.vlp .vlp__button--large:hover svg,.vlp  .vlp__explore:hover svg,.vlp  .vlp__portal-links a:hover svg { translate: calc(5px * var(--d)) 0; }
+
+/* ── Hero text ── */
+.vlp .vlp__eyebrow {
+    background: var(--v-glass);
+    border: 1px solid color-mix(in srgb, var(--vlp-accent) 40%, var(--vlp-line));
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 24px -14px var(--vlp-accent);
+}
+.vlp .vlp__eyebrow-dot { background: var(--vlp-accent); animation: v-ping 2s ease-out infinite; }
+@keyframes v-ping {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--vlp-accent) 70%, transparent); }
+    100% { box-shadow: 0 0 0 11px transparent; }
+}
+.vlp .vlp__word-in--grad {
+    background: var(--v-grad) 0 0 / 240% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    animation: v-text-flow 7s ease-in-out infinite alternate;
+    padding-block: 0.08em;
+}
+@keyframes v-text-flow { to { background-position: 100% 0; } }
+
+.vlp .vlp__trust li,.vlp  .vlp__portal-links a {
+    border: 1px solid var(--vlp-line);
+    background: var(--v-glass);
+    transition: border-color 0.25s, translate 0.25s var(--vlp-ease), box-shadow 0.25s;
+}
+.vlp .vlp__portal-links a:hover { border-color: var(--vlp-accent); translate: 0 -2px; box-shadow: 0 10px 24px -14px var(--vlp-accent); }
+
+/* ── Hero visual: monitor + worklist ── */
+.vlp .vlp__monitor { box-shadow: 0 40px 90px -40px var(--vlp-shadow), 0 0 0 1px var(--vlp-line); }
+.vlp .vlp__monitor-tint {
+    background:
+        linear-gradient(180deg, transparent 42%, color-mix(in srgb, var(--vlp-accent) 38%, transparent) 50%, transparent 58%) 0 0 / 100% 300%,
+        linear-gradient(160deg, color-mix(in srgb, var(--vlp-deep) 55%, transparent), color-mix(in srgb, var(--vlp-cyan) 22%, transparent));
+    animation: v-scan 5.5s linear infinite;
+}
+@keyframes v-scan { from { background-position: 0 120%, 0 0; } to { background-position: 0 -20%, 0 0; } }
+
+.vlp .vlp__worklist-card {
+    background: var(--v-glass);
+    backdrop-filter: blur(22px) saturate(1.5);
+    -webkit-backdrop-filter: blur(22px) saturate(1.5);
+    border: 1px solid color-mix(in srgb, var(--vlp-accent) 35%, var(--vlp-line));
+    box-shadow: 0 40px 80px -34px var(--vlp-shadow), 0 0 60px -30px var(--vlp-accent);
+    animation: v-float 7s ease-in-out 2s infinite;
+}
+@keyframes v-float { 50% { translate: 0 -12px; } }
+.vlp .vlp__wl-rail b { background: var(--v-grad); color: #fff; }
+.vlp .vlp__wl-rail-icon--active { background: color-mix(in srgb, var(--vlp-accent) 22%, transparent); color: var(--vlp-green); }
+.vlp .vlp__wl-row { transition: background 0.25s, translate 0.25s var(--vlp-ease); }
+.vlp .vlp__wl-row:hover { background: var(--vlp-soft); translate: calc(3px * var(--d)) 0; }
+.vlp .vlp__wl-dot { animation: v-beat 1.6s ease-in-out infinite; }
+.vlp .vlp__wl-status--progress { box-shadow: 0 0 0 0 color-mix(in srgb, var(--vlp-info) 50%, transparent); animation: v-ping-info 2.2s ease-out infinite; }
+@keyframes v-ping-info { to { box-shadow: 0 0 0 9px transparent; } }
+
+/* ── Modality marquee ── */
+.vlp .vlp__marquee { mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
+.vlp .vlp__marquee-caption { letter-spacing: 0.04em; color: var(--vlp-muted); }
+.vlp .vlp__modality {
+    background: var(--v-glass);
+    border: 1px solid var(--vlp-line);
+    border-radius: 999px;
+    transition: border-color 0.25s, color 0.25s, translate 0.25s var(--vlp-ease);
+}
+.vlp .vlp__modality b { background: var(--v-grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.vlp .vlp__modality:hover { border-color: var(--vlp-accent); translate: 0 -3px; }
+
+/* ── Metrics ── */
+.vlp .vlp__metric-card,.vlp  .vlp__feature-card,.vlp  .vlp__faq-item {
+    background:
+        radial-gradient(280px circle at var(--mx, 50%) var(--my, 0%), color-mix(in srgb, var(--tone, var(--vlp-accent)) 18%, transparent), transparent 65%),
+        var(--vlp-paper);
+    border: 1px solid var(--vlp-line);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 20px 44px -30px var(--vlp-shadow);
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+.vlp .vlp__metric-card:hover,.vlp  .vlp__feature-card:hover {
+    border-color: color-mix(in srgb, var(--tone, var(--vlp-accent)) 60%, var(--vlp-line));
+    box-shadow: 0 28px 56px -28px color-mix(in srgb, var(--tone, var(--vlp-accent)) 55%, transparent);
+}
+.vlp .vlp__metric-icon {
+    background: var(--v-grad);
+    color: #fff;
+    box-shadow: 0 10px 20px -10px var(--vlp-cyan);
+}
+.vlp .vlp__metric-val {
+    background: var(--v-grad);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* ── Section headings ── */
+.vlp .vlp__section-head h2 { letter-spacing: -0.01em; }
+.vlp .vlp__section-head h2 .vlp__word-in {
+    background: linear-gradient(180deg, var(--vlp-ink) 55%, color-mix(in srgb, var(--vlp-green) 70%, var(--vlp-ink)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* ── Features ── */
+.vlp .vlp__feature-card[data-tone='teal'] { --tone: #12b8a0; }
+.vlp .vlp__feature-card[data-tone='violet'] { --tone: var(--v-violet); }
+.vlp .vlp__feature-card[data-tone='cyan'] { --tone: #0ea5c6; }
+.vlp .vlp__feature-icon {
+    color: #fff;
+    background: linear-gradient(140deg, var(--tone), color-mix(in srgb, var(--tone) 55%, #04252c));
+    box-shadow: 0 14px 26px -12px var(--tone), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.vlp .vlp__mini-line { background: linear-gradient(90deg, var(--vlp-line), var(--tone), var(--vlp-line)); }
+.vlp .vlp__mini-pulse { background: var(--tone); box-shadow: 0 0 14px var(--tone); }
+.vlp .vlp__mini-node { background: var(--vlp-paper); border: 2px solid var(--tone); animation: v-node 2.8s ease-in-out infinite; animation-delay: calc(var(--i) * 0.35s); }
+@keyframes v-node { 50% { scale: 1.35; background: var(--tone); } }
+.vlp .vlp__role,.vlp  .vlp__pill { border: 1px solid var(--vlp-line); background: var(--vlp-soft); transition: translate 0.25s var(--vlp-ease), border-color 0.25s; }
+.vlp .vlp__role:hover { translate: 0 -3px; border-color: var(--tone); }
+.vlp .vlp__mini-bar i { background: var(--v-grad); animation: v-fill 3.6s var(--vlp-ease) infinite alternate; }
+@keyframes v-fill { from { scale: 0.45 1; } to { scale: 1 1; } }
+.vlp .vlp__mini-bar i { transform-origin: inline-start; transform-origin: left; }
+.vlp[dir='rtl'] .vlp__mini-bar i { transform-origin: right; }
+
+/* ── Workflow ── */
+.vlp .vlp__flow-fill { background: var(--v-grad); box-shadow: 0 0 16px var(--vlp-accent); }
+.vlp .vlp__step-node {
+    background: var(--vlp-paper);
+    color: var(--vlp-green);
+    border: 1px solid color-mix(in srgb, var(--vlp-accent) 45%, var(--vlp-line));
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--vlp-accent) 10%, transparent), 0 16px 30px -16px var(--vlp-accent);
+    transition: scale 0.3s var(--vlp-ease), background 0.3s, color 0.3s;
+}
+.vlp .vlp__step:hover .vlp__step-node { scale: 1.1; background: var(--v-grad); color: #fff; }
+.vlp .vlp__step-node em {
+    background: var(--v-grad);
+    color: #fff;
+    font-style: normal;
+}
+.vlp .vlp__step-text h3 { transition: color 0.25s; }
+.vlp .vlp__step:hover .vlp__step-text h3 { color: var(--vlp-green); }
+
+/* ── FAQ ── */
+.vlp .vlp__faq-item--open {
+    border-color: color-mix(in srgb, var(--vlp-accent) 60%, var(--vlp-line));
+    box-shadow: 0 24px 50px -30px var(--vlp-accent);
+}
+.vlp .vlp__faq-trigger { transition: color 0.25s; }
+.vlp .vlp__faq-trigger:hover { color: var(--vlp-green); }
+.vlp .vlp__faq-num { background: var(--v-grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; }
+.vlp .vlp__faq-icon { transition: rotate 0.35s var(--vlp-ease), background 0.3s, color 0.3s; }
+.vlp .vlp__faq-item--open .vlp__faq-icon { rotate: 180deg; background: var(--v-grad); color: #fff; }
+
+/* ── Closing CTA ── */
+.vlp .vlp__cta-panel {
+    color: #fff;
+    background: linear-gradient(120deg, #04353a, #066067 38%, #0a7f9a 68%, #3b5fc9) 0 0 / 220% 100%;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 50px 100px -50px #0ea5c6;
+    animation: v-cta 14s ease-in-out infinite alternate;
+}
+@keyframes v-cta { to { background-position: 100% 0; } }
+.vlp .vlp__cta-aurora { background: radial-gradient(circle, rgba(94, 234, 212, 0.5), transparent 60%); animation: v-drift 12s ease-in-out infinite alternate; }
+.vlp .vlp__cta-grid { opacity: 0.25; mask-image: radial-gradient(ellipse at center, #000, transparent 75%); }
+.vlp .vlp__cta-copy h2,.vlp  .vlp__cta-copy p { color: #fff; }
+.vlp .vlp__ghost { border: 1px solid rgba(255, 255, 255, 0.35); color: #fff; background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(8px); transition: background 0.25s, border-color 0.25s; }
+.vlp .vlp__ghost:hover { background: rgba(255, 255, 255, 0.18); border-color: #fff; }
+
+/* ── Footer ── */
+.vlp .vlp__footer { border-top: 1px solid var(--vlp-line); background: var(--v-glass); backdrop-filter: blur(12px); }
+.vlp .vlp__footer-links a,.vlp  .vlp__footer-links button { transition: color 0.25s; }
+.vlp .vlp__footer-links a:hover,.vlp  .vlp__footer-links button:hover { color: var(--vlp-green); }
+
+/* ── Focus ── */
+.vlp :focus-visible { outline: 2px solid var(--vlp-accent); outline-offset: 3px; border-radius: 10px; }
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+    .vlp *, .vlp *::before, .vlp *::after { animation: none !important; transition-duration: 0.01ms !important; }
+}

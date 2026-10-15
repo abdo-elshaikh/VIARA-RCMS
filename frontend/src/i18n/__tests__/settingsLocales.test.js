@@ -29,8 +29,9 @@ const readLiteralTranslationKeys = () => {
     const keys = new Set();
     [SETTINGS_PAGE, ...collectSourceFiles(SETTINGS_COMPONENTS)].forEach(file => {
         const source = fs.readFileSync(file, 'utf8');
+        const namespace = source.match(/useTranslation\(\s*['"]([^'"]+)['"]/)?.[1] || 'settings';
         for (const match of source.matchAll(/\bt\(\s*['"]([^'"]+)['"]/g)) {
-            if (!match[1].includes(':')) keys.add(match[1]);
+            if (!match[1].includes(':')) keys.add(`${namespace}:${match[1]}`);
         }
     });
     return [...keys];
@@ -48,8 +49,14 @@ describe('settings locale contract', () => {
 
     it('defines every literal translation used by the settings page and subpages', () => {
         const usedKeys = readLiteralTranslationKeys();
-        expect(usedKeys.filter(key => !hasKey(en, key))).toEqual([]);
-        expect(usedKeys.filter(key => !hasKey(ar, key))).toEqual([]);
+        for (const language of ['en', 'ar']) {
+            const missing = usedKeys.filter(reference => {
+                const [namespace, key] = reference.split(':');
+                const locale = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), `src/i18n/locales/${language}/${namespace}.json`), 'utf8'));
+                return !hasKey(locale, key);
+            });
+            expect(missing).toEqual([]);
+        }
     });
 
     it('defines dynamic language and AI provider labels in both locales', () => {

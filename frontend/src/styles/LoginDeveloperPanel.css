@@ -1,0 +1,46 @@
+/* Development-only account picker; the authentication card keeps its space. */
+.vlogin.vlogin--developer .vlogin__developer-panel {
+    grid-column: 1; grid-row: 1; align-self: center; justify-self: start;
+    width: 100%; max-width: 580px; min-width: 0; margin: 180px 0 70px;
+    padding: 20px; position: relative; z-index: 1;
+    border: 1px solid var(--vlp-line); border-radius: 20px;
+    background: color-mix(in srgb, var(--vlp-paper) 95%, transparent);
+    box-shadow: 0 14px 34px -24px rgba(0, 60, 44, .3); backdrop-filter: blur(16px);
+}
+.vlogin.vlogin--developer .vlogin__developer-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.vlogin.vlogin--developer .vlogin__developer-icon { display: grid; place-items: center; width: 42px; height: 42px; flex: none; border-radius: 12px; background: var(--vlp-soft); color: var(--vlp-green); }
+.vlogin.vlogin--developer .vlogin__developer-head > div { flex: 1; min-width: 0; }
+.vlogin.vlogin--developer .vlogin__developer-head h2 { margin: 0 0 3px; font-size: 16px; font-weight: 800; line-height: 1.5; color: var(--vlp-ink); }
+.vlogin.vlogin--developer .vlogin__developer-head p { margin: 0; font-size: 11px; line-height: 1.7; color: var(--vlp-muted); }
+.vlogin.vlogin--developer .vlogin__developer-badge { flex: none; padding: 5px 8px; border: 1px solid var(--vlp-line); border-radius: 7px; background: var(--vlp-soft); color: var(--vlp-green); font: 750 10px/1.3 system-ui, sans-serif; }
+.vlogin.vlogin--developer .vlogin__developer-controls { display: flex; align-items: stretch; gap: 10px; }
+.vlogin.vlogin--developer .vlogin__developer-select { display: block; flex: 1; min-width: 0; }
+.vlogin.vlogin--developer .vlogin__sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.vlogin.vlogin--developer .vlogin__developer-select select { width: 100%; min-width: 0; min-height: 44px; padding: 8px 10px; border: 1px solid var(--vlp-line); border-radius: 11px; background: var(--vlp-bg); color: var(--vlp-ink); font-size: 12px; font-weight: 600; line-height: 1.6; font-family: inherit; cursor: pointer; }
+.vlogin.vlogin--developer .vlogin__developer-fill { display: inline-flex; align-items: center; justify-content: center; gap: 7px; flex: none; min-height: 44px; padding: 10px 14px; border: 0; border-radius: 11px; background: var(--vlp-button); color: white; font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; }
+.vlogin.vlogin--developer .vlogin__developer-fill:hover:not(:disabled) { background: color-mix(in srgb, var(--vlp-button) 88%, #00a67c); }
+.vlogin.vlogin--developer .vlogin__developer-browse { display: flex; align-items: center; gap: 7px; min-height: 36px; margin-top: 10px; padding: 4px 0; border: 0; background: transparent; color: var(--vlp-green); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.vlogin.vlogin--developer .vlogin__developer-panel button:disabled,
+.vlogin.vlogin--developer .vlogin__developer-panel select:disabled { opacity: .6; cursor: wait; }
+@media (min-width: 901px) {
+    .vlogin.vlogin--developer .vlogin__benefits { display: none; }
+    .vlogin.vlogin--developer .vlogin__visual-title,
+    .vlogin.vlogin--developer[dir='ltr'] .vlogin__visual-title { font-size: clamp(28px, min(2.8vw, 5.5svh), 46px); }
+}
+@media (max-width: 1200px) {
+    .vlogin.vlogin--developer .vlogin__developer-panel { padding: 16px; margin-top: 190px; }
+    .vlogin.vlogin--developer .vlogin__developer-controls { flex-direction: column; gap: 8px; }
+}
+@media (max-width: 900px), (max-height: 500px) and (max-width: 1100px) {
+    .vlogin.vlogin--developer .vlogin__developer-panel { max-width: none; margin: 16px 0 0; padding: 20px; }
+    .vlogin.vlogin--developer .vlogin__developer-controls { flex-direction: row; }
+    .vlogin.vlogin--developer .vlogin__developer-select select { font-size: 16px; }
+}
+@media (max-width: 600px) {
+    .vlogin.vlogin--developer .vlogin__developer-panel { padding: 18px; border-radius: 18px; }
+    .vlogin.vlogin--developer .vlogin__developer-controls { flex-direction: column; }
+    .vlogin.vlogin--developer .vlogin__developer-head { gap: 9px; }
+    .vlogin.vlogin--developer .vlogin__developer-head h2 { font-size: 14px; }
+    .vlogin.vlogin--developer .vlogin__developer-icon { width: 36px; height: 36px; border-radius: 10px; }
+    .vlogin.vlogin--developer .vlogin__developer-browse { min-height: 44px; }
+}

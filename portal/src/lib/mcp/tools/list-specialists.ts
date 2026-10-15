@@ -34,7 +34,7 @@ const SPECIALISTS = [
 export const listSpecialistsTool = {
   name: "list_specialists",
   title: "List specialists",
-  description: "List the consultant radiologists at RCMS, optionally filtered by clinical focus.",
+  description: "List the consultant radiologists at VIARA, optionally filtered by clinical focus.",
   inputSchema: {
     focus: z
       .string()

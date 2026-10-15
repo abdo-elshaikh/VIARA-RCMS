@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS claim_status_history (
 CREATE INDEX IF NOT EXISTS idx_claim_status_history_claim
     ON claim_status_history(claim_id, changed_at DESC);
 
-CREATE OR REPLACE FUNCTION rcms_record_claim_status()
+CREATE OR REPLACE FUNCTION VIARA_record_claim_status()
 RETURNS TRIGGER AS $$
 BEGIN
     IF TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM NEW.status THEN
@@ -25,9 +25,9 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_claim_status_history ON insurance_claims;
 CREATE TRIGGER trg_claim_status_history
 AFTER INSERT OR UPDATE OF status ON insurance_claims
-FOR EACH ROW EXECUTE FUNCTION rcms_record_claim_status();
+FOR EACH ROW EXECUTE FUNCTION VIARA_record_claim_status();
 
-CREATE OR REPLACE FUNCTION rcms_protect_claim_status_history()
+CREATE OR REPLACE FUNCTION VIARA_protect_claim_status_history()
 RETURNS TRIGGER AS $$
 BEGIN
     RAISE EXCEPTION 'claim status history is append-only';
@@ -37,4 +37,4 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_claim_status_history_append_only ON claim_status_history;
 CREATE TRIGGER trg_claim_status_history_append_only
 BEFORE UPDATE OR DELETE ON claim_status_history
-FOR EACH ROW EXECUTE FUNCTION rcms_protect_claim_status_history();
+FOR EACH ROW EXECUTE FUNCTION VIARA_protect_claim_status_history();

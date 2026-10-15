@@ -1,0 +1,116 @@
+# Example Prometheus Alerting Rules for VIARA
+# Save to: /etc/prometheus/rules/VIARA-alerts.yml
+# Load via Prometheus server configuration.
+#
+# Requires the backend `/metrics` endpoint to be scraped by Prometheus.
+
+groups:
+  - name: VIARA.health
+    rules:
+      # Alert when the application is not ready to accept traffic
+      - alert: VIARA_NotReady
+        expr: probe_success{job="VIARA-health"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "VIARA readiness probe failed"
+          description: "The /health/ready endpoint has been returning 503 for more than 2 minutes."
+
+      # Alert when 5xx error rate exceeds 5% for 5 minutes
+      - alert: VIARA_HighErrorRate
+        expr: |
+          sum(rate(VIARA_http_requests_total{status=~"5.."}[5m])) by (instance)
+            /
+          clamp_min(sum(rate(VIARA_http_requests_total[5m])) by (instance), 1e-9) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "VIARA 5xx error rate above 5%"
+          description: "{{ $value | humanizePercentage }} of requests are returning 5xx errors."
+
+  - name: VIARA.backup
+    rules:
+      # Alert when no successful backup has been recorded in 24 hours.
+      # VIARA_db_backup_completed is a Unix-seconds gauge set by the backup
+      # scheduler (src/services/backupScheduler.js via src/config/metrics.js).
+      - alert: VIARA_NoBackup
+        expr: time() - VIARA_db_backup_completed > 86400
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "VIARA backup overdue"
+          description: "No successful backup has been completed in the last 24 hours."
+
+      # Alert when backup size drops to 0 (possible empty/corrupt backup)
+      - alert: VIARA_EmptyBackup
+        expr: VIARA_db_backup_size_bytes == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "VIARA backup size is zero"
+          description: "The most recent backup has a size of 0 bytes, indicating a possible corruption."
+
+  - name: VIARA.resources
+    rules:
+      # pg pool saturation: clients waiting for a connection
+      - alert: VIARA_DbPoolWaiting
+        expr: VIARA_db_pool_waiting_clients > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "VIARA DB pool has waiting clients"
+          description: "{{ $value }} clients have been waiting for a PostgreSQL pool connection."
+
+      # Pool utilization above 80% of max (default pool max is 20)
+      - alert: VIARA_HighPoolUtilization
+        expr: VIARA_db_pool_connections > 16
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "VIARA DB pool utilization high"
+          description: "{{ $value }} of 20 pool connections are open for more than 5 minutes."
+
+      # In-flight HTTP requests
+      - alert: VIARA_HighRequestConcurrency
+        expr: VIARA_http_requests_active > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "VIARA high in-flight request count"
+          description: "{{ $value }} in-flight HTTP requests sustained for 5 minutes."
+
+      # Event loop stalls (default-metrics based)
+      - alert: VIARA_EventLoopLag
+        expr: VIARA_nodejs_eventloop_lag_seconds > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "VIARA Node.js event loop lag above 1s"
+          description: "Event loop lag is {{ $value | humanizeDuration }} — the process is blocking for too long."
+
+# ---
+# Log-based alerting (alternative to Prometheus)
+# Configure in your log aggregation platform (Datadog, CloudWatch, ELK, etc.):
+#
+# Alert Name: VIARA Critical Error
+# Condition:  count(logs).level:"error" OR logs.level:"critical" > 0
+# Window:     5 minutes
+# Message:    "Critical error detected in VIARA backend. Check logs for details."
+#
+# Alert Name: VIARA Backup Failed
+# Condition:  message:"Scheduled PostgreSQL backup failed"
+# Window:     10 minutes
+# Message:    "Automated backup failed. Check backup scheduler logs."
+#
+# Alert Name: VIARA Readiness Failed
+# Condition:  HTTP check on /health/ready returns 503
+# Window:     2 consecutive checks (1 minute interval)
+# Message:    "VIARA is not ready to accept traffic."

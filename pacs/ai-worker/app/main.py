@@ -25,7 +25,7 @@ from .schemas import (
 from .security import authorization_header, authorize_request
 
 
-logger = logging.getLogger("rcms-pacs-ai")
+logger = logging.getLogger("VIARA-pacs-ai")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
@@ -50,7 +50,7 @@ def create_app(
         yield
 
     application = FastAPI(
-        title="RCMS PACS AI Worker",
+        title="VIARA PACS AI Worker",
         version="1.0.0",
         docs_url=None,
         redoc_url=None,
@@ -60,6 +60,13 @@ def create_app(
 
     def require_auth(authorization: str | None = Depends(authorization_header)) -> None:
         authorize_request(config, authorization)
+
+    @application.get("/health/live")
+    async def health_live():
+        # Unauthenticated liveness for container orchestrators: reports only
+        # that the process is up. No configuration details, no key needed, so
+        # healthchecks do not leak the worker credential via `docker inspect`.
+        return {"status": "ok"}
 
     @application.get("/health", dependencies=[Depends(require_auth)])
     async def health():
@@ -74,7 +81,7 @@ def create_app(
             )
         return {
             "status": "ok",
-            "service": "rcms-pacs-ai-worker",
+            "service": "VIARA-pacs-ai-worker",
             "model": config.model_id,
             "modelRevision": config.model_revision or "unpinned",
             "backend": config.model_backend,
@@ -95,7 +102,7 @@ def create_app(
             provider={
                 "medgemma": "google-health",
                 "torchxrayvision": "mlmed",
-            }.get(config.model_backend, "rcms"),
+            }.get(config.model_backend, "VIARA"),
             name=config.model_id,
             revision=config.model_revision or "unpinned",
             backend=config.model_backend,

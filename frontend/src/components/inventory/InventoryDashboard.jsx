@@ -22,43 +22,16 @@ const InventoryDashboard = () => {
     const loading = inventoryLoading || alertsLoading || movementsLoading;
     const hasError = inventoryError || alertsError || movementsError;
 
-    const refreshAll = () => {
-        refetchInventory();
-        refetchAlerts();
-        refetchMovements();
-    };
-
     const formatDate = value => value ? new Date(value).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
     const formatDateTime = value => value ? new Date(value).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' }) : '—';
 
     return (
         <div className="space-y-6">
-            {/* Header Refresh Control */}
-            <div className="flex justify-end">
-                <button
-                    type="button"
-                    onClick={refreshAll}
-                    disabled={loading}
-                    className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
-                >
-                    <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-                    {copy('refresh')}
-                </button>
-            </div>
-
             {hasError && (
                 <div role="alert" className="rounded-2xl border border-rose-300/80 bg-rose-50/90 p-4 text-xs font-bold text-rose-900 shadow-sm dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
                     {copy('partialError')}
                 </div>
             )}
-
-            {/* Executive KPI Signals */}
-            <section className="grid grid-cols-2 gap-4 xl:grid-cols-4" aria-label={copy('summaryLabel')}>
-                <Metric icon={AlertTriangle} label={copy('lowStock')} value={lowStockItems.length} tone="rose" loading={inventoryLoading} trend={lowStockItems.length > 0 ? 'Action Req' : 'Optimal'} />
-                <Metric icon={Clock} label={copy('expiring')} value={alerts.length} tone="amber" loading={alertsLoading} trend={expiredCount > 0 ? `${expiredCount} Expired` : 'Monitored'} />
-                <Metric icon={Package} label={copy('catalogItems')} value={inventory.length} tone="blue" loading={inventoryLoading} trend="Total SKUs" />
-                <Metric icon={TrendingUp} label={copy('movementsToday')} value={movementToday} tone="emerald" loading={movementsLoading} trend="Daily Velocity" />
-            </section>
 
             {/* Low Stock & Expiry Panels */}
             <div className="grid items-start gap-6 xl:grid-cols-2">
@@ -99,11 +72,10 @@ const InventoryDashboard = () => {
                                 return (
                                     <article
                                         key={alert.batch_id}
-                                        className={`rounded-2xl border p-4 transition-colors ${
-                                            expired
+                                        className={`rounded-2xl border p-4 transition-colors ${expired
                                                 ? 'border-rose-200/80 bg-rose-50/70 dark:border-rose-500/20 dark:bg-rose-950/20'
                                                 : 'border-amber-200/80 bg-amber-50/60 dark:border-amber-500/20 dark:bg-amber-950/20'
-                                        }`}
+                                            }`}
                                     >
                                         <div className="flex items-start justify-between gap-3">
                                             <div>
@@ -112,11 +84,10 @@ const InventoryDashboard = () => {
                                                     {alert.lot_number || copy('noLot')} · {alert.quantity} {alert.unit || copy('units')}
                                                 </p>
                                             </div>
-                                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${
-                                                expired
+                                            <span className={`rounded-full px-2.5 py-1 text-[10px] font-black ${expired
                                                     ? 'bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-300'
                                                     : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'
-                                            }`}>
+                                                }`}>
                                                 {expired ? copy('expired') : formatDate(alert.expiry_date)}
                                             </span>
                                         </div>

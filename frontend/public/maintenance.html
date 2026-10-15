@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>صيانة النظام | System Maintenance – VIARA</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --blue-dark:   #0a3d6b;
+      --blue-mid:    #1565c0;
+      --blue-light:  #e8f0fe;
+      --blue-accent: #2196f3;
+      --white:       #ffffff;
+      --grey-light:  #f4f6f9;
+      --grey-text:   #5c6b7a;
+      --border:      #d0dce8;
+    }
+
+    html, body {
+      height: 100%;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      background: var(--grey-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+
+    .card {
+      background: var(--white);
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(10, 61, 107, 0.12);
+      max-width: 640px;
+      width: 100%;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    /* ── Header bar ── */
+    .header {
+      background: linear-gradient(135deg, var(--blue-dark) 0%, var(--blue-mid) 100%);
+      padding: 2rem 2.5rem 1.75rem;
+      text-align: center;
+    }
+
+    .logo-area {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    /* Medical cross icon — SVG inline, no network request */
+    .logo-icon {
+      width: 44px;
+      height: 44px;
+      flex-shrink: 0;
+    }
+
+    .logo-text {
+      font-size: 1.9rem;
+      font-weight: 700;
+      color: var(--white);
+      letter-spacing: 0.08em;
+    }
+
+    .tagline {
+      font-size: 0.82rem;
+      color: rgba(255, 255, 255, 0.75);
+      letter-spacing: 0.04em;
+      direction: ltr;
+    }
+
+    /* ── Spinner ── */
+    .spinner-wrap {
+      display: flex;
+      justify-content: center;
+      margin: 2rem 0 1.5rem;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .spinner {
+      width: 56px;
+      height: 56px;
+      border: 5px solid var(--blue-light);
+      border-top-color: var(--blue-accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    /* ── Body content ── */
+    .body {
+      padding: 0 2.5rem 2.5rem;
+    }
+
+    /* Arabic block (RTL) */
+    .msg-ar {
+      direction: rtl;
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .msg-ar h1 {
+      font-size: 1.45rem;
+      font-weight: 700;
+      color: var(--blue-dark);
+      margin-bottom: 0.6rem;
+    }
+
+    .msg-ar p {
+      font-size: 1rem;
+      color: var(--grey-text);
+      line-height: 1.7;
+    }
+
+    /* Divider */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 1.25rem 0;
+      color: var(--border);
+    }
+
+    .divider::before,
+    .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .divider span {
+      font-size: 0.78rem;
+      color: #aab4be;
+      white-space: nowrap;
+    }
+
+    /* English block (LTR) */
+    .msg-en {
+      direction: ltr;
+      text-align: center;
+      margin-bottom: 1.75rem;
+    }
+
+    .msg-en h2 {
+      font-size: 1.15rem;
+      font-weight: 600;
+      color: var(--blue-dark);
+      margin-bottom: 0.5rem;
+    }
+
+    .msg-en p {
+      font-size: 0.92rem;
+      color: var(--grey-text);
+      line-height: 1.6;
+    }
+
+    /* Status badge */
+    .status-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      background: var(--blue-light);
+      border: 1px solid #c3d8f5;
+      border-radius: 8px;
+      padding: 0.65rem 1rem;
+      font-size: 0.85rem;
+      color: var(--blue-mid);
+      direction: ltr;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--blue-accent);
+      flex-shrink: 0;
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    /* ── Footer ── */
+    .footer {
+      background: var(--grey-light);
+      border-top: 1px solid var(--border);
+      padding: 0.85rem 2.5rem;
+      text-align: center;
+      font-size: 0.75rem;
+      color: #9aa8b5;
+      direction: ltr;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 480px) {
+      .header { padding: 1.5rem 1.25rem 1.25rem; }
+      .body   { padding: 0 1.25rem 1.75rem; }
+      .footer { padding: 0.75rem 1.25rem; }
+      .logo-text  { font-size: 1.5rem; }
+      .msg-ar h1  { font-size: 1.2rem; }
+      .msg-en h2  { font-size: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="logo-area">
+        <!-- Inline medical cross SVG — zero network requests -->
+        <svg class="logo-icon" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <rect width="44" height="44" rx="10" fill="rgba(255,255,255,0.15)"/>
+          <rect x="18" y="8"  width="8" height="28" rx="3" fill="white"/>
+          <rect x="8"  y="18" width="28" height="8"  rx="3" fill="white"/>
+        </svg>
+        <span class="logo-text">VIARA</span>
+      </div>
+      <div class="tagline">Radiology Center Management System</div>
+    </div>
+
+    <!-- Spinner -->
+    <div class="spinner-wrap" role="status" aria-label="جارٍ الصيانة">
+      <div class="spinner"></div>
+    </div>
+
+    <!-- Body -->
+    <div class="body">
+
+      <!-- Arabic message -->
+      <div class="msg-ar">
+        <h1>النظام قيد الصيانة</h1>
+        <p>النظام قيد الصيانة حالياً. نعتذر عن الإزعاج وسنعود قريباً.</p>
+      </div>
+
+      <div class="divider" aria-hidden="true"><span>✦</span></div>
+
+      <!-- English message -->
+      <div class="msg-en">
+        <h2>System Under Maintenance</h2>
+        <p>The system is currently under maintenance. We apologize for the inconvenience and will be back shortly.</p>
+      </div>
+
+      <!-- Status indicator -->
+      <div class="status-badge" role="status">
+        <span class="dot"></span>
+        Maintenance in progress — please check back soon
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      &copy; VIARA Radiology Center Management System
+    </div>
+
+  </div>
+
+</body>
+</html>

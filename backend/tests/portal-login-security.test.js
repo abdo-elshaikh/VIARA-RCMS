@@ -37,11 +37,12 @@ describe('portal login security', () => {
     });
 
     test.each([
+        ['globally inactive', { is_active: false, portal_password_hash: 'hash', portal_is_active: true }],
         ['unactivated', { portal_password_hash: null, portal_is_active: false }],
         ['inactive', { portal_password_hash: 'hash', portal_is_active: false }],
         ['locked', { portal_password_hash: 'hash', portal_is_active: true, portal_locked_until: '2999-01-01T00:00:00Z' }]
     ])('doctor %s account returns the same public error', async (_state, account) => {
-        const db = { query: jest.fn().mockResolvedValue({ rows: [{ doctor_id: 'doctor-1', ...account }] }) };
+        const db = { query: jest.fn().mockResolvedValue({ rows: [{ doctor_id: 'doctor-1', is_active: true, ...account }] }) };
         const next = jest.fn();
         bcrypt.compare.mockResolvedValue(true);
 
@@ -84,7 +85,7 @@ describe('portal login security', () => {
 
     test('wrong doctor password uses an atomic progressive lockout update', async () => {
         const doctor = {
-            doctor_id: 'doctor-1', portal_password_hash: 'hash', portal_is_active: true
+            doctor_id: 'doctor-1', is_active: true, portal_password_hash: 'hash', portal_is_active: true
         };
         const db = { query: jest.fn().mockResolvedValueOnce({ rows: [doctor] }).mockResolvedValueOnce({ rows: [] }) };
         const next = jest.fn();
@@ -100,7 +101,7 @@ describe('portal login security', () => {
 
     test('successful doctor login resets lockout state', async () => {
         const doctor = {
-            doctor_id: 'doctor-1', portal_password_hash: 'hash', portal_is_active: true,
+            doctor_id: 'doctor-1', is_active: true, portal_password_hash: 'hash', portal_is_active: true,
             full_name: 'Doctor', email: 'doctor@example.test'
         };
         const db = { query: jest.fn().mockResolvedValueOnce({ rows: [doctor] }).mockResolvedValueOnce({ rows: [] }) };
@@ -113,6 +114,7 @@ describe('portal login security', () => {
         expect(db.query.mock.calls[1][0]).toContain('portal_failed_login_attempts = 0');
         expect(db.query.mock.calls[1][0]).toContain('portal_locked_until = NULL');
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ token: 'token' }));
+        expect(res.cookie).toHaveBeenCalledWith('portalRefreshToken', 'refresh', expect.objectContaining({ path: '/api/portal', httpOnly: true }));
     });
 
     test('successful patient login resets lockout state', async () => {
@@ -130,5 +132,6 @@ describe('portal login security', () => {
         expect(db.query.mock.calls[1][0]).toContain('portal_failed_login_attempts = 0');
         expect(db.query.mock.calls[1][0]).toContain('portal_locked_until = NULL');
         expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ token: 'token' }));
+        expect(res.cookie).toHaveBeenCalledWith('portalRefreshToken', 'refresh', expect.objectContaining({ path: '/api/portal', httpOnly: true }));
     });
 });

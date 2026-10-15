@@ -51,7 +51,7 @@ export const listServicesTool = {
   name: "list_services",
   title: "List diagnostic services",
   description:
-    "List the diagnostic imaging services offered by the RCMS radiology center, optionally filtered by category.",
+    "List the diagnostic imaging services offered by the VIARA radiology center, optionally filtered by category.",
   inputSchema: {
     category: z
       .string()

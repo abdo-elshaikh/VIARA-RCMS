@@ -1,4 +1,6 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import {
     Activity,
     AlertTriangle,
@@ -13,12 +15,15 @@ import {
     Banknote,
     Search,
     MapPin,
-    Award
+    Award,
+    ExternalLink
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import toast from 'react-hot-toast';
 import { downloadAuthenticatedFile } from '../../utils/authenticatedFetch';
 import { useGetReferralAnalyticsQuery } from '../../store/api';
+import { selectCurrentUser } from '../../store/authSlice';
+import { hasDeveloperOrAdminRole } from '../../utils/roles';
 
 const DAY = 24 * 60 * 60 * 1000;
 const isoDate = (date) => date.toISOString().split('T')[0];
@@ -30,6 +35,12 @@ const formatMetric = (value, formatter, suffix = '') => {
 
 const ReferralsTab = () => {
     const { t, i18n } = useTranslation('admin');
+    const navigate = useNavigate();
+    const user = useSelector(selectCurrentUser);
+    const hasSystemRole = hasDeveloperOrAdminRole(user?.role);
+    const canAccessDoctorDetail = hasSystemRole || ['Receptionist', 'Admin', 'Accountant'].includes(user?.role);
+
+    const isArabic = i18n.language?.startsWith('ar');
     const [startDate, setStartDate] = useState(isoDate(new Date(Date.now() - 30 * DAY)));
     const [endDate, setEndDate] = useState(isoDate(new Date()));
     const [tableSearch, setTableSearch] = useState('');
@@ -38,13 +49,16 @@ const ReferralsTab = () => {
     const dateInvalid = Boolean(startDate && endDate && startDate > endDate);
     const { data, isLoading, isError, refetch } = useGetReferralAnalyticsQuery(query, { skip: dateInvalid });
 
-    const locale = i18n.language === 'ar' ? 'ar-EG' : 'en-US';
+    const locale = isArabic ? 'ar-EG' : 'en-EG';
     const number = useMemo(() => new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }), [locale]);
-    const money = useMemo(() => new Intl.NumberFormat(locale, {
-        style: 'currency',
-        currency: 'USD',
-        maximumFractionDigits: 0
-    }), [locale]);
+    const formatMoney = (val) => {
+        const formatted = new Intl.NumberFormat(locale, {
+            style: 'currency',
+            currency: 'EGP',
+            maximumFractionDigits: 0
+        }).format(Number(val || 0));
+        return formatted.replace(/\s+/g, '\u00A0');
+    };
 
     const setPreset = (days) => {
         setEndDate(isoDate(new Date()));
@@ -53,7 +67,7 @@ const ReferralsTab = () => {
 
     const handleExport = async () => {
         if (dateInvalid) return;
-        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+        const baseUrl = import.meta.env.VITE_API_URL || '/api';
         const params = new URLSearchParams({ type: 'referrals', startDate, endDate });
         try {
             await downloadAuthenticatedFile(`${baseUrl}/analytics/export?${params.toString()}`, 'referral-analytics.csv');
@@ -81,33 +95,33 @@ const ReferralsTab = () => {
         {
             key: 'total_referrals',
             icon: Users,
-            label: t('analytics.kpis.totalReferrals', 'Total Referrals'),
+            label: isArabic ? 'إجمالي الإحالات' : t('analytics.kpis.totalReferrals', 'Total Referrals'),
             value: formatMetric(totalReferrals, number),
-            note: t('analytics.kpis.totalReferralsNote', 'Exams sourced from doctors'),
+            note: isArabic ? 'فحوصات من شبكة الأطباء' : t('analytics.kpis.totalReferralsNote', 'Exams sourced from doctors'),
             tone: 'blue'
         },
         {
             key: 'total_revenue',
             icon: Banknote,
-            label: t('analytics.kpis.totalRevenue', 'Total Revenue'),
-            value: money.format(totalReferralRevenue),
-            note: t('analytics.kpis.totalRevenueNote', 'Generated from referrals'),
+            label: isArabic ? 'إجمالي إيراد الإحالات' : t('analytics.kpis.totalRevenue', 'Total Revenue'),
+            value: formatMoney(totalReferralRevenue),
+            note: isArabic ? 'عوائد محققة من الإحالات' : t('analytics.kpis.totalRevenueNote', 'Generated from referrals'),
             tone: 'emerald'
         },
         {
             key: 'top_doctor',
             icon: Stethoscope,
-            label: t('analytics.kpis.topDoctor', 'Top Referring Doctor'),
+            label: isArabic ? 'أعلى طبيب محيل' : t('analytics.kpis.topDoctor', 'Top Referring Doctor'),
             value: topDoctor ? topDoctor.doctorName : '—',
-            note: topDoctor ? `${money.format(topDoctor.totalRevenue)} generated` : t('analytics.kpis.noData', 'No data available'),
+            note: topDoctor ? `${formatMoney(topDoctor.totalRevenue)} ${isArabic ? 'إيراد' : 'generated'}` : (isArabic ? 'لا توجد بيانات' : t('analytics.kpis.noData', 'No data available')),
             tone: 'cyan'
         },
         {
             key: 'best_channel',
             icon: TrendingUp,
-            label: t('analytics.kpis.bestChannel', 'Top Acquisition Channel'),
+            label: isArabic ? 'أعلى قناة استقطاب' : t('analytics.kpis.bestChannel', 'Top Acquisition Channel'),
             value: bestChannel ? bestChannel.label : '—',
-            note: bestChannel ? `${number.format(bestChannel.value)} bookings` : t('analytics.kpis.noData', 'No data available'),
+            note: bestChannel ? `${number.format(bestChannel.value)} ${isArabic ? 'حجز' : 'bookings'}` : (isArabic ? 'لا توجد بيانات' : t('analytics.kpis.noData', 'No data available')),
             tone: 'slate'
         }
     ];
@@ -123,11 +137,11 @@ const ReferralsTab = () => {
                         </div>
                         <div className="flex flex-1 items-center gap-2">
                             <div className="flex-1 sm:flex-initial">
-                                <DateField label={t('analytics.startDate', 'Start Date')} value={startDate} onChange={setStartDate} />
+                                <DateField label={isArabic ? 'من تاريخ' : t('analytics.startDate', 'Start Date')} value={startDate} onChange={setStartDate} />
                             </div>
                             <span className="text-slate-300 dark:text-slate-600 font-bold">—</span>
                             <div className="flex-1 sm:flex-initial">
-                                <DateField label={t('analytics.endDate', 'End Date')} value={endDate} onChange={setEndDate} />
+                                <DateField label={isArabic ? 'إلى تاريخ' : t('analytics.endDate', 'End Date')} value={endDate} onChange={setEndDate} />
                             </div>
                         </div>
                     </div>
@@ -142,7 +156,7 @@ const ReferralsTab = () => {
                                     onClick={() => setPreset(days)}
                                     className="shrink-0 rounded-lg px-3 py-1.5 text-[10px] font-bold text-slate-600 transition hover:bg-white hover:text-slate-900 active:scale-95 dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-200"
                                 >
-                                    {t('analytics.lastDays', { count: days, defaultValue: `${days}d` })}
+                                    {isArabic ? `${days} يوم` : `${days}d`}
                                 </button>
                             ))}
                         </div>
@@ -155,7 +169,7 @@ const ReferralsTab = () => {
                             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-cyan-600 px-4 text-xs font-bold text-white shadow-sm hover:bg-cyan-500 disabled:opacity-50 transition active:scale-98"
                         >
                             <Download size={14} />
-                            <span>{t('analytics.actions.export', 'Export CSV')}</span>
+                            <span>{isArabic ? 'تصدير كـ CSV' : t('analytics.actions.export', 'Export CSV')}</span>
                         </button>
                     </div>
                 </div>
@@ -165,8 +179,8 @@ const ReferralsTab = () => {
                 <div role="alert" className="flex items-start gap-3 rounded-2xl border border-rose-200/60 dark:border-rose-900/40 bg-rose-50/50 dark:bg-rose-900/10 p-4 text-sm text-rose-900 dark:text-rose-200 shadow-sm">
                     <AlertTriangle className="mt-0.5 shrink-0 text-rose-500" size={18} aria-hidden="true" />
                     <div>
-                        <p className="font-bold">{t('analytics.invalidPeriod', 'Invalid Date Range')}</p>
-                        <p className="mt-0.5 text-rose-700 dark:text-rose-400">{t('analytics.invalidPeriodHelp', 'The start date must be before the end date.')}</p>
+                        <p className="font-bold">{isArabic ? 'نطاق زمني غير صالح' : t('analytics.invalidPeriod', 'Invalid Date Range')}</p>
+                        <p className="mt-0.5 text-rose-700 dark:text-rose-400">{isArabic ? 'يجب أن يكون تاريخ البدء قبل أو يساوي تاريخ الانتهاء.' : t('analytics.invalidPeriodHelp', 'The start date must be before the end date.')}</p>
                     </div>
                 </div>
             )}
@@ -174,11 +188,13 @@ const ReferralsTab = () => {
             {/* KPI Cards */}
             <section aria-labelledby="kpi-heading">
                 <div className="mb-3">
-                    <h2 id="kpi-heading" className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{t('analytics.overview', 'Overview')}</h2>
+                    <h2 id="kpi-heading" className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                        {isArabic ? 'نظرة عامة على المؤشرات' : t('analytics.overview', 'Overview')}
+                    </h2>
                 </div>
 
                 {isError ? (
-                    <ErrorState label={t('analytics.error', 'Failed to load data')} onRetry={refetch} t={t} />
+                    <ErrorState label={isArabic ? 'فشل تحميل البيانات' : t('analytics.error', 'Failed to load data')} onRetry={refetch} t={t} isArabic={isArabic} />
                 ) : (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                         {kpis.map((item) => <MetricCard key={item.key} {...item} loading={isLoading} />)}
@@ -196,13 +212,17 @@ const ReferralsTab = () => {
                                 <PieChartIcon size={18} aria-hidden="true" />
                             </span>
                             <div>
-                                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('analytics.channelsTitle', 'Acquisition Channels')}</h2>
-                                <p className="text-[10px] text-slate-400">{t('analytics.channelsDesc', 'Where patients book from')}</p>
+                                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                                    {isArabic ? 'قنوات استقطاب وحجز المرضى' : t('analytics.channelsTitle', 'Acquisition Channels')}
+                                </h2>
+                                <p className="text-[10px] text-slate-400">
+                                    {isArabic ? 'توزيع الحجوزات حسب المصدر' : t('analytics.channelsDesc', 'Where patients book from')}
+                                </p>
                             </div>
                         </div>
                     </div>
                     <div className="p-5 flex-1">
-                        {isLoading ? <ChartSkeleton label={t('analytics.states.loading', 'Loading')} /> : isError ? <ErrorState label={t('analytics.states.error', 'Error')} onRetry={refetch} t={t} /> : sourcesData.length === 0 ? <EmptyChart label={t('analytics.states.noData', 'No Data')} /> : (
+                        {isLoading ? <ChartSkeleton label={isArabic ? 'جاري التحميل...' : 'Loading'} /> : isError ? <ErrorState label={isArabic ? 'خطأ في التحميل' : 'Error'} onRetry={refetch} t={t} isArabic={isArabic} /> : sourcesData.length === 0 ? <EmptyChart label={isArabic ? 'لا توجد بيانات' : 'No Data'} /> : (
                             <AcquisitionChannelsBreakdown data={sourcesData} t={t} />
                         )}
                     </div>
@@ -216,14 +236,25 @@ const ReferralsTab = () => {
                                 <BarChart3 size={18} aria-hidden="true" />
                             </span>
                             <div>
-                                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('analytics.doctorsTitle', 'Top Referring Doctors')}</h2>
-                                <p className="text-[10px] text-slate-400">{t('analytics.doctorsDesc', 'By total revenue generated')}</p>
+                                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                                    {isArabic ? 'قائمة أعلى الأطباء المحيلين' : t('analytics.doctorsTitle', 'Top Referring Doctors')}
+                                </h2>
+                                <p className="text-[10px] text-slate-400">
+                                    {isArabic ? 'مرتبين حسب إجمالي الإيراد المحقق' : t('analytics.doctorsDesc', 'By total revenue generated')}
+                                </p>
                             </div>
                         </div>
                     </div>
                     <div className="p-5 flex-1">
-                        {isLoading ? <ChartSkeleton label={t('analytics.states.loading', 'Loading')} /> : isError ? <ErrorState label={t('analytics.states.error', 'Error')} onRetry={refetch} t={t} /> : doctorsData.length === 0 ? <EmptyChart label={t('analytics.states.noData', 'No Data')} /> : (
-                            <TopDoctorsLeaderboard data={doctorsData} money={money} t={t} />
+                        {isLoading ? <ChartSkeleton label={isArabic ? 'جاري التحميل...' : 'Loading'} /> : isError ? <ErrorState label={isArabic ? 'خطأ في التحميل' : 'Error'} onRetry={refetch} t={t} isArabic={isArabic} /> : doctorsData.length === 0 ? <EmptyChart label={isArabic ? 'لا توجد بيانات' : 'No Data'} /> : (
+                            <TopDoctorsLeaderboard
+                                data={doctorsData}
+                                formatMoney={formatMoney}
+                                t={t}
+                                isArabic={isArabic}
+                                canAccessDoctorDetail={canAccessDoctorDetail}
+                                onViewDoctor={(id) => navigate(`/referring-doctors/${id}`)}
+                            />
                         )}
                     </div>
                 </section>
@@ -238,8 +269,12 @@ const ReferralsTab = () => {
                                 <Users size={18} aria-hidden="true" />
                             </span>
                             <div>
-                                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">{t('analytics.allDoctorsTitle', 'Referrer Performance')}</h2>
-                                <p className="text-[10px] text-slate-400">{t('analytics.allDoctorsDesc', 'Detailed breakdown of referring physicians')}</p>
+                                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                                    {isArabic ? 'تفاصيل أداء الأطباء المحيلين' : t('analytics.allDoctorsTitle', 'Referrer Performance')}
+                                </h2>
+                                <p className="text-[10px] text-slate-400">
+                                    {isArabic ? 'جدول تفصيلي يوضح أداء كل طبيب وعيادته' : t('analytics.allDoctorsDesc', 'Detailed breakdown of referring physicians')}
+                                </p>
                             </div>
                         </div>
 
@@ -248,10 +283,10 @@ const ReferralsTab = () => {
                             <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
                             <input
                                 type="text"
-                                placeholder="Search by doctor or clinic..."
+                                placeholder={isArabic ? 'بحث باسم الطبيب أو العيادة...' : 'Search by doctor or clinic...'}
                                 value={tableSearch}
                                 onChange={(e) => setTableSearch(e.target.value)}
-                                className="h-9 w-60 rounded-xl border border-slate-200 bg-white ps-8 pe-4 text-xs outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
+                                className="h-9 w-64 rounded-xl border border-slate-200 bg-white ps-8 pe-4 text-xs outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/10 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
                             />
                         </div>
                     </div>
@@ -260,23 +295,30 @@ const ReferralsTab = () => {
                         <table className="w-full table-auto text-start text-xs">
                             <thead className="border-b border-slate-100 bg-slate-50/60 dark:border-slate-850 dark:bg-slate-900/40">
                                 <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                    <th className="px-6 py-4 text-slate-500 text-start">Doctor Name</th>
-                                    <th className="px-6 py-4 text-slate-500 text-start">Clinic / Hospital</th>
-                                    <th className="px-6 py-4 text-slate-500 text-end">Total Referrals</th>
-                                    <th className="px-6 py-4 text-slate-500 text-end">Revenue Generated</th>
+                                    <th className="px-6 py-4 text-slate-500 text-start">{isArabic ? 'اسم الطبيب' : 'Doctor Name'}</th>
+                                    <th className="px-6 py-4 text-slate-500 text-start">{isArabic ? 'العيادة / المستشفى' : 'Clinic / Hospital'}</th>
+                                    <th className="px-6 py-4 text-slate-500 text-end">{isArabic ? 'إجمالي الإحالات' : 'Total Referrals'}</th>
+                                    <th className="px-6 py-4 text-slate-500 text-end">{isArabic ? 'الإيراد المحقق' : 'Revenue Generated'}</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
                                 {filteredDoctorsTable.length === 0 ? (
                                     <tr>
-                                        <td colSpan={4} className="p-8 text-center text-slate-400 font-medium">No referring doctors found matching criteria.</td>
+                                        <td colSpan={4} className="p-8 text-center text-slate-400 font-medium">
+                                            {isArabic ? 'لم يتم العثور على أطباء إحالة مطابقين للبحث.' : 'No referring doctors found matching criteria.'}
+                                        </td>
                                     </tr>
                                 ) : filteredDoctorsTable.map((doc, idx) => {
                                     const isTopReferrer = idx === 0 && doc.totalExams > 3;
                                     const initials = doc.doctorName ? doc.doctorName.replace(/^(dr|mr|ms|mrs)\.?\s+/i, '').slice(0, 2).toUpperCase() : 'DR';
+                                    const isClickable = canAccessDoctorDetail && doc.doctorId;
 
                                     return (
-                                        <tr key={idx} className="transition-colors hover:bg-slate-50/40 dark:hover:bg-slate-800/20">
+                                        <tr
+                                            key={idx}
+                                            onClick={() => isClickable && navigate(`/referring-doctors/${doc.doctorId}`)}
+                                            className={`transition-colors ${isClickable ? 'cursor-pointer hover:bg-cyan-50/40 dark:hover:bg-cyan-950/20' : 'hover:bg-slate-50/40 dark:hover:bg-slate-800/20'}`}
+                                        >
                                             <td className="px-6 py-3.5">
                                                 <div className="flex items-center gap-3">
                                                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-cyan-50 text-[10px] font-bold text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-400">
@@ -284,11 +326,16 @@ const ReferralsTab = () => {
                                                     </div>
                                                     <div>
                                                         <div className="flex items-center gap-2">
-                                                            <span className="font-semibold text-slate-900 dark:text-slate-100">{doc.doctorName}</span>
+                                                            <span className={`font-semibold ${isClickable ? 'text-cyan-700 hover:underline dark:text-cyan-400' : 'text-slate-900 dark:text-slate-100'}`}>
+                                                                {doc.doctorName}
+                                                            </span>
+                                                            {isClickable && (
+                                                                <ExternalLink size={11} className="text-cyan-500 opacity-60" />
+                                                            )}
                                                             {isTopReferrer && (
                                                                 <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-black text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
                                                                     <Award size={10} />
-                                                                    Top Partner
+                                                                    {isArabic ? 'طبيب مميز' : 'Top Partner'}
                                                                 </span>
                                                             )}
                                                         </div>
@@ -298,14 +345,14 @@ const ReferralsTab = () => {
                                             <td className="px-6 py-3.5 text-slate-500 dark:text-slate-400">
                                                 <div className="flex items-center gap-1.5">
                                                     <MapPin size={12} className="text-slate-400" />
-                                                    <span>{doc.clinicName || 'Independent Clinic'}</span>
+                                                    <span>{doc.clinicName || (isArabic ? 'عيادة خاصة' : 'Independent Clinic')}</span>
                                                 </div>
                                             </td>
                                             <td className="px-6 py-3.5 font-mono font-bold text-slate-700 dark:text-slate-300 text-end">
                                                 {doc.totalExams}
                                             </td>
-                                            <td className="px-6 py-3.5 font-mono font-bold text-emerald-600 dark:text-emerald-400 text-end">
-                                                <span dir="ltr">{money.format(doc.totalRevenue)}</span>
+                                            <td className="px-6 py-3.5 font-mono font-bold text-emerald-600 dark:text-emerald-400 text-end whitespace-nowrap">
+                                                <span>{formatMoney(doc.totalRevenue)}</span>
                                             </td>
                                         </tr>
                                     );
@@ -356,18 +403,33 @@ const MetricCard = ({ icon: Icon, label, value, note, tone, loading }) => {
     );
 };
 
-const ErrorState = ({ label, onRetry, t }) => (
+const ErrorState = ({ label, onRetry, t, isArabic }) => (
     <div role="alert" className="flex min-h-32 flex-col items-center justify-center rounded-2xl border border-dashed border-rose-200 dark:border-rose-900/40 bg-rose-50/60 dark:bg-rose-900/10 p-6 text-center">
         <AlertTriangle className="text-rose-500" size={22} aria-hidden="true" />
         <p className="mt-2 text-sm font-bold text-rose-800 dark:text-rose-200">{label}</p>
-        <button type="button" onClick={onRetry} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-white dark:bg-[#0b1426] px-3 py-2 text-xs font-bold text-rose-700 dark:text-rose-400 shadow-sm ring-1 ring-rose-200 dark:ring-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/30"><RefreshCw size={14} aria-hidden="true" /> {t ? t('analytics.actions.retry', 'Retry') : 'Retry'}</button>
+        <button type="button" onClick={onRetry} className="mt-3 inline-flex items-center gap-2 rounded-lg bg-white dark:bg-[#0b1426] px-3 py-2 text-xs font-bold text-rose-700 dark:text-rose-400 shadow-sm ring-1 ring-rose-200 dark:ring-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/30">
+            <RefreshCw size={14} aria-hidden="true" />
+            <span>{isArabic ? 'إعادة المحاولة' : (t ? t('analytics.actions.retry', 'Retry') : 'Retry')}</span>
+        </button>
     </div>
 );
 
-const EmptyChart = ({ label }) => <div className="flex h-[300px] flex-col items-center justify-center rounded-2xl bg-slate-50 dark:bg-[#0b1426]/30 text-center border border-dashed border-slate-200 dark:border-slate-800/80"><BarChart3 size={32} className="text-slate-300 dark:text-slate-600 mb-2" aria-hidden="true" /><p className="mt-3 text-xs font-bold text-slate-500 dark:text-slate-400">{label}</p></div>;
-const ChartSkeleton = ({ label }) => <div className="flex h-[300px] animate-pulse items-end gap-4 rounded-2xl bg-slate-50 dark:bg-[#0b1426]/30 p-8 border border-dashed border-slate-200 dark:border-slate-800/80" aria-label={label}>{[45, 70, 52, 88, 62, 78, 48].map((height, index) => <span key={index} className="flex-1 rounded-t-lg bg-slate-200 dark:bg-slate-800" style={{ height: `${height}%` }} />)}</div>;
+const EmptyChart = ({ label }) => (
+    <div className="flex h-[300px] flex-col items-center justify-center rounded-2xl bg-slate-50 dark:bg-[#0b1426]/30 text-center border border-dashed border-slate-200 dark:border-slate-800/80">
+        <BarChart3 size={32} className="text-slate-300 dark:text-slate-600 mb-2" aria-hidden="true" />
+        <p className="mt-3 text-xs font-bold text-slate-500 dark:text-slate-400">{label}</p>
+    </div>
+);
 
-const AcquisitionChannelsBreakdown = ({ data, t }) => {
+const ChartSkeleton = ({ label }) => (
+    <div className="flex h-[300px] animate-pulse items-end gap-4 rounded-2xl bg-slate-50 dark:bg-[#0b1426]/30 p-8 border border-dashed border-slate-200 dark:border-slate-800/80" aria-label={label}>
+        {[45, 70, 52, 88, 62, 78, 48].map((height, index) => (
+            <span key={index} className="flex-1 rounded-t-lg bg-slate-200 dark:bg-slate-800" style={{ height: `${height}%` }} />
+        ))}
+    </div>
+);
+
+const AcquisitionChannelsBreakdown = ({ data }) => {
     const total = data.reduce((sum, item) => sum + item.value, 0);
 
     const gradients = [
@@ -423,7 +485,7 @@ const AcquisitionChannelsBreakdown = ({ data, t }) => {
     );
 };
 
-const TopDoctorsLeaderboard = ({ data, money, t }) => {
+const TopDoctorsLeaderboard = ({ data, formatMoney, isArabic, canAccessDoctorDetail, onViewDoctor }) => {
     const top10 = data.slice(0, 10);
     const maxRevenue = top10.length > 0 ? top10[0].totalRevenue : 1;
 
@@ -431,31 +493,45 @@ const TopDoctorsLeaderboard = ({ data, money, t }) => {
         <div className="space-y-1.5 h-[300px] overflow-y-auto overflow-x-hidden pe-2">
             {top10.map((doc, index) => {
                 const percentage = Math.max(2, (doc.totalRevenue / maxRevenue) * 100);
+                const isClickable = canAccessDoctorDetail && doc.doctorId;
                 return (
-                    <div key={index} className="group relative flex items-center gap-3 rounded-xl p-2 transition-all hover:bg-slate-50 dark:hover:bg-slate-800/30">
+                    <div
+                        key={index}
+                        onClick={() => isClickable && onViewDoctor(doc.doctorId)}
+                        className={`group relative flex items-center gap-3 rounded-xl p-2 transition-all ${
+                            isClickable ? 'cursor-pointer hover:bg-cyan-50/60 dark:hover:bg-cyan-950/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/30'
+                        }`}
+                    >
                         <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-bold text-xs ${index === 0 ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-400' :
-                                index === 1 ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300' :
-                                    index === 2 ? 'bg-orange-100 text-orange-850 dark:bg-orange-900/40 dark:text-orange-400' :
-                                        'bg-slate-100 text-slate-500 dark:bg-slate-800/80 dark:text-slate-400'
+                            index === 1 ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300' :
+                                index === 2 ? 'bg-orange-100 text-orange-850 dark:bg-orange-900/40 dark:text-orange-400' :
+                                    'bg-slate-100 text-slate-500 dark:bg-slate-800/80 dark:text-slate-400'
                             }`}>
                             #{index + 1}
                         </div>
                         <div className="min-w-0 flex-1">
                             <div className="flex items-end justify-between gap-3">
                                 <div className="min-w-0">
-                                    <p className="truncate text-xs font-bold text-slate-900 dark:text-slate-100">{doc.doctorName}</p>
-                                    <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-400 dark:text-slate-500">{doc.clinicName || '—'} • {doc.totalExams} referrals</p>
+                                    <div className="flex items-center gap-1.5">
+                                        <p className="truncate text-xs font-bold text-slate-900 dark:text-slate-100">{doc.doctorName}</p>
+                                        {isClickable && <ExternalLink size={11} className="opacity-0 group-hover:opacity-100 text-cyan-600 dark:text-cyan-400 transition" />}
+                                    </div>
+                                    <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-400 dark:text-slate-500">
+                                        {doc.clinicName || (isArabic ? 'عيادة خاصة' : 'Independent Clinic')} • {doc.totalExams} {isArabic ? 'إحالة' : 'referrals'}
+                                    </p>
                                 </div>
                                 <div className="text-end shrink-0">
-                                    <p className="font-mono text-xs font-bold text-slate-900 dark:text-white"><span dir="ltr">{money.format(doc.totalRevenue)}</span></p>
+                                    <p className="font-mono text-xs font-bold text-slate-900 dark:text-white">
+                                        <span dir="ltr">{formatMoney ? formatMoney(doc.totalRevenue) : doc.totalRevenue}</span>
+                                    </p>
                                 </div>
                             </div>
                             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800/85">
                                 <div
                                     className={`h-full rounded-full transition-all duration-1000 ease-out ${index === 0 ? 'bg-gradient-to-r from-amber-400 to-amber-500' :
-                                            index === 1 ? 'bg-gradient-to-r from-slate-400 to-slate-500' :
-                                                index === 2 ? 'bg-gradient-to-r from-orange-400 to-orange-500' :
-                                                    'bg-gradient-to-r from-cyan-400 to-cyan-500'
+                                        index === 1 ? 'bg-gradient-to-r from-slate-400 to-slate-500' :
+                                            index === 2 ? 'bg-gradient-to-r from-orange-400 to-orange-500' :
+                                                'bg-gradient-to-r from-cyan-400 to-cyan-500'
                                         }`}
                                     style={{ width: `${percentage}%` }}
                                 />

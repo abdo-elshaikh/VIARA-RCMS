@@ -3,6 +3,8 @@ const { encrypt, hash } = require('../utils/crypto');
 const csv = require('csv-parser');
 const fs = require('fs');
 const crypto = require('crypto');
+const { Writable } = require('stream');
+const { pipeline } = require('stream/promises');
 
 const encryptOptional = (value) => value ? encrypt(value) : null;
 
@@ -17,14 +19,18 @@ const generateMrn = () => {
     return `PAT-${dateStr}-${randomSuffix}`;
 };
 
-const parseCsvFile = (filePath) => new Promise((resolve, reject) => {
+const parseCsvFile = async (filePath) => {
     const rows = [];
-    fs.createReadStream(filePath)
-        .pipe(csv())
-        .on('data', (row) => rows.push(row))
-        .on('end', () => resolve(rows))
-        .on('error', reject);
-});
+    await pipeline(fs.createReadStream(filePath), csv({ maxRowBytes: 256 * 1024 }), new Writable({
+        objectMode: true,
+        write(row, _encoding, callback) {
+            if (rows.length >= 10000) return callback(new AppError('CSV import is limited to 10000 rows', 413));
+            rows.push(row);
+            callback();
+        }
+    }));
+    return rows;
+};
 
 const findDuplicatePatient = async (db, { phoneHash, nameDobHash, nationalIdHash, email }) => {
     if (email) {

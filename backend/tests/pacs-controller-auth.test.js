@@ -3,7 +3,7 @@ jest.mock('../src/config/logger', () => ({
 }));
 
 jest.mock('../src/services/pacsDicomWebService', () => ({
-    proxyToOrthanc: jest.fn(async () => {}),
+    proxyToOrthanc: jest.fn(async () => { }),
     getOrthancUrl: jest.fn(async () => 'http://orthanc'),
     getOrthancAuthHeader: jest.fn(async () => 'Basic test')
 }));
@@ -12,7 +12,7 @@ jest.mock('../src/services/pacsReconcileService', () => ({
     reconcileInstance: jest.fn(),
     reconcileQuarantine: jest.fn(),
     discardQuarantine: jest.fn(),
-    writeAudit: jest.fn(async () => {})
+    writeAudit: jest.fn(async () => { })
 }));
 
 const { proxyToOrthanc, getOrthancUrl, getOrthancAuthHeader } = require('../src/services/pacsDicomWebService');
@@ -26,14 +26,14 @@ const {
 
 const originalFetch = global.fetch;
 
-const makeRes = () => ({
-    setTimeout: jest.fn(),
-    setHeader: jest.fn(),
-    end: jest.fn(),
-    headersSent: false,
-    json: jest.fn(),
-    status: jest.fn(function status() { return this; })
-});
+const { Writable } = require('stream');
+const makeRes = () => {
+    const chunks = [];
+    const res = new Writable({ write(chunk, encoding, done) { chunks.push(Buffer.from(chunk)); done(); } });
+    Object.assign(res, { setTimeout: jest.fn(), setHeader: jest.fn(), headersSent: false,
+        json: jest.fn(), status: jest.fn(function () { return this; }), body: () => Buffer.concat(chunks) });
+    return res;
+};
 
 describe('PACS controller authorization', () => {
     afterEach(() => {
@@ -44,6 +44,8 @@ describe('PACS controller authorization', () => {
     it('rejects a scoped viewer WADO request when the SOP is not indexed to the allowed study', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { 0: 'wado', 1: '' },
             query: { studyUID: '1.2.3', objectUID: '9.9.9' },
@@ -68,9 +70,130 @@ describe('PACS controller authorization', () => {
         }));
     });
 
+    it('allows scoped viewer series metadata when the path is already scoped to the allowed study', async () => {
+        const db = { query: jest.fn(async () => ({ rows: [] })) };
+        const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
+            method: 'GET',
+            params: { 0: 'dicom-web', 1: '/studies/1.2.3/series/1.2.3.4/metadata' },
+            query: {},
+            originalUrl: '/api/pacs/dicom-web/studies/1.2.3/series/1.2.3.4/metadata',
+            authType: 'pacs_viewer_cookie',
+            user: {
+                role: 'Radiologist',
+                user_id: 'user-1',
+                study_instance_uids: ['1.2.3']
+            },
+            setTimeout: jest.fn()
+        };
+        const next = jest.fn();
+
+        await dicomWebProxy(db)(req, makeRes(), next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(proxyToOrthanc).toHaveBeenCalledWith(
+            req,
+            expect.any(Object),
+            '/dicom-web/studies/1.2.3/series/1.2.3.4/metadata'
+        );
+    });
+
+    it('fails closed before proxying a study when required view audit persistence fails', async () => {
+        writeAudit.mockRejectedValueOnce(Object.assign(new Error('audit unavailable'), { statusCode: 503 }));
+        const db = { query: jest.fn(async () => ({ rows: [] })) };
+        const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+            method: 'GET',
+            params: { 0: 'dicom-web', 1: '/studies/1.2.30/metadata' },
+            query: {},
+            originalUrl: '/api/pacs/dicom-web/studies/1.2.30/metadata?patient=private',
+            authType: 'pacs_viewer_cookie',
+            user: { role: 'Radiologist', user_id: 'user-1', study_instance_uids: ['1.2.30'] },
+            headers: {},
+            setTimeout: jest.fn()
+        };
+        const next = jest.fn();
+
+        await dicomWebProxy(db)(req, makeRes(), next);
+
+        expect(writeAudit).toHaveBeenCalledWith(db, expect.objectContaining({
+            eventType: 'IMAGE_VIEW',
+            studyInstanceUid: '1.2.30',
+            required: true,
+            requestPath: '/api/pacs/dicom-web/studies/:studyUid'
+        }));
+        expect(proxyToOrthanc).not.toHaveBeenCalled();
+        expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 503 });
+    });
+
+    it('audits broad study searches before forwarding their query to Orthanc', async () => {
+        const db = { query: jest.fn(async () => ({ rows: [] })) };
+        const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+            method: 'GET',
+            params: { 0: 'dicom-web', 1: '/studies' },
+            query: { PatientID: 'private-patient-id' },
+            originalUrl: '/api/pacs/dicom-web/studies?PatientID=private-patient-id',
+            authType: 'jwt',
+            user: {
+                role: 'Admin',
+                user_id: 'admin-1',
+                emergencyAccessId: 'break-glass-1',
+                elevatedPermissions: ['VIEW_PACS_IMAGES'],
+                breakGlassExpiry: Date.now() + 60000
+            },
+            headers: {},
+            setTimeout: jest.fn()
+        };
+        const next = jest.fn();
+
+        await dicomWebProxy(db)(req, makeRes(), next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(writeAudit).toHaveBeenCalledWith(db, expect.objectContaining({
+            eventType: 'PACS_STUDY_SEARCH',
+            required: true,
+            requestPath: '/api/pacs/dicom-web/studies',
+            detail: { path: '/api/pacs/dicom-web/studies' }
+        }));
+        expect(proxyToOrthanc).toHaveBeenCalledWith(req, expect.any(Object), '/dicom-web/studies');
+    });
+
+    it('returns an empty safe study list for scoped viewer patient-level browse requests', async () => {
+        const db = { query: jest.fn(async () => ({ rows: [] })) };
+        const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
+            method: 'GET',
+            params: { 0: 'dicom-web', 1: '/studies' },
+            query: { '00100020': '25963..', limit: '101' },
+            originalUrl: '/api/pacs/dicom-web/studies?00100020=25963..&limit=101',
+            authType: 'pacs_viewer_cookie',
+            user: {
+                role: 'Radiologist',
+                user_id: 'user-1',
+                study_instance_uids: ['1.2.3']
+            },
+            setTimeout: jest.fn()
+        };
+        const res = makeRes();
+        const next = jest.fn();
+
+        await dicomWebProxy(db)(req, res, next);
+
+        expect(next).not.toHaveBeenCalled();
+        expect(proxyToOrthanc).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith([]);
+        expect(res.setHeader).toHaveBeenCalledWith('X-VIARA-DICOMweb-Scoped', 'empty-study-browse');
+    });
+
     it('does not treat RECONCILE_STUDIES as global DICOMweb image access', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies/1.2.3/metadata' },
             query: {},
@@ -95,9 +218,11 @@ describe('PACS controller authorization', () => {
         }));
     });
 
-    it('allows a PACS manager to browse studies through the proxy', async () => {
+    it('does not let a PACS manager browse private studies without emergency access', async () => {
         const db = { query: jest.fn() };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { 0: 'dicom-web', 1: '/studies' },
             query: {},
@@ -114,6 +239,34 @@ describe('PACS controller authorization', () => {
 
         await dicomWebProxy(db)(req, makeRes(), next);
 
+        expect(proxyToOrthanc).not.toHaveBeenCalled();
+        expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403 });
+    });
+
+    it('allows audited emergency access to browse PACS studies', async () => {
+        const db = { query: jest.fn() };
+        const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
+            method: 'GET',
+            params: { 0: 'dicom-web', 1: '/studies' },
+            query: {},
+            originalUrl: '/api/pacs/dicom-web/studies',
+            authType: 'jwt',
+            user: {
+                role: 'Admin',
+                user_id: '00000000-0000-0000-0000-000000000002',
+                permissions: ['MANAGE_PACS'],
+                emergencyAccessId: '00000000-0000-4000-8000-000000000099',
+                elevatedPermissions: ['VIEW_PACS_IMAGES'],
+                breakGlassExpiry: Date.now() + 60000
+            },
+            setTimeout: jest.fn()
+        };
+        const next = jest.fn();
+
+        await dicomWebProxy(db)(req, makeRes(), next);
+
         expect(next).not.toHaveBeenCalled();
         expect(proxyToOrthanc).toHaveBeenCalledWith(req, expect.any(Object), '/dicom-web/studies');
     });
@@ -121,6 +274,8 @@ describe('PACS controller authorization', () => {
     it('does not return imaging metadata for an unassigned exam', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { examId: 'exam-1' },
             user: {
                 role: 'Technician',
@@ -149,6 +304,8 @@ describe('PACS controller authorization', () => {
             })
         };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             params: { jobId: 'job-1' },
             user: {
                 role: 'Technician',
@@ -171,6 +328,8 @@ describe('PACS controller authorization', () => {
     it('denies PACS study export when the study is outside the user scope', async () => {
         const db = { query: jest.fn(async () => ({ rows: [] })) };
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { studyInstanceUid: '1.2.3' },
             query: { format: 'dicom' },
@@ -198,6 +357,7 @@ describe('PACS controller authorization', () => {
     it('exports rendered PACS images as a ZIP after study access is authorized', async () => {
         const db = {
             query: jest.fn(async (sql) => {
+                if (sql.includes('FROM user_branch_memberships')) return { rows: [{ id: '00000000-0000-4000-8000-000000000001' }] };
                 if (sql.includes('LEFT JOIN appointments')) {
                     return { rows: [{ study_instance_uid: '1.2.3' }] };
                 }
@@ -232,7 +392,8 @@ describe('PACS controller authorization', () => {
                     headers: { 'content-type': 'application/json' }
                 });
             }
-            if (href.endsWith('/instances/instance-1/preview')) {
+            if (href.endsWith('/instances/instance-1/frames')) return new Response('[0]', { status: 200 });
+            if (href.endsWith('/instances/instance-1/frames/0/preview')) {
                 return new Response(Buffer.from([1, 2, 3]), {
                     status: 200,
                     headers: { 'content-type': 'image/jpeg' }
@@ -241,6 +402,8 @@ describe('PACS controller authorization', () => {
             throw new Error(`unexpected fetch ${href}`);
         });
         const req = {
+        branchContext: { branchId: '00000000-0000-4000-8000-000000000001' },
+        headers: {},
             method: 'GET',
             params: { studyInstanceUid: '1.2.3' },
             query: { format: 'images', examId: 'exam-1' },
@@ -259,9 +422,9 @@ describe('PACS controller authorization', () => {
 
         expect(next).not.toHaveBeenCalled();
         expect(res.status).toHaveBeenCalledWith(200);
-        expect(res.setHeader).toHaveBeenCalledWith('X-RCMS-PACS-Export-Format', 'images');
-        expect(Buffer.isBuffer(res.end.mock.calls[0][0])).toBe(true);
-        expect(res.end.mock.calls[0][0].subarray(0, 4).toString('hex')).toBe('504b0304');
+        expect(res.setHeader).toHaveBeenCalledWith('X-VIARA-PACS-Export-Format', 'images');
+        expect(Buffer.isBuffer(res.body())).toBe(true);
+        expect(res.body().subarray(0, 4).toString('hex')).toBe('504b0304');
         expect(writeAudit).toHaveBeenCalledWith(db, expect.objectContaining({
             eventType: 'STUDY_EXPORTED',
             detail: expect.objectContaining({ format: 'images', imageCount: 1, seriesCount: 1 })

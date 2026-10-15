@@ -24,7 +24,7 @@ export const STICKER_OPTIONS = [
     { label: 'Review', value: '👀', tone: 'bg-sky-50 text-sky-700 dark:bg-sky-950/30 dark:text-sky-300' }
 ];
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const API_ORIGIN = API_BASE.replace(/\/api\/?$/, '');
 
 export const resolveChatAssetUrl = (url = '') => {
@@ -136,9 +136,9 @@ const AttachmentCard = ({ attachment, isMe, compact, t }) => {
     );
 };
 
-export const ChatMessageContent = ({ message, isMe = false, compact = false, t }) => {
+export const ChatMessageContent = ({ message, displayBody, isMe = false, compact = false, t }) => {
     const attachments = useMemo(() => getMessageAttachments(message), [message]);
-    const body = message?.body || '';
+    const body = displayBody ?? message?.body ?? '';
     const isSticker = message?.message_kind === 'sticker';
 
     return (

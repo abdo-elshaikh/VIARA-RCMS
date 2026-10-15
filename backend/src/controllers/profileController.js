@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const { AppError } = require('../middleware/errorHandler');
 const { logAction } = require('../services/auditService');
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 
 const mapProfile = (row) => ({
     id: row.user_id,
@@ -27,7 +27,7 @@ const getProfile = (db) => async (req, res, next) => {
     try {
         const userId = req.user.user_id;
         const result = await db.query(`
-            SELECT user_id, full_name, email, role, is_active, is_2fa_enabled, phone, department, job_title, bio, avatar_url, preferences, created_at, updated_at
+            SELECT user_id, full_name, email, role, is_active, is_2fa_enabled, phone, department, job_title, bio, avatar_url, preferences, created_at, updated_at, organization_id, is_org_admin
             FROM users
             WHERE user_id = $1 AND is_active = TRUE
         `, [userId]);
@@ -36,7 +36,22 @@ const getProfile = (db) => async (req, res, next) => {
             return next(new AppError('Profile not found', 404));
         }
 
-        res.json(mapProfile(result.rows[0]));
+        const user = result.rows[0];
+        const profile = mapProfile(user);
+        profile.organizationId = user.organization_id;
+        profile.isOrgAdmin = Boolean(user.is_org_admin || user.role === 'Developer');
+
+        const branchService = require('../services/branchService');
+        const userBranches = await branchService.getUserBranches(
+            db,
+            userId,
+            profile.isOrgAdmin,
+            user.organization_id
+        );
+        profile.branches = userBranches.branches;
+        profile.defaultBranchId = userBranches.defaultBranchId;
+
+        res.json(profile);
     } catch (error) {
         next(error);
     }
@@ -109,7 +124,7 @@ const changePassword = (db) => async (req, res, next) => {
 
         const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
         await client.query(
-            'UPDATE users SET password_hash = $1, must_change_password = FALSE, failed_login_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
+            'UPDATE users SET password_hash = $1, current_session_id = NULL, must_change_password = FALSE, failed_login_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP WHERE user_id = $2',
             [passwordHash, userId]
         );
         await client.query(`
@@ -145,10 +160,22 @@ const changePassword = (db) => async (req, res, next) => {
 const getPreferences = (db) => async (req, res, next) => {
     try {
         const userId = req.user.user_id;
-        const result = await db.query('SELECT preferences FROM users WHERE user_id = $1', [userId]);
+        const result = await db.query(`
+            SELECT u.preferences,
+                   COALESCE((
+                       SELECT setting_value
+                       FROM system_settings
+                       WHERE setting_key = 'admin.session_timeout_mins'
+                       LIMIT 1
+                   ), '30') AS organization_session_timeout
+            FROM users u
+            WHERE u.user_id = $1
+        `, [userId]);
         
         if (result.rows.length === 0) return next(new AppError('User not found', 404));
-        res.json(result.rows[0].preferences || {});
+        const preferences = result.rows[0].preferences || {};
+        const organizationSessionTimeout = Number(result.rows[0].organization_session_timeout) || 30;
+        res.json({ ...preferences, organizationSessionTimeout });
     } catch (error) {
         next(error);
     }

@@ -1,0 +1,5 @@
+[autorun]
+open=START_VIARA.bat
+icon=00_ابدأ_من_هنا_START_HERE.html,0
+label=VIARA RCMS Medical System
+action=Start VIARA Radiology Information & PACS System

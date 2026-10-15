@@ -1,0 +1,19 @@
+# VIARA WireGuard client peer (radiologist device).
+#
+# Install as /etc/wireguard/wg0.conf on the device (mode 0600) or import into
+# the WireGuard client. Replace every <PLACEHOLDER>.
+#
+# This is a split tunnel: only the clinical subnet is routed through VIARA so
+# personal traffic does not traverse the hospital network.
+
+[Interface]
+PrivateKey = <DEVICE_PRIVATE_KEY>
+Address = 10.20.0.11/32
+DNS = <CLINICAL_DNS_OR_RESOLVER>          # optional; omit for split tunnel
+# MTU 1280 if the device is often on consumer/mobile networks.
+
+[Peer]
+PublicKey = <SERVER_PUBLIC_KEY>
+Endpoint = <VIARA_PUBLIC_HOST_OR_IP>:51820
+AllowedIPs = 10.20.0.0/24                  # clinical subnet only
+PersistentKeepalive = 25

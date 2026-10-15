@@ -23,8 +23,8 @@ const ShiftActionModal = ({
     >
         <form onSubmit={onSubmit} className="space-y-5">
             {action === 'open' ? (
-                <div>
-                    <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-400">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                    <label className="mb-2 block text-xs font-black text-slate-700 dark:text-slate-300">
                         {t('billing.openingBalance', { defaultValue: 'Opening Balance' })}
                     </label>
                     <input
@@ -34,17 +34,20 @@ const ShiftActionModal = ({
                         required
                         value={openingBalance}
                         onChange={(event) => onOpeningBalanceChange(event.target.value)}
-                        className="w-full rounded-none border border-slate-200/60 bg-white/80 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-950 dark:text-slate-100"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base font-bold text-slate-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                         dir="ltr"
                     />
                 </div>
             ) : (
                 <>
-                    <div className="rounded-none border border-teal-100/60 bg-teal-50/40 p-4 text-sm font-medium text-teal-800 dark:border-teal-900/40 dark:bg-teal-950/20 dark:text-teal-300">
+                    <div className="flex gap-3 rounded-2xl border border-teal-200/80 bg-gradient-to-br from-teal-50 to-white p-4 text-sm font-medium leading-relaxed text-teal-900 dark:border-teal-900/60 dark:from-teal-950/45 dark:to-slate-900 dark:text-teal-200">
+                        <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-teal-100 text-teal-700 dark:bg-teal-900/60 dark:text-teal-300">i</span>
+                        <span>
                         {t('billing.blindCountHelp', { defaultValue: 'Count the physical cash before submitting. The expected amount remains hidden until the drawer is closed.' })}
+                        </span>
                     </div>
-                    <div>
-                        <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-400">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                        <label className="mb-2 block text-xs font-black text-slate-700 dark:text-slate-300">
                             {t('billing.countedCash', { defaultValue: 'Counted Cash' })}
                         </label>
                         <input
@@ -54,14 +57,14 @@ const ShiftActionModal = ({
                             required
                             value={countedCash}
                             onChange={(event) => onCountedCashChange(event.target.value)}
-                            className="w-full rounded-none border border-slate-200/60 bg-white/80 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-950 dark:text-slate-100"
+                            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-base font-bold text-slate-900 shadow-sm outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                             dir="ltr"
                         />
                     </div>
                 </>
             )}
-            <div>
-                <label className="mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-400">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/50">
+                <label className="mb-2 block text-xs font-black text-slate-700 dark:text-slate-300">
                     {action === 'close'
                         ? t('billing.varianceReason', { defaultValue: 'Count note / variance reason' })
                         : t('billing.shiftNotes', { defaultValue: 'Shift Notes (Optional)' })}
@@ -72,17 +75,17 @@ const ShiftActionModal = ({
                     required={action === 'close'}
                     value={shiftNotes}
                     onChange={(event) => onNotesChange(event.target.value)}
-                    className="w-full rounded-none border border-slate-200/60 bg-white/80 px-4 py-3 dark:border-slate-800/60 dark:bg-slate-950 dark:text-slate-100"
+                    className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:bg-slate-950"
                 />
             </div>
-            <div className="flex gap-3">
-                <button type="button" disabled={isBusy} onClick={onClose} className="flex-1 rounded-none border border-slate-200/60 bg-white/80 py-3 font-bold text-slate-700 dark:border-slate-800/60 dark:bg-slate-900/50 dark:text-slate-300">
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:gap-3 dark:border-slate-800">
+                <button type="button" disabled={isBusy} onClick={onClose} className="min-h-11 flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800">
                     {t('common.cancel', { defaultValue: 'Cancel' })}
                 </button>
                 <button
                     type="submit"
-                    disabled={isBusy || (action === 'close' && (!countedCash || shiftNotes.trim().length < 3))}
-                    className="flex-1 rounded-none bg-gradient-to-b from-slate-800 to-slate-950 py-3 font-bold text-white shadow-sm transition hover:from-slate-900 hover:to-black disabled:opacity-50 dark:from-slate-100 dark:to-slate-200 dark:text-slate-900 dark:hover:from-white dark:hover:to-slate-100"
+                    disabled={isBusy || (action === 'close' && (countedCash === '' || shiftNotes.trim().length < 3))}
+                    className="min-h-11 flex-1 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 py-3 text-sm font-black text-white shadow-sm transition hover:from-teal-700 hover:to-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                     {isBusy ? t('billing.processing', { defaultValue: 'Processing...' }) : t('common.confirm', { defaultValue: 'Confirm' })}
                 </button>

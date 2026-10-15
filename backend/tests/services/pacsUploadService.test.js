@@ -17,6 +17,7 @@ jest.mock('../../src/services/pacsReconcileService', () => ({
 
 // Keep Orthanc URL/creds deterministic before the service captures them.
 process.env.ORTHANC_URL = 'http://orthanc:8042';
+process.env.ORTHANC_PASSWORD = 'test-password';
 
 const { reconcileInstance } = require('../../src/services/pacsReconcileService');
 const {
@@ -33,7 +34,7 @@ const { DicomDict, DicomMetaDictionary } = dcmjs.data;
 // Build a minimal valid Part-10 DICOM buffer with the given identity tags.
 const makeDicomBuffer = (over = {}) => {
     const ds = {
-        PatientID: 'OLD', PatientName: 'OLD^NAME', AccessionNumber: 'OLDACC',
+        PatientID: 'MRN100', PatientName: 'OLD^NAME', AccessionNumber: 'OLDACC',
         StudyInstanceUID: DicomMetaDictionary.uid(),
         SeriesInstanceUID: DicomMetaDictionary.uid(),
         SOPInstanceUID: DicomMetaDictionary.uid(),
@@ -55,6 +56,8 @@ const makeDicomBuffer = (over = {}) => {
 };
 
 // Exam identity + Orthanc REST mock shared by the flow tests.
+const parseSource = (buffer) => dcmjs.data.DicomMetaDictionary.naturalizeDataset(dcmjs.data.DicomMessage.readFile(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)).dict);
+
 const makeExamPool = () => ({
     query: jest.fn(async (sql) => {
         if (sql.includes('FROM examinations e') && sql.includes('JOIN patients')) {
@@ -132,6 +135,17 @@ describe('pacsUploadService', () => {
     });
 
     describe('uploadFilesToExam', () => {
+        it('rejects another patient before contacting Orthanc', async () => {
+            const { buffer } = makeDicomBuffer({ PatientID: 'ANOTHER-PATIENT' });
+            global.fetch = jest.fn();
+            const result = await uploadFilesToExam(makeExamPool(), {
+                files: [{ buffer, originalname: 'wrong-patient.dcm', mimetype: 'application/dicom' }], examId: 'exam-1'
+            });
+            expect(global.fetch).not.toHaveBeenCalled();
+            expect(reconcileInstance).not.toHaveBeenCalled();
+            expect(result).toMatchObject({ stored: 0, reconciled: 0, failed: 1 });
+            expect(result.results[0].reason).toContain('patient identity');
+        });
         it('stamps a DICOM file, stores it in Orthanc, and reconciles it', async () => {
             const pool = makeExamPool();
             const { buffer, ds } = makeDicomBuffer({
@@ -144,7 +158,7 @@ describe('pacsUploadService', () => {
             let storeCount = 0;
             global.fetch = jest.fn(async (url, options = {}) => {
                 if (String(url).includes('/modify')) {
-                    return new Response(buffer, { status: 200 });
+                    return new Response(makeDicomBuffer({ ...parseSource(buffer), ...JSON.parse(options.body).Replace }).buffer, { status: 200 });
                 }
                 if (options.method === 'DELETE') return new Response(null, { status: 200 });
                 if (String(url).endsWith('/instances')) {
@@ -169,7 +183,7 @@ describe('pacsUploadService', () => {
             expect(global.fetch.mock.calls[2][0]).toBe('http://orthanc:8042/instances');
             expect(global.fetch.mock.calls[3][1].method).toBe('DELETE');
             const modifyCall = global.fetch.mock.calls.find((call) => String(call[0]).includes('/modify'));
-            expect(JSON.parse(modifyCall[1].body).Keep).toEqual(['SeriesInstanceUID', 'SOPInstanceUID']);
+            expect(JSON.parse(modifyCall[1].body).Keep).toEqual([]);
 
             // Reconciled with the exam's identity (accession + study bound).
             expect(reconcileInstance).toHaveBeenCalledTimes(1);
@@ -178,8 +192,8 @@ describe('pacsUploadService', () => {
             expect(payload.StudyInstanceUID).toBe('1.2.900');
             expect(payload.PatientID).toBe('MRN100');
             expect(payload.OrthancInstanceId).toBe('orth-abc');
-            expect(payload.SeriesInstanceUID).toBe(ds.SeriesInstanceUID);
-            expect(payload.SOPInstanceUID).toBe(ds.SOPInstanceUID);
+            expect(payload.SeriesInstanceUID).not.toBe(ds.SeriesInstanceUID);
+            expect(payload.SOPInstanceUID).not.toBe(ds.SOPInstanceUID);
             expect(payload.SeriesNumber).toBe(3);
             expect(payload.InstanceNumber).toBe(8);
             expect(payload.SeriesDescription).toBe('COR PD');
@@ -200,7 +214,7 @@ describe('pacsUploadService', () => {
             fs.writeFileSync(filePath, buffer);
             let storeCount = 0;
             global.fetch = jest.fn(async (url, options = {}) => {
-                if (String(url).includes('/modify')) return new Response(buffer, { status: 200 });
+                if (String(url).includes('/modify')) return new Response(makeDicomBuffer({ ...parseSource(buffer), ...JSON.parse(options.body).Replace }).buffer, { status: 200 });
                 if (options.method === 'DELETE') return new Response(null, { status: 200 });
                 if (String(url).endsWith('/instances')) {
                     storeCount += 1;
@@ -421,17 +435,18 @@ describe('pacsUploadService', () => {
 
         it('generates and persists a Study UID when the exam lacks one', async () => {
             const pool = {
-                query: jest.fn(async (sql) => {
+                query: jest.fn(async (sql, params) => {
+                    if (sql.includes('UPDATE examinations')) return { rows: [{ study_instance_uid: params[1] }] };
                     if (sql.includes('FROM examinations e') && sql.includes('JOIN patients')) {
                         return { rows: [{ exam_id: 'exam-2', order_number: 'ORD-2', study_instance_uid: null, status: 'Scheduled', mrn: 'MRN2', first_name_enc: null, last_name_enc: null }] };
                     }
                     return { rows: [] };
                 })
             };
-            const { buffer } = makeDicomBuffer();
+            const { buffer } = makeDicomBuffer({ PatientID: 'MRN2' });
             let storeCount = 0;
             global.fetch = jest.fn(async (url, options = {}) => {
-                if (String(url).includes('/modify')) return new Response(buffer, { status: 200 });
+                if (String(url).includes('/modify')) return new Response(makeDicomBuffer({ ...parseSource(buffer), ...JSON.parse(options.body).Replace }).buffer, { status: 200 });
                 if (options.method === 'DELETE') return new Response(null, { status: 200 });
                 storeCount += 1;
                 return new Response(JSON.stringify({ ID: `i-${storeCount}`, ParentStudy: 's' }), { status: 200 });

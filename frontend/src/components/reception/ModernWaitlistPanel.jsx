@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     Plus, X, Search, UserPlus, Clock, CheckCircle2,
-    Users
+    Users, PhoneCall, Gift, ThumbsDown, Calendar, Filter
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
     useGetPatientsQuery,
     useGetMachinesQuery,
@@ -15,6 +16,8 @@ import {
 import { getErrorMessage } from '../../utils/getErrorMessage';
 import { toDateInput } from '../../utils/appointmentDates';
 import { inputClass as baseInputClass } from '../../utils/designTokens';
+import { getPaginationState } from '../../utils/pagination';
+import Pagination from '../ui/Pagination';
 import toast from 'react-hot-toast';
 
 // Helper functions
@@ -27,17 +30,38 @@ const getPatientDisplayName = (patient) => {
 };
 
 const getWaitingListValidation = (form, today) => {
-    if (!form.patientId) return 'waitlist.patientRequired';
-    if (!form.preferredDate) return 'waitlist.dateRequired';
-    if (form.preferredDate < today) return 'waitlist.dateInPast';
-    if (form.preferredEndTime <= form.preferredStartTime) return 'waitlist.timeInvalid';
+    if (!form.patientId) return 'selectPatient';
+    if (!form.preferredDate) return 'pastPreferredDate';
+    if (form.preferredDate < today) return 'pastPreferredDate';
+    if (!form.preferredStartTime || !form.preferredEndTime) return 'incompletePreferredWindow';
+    if (form.preferredEndTime <= form.preferredStartTime) return 'invalidPreferredWindow';
     return null;
 };
 
-const inputClass = `${baseInputClass} h-8 border-slate-200 bg-white py-0 text-[11px] transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950`;
+const getDaysWaiting = (createdAt) => {
+    if (!createdAt) return 0;
+    const diff = Date.now() - new Date(createdAt).getTime();
+    return Math.max(0, Math.floor(diff / (1000 * 60 * 60 * 24)));
+};
 
-const ModernWaitlistPanel = ({ selectedDate, t }) => {
+const inputClass = `${baseInputClass} h-9 rounded-xl border-slate-200 bg-white py-0 text-xs transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950`;
+const PAGE_SIZE = 5;
+
+const STATUS_BADGES = {
+    Waiting: 'bg-teal-50 text-teal-700 border-teal-200 dark:bg-teal-950/40 dark:text-teal-300 dark:border-teal-800',
+    Contacted: 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800',
+    Offered: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800',
+    Declined: 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800',
+    Cancelled: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+};
+
+const ModernWaitlistPanel = ({ selectedDate, t, canManage = false, canCreateAppointments = false, onClose }) => {
+    const { i18n } = useTranslation();
     const [showForm, setShowForm] = useState(false);
+    const [filterDateOnly, setFilterDateOnly] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [patientQuery, setPatientQuery] = useState('');
     
     const [waitlistForm, setWaitlistForm] = useState({
         patientId: '',
@@ -55,19 +79,27 @@ const ModernWaitlistPanel = ({ selectedDate, t }) => {
         setWaitlistForm(prev => ({ ...prev, preferredDate: selectedDate || toDateInput() }));
     }, [selectedDate]);
 
-    const { data: waitingList = [], isLoading: isWaitlistLoading } = useGetWaitingListQuery({ status: 'Waiting', date: selectedDate });
-    const { data: patientsResponse } = useGetPatientsQuery({ limit: 100 });
+    const activeDateParam = filterDateOnly ? (selectedDate || toDateInput()) : undefined;
+    const { data: waitingList = [], isLoading: isWaitlistLoading } = useGetWaitingListQuery({
+        active: 'true',
+        date: activeDateParam,
+        q: searchQuery.trim() || undefined
+    });
+
+    const { data: patientsResponse } = useGetPatientsQuery({ limit: 25, q: patientQuery.trim() || undefined });
     const { data: machines = [] } = useGetMachinesQuery();
     const { data: examTypes = [] } = useGetExamTypesQuery(waitlistForm.modalityId, { skip: !waitlistForm.modalityId });
     const [createWaitingListEntry, { isLoading: isAdding }] = useCreateWaitingListEntryMutation();
     const [updateWaitingListEntry] = useUpdateWaitingListEntryMutation();
 
     const patients = useMemo(() => patientsResponse?.data || [], [patientsResponse?.data]);
-    const [patientQuery, setPatientQuery] = useState('');
-
     useEffect(() => {
         if (!showForm) setPatientQuery('');
     }, [showForm]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [waitingList.length, selectedDate, filterDateOnly, searchQuery]);
 
     const filteredPatients = useMemo(() => {
         const q = patientQuery.toLowerCase().trim();
@@ -77,6 +109,15 @@ const ModernWaitlistPanel = ({ selectedDate, t }) => {
             getPatientDisplayName(p).toLowerCase().includes(q)
         );
     }, [patients, patientQuery]);
+
+    // Pagination calculations
+    const paginationState = useMemo(() => {
+        return getPaginationState(waitingList.length, currentPage, PAGE_SIZE);
+    }, [waitingList.length, currentPage]);
+
+    const paginatedList = useMemo(() => {
+        return waitingList.slice(paginationState.startIndex, paginationState.endIndex);
+    }, [waitingList, paginationState.startIndex, paginationState.endIndex]);
 
     const handleAddWaitlist = async () => {
         const validationError = getWaitingListValidation(waitlistForm, toDateInput());
@@ -102,83 +143,151 @@ const ModernWaitlistPanel = ({ selectedDate, t }) => {
     const handleUpdateStatus = async (entry, status) => {
         try {
             await updateWaitingListEntry({ id: entry.waitlist_id, status }).unwrap();
-            toast.success(t('reception:toast.waitlistMarked', { status: t(`reception:waitlist.statuses.${status}`, { defaultValue: status }) }));
+            const localizedStatus = t(`reception:waitlist.statuses.${status}`, {
+                defaultValue: t(`appointments:status.${status}`, { defaultValue: status })
+            });
+            toast.success(t('reception:toast.waitlistMarked', { status: localizedStatus }));
         } catch (error) {
             toast.error(getErrorMessage(error, t('reception:toast.waitlistFailed')));
         }
     };
 
     return (
-        <section className="rounded-none border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 dark:border-slate-800 sm:px-5">
-                <div className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-none bg-teal-50 text-teal-700 ring-1 ring-teal-100 dark:bg-teal-500/10 dark:text-teal-300 dark:ring-teal-500/20">
-                        <Users size={15} />
-                    </span>
-                    <div className="min-w-0">
-                        <h2 className="truncate text-sm font-black text-slate-900 dark:text-white">
-                            {t('reception:waitlist.title', { defaultValue: 'Waiting List' })}
-                        </h2>
-                        <p className="mt-0.5 text-[10px] font-bold text-slate-500">
-                            {waitingList.length} {t('reception:waitlist.entries', { defaultValue: 'entries' })}
-                        </p>
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-[#070e1a]">
+            {/* ── Header ── */}
+            <div className="border-b border-slate-200 bg-slate-50 px-4 pb-3 pt-4 dark:border-slate-800 dark:bg-[#091222]">
+                {/* Title row */}
+                <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-teal-500/10 text-teal-600 ring-1 ring-teal-500/20 dark:text-teal-300">
+                            <Users size={16} />
+                        </span>
+                        <div className="min-w-0">
+                            <h2 className="text-sm font-black text-slate-900 dark:text-white">
+                                {t('waitlist.title', { defaultValue: t('reception:waitlist.title', { defaultValue: 'قائمة الانتظار' }) })}
+                            </h2>
+                            <p className="text-[10.5px] font-medium text-slate-400">
+                                {waitingList.length} {t('waitlist.entries', { defaultValue: t('reception:waitlist.entries', { defaultValue: 'حالة' }) })}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Toolbar: date toggle + add */}
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => setFilterDateOnly(v => !v)}
+                            title={filterDateOnly
+                                ? t('reception:waitlist.showingDateOnly', { defaultValue: 'عرض التاريخ المحدد فقط' })
+                                : t('reception:waitlist.showingAll', { defaultValue: 'عرض كل التواريخ' })}
+                            className={`inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[10.5px] font-bold transition active:scale-95 ${
+                                filterDateOnly
+                                    ? 'border-teal-200 bg-teal-50 text-teal-700 dark:border-teal-800/60 dark:bg-teal-950/40 dark:text-teal-300'
+                                    : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
+                            }`}
+                        >
+                            <Calendar size={11} />
+                            <span className="max-w-[68px] truncate">
+                                {filterDateOnly
+                                    ? (selectedDate || t('common:dates.today', { defaultValue: 'اليوم' }))
+                                    : t('reception:waitlist.allDates', { defaultValue: 'الكل' })}
+                            </span>
+                        </button>
+
+                        {canManage && (
+                            <button
+                                type="button"
+                                onClick={() => setShowForm(v => !v)}
+                                aria-label={showForm ? t('appointments:waitlist.collapseForm') : t('appointments:waitlist.add')}
+                                className={`inline-flex h-7 w-7 items-center justify-center rounded-lg border transition active:scale-95 ${
+                                    showForm
+                                        ? 'border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400'
+                                        : 'border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100 dark:border-teal-800/60 dark:bg-teal-950/40 dark:text-teal-300'
+                                }`}
+                            >
+                                {showForm ? <X size={13} /> : <Plus size={13} />}
+                            </button>
+                        )}
+
+                        {onClose && (
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                title={t('waitlist.closePanel', { defaultValue: 'إغلاق اللوحة' })}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:border-slate-300 hover:bg-slate-50 hover:text-slate-700 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:hover:text-white"
+                            >
+                                <X size={13} />
+                            </button>
+                        )}
                     </div>
                 </div>
-                <button 
-                    type="button" 
-                    onClick={() => setShowForm(v => !v)}
-                    className={`flex h-8 w-8 items-center justify-center rounded-none border transition ${
-                        showForm 
-                            ? 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-400' 
-                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-                    }`}
-                    aria-label={showForm ? t('appointments:waitlist.collapseForm') : t('appointments:waitlist.add')}
-                >
-                    {showForm ? <X size={15} /> : <Plus size={16} />}
-                </button>
+
+                {/* Search */}
+                <div className="relative mt-2.5">
+                    <Search size={12} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                        type="text"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder={t('appointments:waitlist.filterPlaceholder', { defaultValue: 'بحث بالاسم أو الرقم الطبي أو الفحص...' })}
+                        className="h-8 w-full rounded-xl border border-slate-200 bg-white ps-8 pe-7 text-[11px] font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-[#0b1426] dark:text-slate-200"
+                    />
+                    {searchQuery && (
+                        <button
+                            type="button"
+                            onClick={() => setSearchQuery('')}
+                            className="absolute end-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                        >
+                            <X size={11} />
+                        </button>
+                    )}
+                </div>
             </div>
 
+            {/* ── Add Waitlist Form ── */}
             {showForm && (
-                <div className="space-y-3 border-b border-slate-100 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-950/30 sm:px-5">
+                <div className="space-y-2.5 border-b border-slate-100 bg-slate-50/60 px-4 py-3.5 dark:border-slate-800 dark:bg-slate-950/40">
                     <div className="relative">
-                        <Search className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+                        <Search className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-400" size={12} />
                         <input
                             type="text"
                             value={patientQuery}
                             onChange={(e) => setPatientQuery(e.target.value)}
                             placeholder={t('appointments:waitlist.searchPatientPlaceholder')}
-                            className="h-9 w-full rounded-none border border-slate-200 bg-white ps-9 pe-8 text-xs font-semibold text-slate-900 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                            className="h-8 w-full rounded-xl border border-slate-200 bg-white ps-8 pe-7 text-xs font-medium text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                         />
                         {patientQuery && (
-                            <button 
-                                type="button" 
+                            <button
+                                type="button"
                                 onClick={() => setPatientQuery('')}
-                                className="absolute end-3 top-1/2 -translate-y-1/2 rounded-none text-slate-400 transition hover:text-slate-700"
+                                className="absolute end-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
                             >
-                                <X size={14} />
+                                <X size={11} />
                             </button>
                         )}
                     </div>
 
-                    <select 
-                        value={waitlistForm.patientId} 
-                        onChange={(e) => setWaitlistForm(prev => ({ ...prev, patientId: e.target.value }))} 
+                    <select
+                        value={waitlistForm.patientId}
+                        onChange={(e) => setWaitlistForm(prev => ({ ...prev, patientId: e.target.value }))}
                         className={inputClass}
                     >
                         <option value="">
-                            {filteredPatients.length === 0 ? t('appointments:waitlist.noPatientsFound') : t('appointments:waitlist.selectPatient')}
+                            {filteredPatients.length === 0
+                                ? t('appointments:waitlist.noPatientsFound')
+                                : t('appointments:waitlist.selectPatient')}
                         </option>
                         {filteredPatients.map((p) => (
                             <option key={p.patient_id} value={p.patient_id}>
-                                {p.mrn} - {getPatientDisplayName(p) || t('appointments:waitlist.unnamedPatient')}
+                                {p.mrn} — {getPatientDisplayName(p) || t('appointments:waitlist.unnamedPatient')}
                             </option>
                         ))}
                     </select>
 
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        <select 
-                            value={waitlistForm.modalityId} 
-                            onChange={(e) => setWaitlistForm(prev => ({ ...prev, modalityId: e.target.value, examTypeId: '' }))} 
+                    <div className="grid grid-cols-2 gap-2">
+                        <select
+                            value={waitlistForm.modalityId}
+                            onChange={(e) => setWaitlistForm(prev => ({ ...prev, modalityId: e.target.value, examTypeId: '' }))}
                             className={inputClass}
                         >
                             <option value="">{t('appointments:waitlist.anyRoom')}</option>
@@ -186,10 +295,10 @@ const ModernWaitlistPanel = ({ selectedDate, t }) => {
                                 <option key={m.modality_id} value={m.modality_id}>{m.name}</option>
                             ))}
                         </select>
-                        <select 
-                            value={waitlistForm.examTypeId} 
-                            onChange={(e) => setWaitlistForm(prev => ({ ...prev, examTypeId: e.target.value }))} 
-                            disabled={!waitlistForm.modalityId} 
+                        <select
+                            value={waitlistForm.examTypeId}
+                            onChange={(e) => setWaitlistForm(prev => ({ ...prev, examTypeId: e.target.value }))}
+                            disabled={!waitlistForm.modalityId}
                             className={inputClass}
                         >
                             <option value="">{t('appointments:waitlist.anyExamType')}</option>
@@ -199,128 +308,279 @@ const ModernWaitlistPanel = ({ selectedDate, t }) => {
                         </select>
                     </div>
 
-                    <textarea 
-                        value={waitlistForm.notes} 
-                        onChange={(e) => setWaitlistForm(prev => ({ ...prev, notes: e.target.value }))} 
-                        rows={2} 
-                        placeholder={t('appointments:waitlist.notes')} 
-                        className={`${baseInputClass} border-slate-200 bg-white py-2 text-[11px] transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950`}
+                    <div className="grid grid-cols-3 gap-2">
+                        <input
+                            type="date"
+                            required
+                            min={toDateInput()}
+                            value={waitlistForm.preferredDate}
+                            onChange={(e) => setWaitlistForm(prev => ({ ...prev, preferredDate: e.target.value }))}
+                            className={inputClass}
+                        />
+                        <input
+                            type="time"
+                            required
+                            value={waitlistForm.preferredStartTime}
+                            onChange={(e) => setWaitlistForm(prev => ({ ...prev, preferredStartTime: e.target.value }))}
+                            className={inputClass}
+                        />
+                        <input
+                            type="time"
+                            required
+                            value={waitlistForm.preferredEndTime}
+                            onChange={(e) => setWaitlistForm(prev => ({ ...prev, preferredEndTime: e.target.value }))}
+                            className={inputClass}
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                        <select
+                            value={waitlistForm.priority}
+                            onChange={(e) => setWaitlistForm(prev => ({ ...prev, priority: e.target.value }))}
+                            className={inputClass}
+                        >
+                            {['Routine', 'Urgent', 'Emergency'].map((p) => (
+                                <option key={p} value={p}>{p}</option>
+                            ))}
+                        </select>
+                        <select
+                            value={waitlistForm.source}
+                            onChange={(e) => setWaitlistForm(prev => ({ ...prev, source: e.target.value }))}
+                            className={inputClass}
+                        >
+                            {['Walk-in', 'Phone', 'Online', 'Referral'].map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <textarea
+                        value={waitlistForm.notes}
+                        onChange={(e) => setWaitlistForm(prev => ({ ...prev, notes: e.target.value }))}
+                        rows={2}
+                        placeholder={t('appointments:waitlist.notes')}
+                        className={`${baseInputClass} rounded-xl border-slate-200 bg-white py-2 text-xs transition focus:border-teal-500 focus:ring-4 focus:ring-teal-500/10 dark:border-slate-700 dark:bg-slate-950`}
                     />
 
-                    <button 
-                        type="button" 
-                        onClick={handleAddWaitlist} 
+                    <button
+                        type="button"
+                        onClick={handleAddWaitlist}
                         disabled={isAdding}
-                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-none bg-teal-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-teal-700 active:scale-[0.98] disabled:opacity-50"
+                        className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-teal-600 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-teal-700 active:scale-[0.98] disabled:opacity-50"
                     >
-                        <UserPlus size={14} />
-                        {isAdding ? t('appointments:waitlist.adding') : t('appointments:waitlist.add')}
+                        <UserPlus size={13} />
+                        {isAdding
+                            ? t('appointments:waitlist.adding')
+                            : t('appointments:waitlist.add')}
                     </button>
                 </div>
             )}
 
-            <div className="px-2 py-2 sm:px-3">
+            {/* ── List ── */}
+            <div className="p-2">
                 {isWaitlistLoading ? (
-                    <div className="py-10 text-center text-xs font-bold text-slate-400">
-                        {t('common:status.loading')}
+                    <div className="space-y-2 py-3">
+                        {Array.from({ length: 3 }).map((_, i) => (
+                            <div key={i} className="h-20 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800" />
+                        ))}
                     </div>
                 ) : waitingList.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <div className="mb-3 rounded-none bg-slate-100 p-3 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
-                            <UserPlus size={20} className="text-slate-400 dark:text-slate-500" />
+                    <div className="flex flex-col items-center justify-center py-10 text-center">
+                        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
+                            <UserPlus size={18} className="text-slate-400" />
                         </div>
-                        <p className="text-sm font-black text-slate-800 dark:text-slate-200">
-                            {t('reception:waitlist.noEntries')}
+                        <p className="text-sm font-black text-slate-700 dark:text-slate-200">
+                            {t('waitlist.noEntries', { defaultValue: t('reception:waitlist.noEntries', { defaultValue: 'لا توجد حالات انتظار' }) })}
                         </p>
-                        <p className="mt-1 text-[11px] font-semibold text-slate-500">
-                            {t('reception:waitlist.emptySubtitle', { defaultValue: 'No patients are waiting.' })}
+                        <p className="mt-1 text-[11px] text-slate-400">
+                            {t('waitlist.emptySubtitle', { defaultValue: t('reception:waitlist.emptySubtitle', { defaultValue: 'لا يوجد مرضى في قائمة الانتظار.' }) })}
                         </p>
+                        {canManage && (
+                            <button
+                                type="button"
+                                onClick={() => setShowForm(true)}
+                                className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-teal-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-teal-700 active:scale-95"
+                            >
+                                <Plus size={13} />
+                                <span>{t('waitlist.addPatient', { defaultValue: 'إضافة مريض للانتظار' })}</span>
+                            </button>
+                        )}
                     </div>
                 ) : (
-                    <div className="max-h-[500px] divide-y divide-slate-100 overflow-y-auto overflow-x-hidden pe-1 dark:divide-slate-800">
-                        {waitingList.map((entry, qIdx) => (
-                            <WaitlistEntry 
-                                key={entry.waitlist_id} 
-                                entry={entry} 
-                                index={qIdx} 
-                                onUpdateStatus={handleUpdateStatus} 
-                                selectedDate={selectedDate} 
-                                t={t} 
+                    <div className="space-y-2.5">
+                        {paginatedList.map((entry, qIdx) => (
+                            <WaitlistEntry
+                                key={entry.waitlist_id}
+                                entry={entry}
+                                index={paginationState.startIndex + qIdx}
+                                onUpdateStatus={handleUpdateStatus}
+                                selectedDate={selectedDate}
+                                canManage={canManage}
+                                canCreateAppointments={canCreateAppointments}
+                                t={t}
                             />
                         ))}
                     </div>
                 )}
             </div>
+
+            {/* ── Compact Pagination ── */}
+            {waitingList.length > PAGE_SIZE && (
+                <footer className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-3.5 py-2 dark:border-slate-800 dark:bg-[#070e1a]">
+                    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                        {paginationState.startIndex + 1}–{paginationState.endIndex} / {waitingList.length}
+                    </span>
+                    <Pagination
+                        currentPage={currentPage}
+                        pageCount={paginationState.pageCount}
+                        onPageChange={setCurrentPage}
+                        isRtl={i18n.language?.startsWith('ar')}
+                        compact
+                    />
+                </footer>
+            )}
         </section>
     );
 };
 
-const WaitlistEntry = ({ entry, index, onUpdateStatus, selectedDate, t }) => {
+const WaitlistEntry = ({ entry, index, onUpdateStatus, selectedDate, t, canManage, canCreateAppointments }) => {
+    const daysWaiting  = getDaysWaiting(entry.created_at);
+    const statusClass  = STATUS_BADGES[entry.status] || STATUS_BADGES.Waiting;
+    const isUrgent     = entry.priority === 'Urgent';
+    const isEmergency  = entry.priority === 'Emergency';
+
     return (
-        <div className="group min-w-0 rounded-none p-3 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50">
-            <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-none bg-slate-100 text-[10px] font-black text-slate-500 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700">
-                            {(index + 1)}
-                        </span>
-                        <h3 className="min-w-0 truncate text-sm font-black text-slate-900 dark:text-white">
-                            {entry.patient_name || t('fallback.unnamed', { defaultValue: 'Unnamed Patient' })}
-                        </h3>
-                        {entry.priority !== 'Routine' && (
-                            <span 
-                                className={`inline-block h-2 w-2 rounded-none shadow-sm ${
-                                    entry.priority === 'Emergency' ? 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]' : 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.6)]'
-                                }`} 
-                                title={entry.priority} 
-                            />
-                        )}
-                    </div>
-                    <p className="mt-1.5 font-mono text-[10px] font-bold text-slate-400">
-                        {entry.mrn}
-                    </p>
-                    <p className="mt-1 truncate text-xs font-bold text-slate-700 dark:text-slate-300">
-                        {entry.exam_type_name || t('appointments:waitlist.anyExam')}
-                    </p>
-                    <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] font-semibold text-slate-500">
-                        <span className="flex items-center gap-1 truncate">
-                            <Clock size={11} /> 
-                            {entry.machine_name || t('appointments:waitlist.anyRoomShort')}
-                        </span>
-                    </div>
-                    {entry.notes && (
-                        <p className="mt-2 text-[10px] italic text-slate-500 line-clamp-1 transition-all duration-300 group-hover:line-clamp-none">
-                            <span className="font-bold text-slate-400">Notes:</span> {entry.notes}
-                        </p>
-                    )}
+        <div className={`group rounded-2xl border-2 p-3.5 transition-all shadow-2xs hover:shadow-sm ${
+            isEmergency
+                ? 'border-rose-300 border-s-4 border-s-rose-500 bg-rose-50 dark:border-rose-800 dark:border-s-rose-500 dark:bg-[#200a0e]'
+                : isUrgent
+                    ? 'border-amber-300 border-s-4 border-s-amber-500 bg-amber-50 dark:border-amber-800 dark:border-s-amber-500 dark:bg-[#281c0b]'
+                    : 'border-slate-200 border-s-4 border-s-teal-500 bg-white hover:border-teal-300 dark:border-slate-800 dark:border-s-teal-500 dark:bg-[#0b1426]'
+        }`}>
+
+            {/* Row 1: Number + Name + Status badge */}
+            <div className="flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-lg text-[9px] font-black ring-1 ${
+                        isEmergency
+                            ? 'bg-rose-100 text-rose-700 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-900/50'
+                            : isUrgent
+                                ? 'bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900/50'
+                                : 'bg-slate-100 text-slate-500 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700'
+                    }`}>
+                        {index + 1}
+                    </span>
+                    <h3 className="min-w-0 truncate text-xs font-black text-slate-900 dark:text-white">
+                        {entry.patient_name || t('fallback.unnamed', { defaultValue: 'غير معرّف' })}
+                    </h3>
                 </div>
+                <span className={`inline-flex shrink-0 items-center rounded-lg border px-1.5 py-0.5 text-[9px] font-bold ${statusClass}`}>
+                    {t(`reception:waitlist.statuses.${entry.status}`, { defaultValue: entry.status })}
+                </span>
             </div>
 
-            <div className="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-end lg:opacity-0 lg:transition-opacity lg:duration-150 lg:group-hover:opacity-100 lg:focus-within:opacity-100">
-                <Link 
-                    to={`/appointments/new?patientId=${entry.patient_id}&date=${selectedDate}&modalityId=${entry.modality_id || ''}&examTypeId=${entry.exam_type_id || ''}&priority=${entry.priority || 'Routine'}&notes=${encodeURIComponent(entry.notes || '')}`}
-                    className="inline-flex min-h-8 flex-1 items-center justify-center rounded-none bg-teal-600 px-2.5 py-1.5 text-[10px] font-black text-white transition hover:bg-teal-700 active:scale-95"
-                >
-                    {t('appointments:waitlist.bookNow')}
-                </Link>
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                    <button
-                        type="button"
-                        onClick={() => onUpdateStatus(entry, 'Contacted')}
-                        className="inline-flex h-8 items-center justify-center rounded-none border border-slate-200 bg-white px-2 text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-emerald-500/30 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-400 sm:w-8 sm:px-0"
-                        title={t('appointments:waitlist.contacted')}
+            {/* Row 2: MRN + days waiting + phone */}
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className="font-mono text-[10px] text-slate-400 ltr-embed">{entry.mrn}</span>
+                {(entry.phone || entry.patient_phone) && (
+                    <a
+                        href={`tel:${entry.phone || entry.patient_phone}`}
+                        className="font-mono text-[10px] text-teal-600 hover:underline dark:text-teal-400 ltr-embed"
                     >
-                        <CheckCircle2 size={13} />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => onUpdateStatus(entry, 'Cancelled')}
-                        className="inline-flex h-8 items-center justify-center rounded-none border border-slate-200 bg-white px-2 text-slate-500 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-rose-500/30 dark:hover:bg-rose-500/10 dark:hover:text-rose-400 sm:w-8 sm:px-0"
-                        title={t('appointments:waitlist.cancel')}
+                        {entry.phone || entry.patient_phone}
+                    </a>
+                )}
+                {daysWaiting > 0 && (
+                    <span className="flex items-center gap-0.5 text-[9.5px] font-semibold text-amber-600 dark:text-amber-400">
+                        <Clock size={9} />
+                        {daysWaiting}د
+                    </span>
+                )}
+                {(isEmergency || isUrgent) && (
+                    <span className={`text-[9px] font-black ${isEmergency ? 'text-rose-600 dark:text-rose-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                        · {entry.priority}
+                    </span>
+                )}
+            </div>
+
+            {/* Row 3: Exam + Machine + Date */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                    {entry.exam_type_name || t('appointments:waitlist.anyExam')}
+                </p>
+                {entry.machine_name && (
+                    <span className="inline-flex items-center gap-0.5 text-[10px] text-slate-400">
+                        · {entry.machine_name}
+                    </span>
+                )}
+                {entry.preferred_date && (
+                    <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                        <Calendar size={9} />
+                        {entry.preferred_date}
+                    </span>
+                )}
+            </div>
+
+            {/* Notes (collapsed, expand on hover) */}
+            {entry.notes && (
+                <p className="mt-1.5 line-clamp-1 text-[10px] italic text-slate-500 transition-all group-hover:line-clamp-none dark:text-slate-400">
+                    {entry.notes}
+                </p>
+            )}
+
+            {/* Actions row */}
+            <div className="mt-2.5 flex items-center gap-1 border-t border-slate-100 pt-2 dark:border-slate-800">
+                {canCreateAppointments && (
+                    <Link
+                        to={`/appointments/new?patientId=${entry.patient_id}&date=${entry.preferred_date || selectedDate}&modalityId=${entry.modality_id || ''}&examTypeId=${entry.exam_type_id || ''}&priority=${entry.priority || 'Routine'}&source=${encodeURIComponent(entry.source || 'Walk-in')}&waitlistId=${entry.waitlist_id}&notes=${encodeURIComponent(entry.notes || '')}`}
+                        className="inline-flex h-7 items-center gap-1 rounded-lg bg-teal-600 px-2.5 text-[10.5px] font-black text-white shadow-sm transition hover:bg-teal-700 active:scale-95"
                     >
-                        <X size={13} />
-                    </button>
-                </div>
+                        {t('appointments:waitlist.bookNow', { defaultValue: 'حجز' })}
+                    </Link>
+                )}
+
+                {canManage && (
+                    <>
+                        {entry.status !== 'Contacted' && (
+                            <button
+                                type="button"
+                                onClick={() => onUpdateStatus(entry, 'Contacted')}
+                                title={t('reception:waitlist.markContacted', { defaultValue: 'تم التواصل' })}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-sky-700/50 dark:hover:bg-sky-950/30 dark:hover:text-sky-400"
+                            >
+                                <PhoneCall size={11} />
+                            </button>
+                        )}
+                        {entry.status !== 'Offered' && (
+                            <button
+                                type="button"
+                                onClick={() => onUpdateStatus(entry, 'Offered')}
+                                title={t('reception:waitlist.markOffered', { defaultValue: 'تم عرض موعد' })}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-amber-700/50 dark:hover:bg-amber-950/30 dark:hover:text-amber-400"
+                            >
+                                <Gift size={11} />
+                            </button>
+                        )}
+                        {entry.status !== 'Declined' && (
+                            <button
+                                type="button"
+                                onClick={() => onUpdateStatus(entry, 'Declined')}
+                                title={t('reception:waitlist.markDeclined', { defaultValue: 'رفض' })}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-purple-300 hover:bg-purple-50 hover:text-purple-700 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400 dark:hover:border-purple-700/50 dark:hover:bg-purple-950/30 dark:hover:text-purple-400"
+                            >
+                                <ThumbsDown size={11} />
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={() => onUpdateStatus(entry, 'Cancelled')}
+                            title={t('appointments:waitlist.cancel', { defaultValue: 'إلغاء' })}
+                            className="ms-auto inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 active:scale-95 dark:border-slate-700 dark:bg-slate-800 dark:hover:border-rose-700/50 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+                        >
+                            <X size={11} />
+                        </button>
+                    </>
+                )}
             </div>
         </div>
     );

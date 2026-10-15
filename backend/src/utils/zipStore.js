@@ -109,4 +109,35 @@ const createStoredZip = (files = []) => {
     ]);
 };
 
-module.exports = { createStoredZip };
+// Sequential lazy streams apply backpressure and let yazl handle ZIP64 safely.
+const createStoredZipStream = async function* (files) {
+    const { Readable } = require('stream');
+    const zip = new (require('yazl').ZipFile)();
+    const iterator = files[Symbol.asyncIterator] ? files[Symbol.asyncIterator]() : files[Symbol.iterator]();
+    let closed = false;
+    let source;
+    const fail = error => zip.outputStream.destroy(error);
+    zip.on('error', fail);
+    const addNext = async () => {
+        const entry = await iterator.next();
+        if (closed) return;
+        if (entry.done) { zip.end({ forceZip64Format: true }); return; }
+        const file = entry.value;
+        zip.addReadStreamLazy(String(file.name).replace(/\\/g, '/'), { compress: false }, callback => {
+            source = Readable.from([Buffer.isBuffer(file.data) ? file.data : Buffer.from(file.data || '')]);
+            source.once('end', () => { addNext().catch(fail); });
+            source.once('error', fail);
+            callback(null, source);
+        });
+    };
+    addNext().catch(fail);
+    try { for await (const chunk of zip.outputStream) yield chunk; }
+    finally {
+        closed = true;
+        source?.destroy();
+        zip.outputStream.destroy();
+        await iterator.return?.();
+    }
+};
+
+module.exports = { createStoredZip, createStoredZipStream };

@@ -6,6 +6,7 @@
   },
   "stats": {
     "label": "ملخص عمليات التأمين",
+    "liveStatus": "سجل التأمين محدّث",
     "providers": "مقدمو الخدمة المسجلون",
     "contracts": "العقود النشطة",
     "approvals": "الموافقات المعلقة",
@@ -22,7 +23,9 @@
     "approvals": "الموافقات المسبقة",
     "approvalsDescription": "سجل قرارات التغطية وتابع المطالبات المرفوضة.",
     "claims": "منصة المطالبات",
-    "claimsDescription": "أنشئ المطالبات وتابع التحصيل المتوقع وأدر حالات المتابعة."
+    "claimsDescription": "أنشئ المطالبات وتابع التحصيل المتوقع وأدر حالات المتابعة.",
+    "policies": "وثائق التأمين للمرضى",
+    "policiesDescription": "استعراض وإدارة وثائق تأمين المرضى وربطها بالخطط والعقود."
   },
   "configuration": {
     "eyebrow": "إعداد جهات الدفع",
@@ -32,7 +35,8 @@
   "forms": {
     "newClaim": "إنشاء مطالبة",
     "newClaimDescription": "اربط المريض وجهة الدفع قبل تسجيل مراجع الفاتورة أو الموافقة.",
-    "rejectedQueue": "مطالبات مرفوضة تتطلب المتابعة"
+    "rejectedQueue": "مطالبات مرفوضة تتطلب المتابعة",
+    "deductionAmount": "مبلغ الاستقطاع / الخصم"
   },
   "fields": {
     "provider": "مقدم الخدمة",
@@ -69,7 +73,10 @@
     "selectPolicy": "اختر الوثيقة",
     "selectApproval": "اختر الموافقة",
     "claimReference": "مرجع المطالبة الخارجي",
-    "expected": "المبلغ المتوقع"
+    "expected": "المبلغ المتوقع",
+    "patient": "المريض",
+    "invoice": "الفاتورة",
+    "policy": "البوليصة"
   },
   "actions": {
     "openClaims": "فتح منصة المطالبات",
@@ -86,7 +93,21 @@
     "submit": "إرسال",
     "partialPaid": "تسجيل دفعة جزئية",
     "paid": "تعليم كمدفوع",
-    "reject": "رفض"
+    "reject": "رفض",
+    "export": "تصدير",
+    "exportCsv": "تصدير CSV",
+    "exportJson": "تصدير JSON",
+    "exportClaimsCsv": "تصدير المطالبات (Excel/CSV)",
+    "exportClaimsJson": "تصدير المطالبات (JSON)",
+    "exportPolicies": "تصدير الوثائق (CSV)",
+    "exporting": "جارٍ التصدير...",
+    "edit": "تعديل",
+    "addPolicy": "إضافة وثيقة تأمين",
+    "editProvider": "تعديل بيانات جهة التأمين",
+    "editContract": "تعديل العقد",
+    "editRule": "تعديل قاعدة التغطية",
+    "editPolicy": "تعديل البوليصة",
+    "requestApproval": "طلب موافقة تأمينية"
   },
   "filters": {
     "search": "ابحث بالمطالبة أو المرجع أو مقدم الخدمة أو المريض أو الرقم الطبي...",
@@ -118,10 +139,12 @@
     "rules": "لا توجد قواعد تغطية",
     "rulesDescription": "أضف قاعدة لجهة دفع لإظهار شروط التغطية.",
     "rejectedClaims": "لا توجد مطالبات مرفوضة تتطلب المتابعة.",
-    "noPayerCode": "لا يوجد رمز جهة دفع"
+    "noPayerCode": "لا يوجد رمز جهة دفع",
+    "noDataToExport": "لا توجد بيانات مطالبات أو وثائق للتصدير"
   },
   "errors": {
     "load": "تعذر تحميل بعض بيانات التأمين. تظل الأقسام المتاحة قابلة للاستخدام.",
+    "partialStatus": "بعض بيانات التأمين تحتاج مراجعة",
     "retry": "المحاولة مرة أخرى"
   },
   "allExams": "جميع الفحوصات",
@@ -132,22 +155,22 @@
     "received": "المبلغ المستلم"
   },
   "claimDialog": {
-    "submitTitle": "إرسال مطالبة التأمين",
-    "submitDescription": "أدخل مرجع جهة الدفع قبل إرسال المطالبة {{claim}}.",
-    "resubmitTitle": "إعادة إرسال مطالبة التأمين",
-    "resubmitDescription": "أضف الإجراء التصحيحي أو المعلومات الداعمة للمطالبة {{claim}}.",
-    "rejectTitle": "رفض مطالبة التأمين",
-    "rejectDescription": "سجّل سبب جهة الدفع لرفض المطالبة {{claim}} ليظل متاحًا للمتابعة.",
-    "paymentTitle": "تسجيل دفعة التأمين",
-    "paymentDescription": "سجّل المبلغ المستلم للمطالبة {{claim}}. التحصيل المتوقع: {{amount}}.",
-    "confirmSubmit": "إرسال المطالبة",
-    "confirmResubmit": "إعادة إرسال المطالبة",
-    "confirmReject": "رفض المطالبة",
-    "confirmPayment": "تسجيل الدفعة",
+    "submitTitle": "إرسال المطالبة التأمينية",
+    "submitDescription": "هل أنت متأكد من إرسال المطالبة {{claim}} بقيمة {{amount}} إلى جهة التأمين؟",
+    "confirmSubmit": "تأكيد الإرسال",
+    "resubmitTitle": "إعادة إرسال المطالبة",
+    "resubmitDescription": "إعادة إرسال المطالبة {{claim}} بقيمة {{amount}} بعد استيفاء الملاحظات.",
+    "confirmResubmit": "تأكيد إعادة الإرسال",
+    "rejectTitle": "تسجيل رفض المطالبة",
+    "rejectDescription": "تسجيل قرار رفض المطالبة {{claim}} مع تدوين السبب.",
+    "confirmReject": "تأكيد الرفض",
+    "settleTitle": "تسوية وصرف المطالبة",
+    "settleDescription": "تسجيل المبلغ المحصل والاستقطاعات للمطالبة {{claim}}.",
+    "confirmSettle": "تأكيد التسوية",
     "cancel": "إلغاء",
-    "required": "أدخل قيمة قبل المتابعة.",
-    "amountPositive": "أدخل مبلغًا أكبر من صفر.",
-    "amountExceeds": "لا يمكن أن يتجاوز المبلغ المستلم قيمة المطالبة المتوقعة."
+    "required": "هذا الحقل إجباري",
+    "amountPositive": "يرجى إدخال مبلغ أكبر من الصفر.",
+    "amountExceeds": "المبلغ المسوى لا يمكن أن يتجاوز قيمة المطالبة المتوقعة."
   },
   "messages": {
     "providerAdded": "تمت إضافة مقدم الخدمة.",
@@ -162,13 +185,23 @@
     "claimUpdatedError": "تعذر تحديث المطالبة.",
     "claimCreated": "تم إنشاء المطالبة.",
     "claimCreatedError": "تعذر إنشاء المطالبة.",
-    "claimStatus": "تم تحديث المطالبة إلى {{status}}."
+    "claimStatus": "تم تحديث المطالبة إلى {{status}}.",
+    "providerUpdated": "تم تحديث بيانات مقدم الخدمة بنجاح.",
+    "contractUpdated": "تم تحديث العقد بنجاح.",
+    "policyAdded": "تمت إضافة وثيقة التأمين بنجاح.",
+    "policyUpdated": "تم تحديث وثيقة التأمين بنجاح.",
+    "ruleUpdated": "تم تحديث قاعدة التغطية بنجاح.",
+    "exportSuccess": "تم تصدير المطالبات بنجاح.",
+    "exportFailed": "تعذر تصدير المطالبات.",
+    "policyError": "فشل حفظ بوليصة التأمين"
   },
   "tabs": {
     "claims": "منصة المطالبات",
+    "reports": "التقارير وكشوف الحسابات",
     "providers": "جهات الدفع والعقود",
     "rules": "قواعد التغطية والمحاكي",
-    "approvals": "الموافقات المسبقة"
+    "approvals": "الموافقات المسبقة",
+    "policies": "وثائق التأمين"
   },
   "calculator": {
     "title": "حاسبة معاينة التغطية",
@@ -192,5 +225,33 @@
     "Resubmitted": "أعيد إرساله",
     "Active": "نشط",
     "Inactive": "غير نشط"
+  },
+  "settlement": {
+    "title": "تسوية المطالبة واستلام الدفعة",
+    "description": "سجل الدفعة المحصلة من التأمين مع الاستقطاعات التعاقدية أو الخصومات المعتمدة.",
+    "receivedAmount": "المبلغ المحصل (ج.م)",
+    "deductionAmount": "مبلغ الاستقطاع / الخصم التعاقدي (ج.م)",
+    "deductionReason": "سبب الاستقطاع / الخصم",
+    "deductionReasonPlaceholder": "مثال: فارق التسعير التعاقدي، نسبة تحمل، خصم اتفاقية...",
+    "expectedAmount": "المبلغ المتوقع",
+    "totalSettled": "إجمالي التسوية",
+    "remaining": "المتبقي",
+    "settlePaid": "تسوية كاملة (مدفوع)",
+    "settlePartial": "تسوية جزئية",
+    "confirm": "تأكيد التسوية والتسجيل المالي"
+  },
+  "exportModal": {
+    "title": "تصدير كشف المطالبات حسب مقدم الخدمة",
+    "description": "حدد مقدم الخدمة وحالة المطالبات والنطاق الزمني لتنزيل كشف مالي مفصل ومخصص.",
+    "provider": "مقدم الخدمة (شركة التأمين)",
+    "allProviders": "جميع مقدمي الخدمة (كشف شامل)",
+    "status": "حالة المطالبة",
+    "allStatuses": "جميع الحالات",
+    "startDate": "من تاريخ",
+    "endDate": "إلى تاريخ",
+    "format": "صيغة التصدير",
+    "download": "تنزيل الكشف الآن",
+    "exportProvider": "تصدير مطالبات هذه الجهة",
+    "quickExportByProvider": "تصدير حسب مقدم الخدمة"
   }
 }

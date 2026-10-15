@@ -17,6 +17,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useGetDiscountReportQuery } from '../../store/api';
 import { formatFinancialCurrency, formatFinancialDate, toFinancialDateInput } from '../../utils/financialFormat';
+import { escapeFinancialCsvValue as csvEscape } from '../../utils/financialCsv';
 
 const monthStart = () => toFinancialDateInput(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 const today = () => toFinancialDateInput();
@@ -191,12 +192,8 @@ const deriveFlags = (row, threshold) => {
     return flags;
 };
 
-const csvEscape = (value) => {
-    const text = value === null || value === undefined ? '' : String(value);
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-};
 
-const DiscountReports = () => {
+const DiscountReports = ({ dateRange: externalDateRange, onDateRangeChange }) => {
     const { i18n } = useTranslation('workspace');
     const language = i18n.language;
     const isArabic = language?.startsWith('ar');
@@ -206,19 +203,28 @@ const DiscountReports = () => {
     const flagLabel = useCallback((flag) => FLAG_COPY[flag]?.[isArabic ? 'ar' : 'en'] || flag, [isArabic]);
 
     const [filters, setFilters] = useState({
-        startDate: monthStart(),
-        endDate: today(),
+        startDate: externalDateRange?.startDate || monthStart(),
+        endDate: externalDateRange?.endDate || today(),
         groupBy: 'day',
         review: 'flagged',
         search: '',
         minDiscount: ''
     });
 
+    const effectiveStartDate = externalDateRange?.startDate || filters.startDate;
+    const effectiveEndDate = externalDateRange?.endDate || filters.endDate;
+
+    const handleDateChange = (field, value) => {
+        const nextRange = { startDate: effectiveStartDate, endDate: effectiveEndDate, [field]: value };
+        setFilters((current) => ({ ...current, [field]: value }));
+        onDateRangeChange?.(nextRange, 'custom');
+    };
+
     const queryParams = useMemo(() => ({
-        startDate: filters.startDate,
-        endDate: filters.endDate,
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate,
         groupBy: filters.groupBy
-    }), [filters.endDate, filters.groupBy, filters.startDate]);
+    }), [effectiveStartDate, effectiveEndDate, filters.groupBy]);
 
     const reportQuery = useGetDiscountReportQuery(queryParams);
     const report = reportQuery.data || {};
@@ -369,14 +375,14 @@ const DiscountReports = () => {
                             className="inline-flex min-h-9 items-center justify-center gap-2 rounded-xl bg-slate-950 px-3 text-xs font-black text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-200"
                         >
                             <Download size={14} />
-                            {text.exportCsv}
+                            {language?.startsWith('ar') ? 'تصدير النتائج المفلترة CSV' : 'Export filtered results CSV'}
                         </button>
                     </div>
                 </div>
 
                 <div className="grid gap-3 border-b border-slate-100 p-4 dark:border-slate-800 md:grid-cols-2 xl:grid-cols-6">
-                    <DateInput label={text.startDate} value={filters.startDate} max={filters.endDate} onChange={(value) => setField('startDate', value)} />
-                    <DateInput label={text.endDate} value={filters.endDate} min={filters.startDate} onChange={(value) => setField('endDate', value)} />
+                    <DateInput label={text.startDate} value={effectiveStartDate} max={effectiveEndDate} onChange={(value) => handleDateChange('startDate', value)} />
+                    <DateInput label={text.endDate} value={effectiveEndDate} min={effectiveStartDate} onChange={(value) => handleDateChange('endDate', value)} />
                     <SelectInput label={text.groupBy} value={filters.groupBy} onChange={(value) => setField('groupBy', value)} options={[
                         { value: 'day', label: text.day },
                         { value: 'week', label: text.week },
@@ -497,12 +503,12 @@ const DiscountReports = () => {
                                         {highestRiskRows.length ? highestRiskRows.map((row) => (
                                             <tr key={row.invoice_id || row.invoice_number} className="hover:bg-slate-50 dark:hover:bg-slate-800/45">
                                                 <td className="px-3 py-3 font-black text-slate-900 dark:text-white" dir="ltr">{row.invoice_number || '-'}</td>
-                                                <td className="px-3 py-3 font-semibold text-slate-600 dark:text-slate-300">{date(row.business_date)}</td>
-                                                <td className="px-3 py-3 font-mono font-black text-slate-800 dark:text-slate-200">
+                                                <td className="px-3 py-3 font-semibold whitespace-nowrap text-slate-600 dark:text-slate-300">{date(row.business_date)}</td>
+                                                <td className="px-3 py-3 font-mono font-black whitespace-nowrap text-slate-800 dark:text-slate-200">
                                                     <div>{money(row.discount_amount)}</div>
                                                     <div className="text-[10px] font-bold text-slate-400">{text.subtotal}: {money(row.subtotal_amount)}</div>
                                                 </td>
-                                                <td className="px-3 py-3 font-mono font-black text-slate-800 dark:text-slate-200">{percent(row.effective_rate, language)}</td>
+                                                <td className="px-3 py-3 font-mono font-black whitespace-nowrap text-slate-800 dark:text-slate-200">{percent(row.effective_rate, language)}</td>
                                                 <td className="max-w-[220px] px-3 py-3 font-semibold text-slate-600 dark:text-slate-300">{row.discount_reason || text.notProvided}</td>
                                                 <td className="px-3 py-3 font-semibold text-slate-600 dark:text-slate-300">{row.approved_by || text.unapproved}</td>
                                                 <td className="px-3 py-3">

@@ -28,8 +28,9 @@ describe('privacy controller workflow hardening', () => {
     let encrypt;
 
     beforeAll(async () => {
-        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'rcms-privacy-'));
+        tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'VIARA-privacy-'));
         process.env.ENCRYPTION_KEY = TEST_KEY;
+        process.env.BLIND_INDEX_KEY = TEST_KEY;
         process.env.PRIVACY_EXPORT_DIR = tempDir;
         jest.resetModules();
         controller = require('../src/controllers/privacyController');
@@ -62,11 +63,34 @@ describe('privacy controller workflow hardening', () => {
         const statements = client.query.mock.calls.map(([sql]) => String(sql));
         expect(statements).toContain('BEGIN');
         expect(statements.some(sql => sql.includes('INSERT INTO patient_consents'))).toBe(true);
-        expect(client.query).toHaveBeenCalledWith('UPDATE patients SET consent_marketing = $2 WHERE patient_id = $1', [PATIENT_ID, true]);
+        expect(client.query.mock.calls.some(([sql, params]) =>
+            String(sql).includes('consent_marketing = $2') &&
+            String(sql).includes('opt_in_marketing = $2') &&
+            Array.isArray(params) && params[0] === PATIENT_ID && params[1] === true
+        )).toBe(true);
         expect(statements.some(sql => sql.includes('INSERT INTO system_logs'))).toBe(true);
         expect(statements).toContain('COMMIT');
         expect(res.status).toHaveBeenCalledWith(201);
         expect(next).not.toHaveBeenCalled();
+    });
+
+    test('marketing consent sync keeps the legacy opt-in flag aligned for patient-facing consent views', async () => {
+        const db = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                if (text.includes('SELECT consent_sms, consent_email, consent_whatsapp, consent_marketing, consent_data_sharing, opt_in_marketing')) {
+                    return { rows: [{ consent_marketing: true, opt_in_marketing: true }] };
+                }
+                return { rows: [] };
+            })
+        };
+        const res = createResponse();
+
+        await controller.getCurrentPatientConsents(db)(makeReq({ params: { patientId: PATIENT_ID } }), res, jest.fn());
+
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+            current: expect.objectContaining({ consent_marketing: true, opt_in_marketing: true })
+        }));
     });
 
     test('request resolution refuses an action that does not match the request type', async () => {
@@ -145,6 +169,9 @@ describe('privacy controller workflow hardening', () => {
                 if (text.includes('UPDATE data_privacy_requests')) {
                     return { rows: [{ request_id: REQUEST_ID, status: 'Completed', export_id: 'export-1' }] };
                 }
+                if (text.includes('INSERT INTO system_logs')) {
+                    return { rows: [{ log_id: 'audit-export' }] };
+                }
                 return { rows: [] };
             }),
             release: jest.fn()
@@ -177,6 +204,9 @@ describe('privacy controller workflow hardening', () => {
                 if (text.includes('SELECT patient_id, patient_status FROM patients')) {
                     return { rows: [{ patient_id: PATIENT_ID, patient_status: 'Active' }] };
                 }
+                if (text.includes('INSERT INTO system_logs')) {
+                    return { rows: [{ log_id: 'audit-anonymize' }] };
+                }
                 return { rows: [] };
             }),
             release: jest.fn()
@@ -199,7 +229,63 @@ describe('privacy controller workflow hardening', () => {
         expect(statements).toContain("UPDATE patient_consents");
         expect(client.query.mock.calls.some(([, params]) => Array.isArray(params) && params.includes('PATIENT_ANONYMIZED'))).toBe(true);
         expect(client.query).toHaveBeenCalledWith('COMMIT');
-        expect(res.json).toHaveBeenCalledWith({ message: 'Patient anonymized' });
+        expect(res.json).toHaveBeenCalledWith({
+            message: 'Direct identifiers removed; manual review of free-text and document content is required before completion',
+            status: 'InReview'
+        });
         expect(next).not.toHaveBeenCalled();
+    });
+
+    test('manual review completion scrubs remaining free-text and document references for the anonymized patient', async () => {
+        const client = {
+            query: jest.fn(async (sql) => {
+                const text = String(sql);
+                if (text.includes('SELECT * FROM data_privacy_requests')) {
+                    return { rows: [{ request_id: REQUEST_ID, patient_id: PATIENT_ID, request_type: 'Anonymize', status: 'InReview' }] };
+                }
+                if (text.includes('UPDATE data_privacy_requests') && text.includes('Completed')) {
+                    return { rows: [{ request_id: REQUEST_ID, status: 'Completed' }] };
+                }
+                if (text.includes('UPDATE documents')) {
+                    return { rows: [{ document_id: 'doc-1' }] };
+                }
+                if (text.includes('UPDATE patient_portal_documents')) {
+                    return { rows: [{ document_id: 'portal-doc-1' }] };
+                }
+                if (text.includes('UPDATE patient_portal_messages')) {
+                    return { rows: [{ message_id: 'msg-1' }] };
+                }
+                if (text.includes('UPDATE examinations')) {
+                    return { rows: [{ exam_id: 'exam-1' }] };
+                }
+                if (text.includes('UPDATE appointments')) {
+                    return { rows: [{ appointment_id: 'appt-1' }] };
+                }
+                if (text.includes('UPDATE result_deliveries')) {
+                    return { rows: [{ delivery_id: 'delivery-1' }] };
+                }
+                if (text.includes('INSERT INTO system_logs')) {
+                    return { rows: [{ log_id: 'audit-complete' }] };
+                }
+                return { rows: [] };
+            }),
+            release: jest.fn()
+        };
+
+        const db = {
+            query: jest.fn().mockResolvedValue({ rows: [{ allowed: 1 }] }),
+            connect: jest.fn().mockResolvedValue(client)
+        };
+
+        await controller.resolvePrivacyRequest(db)(makeReq({
+            params: { requestId: REQUEST_ID },
+            body: { action: 'CompleteAnonymization', notes: 'Manual review confirmed' }
+        }), createResponse(), jest.fn());
+
+        const statements = client.query.mock.calls.map(([sql]) => String(sql)).join('\n');
+        expect(statements).toContain('UPDATE documents');
+        expect(statements).toContain('UPDATE patient_portal_documents');
+        expect(statements).toContain('UPDATE patient_portal_messages');
+        expect(statements).toContain('UPDATE examinations');
     });
 });

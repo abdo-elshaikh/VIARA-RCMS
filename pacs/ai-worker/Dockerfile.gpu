@@ -1,4 +1,5 @@
-FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+ARG VIARA_APPROVED_GPU_BASE_IMAGE
+FROM ${VIARA_APPROVED_GPU_BASE_IMAGE}
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -12,18 +13,19 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN groupadd --system rcms-ai \
-    && useradd --system --gid rcms-ai --create-home rcms-ai \
+RUN groupadd --system VIARA-ai \
+    && useradd --system --gid VIARA-ai --create-home VIARA-ai \
     && mkdir -p /models/huggingface \
-    && chown -R rcms-ai:rcms-ai /app /models
+    && chown -R VIARA-ai:VIARA-ai /app /models
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN python -c "import torch, torchvision; assert torch.__version__.split('+')[0] == '2.14.1'; assert torchvision.__version__.split('+')[0] == '0.29.1'"
 
 COPY app ./app
-RUN chown -R rcms-ai:rcms-ai /app
+RUN chown -R VIARA-ai:VIARA-ai /app
 
-USER rcms-ai
+USER VIARA-ai
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

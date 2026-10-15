@@ -30,7 +30,9 @@ const EditComplaintDialog = ({ isOpen, patientName, initialComplaint, isSaving, 
                         </div>
                     </div>
                     <button 
+                        type="button"
                         onClick={onClose}
+                        aria-label="Close dialog"
                         className="rounded-full p-2 text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors"
                     >
                         <X size={20} strokeWidth={3} />
@@ -44,7 +46,7 @@ const EditComplaintDialog = ({ isOpen, patientName, initialComplaint, isSaving, 
                     <textarea
                         autoFocus
                         rows={5}
-                        className="w-full rounded-2xl border-2 border-slate-200 p-4 text-[15px] font-medium text-slate-800 outline-none transition-all focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 placeholder:text-slate-400 placeholder:font-normal"
+                        className="w-full rounded-2xl border-2 border-slate-200 p-4 text-[15px] font-medium text-slate-800 outline-none transition-all focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 placeholder:text-slate-400 placeholder:font-normal"
                         placeholder="Enter the patient's chief complaint or clinical indication..."
                         value={complaint}
                         onChange={(e) => setComplaint(e.target.value)}
@@ -53,6 +55,7 @@ const EditComplaintDialog = ({ isOpen, patientName, initialComplaint, isSaving, 
                 
                 <div className="flex items-center justify-end gap-3 border-t border-slate-100 bg-slate-50/80 px-8 py-5">
                     <button
+                        type="button"
                         onClick={onClose}
                         disabled={isSaving}
                         className="rounded-xl px-5 py-2.5 text-sm font-bold text-slate-600 hover:bg-slate-200 transition-colors"
@@ -60,6 +63,7 @@ const EditComplaintDialog = ({ isOpen, patientName, initialComplaint, isSaving, 
                         {t('common.cancel')}
                     </button>
                     <button
+                        type="button"
                         onClick={() => onConfirm(complaint)}
                         disabled={isSaving}
                         className="rounded-xl bg-gradient-to-r from-blue-600 to-cyan-500 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/30 transition-all hover:scale-105 active:scale-95 disabled:opacity-50"

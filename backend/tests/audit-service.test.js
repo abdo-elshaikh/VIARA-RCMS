@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { logAction } = require('../src/services/auditService');
 const AuditService = require('../src/services/auditService');
 const { runAuditPatternDetections } = require('../src/services/auditDetectionService');
@@ -103,21 +105,37 @@ describe('audit logging resilience', () => {
     it('redacts sensitive fields recursively before audit persistence', () => {
         expect(AuditService.sanitizeForAudit({
             password: 'secret',
+            currentPassword: 'another-secret',
             profile: {
                 email: 'patient@example.com',
                 status: 'Active',
                 patient_id: 'MRN-123',
                 raw_patient_name: 'DOE^JANE',
+                clinicalIndication: 'Persistent headache',
+                icdCode: 'R51.9',
             },
         })).toEqual({
             password: '[REDACTED]',
+            currentPassword: '[REDACTED]',
             profile: {
                 email: '[REDACTED]',
                 status: 'Active',
                 patient_id: '[REDACTED]',
                 raw_patient_name: '[REDACTED]',
+                clinicalIndication: '[REDACTED]',
+                icdCode: '[REDACTED]',
             },
         });
+    });
+
+    it('throws when a required audit entry cannot be persisted', async () => {
+        const db = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+
+        await expect(logAction(db, {
+            action: 'BILLING.PAYMENT_COLLECTED',
+            resourceTable: 'invoices',
+            required: true,
+        })).rejects.toMatchObject({ code: 'AUDIT_LOG_REQUIRED_FAILED' });
     });
 
     it('creates alert records for sensitive or high-risk audit events', async () => {
@@ -207,5 +225,17 @@ describe('audit logging resilience', () => {
         expect(insert.params[22]).toBe('system_jobs');
         expect(insert.params[30]).toBe('jest-job');
         expect(JSON.parse(insert.params[5])).toEqual({ jobName: 'retention-test', processed: 2 });
+    });
+
+    it('keeps the canonical schema aligned with the structured audit contract', () => {
+        const schemaPath = path.join(__dirname, '../../database/schema.sql');
+        const schema = fs.readFileSync(schemaPath, 'utf8');
+
+        expect(schema).toContain('CREATE TABLE system_logs');
+        expect(schema).toContain('audit_hash_version');
+        expect(schema).toContain('actor_type');
+        expect(schema).toContain('event_code');
+        expect(schema).toContain('risk_score');
+        expect(schema).toContain('CREATE TABLE audit_alerts');
     });
 });

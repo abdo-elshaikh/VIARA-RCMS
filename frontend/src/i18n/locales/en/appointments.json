@@ -13,7 +13,11 @@
     "urgent": "Priority studies",
     "urgentDetail": "Urgent and emergency cases requiring attention",
     "noShow": "No-shows",
-    "noShowDetail": "Missed appointments in this schedule range"
+    "noShowDetail": "Missed appointments in this schedule range",
+    "attention": "Needs attention",
+    "attentionDetail": "{{urgent}} priority · {{missed}} no-show · {{cancelled}} cancelled",
+    "bookedTooltip": "View all appointments",
+    "disruptions": "No-show / cancelled"
   },
   "navigation": {
     "previous": "Previous period",
@@ -28,15 +32,30 @@
     "allStatuses": "All statuses",
     "allPriorities": "All priorities",
     "results": "{{shown}} of {{total}} appointments",
-    "reset": "Reset"
+    "reset": "Reset",
+    "searchLabel": "Search appointments",
+    "roomLabel": "Filter by room or equipment",
+    "clearSearch": "Clear search",
+    "show": "Filters",
+    "hide": "Hide filters",
+    "status": "Status",
+    "priority": "Priority"
   },
   "mobile": {
     "remind": "Remind",
-    "move": "Move"
+    "move": "Move",
+    "noShow": "No-show",
+    "cancel": "Cancel"
   },
   "actions": {
     "newAppointment": "Book appointment",
-    "exportSchedule": "Export schedule"
+    "exportSchedule": "Export schedule",
+    "print": "Print schedule",
+    "refresh": "Refresh data",
+    "retry": "Try again",
+    "bulkRemind": "Send reminders",
+    "clearSelection": "Clear selection",
+    "close": "Close"
   },
   "export": {
     "dateTime": "Date and time",
@@ -77,8 +96,12 @@
       "rowsPerPage": "Rows per page",
       "page": "{{page}} / {{pages}}",
       "previous": "Previous appointment page",
-      "next": "Next appointment page"
+      "next": "Next appointment page",
+      "aria": "Appointment pages"
     }
+  },
+  "agenda": {
+    "title": "Appointment agenda"
   },
   "table": {
     "time": "Time",
@@ -105,7 +128,18 @@
     "selectRow": "Select row",
     "priority": "Priority",
     "followUp": "Follow-up",
-    "priorStudy": "Prior study"
+    "priorStudy": "Prior study",
+    "mrn": "MRN",
+    "details": "Room and examination",
+    "room": "Room / equipment",
+    "exam": "Examination",
+    "radiologist": "Radiologist",
+    "appointmentList": "Appointment list",
+    "appointmentTable": "Appointments",
+    "selectAppointment": "Select appointment",
+    "viewCase": "Open case",
+    "cancelAppt": "Cancel appointment",
+    "copyMrn": "Copy MRN"
   },
   "availability": {
     "title": "Availability",
@@ -130,6 +164,9 @@
     "activeRequests": "{{count}} active requests",
     "selectPatient": "Select patient",
     "searchPatientPlaceholder": "Search patient by MRN or name...",
+    "searchPatient": "Search patient name or MRN...",
+    "clearPatient": "Clear patient",
+    "noPatientResults": "No patients found",
     "noPatientsFound": "No patients match filter",
     "unnamedPatient": "Unnamed patient",
     "preferredDate": "Preferred date",
@@ -160,7 +197,10 @@
     "contacted": "Contacted",
     "cancel": "Cancel",
     "bookNow": "Book",
-    "collapseForm": "Collapse form"
+    "collapseForm": "Collapse form",
+    "search": "Search waiting list",
+    "hide": "Hide panel",
+    "show": "Waiting & rooms"
   },
   "reschedule": {
     "title": "Reschedule Appointment",
@@ -175,7 +215,37 @@
     "today": "Today",
     "tomorrow": "Tomorrow",
     "in2days": "+2 days",
-    "nextWeek": "+1 week"
+    "nextWeek": "+1 week",
+    "reactivateNotice": "This appointment is cancelled. Rescheduling will reactivate it as a confirmed order.",
+    "reactivateConfirm": "Reactivate & reschedule",
+    "reasonPlaceholder": "Explain why the appointment is being moved..."
+  },
+  "command": {
+    "eyebrow": "Scheduling command center",
+    "period": "Period",
+    "roomScope": "Room scope",
+    "visible": "Visible",
+    "next": "Next appointment",
+    "noNext": "No upcoming appointment",
+    "readiness": "Schedule readiness",
+    "operationalControl": "Daily operating control",
+    "operationalControlDescription": "Track capacity, disruption risk, waiting-list pressure, and staff coverage before the schedule starts slipping.",
+    "completionRate": "Completion rate",
+    "completedOfActive": "{{completed}} of {{active}} active studies",
+    "disruptionRate": "Disruption rate",
+    "cancelNoShow": "{{count}} cancelled or no-show",
+    "waitingPressure": "Waiting pressure",
+    "busiestRoom": "Busiest room",
+    "filteredView": "Focused view",
+    "filteredViewDetail": "Visible appointments after room, search, status, and priority filters.",
+    "visibleShare": "Visible share",
+    "activeRooms": "Active rooms",
+    "activeRoomsCount": "{{count}} active rooms",
+    "staffAssigned": "Staff assigned",
+    "capacityHours": "Capacity hours",
+    "unassigned": "Unassigned",
+    "patientFlow": "Patient flow",
+    "patientFlowDetail": "Current schedule by workflow state"
   },
   "status": {
     "Confirmed": "Confirmed",
@@ -183,8 +253,12 @@
     "Cancelled": "Cancelled",
     "No-Show": "No-Show",
     "Scheduled": "Scheduled",
+    "Checked-In": "Checked-in",
+    "In-Progress": "In progress",
     "Waiting": "Waiting",
-    "Contacted": "Contacted"
+    "Contacted": "Contacted",
+    "refreshing": "Refreshing",
+    "Arrived": "Arrived at center"
   },
   "priority": {
     "Routine": "Routine",
@@ -240,6 +314,24 @@
     "waitlistFailed": "Could not add waiting-list entry.",
     "waitlistMarked": "Waiting-list entry marked {{status}}.",
     "waitlistUpdateFailed": "Waiting-list entry could not be updated.",
-    "reminderSentBulk": "Sent {{count}} reminders"
+    "reminderSentBulk": "Sent {{count}} reminders",
+    "cancelled": "Appointment cancelled successfully.",
+    "cancelFailed": "Appointment could not be cancelled."
+  },
+  "metrics": {
+    "show": "Show metrics",
+    "hide": "Hide metrics"
+  },
+  "focused": {
+    "title": "Selected appointment"
+  },
+  "error": {
+    "loadFailed": "Appointment data could not be loaded."
+  },
+  "viewMode": "Schedule period",
+  "layoutMode": "Schedule layout",
+  "analytics": {
+    "hide": "Hide analytics",
+    "show": "Analytics & flow"
   }
 }

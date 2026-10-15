@@ -5,16 +5,16 @@ const crypto = require('crypto');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://***REMOVED***/rcms'
+    connectionString: process.env.DATABASE_URL || 'postgresql://***REMOVED***/VIARA'
 });
 
 async function createAdmin() {
     try {
         const password = process.env.ADMIN_PASSWORD || crypto.randomBytes(12).toString('base64url');
-        const salt = await bcrypt.genSalt(10);
+        const salt = await bcrypt.genSalt(12);
         const hash = await bcrypt.hash(password, salt);
 
-        const email = process.env.ADMIN_EMAIL || 'superadmin@rcms.com';
+        const email = process.env.ADMIN_EMAIL || 'superadmin@VIARA.com';
 
         // Check if exists
         const check = await pool.query('SELECT * FROM users WHERE email = $1', [email]);

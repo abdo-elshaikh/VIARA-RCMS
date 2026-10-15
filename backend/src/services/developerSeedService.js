@@ -1,7 +1,7 @@
 const bcrypt = require('bcrypt');
 const logger = require('../config/logger');
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 const MIN_DEVELOPER_PASSWORD_LENGTH = 12;
 
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();

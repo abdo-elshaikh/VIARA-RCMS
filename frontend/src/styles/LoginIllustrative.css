@@ -1,0 +1,2101 @@
+/* ═══════════════════════════════════════════════════════════════
+   VIARA Modern Login — Aligned with Landing Page Reference Design
+   Scoped to .vlogin
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Fonts ── */
+@font-face {
+    font-family: 'Viara Cairo';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 200 1000;
+    src: url(/fonts/viara/cairo-arabic-wght-normal.woff2) format('woff2-variations');
+    unicode-range: U+0600-06FF, U+0750-077F, U+0870-088E, U+0890-0891, U+0897-08E1,
+        U+08E3-08FF, U+200C-200E, U+2010-2011, U+204F, U+2E41, U+FB50-FDFF,
+        U+FE70-FE74, U+FE76-FEFC;
+}
+@font-face {
+    font-family: 'Viara Cairo';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 200 1000;
+    src: url(/fonts/viara/cairo-latin-ext-wght-normal.woff2) format('woff2-variations');
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF;
+}
+@font-face {
+    font-family: 'Viara Cairo';
+    font-style: normal;
+    font-display: swap;
+    font-weight: 200 1000;
+    src: url(/fonts/viara/cairo-latin-wght-normal.woff2) format('woff2-variations');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+        U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+FEFF, U+FFFD;
+}
+
+/* ── Design Tokens matching Landing Page ── */
+.vlogin {
+    --vlp-bg:        #f4f8f5;
+    --vlp-paper:     #ffffff;
+    --vlp-ink:       #0e2b22;
+    --vlp-muted:     #5a7068;
+    --vlp-line:      #dde8e3;
+    --vlp-soft:      #e8f3ed;
+    --vlp-green:     #087f5b;
+    --vlp-accent:    #24c7a1;
+    --vlp-button:    #065b47;
+    --vlp-on:        #ffffff;
+    --vlp-deep:      #063c2e;
+    --vlp-header-h:  74px;
+    --vlp-danger:    #b42335;
+    --vlp-error-bg:  #fff1f2;
+    --vlp-glow:      rgba(8, 127, 91, 0.14);
+    --vlp-glow-bright: rgba(36, 199, 161, 0.13);
+    --vlp-grid:      rgba(7, 92, 74, 0.065);
+    --vlp-field:     #f4faf7;
+
+    font-family: 'Viara Cairo', system-ui, -apple-system, sans-serif;
+    color: var(--vlp-ink);
+    background:
+        radial-gradient(ellipse at 16% 18%, var(--vlp-glow), transparent 34%),
+        radial-gradient(ellipse at 86% 82%, var(--vlp-glow-bright), transparent 36%),
+        var(--vlp-bg);
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+    isolation: isolate;
+    position: relative;
+    color-scheme: light;
+}
+
+.vlogin.vlogin--dark {
+    --vlp-bg:        #0b1714;
+    --vlp-paper:     #12251e;
+    --vlp-ink:       #eaf5ef;
+    --vlp-muted:     #b0c7bc;
+    --vlp-line:      #2a4437;
+    --vlp-soft:      #183b2c;
+    --vlp-green:     #24c7a1;
+    --vlp-accent:    #6ee7c4;
+    --vlp-button:    #087f5b;
+    --vlp-on:        #ffffff;
+    --vlp-deep:      #0c2a20;
+    --vlp-danger:    #ffb4bd;
+    --vlp-error-bg:  #3b2029;
+    --vlp-glow:      rgba(36, 199, 161, 0.16);
+    --vlp-glow-bright: rgba(6, 182, 212, 0.1);
+    --vlp-grid:      rgba(95, 216, 176, 0.055);
+    --vlp-field:     #142b25;
+    color-scheme: dark;
+}
+
+.vlogin.vlogin--reduce-motion *,
+.vlogin.vlogin--reduce-motion *::before,
+.vlogin.vlogin--reduce-motion *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+}
+
+.vlogin, .vlogin *, .vlogin *::before, .vlogin *::after {
+    box-sizing: border-box;
+}
+
+.vlogin a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.vlogin button,
+.vlogin input {
+    font: inherit;
+}
+
+.vlogin button {
+    color: inherit;
+    cursor: pointer;
+}
+
+.vlogin :is(a, button):focus-visible {
+    outline: 3px solid var(--vlp-green);
+    outline-offset: 3px;
+    border-radius: 8px;
+}
+
+.vlogin button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+/* ════════════════════════════════════════════════
+   BACKGROUND AMBIENT GLOW
+   ════════════════════════════════════════════════ */
+.vlogin__ambient {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.vlogin__ambient-backdrop {
+    position: absolute;
+    inset: 0;
+    background-image: url('/images/viara/login-reference-panorama.webp');
+    background-size: cover;
+    background-position: center 35%;
+    opacity: 0.055;
+    filter: saturate(0.85);
+    transition: opacity 0.5s ease;
+}
+
+.vlogin.vlogin--dark .vlogin__ambient-backdrop {
+    opacity: 0.16;
+    filter: saturate(0.9) brightness(0.65);
+}
+
+.vlogin__ambient::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(var(--vlp-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--vlp-grid) 1px, transparent 1px);
+    background-size: 46px 46px;
+    -webkit-mask-image: radial-gradient(ellipse 76% 68% at 58% 34%, #000 18%, transparent 82%);
+    mask-image: radial-gradient(ellipse 76% 68% at 58% 34%, #000 18%, transparent 82%);
+}
+
+.vlogin__ambient-orb-1 {
+    position: absolute;
+    top: -120px;
+    inset-inline-start: -100px;
+    width: 600px;
+    height: 600px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--vlp-glow) 0%, transparent 70%);
+    filter: blur(80px);
+    opacity: 0.85;
+}
+
+.vlogin__ambient-orb-2 {
+    position: absolute;
+    bottom: -150px;
+    inset-inline-end: -80px;
+    width: 700px;
+    height: 700px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--vlp-glow) 0%, transparent 68%);
+    filter: blur(90px);
+    opacity: 0.7;
+}
+
+/* ════════════════════════════════════════════════
+   HEADER — Aligned with Landing Page Header
+   ════════════════════════════════════════════════ */
+.vlogin__header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    height: var(--vlp-header-h);
+    padding: 0 clamp(20px, 4.5vw, 64px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: color-mix(in srgb, var(--vlp-bg) 82%, transparent);
+    backdrop-filter: blur(22px) saturate(1.6);
+    -webkit-backdrop-filter: blur(22px) saturate(1.6);
+    border-bottom: 1px solid color-mix(in srgb, var(--vlp-line) 70%, transparent);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.32), 0 8px 24px -18px rgba(14, 43, 34, 0.18);
+    direction: ltr; /* Always brand start, utilities end */
+}
+
+/* Brand */
+.vlogin__header-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    direction: ltr;
+    border-radius: 12px;
+    padding: 6px 8px;
+    text-decoration: none;
+    flex-shrink: 0;
+    transition: transform 0.18s ease;
+}
+
+.vlogin__header-brand:hover {
+    transform: scale(1.02);
+}
+
+.vlogin__header-brand img {
+    width: 38px;
+    height: 38px;
+    object-fit: contain;
+}
+
+.vlogin__header-brand strong {
+    font: 800 23px/1.2 system-ui, sans-serif;
+    letter-spacing: 2.2px;
+    color: var(--vlp-ink);
+}
+
+.vlogin__header-brand-fallback {
+    font: 900 36px/1 system-ui, sans-serif;
+    color: var(--vlp-green);
+    transform: skew(-8deg);
+    display: block;
+}
+
+/* Header Utilities */
+.vlogin__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* Service Health badge */
+.vlogin__util-service {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid var(--vlp-line);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--vlp-paper) 80%, transparent);
+    color: var(--vlp-muted);
+    font-size: 12px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+}
+
+.vlogin__util-service:hover {
+    border-color: var(--vlp-green);
+    color: var(--vlp-green);
+    background: var(--vlp-soft);
+}
+
+.vlogin__util-service i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    animation: vlogin-pulse 2s infinite ease-in-out;
+}
+
+/* Demo trigger badge (dev mode) */
+.vlogin__util-demo {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 36px;
+    padding: 0 12px;
+    border: 1px solid color-mix(in srgb, var(--vlp-green) 35%, var(--vlp-line));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--vlp-green) 10%, transparent);
+    color: var(--vlp-green);
+    font-size: 12px;
+    font-weight: 700;
+    transition: all 0.2s ease;
+}
+
+.vlogin__util-demo:hover {
+    background: color-mix(in srgb, var(--vlp-green) 18%, transparent);
+    border-color: var(--vlp-green);
+}
+
+.vlogin__util-demo-count {
+    display: inline-grid;
+    place-items: center;
+    background: var(--vlp-green);
+    color: var(--vlp-on);
+    font-size: 10.5px;
+    font-weight: 800;
+    height: 18px;
+    min-width: 18px;
+    border-radius: 9999px;
+    padding: 0 5px;
+}
+
+/* Theme toggle */
+.vlogin__util-icon {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--vlp-muted);
+    cursor: pointer;
+    transition: background 0.18s, color 0.18s;
+}
+
+.vlogin__util-icon:hover {
+    background: var(--vlp-soft);
+    color: var(--vlp-ink);
+}
+
+/* Language Switcher */
+.vlogin__util-lang {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--vlp-muted);
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.18s, color 0.18s;
+}
+
+.vlogin__util-lang:hover {
+    background: var(--vlp-soft);
+    color: var(--vlp-ink);
+}
+
+/* Separator */
+.vlogin__util-sep {
+    display: block;
+    width: 1px;
+    height: 20px;
+    background: var(--vlp-line);
+    margin: 0 6px;
+    flex-shrink: 0;
+}
+
+/* Back to Home Button */
+.vlogin__header-home {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: color-mix(in srgb, var(--vlp-paper) 88%, transparent);
+    color: var(--vlp-ink) !important;
+    border: 1px solid var(--vlp-line);
+    border-radius: 11px;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 8px 15px;
+    min-height: 36px;
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.vlogin__header-home:hover {
+    box-shadow: 0 6px 18px -6px rgba(6, 91, 71, 0.6);
+    transform: translateY(-1px);
+}
+
+/* ════════════════════════════════════════════════
+   MAIN STAGE — Split Screen Architecture
+   ════════════════════════════════════════════════ */
+.vlogin__body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(16px, 3vh, 36px) clamp(16px, 4vw, 48px);
+    width: 100%;
+}
+
+.vlogin__card {
+    display: grid;
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+    width: min(100%, 1240px);
+    min-height: clamp(620px, calc(100svh - 130px), 820px);
+    background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.92));
+    border: 1px solid color-mix(in srgb, var(--vlp-line) 85%, transparent);
+    border-radius: 30px;
+    overflow: hidden;
+    box-shadow: 0 28px 80px -38px rgba(8, 60, 46, 0.34),
+                0 12px 30px rgba(8, 60, 46, 0.06),
+                inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    position: relative;
+    transition: box-shadow 0.3s ease;
+}
+
+/* ════════════════════════════════════════════════
+   VISUAL STAGE (Medical Intelligence Showcase)
+   ════════════════════════════════════════════════ */
+.vlogin__visual {
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background: var(--vlp-deep);
+    color: #ffffff;
+    padding: clamp(28px, 4.5vh, 48px) clamp(28px, 3.8vw, 54px);
+    direction: ltr; /* Keeps telemetry artwork layout stable */
+}
+
+.vlogin__scene {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 42%;
+    opacity: 0.76;
+    transition: transform 1.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.vlogin__visual:hover .vlogin__scene {
+    transform: scale(1.025);
+}
+
+.vlogin--dark .vlogin__scene {
+    opacity: 0.64;
+    filter: brightness(0.85) saturate(0.95);
+}
+
+/* Dynamic medical gradient overlays */
+.vlogin__visual-overlay {
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(180deg, rgba(6, 40, 30, 0.75) 0%, rgba(6, 40, 30, 0.4) 45%, rgba(6, 30, 24, 0.94) 100%),
+        radial-gradient(ellipse at 85% 15%, rgba(36, 199, 161, 0.28), transparent 50%),
+        linear-gradient(90deg, rgba(6, 60, 46, 0.08), rgba(6, 60, 46, 0.16));
+    pointer-events: none;
+}
+
+/* Visual Copy Header */
+.vlogin__visual-header {
+    position: relative;
+    z-index: 2;
+}
+
+.vlogin__visual-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(12px);
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #a7f3d0;
+    margin-bottom: 22px;
+}
+
+.vlogin__visual-tag i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #34d399;
+    box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.3);
+    animation: vlogin-pulse 1.8s infinite;
+}
+
+.vlogin__visual-title {
+    font-size: clamp(30px, 3.2vw, 44px);
+    font-weight: 900;
+    line-height: 1.25;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+    margin: 0 0 14px;
+}
+
+.vlogin__visual-title span {
+    display: block;
+    color: #6ee7c4;
+    background: linear-gradient(110deg, #a7f3d0 0%, #6ee7c4 52%, #24c7a1 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.vlogin__visual-desc {
+    font-size: clamp(14px, 1.1vw, 16px);
+    line-height: 1.75;
+    color: rgba(230, 245, 237, 0.85);
+    max-width: 440px;
+    margin: 0;
+}
+
+/* Floating Glass Telemetry Card (matching Landing Worklist Card) */
+.vlogin__telemetry-card {
+    position: relative;
+    z-index: 2;
+    margin-top: auto;
+    background: linear-gradient(145deg, rgba(8, 48, 37, 0.84), rgba(5, 35, 28, 0.76));
+    border: 1px solid rgba(167, 243, 208, 0.24);
+    border-radius: 22px;
+    padding: 18px 20px;
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    box-shadow: 0 24px 56px -18px rgba(0, 0, 0, 0.48),
+                inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
+.vlogin__telemetry-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    margin-bottom: 14px;
+}
+
+.vlogin__telemetry-node {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.vlogin__telemetry-icon {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: rgba(16, 185, 129, 0.2);
+    color: #6ee7b7;
+}
+
+.vlogin__telemetry-node-text strong {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.vlogin__telemetry-node-text span {
+    display: block;
+    font-size: 10px;
+    color: #a7f3d0;
+}
+
+.vlogin__telemetry-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 700;
+    color: #6ee7b7;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 999px;
+    padding: 2px 8px;
+}
+
+.vlogin__telemetry-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.vlogin__telemetry-item {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 10px;
+    text-align: start;
+}
+
+.vlogin__telemetry-label {
+    display: block;
+    font-size: 9.5px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+}
+
+.vlogin__telemetry-val {
+    font-size: 11.5px;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+/* ════════════════════════════════════════════════
+   FORM PANE (Civilized & Modern Authentication)
+   ════════════════════════════════════════════════ */
+.vlogin__form-pane {
+    padding: clamp(28px, 4vh, 48px) clamp(28px, 4.5vw, 64px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(145deg, color-mix(in srgb, var(--vlp-paper) 97%, var(--vlp-soft)), var(--vlp-paper) 54%);
+}
+
+.vlogin__form-inner {
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
+}
+
+/* Header inside Form */
+.vlogin__form-header {
+    margin-bottom: clamp(20px, 3vh, 30px);
+}
+
+/* Eyebrow matching Landing Page with emerald line */
+.vlogin__eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    font-size: 12.5px;
+    font-weight: 800;
+    color: var(--vlp-green);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 10px;
+}
+
+.vlogin[dir='rtl'] .vlogin__eyebrow::after {
+    content: '';
+    display: inline-block;
+    width: 32px;
+    height: 2px;
+    background: var(--vlp-green);
+    border-radius: 999px;
+    margin-inline-start: 10px;
+    flex-shrink: 0;
+}
+
+.vlogin[dir='ltr'] .vlogin__eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 32px;
+    height: 2px;
+    background: var(--vlp-green);
+    border-radius: 999px;
+    margin-inline-end: 10px;
+    flex-shrink: 0;
+}
+
+.vlogin__form-pane h1 {
+    font-size: clamp(30px, 3vw, 40px);
+    font-weight: 900;
+    line-height: 1.25;
+    letter-spacing: -0.03em;
+    color: var(--vlp-ink);
+    margin: 0 0 8px;
+}
+
+.vlogin__subtitle {
+    font-size: 14.5px;
+    line-height: 1.7;
+    color: var(--vlp-muted);
+    margin: 0;
+}
+
+/* Form Fields */
+.vlogin__field {
+    margin-bottom: 20px;
+}
+
+.vlogin__field > label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13.5px;
+    font-weight: 700;
+    color: var(--vlp-ink);
+    margin-bottom: 8px;
+}
+
+.vlogin__input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    border: 1.5px solid var(--vlp-line);
+    border-radius: 16px;
+    background: var(--vlp-field);
+    padding: 0 16px;
+    min-height: 52px;
+    transition: all 0.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+    color: var(--vlp-muted);
+    direction: ltr; /* keeps inputs cleanly aligned */
+}
+
+.vlogin__input-wrap:focus-within {
+    border-color: var(--vlp-green);
+    background: color-mix(in srgb, var(--vlp-field) 72%, var(--vlp-paper));
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--vlp-green) 16%, transparent), 0 8px 20px -16px var(--vlp-green);
+    color: var(--vlp-green);
+}
+
+.vlogin__input-wrap--invalid {
+    border-color: var(--vlp-danger) !important;
+    background: color-mix(in srgb, var(--vlp-danger) 4%, var(--vlp-paper));
+    box-shadow: 0 0 0 3px rgba(180, 35, 53, 0.12) !important;
+}
+
+.vlogin__input-icon {
+    flex-shrink: 0;
+    margin-inline-end: 12px;
+}
+
+.vlogin__input-wrap input {
+    background: transparent;
+    color: var(--vlp-ink);
+    border: 0;
+    outline: none !important;
+    box-shadow: none;
+    width: 100%;
+    min-width: 0;
+    height: 50px;
+    padding: 8px 0;
+    font-size: 15.5px;
+    line-height: 1.4;
+    font-family: inherit;
+}
+
+.vlogin__input-wrap input::placeholder {
+    color: color-mix(in srgb, var(--vlp-muted) 65%, transparent);
+}
+
+.vlogin__input-wrap input:-webkit-autofill {
+    -webkit-text-fill-color: var(--vlp-ink) !important;
+    -webkit-box-shadow: 0 0 0 1000px var(--vlp-field) inset !important;
+    box-shadow: 0 0 0 1000px var(--vlp-field) inset !important;
+    caret-color: var(--vlp-ink);
+}
+
+.vlogin__eye {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: transparent;
+    border: 0;
+    color: var(--vlp-muted);
+    transition: color 0.18s, background 0.18s;
+}
+
+.vlogin__eye:hover {
+    color: var(--vlp-green);
+    background: var(--vlp-soft);
+}
+
+.vlogin__field-error {
+    color: var(--vlp-danger);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.6;
+    margin: 6px 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.vlogin__caps {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #b45309;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    margin-top: 7px;
+}
+
+.vlogin--dark .vlogin__caps {
+    background: #451a03;
+    border-color: #78350f;
+    color: #fde68a;
+}
+
+/* Helpers (Remember me + Help) */
+.vlogin__helpers {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 2px 0 22px;
+    font-size: 13px;
+}
+
+.vlogin__remember {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    color: var(--vlp-ink);
+    font-weight: 600;
+}
+
+.vlogin__remember input {
+    accent-color: var(--vlp-green);
+    height: 17px;
+    width: 17px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin: 0;
+}
+
+.vlogin__help-btn {
+    border: 0;
+    background: transparent;
+    color: var(--vlp-green);
+    font-size: 13px;
+    font-weight: 700;
+    padding: 4px 6px;
+    border-radius: 6px;
+    transition: opacity 0.18s;
+}
+
+.vlogin__help-btn:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+}
+
+/* Server Error Banner */
+.vlogin__server-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: var(--vlp-error-bg);
+    color: var(--vlp-danger);
+    border: 1px solid color-mix(in srgb, var(--vlp-danger) 30%, transparent);
+    padding: 12px 16px;
+    border-radius: 14px;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.6;
+    margin-bottom: 20px;
+}
+
+.vlogin__server-error svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+/* Submit Button (matching Landing Page vlp__button--large) */
+.vlogin__submit {
+    position: relative;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    border: 0;
+    background: var(--vlp-button);
+    color: var(--vlp-on) !important;
+    min-height: 54px;
+    border-radius: 16px;
+    font-size: 16px;
+    font-weight: 800;
+    padding: 12px 32px;
+    background: linear-gradient(110deg, #065b47 0%, #087f5b 58%, #0a8a68 100%);
+    box-shadow: 0 14px 30px -14px rgba(6, 91, 71, 0.78), inset 0 1px 0 rgba(255,255,255,.18);
+    transition: all 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.vlogin__submit:hover:not(:disabled) {
+    box-shadow: 0 18px 38px -14px rgba(6, 91, 71, 0.86), inset 0 1px 0 rgba(255,255,255,.22);
+    transform: translateY(-1.5px);
+}
+
+.vlogin__submit:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.vlogin__submit-arrow {
+    transition: transform 0.2s ease;
+}
+
+.vlogin[dir='ltr'] .vlogin__submit:hover .vlogin__submit-arrow {
+    transform: translateX(4px);
+}
+
+.vlogin[dir='rtl'] .vlogin__submit:hover .vlogin__submit-arrow {
+    transform: translateX(-4px);
+}
+
+/* Divider */
+.vlogin__divider {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    color: var(--vlp-muted);
+    font-size: 12px;
+    font-weight: 700;
+    margin: 22px 0;
+}
+
+.vlogin__divider::before,
+.vlogin__divider::after {
+    content: '';
+    height: 1px;
+    background: var(--vlp-line);
+    flex: 1;
+}
+
+/* Passkey Button */
+.vlogin__passkey {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border: 1.5px solid var(--vlp-line);
+    color: var(--vlp-ink) !important;
+    background: color-mix(in srgb, var(--vlp-paper) 80%, var(--vlp-soft));
+    width: 100%;
+    min-height: 52px;
+    border-radius: 14px;
+    font-size: 14.5px;
+    font-weight: 700;
+    padding: 10px 18px;
+    transition: all 0.2s ease;
+}
+
+.vlogin__passkey:hover:not(:disabled) {
+    border-color: var(--vlp-green);
+    background: var(--vlp-soft);
+    color: var(--vlp-green) !important;
+    box-shadow: 0 8px 20px -14px rgba(8, 127, 91, 0.42);
+}
+
+.vlogin__passkey-note {
+    font-size: 11.5px;
+    color: var(--vlp-muted);
+    text-align: center;
+    line-height: 1.7;
+    margin: 10px 0 0;
+}
+
+/* Spinner */
+.vlogin__spinner {
+    animation: vlogin-spin 0.9s linear infinite;
+}
+
+/* ════════════════════════════════════════════════
+   MODALS (Service Health, Help, Dev Demo)
+   ════════════════════════════════════════════════ */
+.vlogin__dialog {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    padding: 20px;
+    margin: auto;
+    border: 0;
+    background: transparent;
+    max-width: 100%;
+    max-height: 100%;
+    overflow: visible;
+}
+
+.vlogin__dialog::backdrop {
+    background: rgba(5, 24, 19, 0.6);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.vlogin__dialog-card {
+    background: var(--vlp-paper);
+    color: var(--vlp-ink);
+    border: 1px solid var(--vlp-line);
+    border-radius: 24px;
+    box-shadow: 0 32px 90px rgba(0, 0, 0, 0.3);
+    width: min(calc(100vw - 32px), 520px);
+    max-height: min(88vh, 760px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    animation: vlogin-dialog-rise 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.vlogin__dialog-card--demo {
+    width: min(calc(100vw - 32px), 600px);
+}
+
+.vlogin__dialog-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 22px 24px 16px;
+    border-bottom: 1px solid var(--vlp-line);
+}
+
+.vlogin__dialog-head-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.vlogin__dialog-head-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: var(--vlp-soft);
+    color: var(--vlp-green);
+}
+
+.vlogin__dialog-head h2 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 800;
+    color: var(--vlp-ink);
+}
+
+.vlogin__dialog-head p {
+    margin: 2px 0 0;
+    font-size: 12.5px;
+    color: var(--vlp-muted);
+}
+
+.vlogin__dialog-close {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--vlp-line);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--vlp-muted);
+    cursor: pointer;
+    transition: all 0.18s;
+}
+
+.vlogin__dialog-close:hover {
+    color: var(--vlp-ink);
+    background: var(--vlp-soft);
+}
+
+.vlogin__dialog-body {
+    padding: 20px 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* Demo Password Banner */
+.vlogin__demo-pwd-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: color-mix(in srgb, var(--vlp-soft) 70%, var(--vlp-paper));
+    border: 1px solid var(--vlp-line);
+    border-radius: 14px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+}
+
+.vlogin__demo-pwd-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--vlp-muted);
+}
+
+.vlogin__demo-pwd-info code {
+    font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--vlp-ink);
+    background: var(--vlp-paper);
+    padding: 2px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--vlp-line);
+}
+
+.vlogin__demo-copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--vlp-line);
+    border-radius: 8px;
+    background: var(--vlp-paper);
+    color: var(--vlp-ink);
+    font-size: 11.5px;
+    font-weight: 700;
+    transition: all 0.18s;
+}
+
+.vlogin__demo-copy-btn:hover {
+    border-color: var(--vlp-green);
+    color: var(--vlp-green);
+}
+
+/* Demo Search & Tabs */
+.vlogin__demo-controls {
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.vlogin__demo-search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    min-height: 42px;
+    border: 1px solid var(--vlp-line);
+    border-radius: 12px;
+    background: var(--vlp-paper);
+    color: var(--vlp-muted);
+}
+
+.vlogin__demo-search:focus-within {
+    border-color: var(--vlp-green);
+    box-shadow: 0 0 0 3px rgba(8, 116, 87, 0.12);
+}
+
+.vlogin__demo-search input {
+    border: 0;
+    background: transparent;
+    outline: none;
+    width: 100%;
+    font-size: 13px;
+    color: var(--vlp-ink);
+}
+
+.vlogin__demo-tabs {
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+}
+
+.vlogin__demo-tab {
+    padding: 5px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--vlp-line);
+    background: transparent;
+    font-size: 11.5px;
+    font-weight: 700;
+    color: var(--vlp-muted);
+    white-space: nowrap;
+    transition: all 0.18s;
+}
+
+.vlogin__demo-tab--active {
+    background: var(--vlp-green);
+    color: var(--vlp-on) !important;
+    border-color: var(--vlp-green);
+}
+
+/* Demo Cards List */
+.vlogin__demo-list {
+    display: grid;
+    gap: 8px;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.vlogin__demo-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--vlp-line);
+    border-radius: 14px;
+    background: var(--vlp-paper);
+    padding: 8px 12px;
+    transition: all 0.2s ease;
+    width: 100%;
+}
+
+.vlogin__demo-item:hover {
+    border-color: var(--vlp-green);
+    background: color-mix(in srgb, var(--vlp-soft) 40%, var(--vlp-paper));
+    box-shadow: 0 4px 14px -4px rgba(8, 116, 87, 0.18);
+}
+
+.vlogin__demo-main-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    padding: 4px 0;
+    text-align: start;
+    cursor: pointer;
+}
+
+.vlogin__demo-avatar {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    flex-shrink: 0;
+}
+
+.vlogin__demo-avatar--emerald { background: rgba(16, 185, 129, 0.12); color: #059669; }
+.vlogin__demo-avatar--cyan    { background: rgba(6, 182, 212, 0.12); color: #0891b2; }
+.vlogin__demo-avatar--teal    { background: rgba(20, 184, 166, 0.12); color: #0d9488; }
+.vlogin__demo-avatar--amber   { background: rgba(245, 158, 11, 0.12); color: #d97706; }
+.vlogin__demo-avatar--orange  { background: rgba(249, 115, 22, 0.12); color: #ea580c; }
+.vlogin__demo-avatar--indigo  { background: rgba(99, 102, 241, 0.12); color: #4f46e5; }
+.vlogin__demo-avatar--purple  { background: rgba(168, 85, 247, 0.12); color: #9333ea; }
+.vlogin__demo-avatar--rose    { background: rgba(244, 63, 94, 0.12); color: #e11d48; }
+.vlogin__demo-avatar--blue    { background: rgba(59, 130, 246, 0.12); color: #2563eb; }
+
+.vlogin__demo-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.vlogin__demo-info strong {
+    font-size: 13.5px;
+    font-weight: 800;
+    color: var(--vlp-ink);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.vlogin__demo-info span {
+    font-size: 11.5px;
+    color: var(--vlp-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.vlogin__demo-info code {
+    font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
+    font-size: 11px;
+    color: var(--vlp-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.vlogin__demo-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.vlogin__demo-login-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    background: var(--vlp-soft);
+    color: var(--vlp-green);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* Help Dialog Content */
+.vlogin__help-content {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.vlogin__help-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--vlp-line);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--vlp-soft) 40%, var(--vlp-paper));
+}
+
+.vlogin__help-card-icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--vlp-soft);
+    color: var(--vlp-green);
+    flex-shrink: 0;
+}
+
+.vlogin__help-card-info strong {
+    display: block;
+    font-size: 13.5px;
+    color: var(--vlp-ink);
+}
+
+.vlogin__help-card-info a {
+    display: block;
+    font-size: 12.5px;
+    color: var(--vlp-green);
+    direction: ltr;
+    text-align: start;
+    font-weight: 600;
+}
+
+/* ════════════════════════════════════════════════
+   ANIMATIONS & KEYFRAMES
+   ════════════════════════════════════════════════ */
+@keyframes vlogin-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes vlogin-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.92); }
+}
+
+@keyframes vlogin-dialog-rise {
+    from {
+        opacity: 0;
+        transform: translateY(14px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* ════════════════════════════════════════════════
+   RESPONSIVE DESIGN
+   ════════════════════════════════════════════════ */
+@media (max-width: 1024px) {
+    .vlogin__card {
+        grid-template-columns: 1fr;
+        max-width: 540px;
+        min-height: auto;
+        border-radius: 22px;
+    }
+    .vlogin__visual {
+        display: none; /* Mobile/tablet emphasizes fast, high-security login */
+    }
+    .vlogin__form-pane {
+        padding: 36px 30px;
+    }
+    .vlogin__header {
+        padding: 0 20px;
+    }
+}
+
+@media (max-width: 640px) {
+    .vlogin__header-actions .vlogin__util-service {
+        display: none; /* save space on small screens */
+    }
+    .vlogin__body {
+        padding: 16px;
+    }
+    .vlogin__form-pane {
+        padding: 28px 20px;
+    }
+    .vlogin__card {
+        border-radius: 18px;
+    }
+}
+
+/* Keep the login task clear and fully visible on common laptop displays. */
+.vlogin {
+    --vlp-header-h: 68px;
+}
+
+.vlogin__header {
+    height: var(--vlp-header-h);
+}
+
+.vlogin__body {
+    padding-block: clamp(12px, 2vh, 22px);
+}
+
+.vlogin__card {
+    min-height: clamp(600px, calc(100svh - var(--vlp-header-h) - 40px), 760px);
+}
+
+.vlogin__form-pane {
+    padding-block: clamp(24px, 3vh, 38px);
+}
+
+.vlogin__form-header {
+    margin-bottom: clamp(16px, 2.3vh, 24px);
+}
+
+.vlogin__field {
+    margin-bottom: 16px;
+}
+
+.vlogin__input-wrap {
+    min-height: 50px;
+}
+
+.vlogin__input-wrap input {
+    height: 48px;
+}
+
+.vlogin__helpers {
+    margin-bottom: 18px;
+}
+
+.vlogin__divider {
+    margin-block: 16px;
+}
+
+.vlogin__telemetry-card {
+    padding: 14px 16px;
+}
+
+/* Transparent, content-aligned login header. */
+.vlogin__header {
+    position: relative;
+    width: 100%;
+    padding-inline: max(24px, calc((100vw - 1200px) / 2));
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.vlogin__header-home {
+    color: var(--vlp-ink) !important;
+    background: transparent;
+    border: 1px solid var(--vlp-line);
+    box-shadow: none;
+}
+
+.vlogin__header-home:hover {
+    color: var(--vlp-green) !important;
+    background: var(--vlp-soft);
+    border-color: color-mix(in srgb, var(--vlp-green) 35%, var(--vlp-line));
+    box-shadow: none;
+}
+
+.vlogin__util-service {
+    background: transparent;
+}
+
+/* Icon-only circular controls keep the header light and compact. */
+.vlogin__header-actions {
+    gap: 8px;
+}
+
+.vlogin__header-actions :is(.vlogin__util-service, .vlogin__util-demo, .vlogin__util-icon, .vlogin__util-lang, .vlogin__header-home) {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--vlp-line) 86%, var(--vlp-green));
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--vlp-paper) 84%, var(--vlp-soft));
+    color: var(--vlp-ink) !important;
+    box-shadow: 0 4px 12px -10px rgba(8, 60, 46, .55), inset 0 1px 0 rgba(255,255,255,.62);
+    transition: color 0.18s ease, background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, box-shadow .18s ease;
+}
+
+.vlogin__header-actions :is(.vlogin__util-service, .vlogin__util-demo, .vlogin__util-icon, .vlogin__util-lang, .vlogin__header-home):hover {
+    color: var(--vlp-green) !important;
+    background: var(--vlp-soft);
+    border-color: color-mix(in srgb, var(--vlp-green) 40%, var(--vlp-line));
+    box-shadow: 0 8px 18px -12px var(--vlp-green), inset 0 1px 0 rgba(255,255,255,.72);
+    transform: translateY(-1px);
+}
+
+.vlogin__header-actions :is(.vlogin__util-service, .vlogin__util-demo, .vlogin__util-icon, .vlogin__util-lang, .vlogin__header-home):active {
+    transform: scale(.95);
+}
+
+.vlogin__header-actions .vlogin__header-home {
+    color: var(--vlp-green) !important;
+}
+
+.vlogin__header-actions .vlogin__util-demo-count {
+    background: var(--vlp-green);
+    color: #fff;
+}
+
+.vlogin__form-header,
+.vlogin__field,
+.vlogin__helpers,
+.vlogin__submit,
+.vlogin__divider,
+.vlogin__passkey {
+    animation: vlogin-content-enter .48s both;
+}
+.vlogin__field:nth-of-type(2) { animation-delay: .05s; }
+.vlogin__helpers { animation-delay: .1s; }
+.vlogin__submit { animation-delay: .14s; }
+.vlogin__divider, .vlogin__passkey { animation-delay: .18s; }
+
+@keyframes vlogin-content-enter {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .vlogin *, .vlogin *::before, .vlogin *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+    }
+}
+
+.vlogin__header-actions .vlogin__util-service > span,
+.vlogin__header-actions .vlogin__util-demo > span:not(.vlogin__util-demo-count),
+.vlogin__header-actions .vlogin__util-lang > span,
+.vlogin__header-actions .vlogin__header-home > span {
+    display: none;
+}
+
+.vlogin__header-actions .vlogin__util-service i {
+    position: absolute;
+    inset-block-start: 3px;
+    inset-inline-end: 3px;
+    width: 8px;
+    height: 8px;
+    border: 1.5px solid var(--vlp-bg);
+}
+
+.vlogin__header-actions .vlogin__util-demo-count {
+    position: absolute;
+    inset-block-start: -4px;
+    inset-inline-end: -5px;
+    height: 17px;
+    min-width: 17px;
+    padding: 0 4px;
+    border: 2px solid var(--vlp-bg);
+    font-size: 9px;
+}
+
+.vlogin__header-actions .vlogin__util-sep {
+    display: none;
+}
+
+@media (max-width: 1024px) {
+    .vlogin__card {
+        min-height: auto;
+    }
+
+    .vlogin__header {
+        padding-inline: 24px;
+    }
+}
+
+@media (max-width: 640px) {
+    .vlogin {
+        --vlp-header-h: 60px;
+    }
+
+    .vlogin__header {
+        height: var(--vlp-header-h);
+        padding-inline: 12px;
+        gap: 8px;
+    }
+
+    .vlogin__header-brand {
+        gap: 6px;
+        padding-inline: 2px;
+    }
+
+    .vlogin__header-brand img {
+        width: 32px;
+        height: 32px;
+    }
+
+    .vlogin__header-brand strong {
+        font-size: 18px;
+    }
+
+    .vlogin__header-actions {
+        gap: 6px;
+    }
+
+    .vlogin__header-actions :is(.vlogin__util-service, .vlogin__util-demo, .vlogin__util-icon, .vlogin__util-lang, .vlogin__header-home) {
+        width: 36px;
+        min-width: 36px;
+        height: 36px;
+        min-height: 36px;
+    }
+
+    .vlogin__body {
+        padding: 12px;
+    }
+
+    .vlogin__form-pane {
+        padding: 26px 20px;
+    }
+}
+
+/* Cleaner, denser demo account picker. */
+.vlogin__dialog-card--demo {
+    width: min(calc(100vw - 32px), 660px);
+    max-height: min(86vh, 700px);
+    border-radius: 20px;
+}
+
+.vlogin__dialog-card--demo .vlogin__dialog-head {
+    padding: 16px 20px 12px;
+}
+
+.vlogin__dialog-card--demo .vlogin__dialog-head-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+}
+
+.vlogin__dialog-card--demo .vlogin__dialog-head h2 {
+    font-size: 17px;
+}
+
+.vlogin__dialog-card--demo .vlogin__dialog-head p {
+    font-size: 11.5px;
+}
+
+.vlogin__dialog-card--demo .vlogin__dialog-body {
+    padding: 14px 20px 18px;
+}
+
+.vlogin__demo-pwd-box {
+    gap: 8px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+    border-radius: 12px;
+}
+
+.vlogin__demo-pwd-info {
+    min-width: 0;
+    gap: 7px;
+    font-size: 11.5px;
+}
+
+.vlogin__demo-pwd-info code {
+    font-size: 12px;
+}
+
+.vlogin__demo-pwd-box .vlogin__demo-copy-btn,
+.vlogin__demo-actions .vlogin__demo-copy-btn {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 50%;
+}
+
+.vlogin__demo-pwd-box .vlogin__demo-copy-btn span {
+    display: none;
+}
+
+.vlogin__demo-controls {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.2fr);
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.vlogin__demo-search {
+    min-height: 38px;
+    padding-inline: 10px;
+    border-radius: 10px;
+}
+
+.vlogin__demo-tabs {
+    min-width: 0;
+    gap: 5px;
+    padding: 2px 1px;
+}
+
+.vlogin__demo-tab {
+    padding: 5px 9px;
+    border-radius: 999px;
+    font-size: 10.5px;
+}
+
+.vlogin__demo-list {
+    gap: 6px;
+}
+
+.vlogin__demo-item {
+    gap: 8px;
+    padding: 7px 9px;
+    border-radius: 12px;
+    box-shadow: none;
+}
+
+.vlogin__demo-main-btn {
+    gap: 9px;
+    padding: 1px 0;
+}
+
+.vlogin__demo-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+}
+
+.vlogin__demo-info {
+    gap: 1px;
+}
+
+.vlogin__demo-info strong {
+    font-size: 12.5px;
+}
+
+.vlogin__demo-info span {
+    font-size: 10.5px;
+}
+
+.vlogin__demo-info code {
+    display: none;
+}
+
+.vlogin__demo-login-chip {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+}
+
+.vlogin__demo-login-chip span {
+    display: none;
+}
+
+.vlogin__demo-actions {
+    gap: 0;
+}
+
+@media (max-width: 560px) {
+    .vlogin__dialog-card--demo .vlogin__dialog-head {
+        padding: 14px 14px 10px;
+    }
+
+    .vlogin__dialog-card--demo .vlogin__dialog-body {
+        padding: 12px 14px 14px;
+    }
+
+    .vlogin__demo-controls {
+        grid-template-columns: 1fr;
+        gap: 7px;
+    }
+}
+
+/* Final surface polish and consistent browser autofill colors. */
+.vlogin__card {
+    border-color: color-mix(in srgb, var(--vlp-line) 76%, var(--vlp-accent));
+    box-shadow:
+        0 34px 88px -38px rgba(4, 40, 30, 0.36),
+        0 8px 28px rgba(4, 40, 30, 0.06),
+        inset 0 1px 0 rgba(255, 255, 255, 0.62);
+}
+
+.vlogin--dark .vlogin__card {
+    border-color: color-mix(in srgb, var(--vlp-line) 76%, var(--vlp-accent));
+    box-shadow:
+        0 36px 92px -38px rgba(0, 0, 0, 0.72),
+        0 8px 30px rgba(0, 0, 0, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.055);
+}
+
+.vlogin--dark .vlogin__form-pane {
+    background: linear-gradient(145deg, color-mix(in srgb, var(--vlp-paper) 92%, var(--vlp-accent)), var(--vlp-paper) 56%);
+}
+
+.vlogin__input-wrap input:autofill {
+    color: var(--vlp-ink);
+    box-shadow: 0 0 0 1000px var(--vlp-field) inset;
+    caret-color: var(--vlp-ink);
+}
+
+.vlogin__submit:focus-visible {
+    outline-offset: 4px;
+}
+
+.vlogin__submit:active:not(:disabled) {
+    box-shadow: 0 8px 18px -12px rgba(6, 91, 71, 0.65), inset 0 1px 3px rgba(0, 0, 0, 0.18);
+}
+
+.vlogin__telemetry-item {
+    transition: background-color .22s ease, border-color .22s ease, transform .22s ease;
+}
+
+.vlogin__telemetry-item:hover {
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(167, 243, 208, 0.24);
+}
+
+@media (max-width: 640px) {
+    .vlogin__ambient::before {
+        background-size: 38px 38px;
+        -webkit-mask-image: radial-gradient(ellipse 100% 58% at 50% 28%, #000 10%, transparent 85%);
+        mask-image: radial-gradient(ellipse 100% 58% at 50% 28%, #000 10%, transparent 85%);
+    }
+}
+
+/* ==========================================================================
+   PREMIUM POLISH PASS — Login Page Enterprise Grade v2
+   ========================================================================== */
+
+/* ── 1. Card: richer shadow with accent tint ── */
+.vlogin__card {
+    box-shadow:
+        0 38px 96px -42px rgba(4, 40, 30, 0.42),
+        0 10px 32px rgba(4, 40, 30, 0.07),
+        inset 0 1px 0 rgba(255,255,255,0.7),
+        0 0 0 1px color-mix(in srgb, var(--vlp-accent) 14%, var(--vlp-line));
+}
+.vlogin--dark .vlogin__card {
+    box-shadow:
+        0 40px 100px -42px rgba(0,0,0,0.78),
+        0 10px 32px rgba(0,0,0,0.22),
+        inset 0 1px 0 rgba(255,255,255,0.04),
+        0 0 0 1px color-mix(in srgb, var(--vlp-accent) 18%, var(--vlp-line));
+}
+
+/* ── 2. Submit button: shimmer sweep ── */
+.vlogin__submit {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(110deg, #053d2f 0%, #065b47 40%, #087f5b 78%, #0a8c6a 100%);
+}
+.vlogin__submit::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 28%, rgba(255,255,255,0.2) 50%, transparent 72%);
+    transform: translateX(-130%);
+    transition: transform 0.65s cubic-bezier(0.22, 0.68, 0.2, 1);
+    pointer-events: none;
+}
+.vlogin__submit:hover:not(:disabled)::after { transform: translateX(130%); }
+
+/* ── 3. Input wrap: floating border glow ── */
+.vlogin__input-wrap:focus-within {
+    box-shadow:
+        0 0 0 3.5px color-mix(in srgb, var(--vlp-green) 18%, transparent),
+        0 8px 22px -16px color-mix(in srgb, var(--vlp-green) 55%, transparent);
+}
+
+/* ── 4. Visual overlay: richer gradient ── */
+.vlogin__visual-overlay {
+    background:
+        linear-gradient(180deg,
+            rgba(4, 30, 22, 0.78) 0%,
+            rgba(4, 30, 22, 0.35) 40%,
+            rgba(3, 22, 17, 0.92) 100%),
+        radial-gradient(ellipse at 82% 12%, rgba(36, 199, 161, 0.32), transparent 50%),
+        radial-gradient(ellipse at 20% 85%, rgba(21, 150, 181, 0.18), transparent 45%);
+}
+
+/* ── 5. Visual title: stronger gradient ── */
+.vlogin__visual-title span {
+    background: linear-gradient(115deg, #b2f5e0 0%, #6ee7c4 48%, #22c7a1 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* ── 6. Telemetry card: glowing border ── */
+.vlogin__telemetry-card {
+    background: linear-gradient(150deg,
+        rgba(8, 52, 40, 0.9) 0%,
+        rgba(4, 32, 25, 0.82) 100%);
+    border-color: rgba(167, 243, 208, 0.28);
+    box-shadow:
+        0 28px 60px -20px rgba(0,0,0,0.55),
+        inset 0 1px 0 rgba(255,255,255,0.22),
+        0 0 0 1px rgba(167, 243, 208, 0.08);
+}
+
+/* ── 7. Telemetry item: hover lift ── */
+.vlogin__telemetry-item {
+    transition: background-color 0.22s ease, border-color 0.22s ease, transform 0.22s ease;
+}
+.vlogin__telemetry-item:hover {
+    transform: translateY(-2px);
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(167, 243, 208, 0.26);
+}
+
+/* ── 8. Passkey button: enhanced shimmer ── */
+.vlogin__passkey {
+    position: relative;
+    overflow: hidden;
+}
+.vlogin__passkey::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(105deg, transparent 36%, rgba(8,127,91,0.07) 50%, transparent 64%);
+    transform: translateX(-200%);
+    transition: transform 0.55s ease;
+    pointer-events: none;
+}
+.vlogin__passkey:hover:not(:disabled)::after { transform: translateX(200%); }
+
+/* ── 9. Form pane: subtle top-center glow ── */
+.vlogin__form-pane {
+    background:
+        radial-gradient(ellipse 70% 30% at 50% 0%, color-mix(in srgb, var(--vlp-accent) 6%, transparent), transparent 70%),
+        linear-gradient(145deg, color-mix(in srgb, var(--vlp-paper) 97%, var(--vlp-soft)), var(--vlp-paper) 54%);
+}
+.vlogin--dark .vlogin__form-pane {
+    background:
+        radial-gradient(ellipse 70% 30% at 50% 0%, color-mix(in srgb, var(--vlp-accent) 8%, transparent), transparent 70%),
+        linear-gradient(145deg, color-mix(in srgb, var(--vlp-paper) 94%, var(--vlp-accent)), var(--vlp-paper) 56%);
+}
+
+/* ── 10. Form heading h1: tight letter-spacing ── */
+.vlogin__form-pane h1 {
+    letter-spacing: -0.035em;
+    line-height: 1.18;
+}
+
+/* ── 11. Visual scene: ken-burns on hover ── */
+.vlogin__visual:hover .vlogin__scene {
+    transform: scale(1.03);
+}
+
+/* ── 12. Header brand: micro bounce on hover ── */
+.vlogin__header-brand {
+    transition: transform 0.22s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.vlogin__header-brand:hover { transform: scale(1.03); }
+
+/* ── 13. Service health dot: animated glow ── */
+.vlogin__util-service i,
+.vlogin__visual-tag i {
+    animation: vlogin-pulse 2s ease-in-out infinite;
+}
+
+/* ── 14. Eyebrow: green line shimmer ── */
+.vlogin[dir='ltr'] .vlogin__eyebrow::before,
+.vlogin[dir='rtl'] .vlogin__eyebrow::after {
+    background: linear-gradient(90deg, var(--vlp-green), var(--vlp-accent));
+}
+
+/* ── 15. Field label: monospaced 'required' micro-dot ── */
+.vlogin__field > label::after {
+    content: '';
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--vlp-accent);
+    margin-inline-start: 5px;
+    vertical-align: super;
+    opacity: 0.7;
+}
+
+/* ── 16. Helper row: forget password link refined ── */
+.vlogin__help-btn {
+    position: relative;
+    padding-block-end: 1px;
+}
+.vlogin__help-btn::after {
+    content: '';
+    position: absolute;
+    inset-block-end: 0;
+    inset-inline-start: 0;
+    width: 0;
+    height: 1.5px;
+    background: var(--vlp-green);
+    transition: width 0.25s ease;
+}
+.vlogin__help-btn:hover::after { width: 100%; }
+.vlogin__help-btn:hover { text-decoration: none; opacity: 1; }
+
+/* ── 17. Error banner: left accent bar ── */
+.vlogin__server-error {
+    border-inline-start: 3px solid var(--vlp-danger);
+    border-radius: 0 14px 14px 0;
+}
+.vlogin[dir='rtl'] .vlogin__server-error {
+    border-inline-start: none;
+    border-inline-end: 3px solid var(--vlp-danger);
+    border-radius: 14px 0 0 14px;
+}
+
+/* ── 18. Visual tag: frosted glass pill ── */
+.vlogin__visual-tag {
+    backdrop-filter: blur(16px) saturate(1.4);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    border-color: rgba(255,255,255,0.22);
+}
+
+/* ── 19. Telemetry node icon: accent ring ── */
+.vlogin__telemetry-icon {
+    box-shadow: 0 0 0 3px rgba(16,185,129,0.14);
+}
+
+/* ── 20. Divider: gradient line ── */
+.vlogin__divider::before,
+.vlogin__divider::after {
+    background: linear-gradient(90deg,
+        transparent,
+        color-mix(in srgb, var(--vlp-line) 80%, var(--vlp-accent)),
+        transparent);
+}
+
+/* ── 21. Dialog card: glassmorphism backdrop ── */
+.vlogin__dialog::backdrop {
+    background: rgba(4, 22, 17, 0.62);
+    backdrop-filter: blur(10px) saturate(1.2);
+    -webkit-backdrop-filter: blur(10px) saturate(1.2);
+}
+
+/* ── 22. Demo item: active accent indicator ── */
+.vlogin__demo-item:hover {
+    box-shadow: 0 6px 18px -8px color-mix(in srgb, var(--vlp-green) 45%, transparent);
+}
+
+/* ── 23. Ambient orbs: subtle animation ── */
+.vlogin__ambient-orb-1 {
+    animation: vlogin-orb-drift-a 20s ease-in-out infinite alternate;
+}
+.vlogin__ambient-orb-2 {
+    animation: vlogin-orb-drift-b 26s ease-in-out infinite alternate;
+}
+@keyframes vlogin-orb-drift-a {
+    to { transform: translate(60px, 80px) scale(1.12); }
+}
+@keyframes vlogin-orb-drift-b {
+    to { transform: translate(-50px, -60px) scale(1.18); }
+}
+
+/* ── 24. Body background: grid texture ── */
+.vlogin__ambient::before {
+    -webkit-mask-image: radial-gradient(ellipse 78% 70% at 58% 34%, #000 16%, transparent 84%);
+    mask-image: radial-gradient(ellipse 78% 70% at 58% 34%, #000 16%, transparent 84%);
+}
+
+/* ── 25. Reduced motion: disable orb animations ── */
+@media (prefers-reduced-motion: reduce) {
+    .vlogin__ambient-orb-1,
+    .vlogin__ambient-orb-2 { animation: none; }
+    .vlogin__submit::after,
+    .vlogin__passkey::after { display: none; }
+    .vlogin__visual .vlogin__scene { transition: none; }
+    .vlogin__help-btn::after { display: none; }
+}

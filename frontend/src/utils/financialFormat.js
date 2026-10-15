@@ -18,12 +18,30 @@ export const toFinancialDateInput = (date = new Date()) => {
     return `${year}-${month}-${day}`;
 };
 
-export const formatFinancialCurrency = (value, language = 'en') => new Intl.NumberFormat(localeFor(language), {
-    style: 'currency',
+export const formatMoney = (value, {
+    currency = 'EGP',
+    language = 'en',
+    locale,
+    minimumFractionDigits,
+    maximumFractionDigits,
+    signDisplay = 'auto',
+} = {}) => {
+    const formatted = new Intl.NumberFormat(locale || localeFor(language), {
+        style: 'currency',
+        currency,
+        signDisplay,
+        ...(minimumFractionDigits === undefined ? {} : { minimumFractionDigits }),
+        ...(maximumFractionDigits === undefined ? {} : { maximumFractionDigits }),
+    }).format(toFinancialNumber(value));
+    return formatted.replace(/\s+/g, '\u00A0');
+};
+
+export const formatFinancialCurrency = (value, language = 'en') => formatMoney(roundFinancialAmount(value), {
     currency: 'EGP',
+    language,
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-}).format(roundFinancialAmount(value));
+});
 
 export const formatFinancialDate = (value, language = 'en') => {
     const parsed = new Date(value);

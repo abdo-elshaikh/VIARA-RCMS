@@ -26,19 +26,22 @@ const auditRead = (auditService, { resourceTable = null, resourceIdParam = 'id' 
       const userId = req.user ? req.user.user_id || null : null;
       const requestPath = req.originalUrl.split('?')[0];
       const resourceId = req.params?.[resourceIdParam] || null;
-      const ipAddress = req.ip || req.connection.remoteAddress;
+      const ipAddress = req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || null;
 
       // Metadata only — no response body, no query values that could carry PHI.
       const details = JSON.stringify({
         statusCode: res.statusCode,
         method: req.method,
+        emergencyAccessId: (req.emergencyAccess || req.emergencyAccessVerified)?.grantId || null,
       });
 
       const severity = outcome === AUDIT_OUTCOME.DENIED ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.NOTICE;
 
       await auditService.logEvent({
         actor: {
-          type: userId ? AUDIT_ACTOR_TYPE.USER : AUDIT_ACTOR_TYPE.SYSTEM,
+          type: req.user?.role === 'Patient'
+            ? AUDIT_ACTOR_TYPE.PATIENT
+            : userId ? AUDIT_ACTOR_TYPE.USER : AUDIT_ACTOR_TYPE.SYSTEM,
           userId,
           role: req.user?.role || null,
           name: req.user?.full_name || req.user?.name || null,
@@ -52,6 +55,11 @@ const auditRead = (auditService, { resourceTable = null, resourceIdParam = 'id' 
           type: resourceTable,
           id: resourceId,
         },
+        related: {
+          patientId: ['patients', 'patient_records'].includes(resourceTable) ? resourceId : null,
+          examId: resourceTable === 'examinations' ? resourceId : null,
+          invoiceId: resourceTable === 'invoices' ? resourceId : null,
+        },
         context: {
           requestId: req.id || null,
           ipAddress,
@@ -59,6 +67,10 @@ const auditRead = (auditService, { resourceTable = null, resourceIdParam = 'id' 
           method: 'GET',
           path: requestPath,
           sourceSystem: 'backend-api',
+          metadata: (req.emergencyAccess || req.emergencyAccessVerified) ? {
+            emergencyAccessId: (req.emergencyAccess || req.emergencyAccessVerified).grantId,
+            emergencyPermissions: (req.emergencyAccess || req.emergencyAccessVerified).permissions,
+          } : {},
         },
         details,
         result: {

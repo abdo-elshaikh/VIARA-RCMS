@@ -1,0 +1,3 @@
+ALTER TABLE system_logs
+ADD COLUMN IF NOT EXISTS previous_value JSONB,
+ADD COLUMN IF NOT EXISTS new_value JSONB;

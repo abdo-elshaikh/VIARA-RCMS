@@ -9,6 +9,17 @@ describe('Appointments schedule navigation', () => {
         });
     });
 
+    it('respects the preferred first day of the week', () => {
+        expect(getRange('2026-06-27', 'week', 6)).toEqual({
+            startDate: '2026-06-27',
+            endDate: '2026-07-03',
+        });
+        expect(getRange('2026-06-27', 'week', 0)).toEqual({
+            startDate: '2026-06-21',
+            endDate: '2026-06-27',
+        });
+    });
+
     it('moves week views by seven days', () => {
         expect(shiftAnchorDate('2026-06-27', 'week', 1)).toBe('2026-07-04');
         expect(shiftAnchorDate('2026-06-27', 'week', -1)).toBe('2026-06-20');

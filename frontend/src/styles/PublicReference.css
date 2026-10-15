@@ -1,0 +1,540 @@
+/* Reference composition shared by the two public pages. */
+.vlp, .vlogin {
+    --vlp-ink: #062e27;
+    --vlp-muted: #526c70;
+    --vlp-green: #006f55;
+    --vlp-button: #005847;
+    --vlp-line: #d3e5e3;
+    --vlp-soft: #eaf5f0;
+    --vlp-bg: #f4f9f8;
+    --vlp-accent: #13b68d;
+    --reference-wash: #f4f9f8;
+    --reference-glass: rgba(255, 255, 255, .91);
+}
+.vlp.vlp--dark, .vlogin.vlogin--dark {
+    --vlp-ink: #edf9f4;
+    --vlp-muted: #a7c4bd;
+    --vlp-green: #68dfb7;
+    --vlp-button: #08745b;
+    --vlp-line: #2b4a43;
+    --vlp-soft: #163b30;
+    --vlp-bg: #0b1e19;
+    --vlp-paper: #122b23;
+    --reference-wash: #0b1e19;
+    --reference-glass: rgba(18, 43, 35, .94);
+}
+.vlp :focus-visible, .vlogin :focus-visible { outline: 3px solid var(--vlp-green); outline-offset: 4px; }
+
+/* Landing: one continuous photograph, floating navigation and product preview. */
+.vlp { background: var(--vlp-bg); }
+.vlp .vlp__backdrop { display: none; }
+.vlp__masthead { position: relative; isolation: isolate; padding-top: 20px; min-height: 100svh; }
+.vlp__masthead::before {
+    content: ''; position: absolute; inset: 0; z-index: -2;
+    background:
+        linear-gradient(90deg, transparent 15%, color-mix(in srgb, var(--reference-wash) 12%, transparent) 36%, color-mix(in srgb, var(--reference-wash) 90%, transparent) 66%, var(--reference-wash) 97%),
+        url('/images/viara/landing-radiology.webp') left center / cover no-repeat;
+}
+.vlp__masthead::after {
+    content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--reference-wash) 30%, transparent), transparent 30%, transparent 75%, color-mix(in srgb, var(--reference-wash) 65%, transparent));
+}
+.vlp[dir='ltr'] .vlp__masthead::before { transform: scaleX(-1); }
+.vlp.vlp--dark .vlp__masthead::after { background: rgba(2, 19, 14, .35); }
+.vlp .vlp__header {
+    width: calc(100% - clamp(32px, 10vw, 170px)); max-width: 1580px;
+    min-height: 86px; margin: 0 auto; padding: 12px 20px;
+    top: 16px; gap: 22px; border-radius: 30px;
+    background: var(--reference-glass); border: 1px solid rgba(255,255,255,.5);
+    box-shadow: 0 12px 36px rgba(24, 61, 57, .08); backdrop-filter: blur(22px);
+}
+.vlp .vlp__brand { padding: 0; gap: 12px; }
+.vlp .vlp__brand img { width: 48px; height: 48px; }
+.vlp__brand-lockup { display: grid; gap: 3px; }
+.vlp .vlp__brand strong { font: 850 32px/1.1 system-ui, sans-serif; letter-spacing: .01em; }
+.vlp__brand-lockup small { font-size: 10px; color: var(--vlp-muted); white-space: nowrap; }
+.vlp .vlp__nav { gap: clamp(6px, 1.2vw, 22px); padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.vlp .vlp__nav a { font-size: 14px; padding: 10px 13px; border: 0; white-space: nowrap; color: var(--vlp-ink); }
+.vlp .vlp__nav .vlp__nav-portal { background: var(--vlp-soft); color: var(--vlp-green); border-radius: 999px; }
+.vlp .vlp__nav-doctor { display: none; }
+.vlp .vlp__actions { gap: 12px; }
+.vlp .vlp__util-service { order: 0; height: 54px; padding-inline: 18px; border-radius: 20px; background: transparent; }
+.vlp .vlp__util-service i, .vlp .vlp__util-sep { display: none; }
+.vlp .vlp__util-icon, .vlp .vlp__util-lang { background: transparent; border: 0; min-height: 44px; padding-inline: 4px; }
+.vlp .vlp__util-lang { gap: 9px; }
+.vlp .vlp__header-signin { min-height: 56px; padding-inline: 23px; border-radius: 19px; font-size: 15px; gap: 12px; }
+.vlp .vlp__button { background: var(--vlp-button); color: white; border: 1px solid transparent; box-shadow: 0 8px 18px -12px #005847; }
+.vlp .vlp__button:hover { background: color-mix(in srgb, var(--vlp-button) 87%, #0b9a73); }
+.vlp .vlp__button::before, .vlp .vlp__button::after { display: none; }
+.vlp__menu { display: none; }
+.vlp .vlp__hero {
+    display: block; min-height: calc(100svh - 106px); width: 100%; max-width: 1720px;
+    padding: clamp(40px, 5.5vh, 64px) clamp(28px, 6vw, 102px) 32px; margin: 0 auto;
+    position: relative;
+}
+.vlp .vlp__copy { width: 54%; max-width: 850px; margin-inline-end: 0; margin-inline-start: auto; padding: 0; align-items: flex-start; }
+.vlp[dir='rtl'] .vlp__copy { margin-inline-start: 0; margin-inline-end: auto; }
+.vlp[dir='ltr'] .vlp__copy { margin-inline-start: 0; margin-inline-end: auto; }
+.vlp .vlp__eyebrow { font-size: 14px; padding: 9px 17px; margin-bottom: 22px; border-color: var(--vlp-line); box-shadow: 0 3px 6px rgba(13,64,53,.03); }
+.vlp .vlp__eyebrow-dot { background: var(--vlp-green); animation: none; box-shadow: 0 0 0 6px color-mix(in srgb, var(--vlp-green) 12%, transparent); }
+.vlp .vlp__title { font-size: clamp(48px, 4.7vw, 80px); line-height: 1.3; letter-spacing: -.025em; font-weight: 900; margin-bottom: 22px; max-width: none; }
+.vlp .vlp__line { display: flex; flex-wrap: nowrap; column-gap: .2em; white-space: nowrap; }
+.vlp .vlp__word-in--grad { background: linear-gradient(105deg, #005c51, #079e71); background-clip: text; -webkit-background-clip: text; animation: none; }
+.vlp.vlp--dark .vlp__word-in--grad { background-image: linear-gradient(105deg, #b0f4df, #55d9a6); }
+.vlp .vlp__description { max-width: 580px; font-size: clamp(17px, 1.3vw, 22px); line-height: 1.85; color: var(--vlp-muted); margin: 0 0 30px; }
+.vlp .vlp__cta-row { gap: 20px; flex-wrap: wrap; margin: 0; }
+.vlp .vlp__button--large, .vlp .vlp__explore { min-height: 62px; border-radius: 16px; padding: 14px 28px; font-size: 16px; font-weight: 800; }
+.vlp .vlp__explore { display: inline-flex; align-items: center; justify-content: center; gap: 14px; border: 1px solid #b8ded5; background: color-mix(in srgb, var(--vlp-paper) 78%, transparent); color: var(--vlp-green); }
+.vlp .vlp__explore:hover { background: var(--vlp-paper); }
+.vlp .vlp__capabilities { width: 100%; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 38px 0 0; padding: 0; list-style: none; }
+.vlp__capabilities li { display: flex; flex-direction: column; align-items: center; gap: 9px; font-size: 12px; font-weight: 600; line-height: 1.6; text-align: center; color: var(--vlp-ink); }
+.vlp__capability-icon { display: grid; place-items: center; width: 76px; height: 70px; border-radius: 20px; background: var(--reference-glass); color: var(--vlp-green); box-shadow: 0 7px 25px -18px rgba(9,72,52,.25); }
+.vlp__hero-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; margin-top: 38px; padding: 22px 15px; border: 1px solid var(--vlp-line); border-radius: 18px; background: color-mix(in srgb, var(--vlp-paper) 76%, transparent); backdrop-filter: blur(14px); }
+.vlp__hero-summary > div { display: flex; align-items: center; justify-content: center; gap: 12px; padding-inline: 10px; }
+.vlp__hero-summary > div + div { border-inline-start: 1px solid var(--vlp-line); }
+.vlp__hero-summary svg { color: var(--vlp-green); flex: none; }
+.vlp__hero-summary span { display: grid; gap: 4px; }
+.vlp__hero-summary strong { font-size: 15px; line-height: 1.5; white-space: nowrap; }
+.vlp__hero-summary small { font-size: 11px; color: var(--vlp-muted); }
+.vlp .vlp__stage { position: absolute; inset-inline-end: 6%; bottom: 32px; width: 37%; max-width: 580px; height: auto; min-height: 0; padding: 36px 18px 18px; border: 1px solid rgba(227,255,246,.7); border-radius: 24px; background: rgba(113,173,157,.24); backdrop-filter: blur(14px); box-shadow: 0 18px 60px -35px rgba(0,54,40,.5); }
+.vlp__preview-caption { position: absolute; top: 10px; inset-inline-end: 18px; display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; color: white; background: rgba(2,56,44,.72); padding: 5px 12px; border-radius: 10px; }
+.vlp__preview-caption i { width: 6px; height: 6px; background: #f47b59; border-radius: 50%; }
+.vlp .vlp__worklist-card { position: relative; width: 100%; margin: 0; inset: auto; transform: none; border-radius: 21px; border: 1px solid var(--vlp-line); background: var(--reference-glass); overflow: hidden; box-shadow: none; }
+.vlp .vlp__wl-rail, .vlp .vlp__wl-caption { display: none; }
+.vlp .vlp__wl-topbar { padding: 18px; min-height: 66px; }
+.vlp .vlp__wl-title { font-size: 15px; }
+.vlp .vlp__wl-count { background: var(--vlp-soft); color: var(--vlp-green); }
+.vlp .vlp__wl-search { background: var(--vlp-bg); border-radius: 999px; font-size: 10px; }
+.vlp .vlp__wl-row { padding-block: 13px; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto; }
+.vlp .vlp__wl-cols { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto; }
+.vlp .vlp__wl-row .vlp__wl-patient b { font-size: 12px; }
+.vlp .vlp__wl-status { padding-inline: 9px; font-size: 10px; }
+.vlp .vlp__wl-footer { padding: 13px 18px; font-size: 10px; color: var(--vlp-green); }
+.vlp .vlp__section { scroll-margin-top: 110px; }
+.vlp .vlp__marquee-wrap { border-top: 1px solid var(--vlp-line); }
+
+/* Sign-in: photograph spans the canvas; form stays an independent white card. */
+.vlogin { background: var(--vlp-bg); min-height: 100svh; }
+.vlogin::before {
+    content: ''; position: absolute; inset: 0; z-index: -2; opacity: 1;
+    background:
+        linear-gradient(90deg, color-mix(in srgb, var(--reference-wash) 17%, transparent), transparent 55%, color-mix(in srgb, var(--reference-wash) 40%, transparent)),
+        url('/images/viara/login-reference-panorama.webp') center / cover no-repeat;
+}
+.vlogin::after { content: ''; display: block; position: absolute; z-index: -1; inset: 0; width: auto; height: auto; transform: none; border: 0; border-radius: 0; opacity: 1; background: linear-gradient(125deg, transparent 58%, color-mix(in srgb, var(--vlp-soft) 35%, transparent) 58.1%, color-mix(in srgb, var(--vlp-soft) 80%, transparent)); pointer-events: none; }
+.vlogin.vlogin--dark::before { opacity: .5; }
+.vlogin .vlogin__header { direction: ltr; position: relative; height: 86px; width: 100%; max-width: 1720px; margin: 0 auto; padding: 18px 3.3vw; border: 0; box-shadow: none; background: transparent; backdrop-filter: none; animation: none; }
+.vlogin .vlogin__header-brand { gap: 15px; }
+.vlogin .vlogin__header-brand img { width: 48px; height: 48px; }
+.vlogin .vlogin__header-brand strong { background: none; -webkit-text-fill-color: currentColor; color: var(--vlp-ink); font: 850 32px/1.1 system-ui, sans-serif; letter-spacing: .09em; }
+.vlogin .vlogin__brand-lockup small { font-size: 11px; color: var(--vlp-muted); }
+.vlogin .vlogin__header-actions { gap: 10px; }
+.vlogin .vlogin__header-actions .vlogin__util-service, .vlogin .vlogin__header-actions .vlogin__util-demo, .vlogin .vlogin__header-home, .vlogin .vlogin__util-sep { display: none; }
+.vlogin .vlogin__header-actions .vlogin__util-icon { order: 2; width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--reference-glass); box-shadow: none; }
+.vlogin .vlogin__header-actions .vlogin__util-lang { order: 1; min-width: 125px; width: auto; padding: 0 16px; gap: 10px; border: 0; border-radius: 999px; background: var(--reference-glass); box-shadow: none; font-size: 14px; }
+.vlogin .vlogin__body { flex: 1; width: 100%; max-width: 1720px; margin: 0 auto; align-items: stretch; padding: 14px 3.3vw 20px; }
+.vlogin .vlogin__card { direction: ltr; display: grid; grid-template-columns: minmax(0, 1fr) minmax(430px, 36.5%); gap: clamp(36px, 6vw, 110px); width: 100%; max-width: none; min-height: 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; overflow: visible; animation: none; }
+.vlogin .vlogin__visual, .vlogin[dir='rtl'] .vlogin__visual { grid-column: 1; grid-row: 1; position: relative; align-self: stretch; padding: 50px 0 0 3.8vw; display: flex; align-items: flex-start; justify-content: flex-start; background: transparent; color: var(--vlp-ink); overflow: visible; animation: none; }
+.vlogin .vlogin__visual::before, .vlogin .vlogin__visual::after, .vlogin .vlogin__visual-header::after { display: none; }
+.vlogin .vlogin__visual-header { position: static; width: 100%; max-width: 600px; padding: 0; text-align: start; }
+.vlogin .vlogin__header-actions .vlogin__util-lang { display: inline-flex; flex-direction: row; justify-content: center; }
+.vlogin .vlogin__header-actions :is(.vlogin__util-lang) { display: inline-flex; }
+.vlogin .vlogin__header-actions .vlogin__util-lang span { display: inline; }
+.vlogin[dir='rtl'] .vlogin__visual-header { direction: rtl; text-align: right; }
+.vlogin .vlogin__visual-tag { display: inline-flex; flex-direction: row-reverse; padding: 6px 13px; margin: 0 0 14px; border: 0; background: color-mix(in srgb, var(--vlp-paper) 82%, transparent); color: var(--vlp-green); font-size: 12px; font-weight: 800; animation: none; }
+.vlogin .vlogin__visual-tag::before { background: #4abf9e; box-shadow: 0 0 0 3px rgba(40,169,134,.12); width: 7px; height: 7px; }
+.vlogin .vlogin__visual-title, .vlogin[dir='ltr'] .vlogin__visual-title { max-width: none; font-size: clamp(38px, 3.55vw, 61px); line-height: 1.2; letter-spacing: -.02em; color: var(--vlp-ink); font-weight: 900; margin: 0 0 14px; animation: none; }
+.vlogin .vlogin__visual-title span { color: var(--vlp-green); background: none; -webkit-text-fill-color: currentColor; padding: 0; animation: none; }
+.vlogin .vlogin__visual-desc { max-width: none; font-size: clamp(16px, 1.22vw, 21px); line-height: 1.7; color: var(--vlp-muted); margin: 0; animation: none; }
+.vlogin .vlogin__visual-desc strong { color: var(--vlp-ink); font-weight: 700; }
+.vlogin .vlogin__benefits { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin: 20px 0 0; }
+.vlogin .vlogin__benefits > div { display: flex; flex-direction: column; gap: 8px; padding: 0; border: 0; background: none; backdrop-filter: none; animation: none; min-width: 0; }
+.vlogin .vlogin__benefits > div:hover { background: none; translate: none; }
+.vlogin .vlogin__benefits span { width: 68px; height: 66px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--vlp-line) 55%, transparent); border-radius: 19px; background: var(--reference-glass); color: var(--vlp-green); box-shadow: none; }
+.vlogin .vlogin__benefits strong { color: var(--vlp-ink); font-size: 12px; line-height: 1.7; text-align: center; font-weight: 700; }
+.vlogin__scene-summary { position: absolute; bottom: 14px; left: 0; width: 100%; max-width: 680px; direction: ltr; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.vlogin__scene-summary > div { display: flex; align-items: center; gap: 12px; padding: 15px 14px; border: 1px solid rgba(255,255,255,.2); border-radius: 22px; color: white; background: rgba(50,78,76,.55); backdrop-filter: blur(14px); box-shadow: 0 8px 26px rgba(4,36,28,.08); }
+.vlogin__scene-summary-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; flex: none; background: rgba(25,176,132,.52); }
+.vlogin__scene-summary > div > span:last-child { display: grid; gap: 6px; }
+.vlogin__scene-summary strong { font: 800 20px/1.2 system-ui, sans-serif; white-space: nowrap; }
+.vlogin__scene-summary small { font-size: 11px; color: #e0ebe8; line-height: 1.6; }
+.vlogin .vlogin__form-pane, .vlogin[dir='rtl'] .vlogin__form-pane { grid-column: 2; grid-row: 1; align-self: center; padding: 36px 38px 28px; border: 1px solid color-mix(in srgb, var(--vlp-line) 55%, transparent); border-radius: 30px; background: color-mix(in srgb, var(--vlp-paper) 97%, transparent); box-shadow: 0 22px 75px -42px rgba(0,82,60,.3); }
+.vlogin .vlogin__form-inner { max-width: 500px; width: 100%; }
+.vlogin .vlogin__form-brand { display: flex; justify-content: center; align-items: center; direction: ltr; gap: 13px; margin: 0; animation: none; }
+.vlogin .vlogin__form-brand img { width: 46px; height: 46px; }
+.vlogin .vlogin__form-brand span { font: 850 32px/1.2 system-ui, sans-serif; letter-spacing: .09em; color: var(--vlp-ink); }
+.vlogin__form-descriptor { text-align: center; margin: 8px 0 18px; font-size: 13px; color: var(--vlp-muted); }
+.vlogin .vlogin__form-header { text-align: center; margin-bottom: 26px; animation: none; }
+.vlogin .vlogin__form-header h1 { background: none; color: var(--vlp-ink); -webkit-text-fill-color: currentColor; font-size: 29px; line-height: 1.45; margin-bottom: 5px; }
+.vlogin .vlogin__subtitle { font-size: 16px; color: var(--vlp-muted); }
+.vlogin .vlogin__field { margin-bottom: 17px; animation: none; }
+.vlogin .vlogin__field > label { font-size: 14px; font-weight: 800; margin-bottom: 7px; }
+.vlogin .vlogin__input-wrap { direction: ltr; min-height: 56px; padding-inline: 16px; border: 1px solid var(--vlp-line); border-radius: 16px; background: color-mix(in srgb, var(--vlp-bg) 72%, var(--vlp-paper)); box-shadow: none; }
+.vlogin .vlogin__input-wrap input { height: 54px; padding-block: 12px; font-size: 15px; }
+.vlogin .vlogin__input-icon { color: var(--vlp-green); }
+.vlogin .vlogin__helpers { margin: 0 0 16px; gap: 8px; font-size: 12px; }
+.vlogin .vlogin__help-btn { color: var(--vlp-green); text-decoration: underline; text-underline-offset: 4px; font-size: 12px; min-height: 40px; }
+.vlogin .vlogin__submit { min-height: 57px; border-radius: 16px; background: var(--vlp-button); color: white; font-size: 17px; font-weight: 800; box-shadow: 0 12px 21px -12px rgba(0,84,60,.5); animation: none; }
+.vlogin .vlogin__submit::before, .vlogin .vlogin__submit::after { display: none; }
+.vlogin .vlogin__submit:hover:not(:disabled) { background: color-mix(in srgb, var(--vlp-button) 88%, #00a67c); }
+.vlogin .vlogin__divider { margin-block: 17px; animation: none; }
+.vlogin .vlogin__passkey { min-height: 54px; border: 1px solid var(--vlp-line); border-radius: 16px; background: var(--vlp-bg); color: var(--vlp-ink); font-size: 14px; animation: none; }
+.vlogin .vlogin__passkey > svg { color: var(--vlp-green); }
+.vlogin .vlogin__passkey-note { font-size: 11px; line-height: 1.7; margin: 8px 0 0; color: var(--vlp-muted); }
+.vlogin__security-note { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 24px; }
+.vlogin__security-note > span { width: 50px; height: 50px; display: grid; place-items: center; border-radius: 50%; background: var(--vlp-soft); color: var(--vlp-green); flex: none; }
+.vlogin__security-note > div { display: grid; gap: 4px; }
+.vlogin__security-note strong { font-size: 12px; }
+.vlogin__security-note small { font-size: 10px; line-height: 1.7; color: var(--vlp-muted); }
+.vlogin .vlogin__page-footer { position: relative; width: 100%; max-width: 1720px; margin: 0 auto; padding: 0 3.3vw 10px; font-size: 10px; color: var(--vlp-ink); }
+.vlogin .vlogin__page-footer button { font-size: 10px; }
+
+@media (min-width: 1600px) {
+    .vlogin .vlogin__body { padding-top: 16px; padding-bottom: 28px; }
+    .vlogin .vlogin__visual { padding-top: 54px; }
+    .vlogin .vlogin__form-pane { padding: 40px 44px 30px; }
+    .vlogin .vlogin__form-descriptor { margin-bottom: 20px; }
+    .vlogin .vlogin__form-header { margin-bottom: 24px; }
+    .vlogin .vlogin__field { margin-bottom: 20px; }
+    .vlogin .vlogin__security-note { margin-top: 24px; }
+}
+@media (max-width: 1350px) {
+    .vlp .vlp__header { width: calc(100% - 48px); gap: 14px; padding-inline: 16px; }
+    .vlp .vlp__nav { gap: 2px; }
+    .vlp .vlp__nav a { font-size: 12px; padding-inline: 9px; }
+    .vlp .vlp__brand strong { font-size: 27px; }
+    .vlp .vlp__brand img { width: 40px; height: 40px; }
+    .vlp .vlp__actions { gap: 6px; }
+    .vlp .vlp__util-service { padding-inline: 12px; font-size: 12px; }
+    .vlp .vlp__header-signin { padding-inline: 15px; font-size: 13px; }
+    .vlp .vlp__hero { padding-inline: 4vw; }
+    .vlp .vlp__copy { width: 54%; }
+    .vlp .vlp__stage { inset-inline-end: 4%; width: 38%; padding: 36px 12px 12px; }
+    .vlp__capability-icon { width: 66px; height: 64px; }
+    .vlp__capabilities li { font-size: 11px; }
+    .vlp__hero-summary { padding: 17px 8px; }
+    .vlp__hero-summary > div { gap: 7px; padding-inline: 7px; }
+    .vlp__hero-summary strong { font-size: 12px; }
+    .vlp__hero-summary small { font-size: 10px; }
+    .vlp__hero-summary svg { width: 24px; }
+    .vlogin .vlogin__card { grid-template-columns: minmax(0, 1fr) 430px; gap: 36px; }
+    .vlogin .vlogin__visual { padding-inline-start: 0; }
+    .vlogin .vlogin__form-pane { padding: 30px; }
+    .vlogin__scene-summary { gap: 8px; }
+    .vlogin__scene-summary > div { padding: 12px 10px; gap: 8px; }
+    .vlogin__scene-summary-icon { width: 40px; height: 40px; }
+    .vlogin__scene-summary strong { font-size: 16px; }
+    .vlogin__scene-summary small { font-size: 10px; }
+}
+@media (max-width: 1100px) {
+    .vlp .vlp__header { grid-template-columns: auto 1fr; }
+    .vlp .vlp__actions { justify-content: flex-end; }
+    .vlp__menu { display: grid; place-items: center; width: 44px; height: 44px; border: 0; border-radius: 12px; color: var(--vlp-ink); background: var(--vlp-soft); cursor: pointer; }
+    .vlp .vlp__nav { display: none; position: absolute; top: calc(100% + 8px); inset-inline: 0; padding: 14px; border-radius: 20px; border: 1px solid var(--vlp-line); background: var(--vlp-paper); box-shadow: 0 15px 40px rgba(4,40,30,.15); }
+    .vlp .vlp__nav--open { display: flex; flex-wrap: wrap; justify-content: center; }
+    .vlp .vlp__nav-doctor { display: inline-flex; }
+    .vlp .vlp__title { font-size: 4.6vw; }
+    .vlp .vlp__description { font-size: 17px; }
+    .vlp .vlp__hero { padding-top: 48px; }
+    .vlp .vlp__stage { width: 40%; inset-inline-end: 3%; }
+    .vlp .vlp__wl-search { display: none; }
+    .vlp .vlp__wl-row { padding-inline: 12px; gap: 5px; }
+    .vlp .vlp__wl-thumb { width: 30px; height: 34px; }
+    .vlp .vlp__wl-patient { gap: 6px; }
+    .vlp .vlp__wl-patient small { font-size: 9px; }
+    .vlp .vlp__wl-modality span:not(:first-child) { font-size: 9px; }
+    .vlp .vlp__button--large, .vlp .vlp__explore { padding-inline: 18px; font-size: 14px; }
+    .vlp__capability-icon { width: 58px; height: 58px; }
+    .vlp__capabilities { gap: 8px; }
+    .vlp__hero-summary { grid-template-columns: repeat(2, 1fr); gap: 18px 0; }
+    .vlp__hero-summary > div:nth-child(3) { border-inline-start: 0; }
+    .vlogin .vlogin__card { grid-template-columns: minmax(0, 1fr) 400px; gap: 30px; }
+    .vlogin .vlogin__visual-title, .vlogin[dir='ltr'] .vlogin__visual-title { font-size: 38px; }
+    .vlogin .vlogin__benefits { gap: 8px; }
+    .vlogin__scene-summary { grid-template-columns: 1fr; max-width: 260px; }
+    .vlogin__scene-summary > div { padding-block: 9px; }
+    .vlogin__scene-summary > div:nth-child(n+2) { display: none; }
+}
+@media (max-width: 900px) {
+    .vlp__masthead { min-height: 0; }
+    .vlp__masthead::before { background: linear-gradient(180deg, color-mix(in srgb, var(--reference-wash) 95%, transparent) 20%, color-mix(in srgb, var(--reference-wash) 90%, transparent) 55%, color-mix(in srgb, var(--reference-wash) 15%, transparent) 100%), url('/images/viara/landing-radiology.webp') 25% bottom / auto 100% no-repeat; }
+    .vlp[dir='ltr'] .vlp__masthead::before { transform: none; }
+    .vlp .vlp__hero { padding: 38px 28px 28px; }
+    .vlp .vlp__copy { width: 100%; max-width: 680px; margin-inline: auto; align-items: center; text-align: center; }
+    .vlp .vlp__title { font-size: clamp(36px, 6.3vw, 57px); }
+    .vlp .vlp__description { max-width: 540px; margin-bottom: 25px; }
+    .vlp .vlp__cta-row { justify-content: center; }
+    .vlp .vlp__capabilities { margin-top: 28px; max-width: 610px; }
+    .vlp__hero-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 28px; gap: 0; }
+    .vlp__hero-summary > div:nth-child(3) { border-inline-start: 1px solid var(--vlp-line); }
+    .vlp .vlp__stage { position: relative; inset: auto; width: min(100%, 560px); max-width: 560px; margin: 90px auto 0; padding: 36px 15px 15px; }
+    .vlp .vlp__wl-search { display: flex; }
+    .vlogin::before { background: linear-gradient(180deg, color-mix(in srgb, var(--reference-wash) 75%, transparent), color-mix(in srgb, var(--reference-wash) 55%, transparent)), url('/images/viara/login-reference-panorama.webp') center / cover no-repeat; }
+    .vlogin .vlogin__header { height: 78px; padding-inline: 24px; }
+    .vlogin .vlogin__header-brand strong { font-size: 27px; }
+    .vlogin .vlogin__header-brand img { width: 40px; height: 40px; }
+    .vlogin .vlogin__body { padding: 24px 20px 32px; align-items: center; }
+    .vlogin .vlogin__card { display: block; width: 100%; max-width: 520px; margin: 0 auto; }
+    .vlogin .vlogin__visual, .vlogin[dir='rtl'] .vlogin__visual { display: none; }
+    .vlogin .vlogin__form-pane, .vlogin[dir='rtl'] .vlogin__form-pane { padding: 36px; border-radius: 28px; }
+    .vlogin .vlogin__page-footer { justify-content: center; padding-inline: 20px; gap: 12px; }
+}
+@media (max-width: 600px) {
+    .vlp__masthead { padding-top: 12px; }
+    .vlp .vlp__header { width: calc(100% - 24px); min-height: 64px; padding: 10px 12px; gap: 8px; border-radius: 22px; }
+    .vlp .vlp__brand img { width: 34px; height: 34px; }
+    .vlp .vlp__brand { gap: 7px; }
+    .vlp .vlp__brand strong { display: block; font-size: 23px; }
+    .vlp__brand-lockup small { display: none; }
+    .vlp .vlp__header-signin, .vlp .vlp__util-service { display: none; }
+    .vlp .vlp__actions { gap: 3px; }
+    .vlp .vlp__util-icon { width: 38px; }
+    .vlp .vlp__util-lang { font-size: 11px; }
+    .vlp__menu { width: 40px; height: 42px; }
+    .vlp .vlp__nav--open { flex-direction: column; align-items: stretch; }
+    .vlp .vlp__nav a { font-size: 14px; text-align: start; }
+    .vlp .vlp__hero { padding: 30px 20px 24px; }
+    .vlp .vlp__eyebrow { font-size: 11px; padding: 8px 13px; margin-bottom: 18px; }
+    .vlp .vlp__title { font-size: clamp(29px, 7vw, 42px); line-height: 1.4; margin-bottom: 16px; }
+    .vlp .vlp__description { font-size: 14px; line-height: 1.9; }
+    .vlp .vlp__cta-row { width: 100%; gap: 12px; flex-direction: column; align-items: stretch; }
+    .vlp .vlp__cta-row > div, .vlp .vlp__cta-row .vlp__button { width: 100%; }
+    .vlp .vlp__button--large, .vlp .vlp__explore { min-height: 54px; padding: 12px 18px; font-size: 14px; }
+    .vlp .vlp__capabilities { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px 12px; }
+    .vlp__capabilities li { font-size: 11px; }
+    .vlp__capability-icon { width: 66px; height: 60px; border-radius: 17px; }
+    .vlp__hero-summary { grid-template-columns: repeat(2, 1fr); gap: 18px 0; padding-block: 20px; }
+    .vlp__hero-summary > div:nth-child(3) { border-inline-start: 0; }
+    .vlp .vlp__stage { margin-top: 64px; padding: 34px 8px 8px; border-radius: 20px; }
+    .vlp .vlp__worklist-card { border-radius: 16px; }
+    .vlp .vlp__wl-topbar { padding: 13px 12px; min-height: 58px; }
+    .vlp .vlp__wl-title { font-size: 13px; }
+    .vlp .vlp__wl-search { display: none; }
+    .vlp .vlp__wl-cols { padding-inline: 10px; font-size: 10px; }
+    .vlp .vlp__wl-row { padding: 12px 10px; }
+    .vlp .vlp__wl-thumb { display: none; }
+    .vlp .vlp__wl-row .vlp__wl-patient b { font-size: 10px; }
+    .vlp .vlp__wl-patient small { font-size: 8px; }
+    .vlp .vlp__wl-status { padding-inline: 6px; font-size: 9px; gap: 3px; }
+    .vlp__preview-caption { font-size: 9px; top: 8px; inset-inline-end: 12px; }
+    .vlogin .vlogin__header { padding: 16px; height: 76px; }
+    .vlogin .vlogin__header-brand { gap: 8px; }
+    .vlogin .vlogin__header-brand strong { font-size: 22px; letter-spacing: .05em; }
+    .vlogin .vlogin__header-brand img { width: 33px; height: 33px; }
+    .vlogin .vlogin__header-actions { gap: 7px; }
+    .vlogin .vlogin__header-actions .vlogin__util-lang { min-width: 100px; padding-inline: 11px; font-size: 12px; }
+    .vlogin .vlogin__header-actions .vlogin__util-icon { width: 40px; min-width: 40px; }
+    .vlogin .vlogin__body { padding: 14px 16px 24px; }
+    .vlogin .vlogin__form-pane, .vlogin[dir='rtl'] .vlogin__form-pane { padding: 28px 22px; border-radius: 24px; }
+    .vlogin .vlogin__form-brand span { font-size: 28px; }
+    .vlogin__form-descriptor { font-size: 11px; margin-bottom: 22px; }
+    .vlogin .vlogin__form-header { margin-bottom: 24px; }
+    .vlogin .vlogin__form-header h1 { font-size: 26px; }
+    .vlogin .vlogin__subtitle { font-size: 12px; }
+    .vlogin .vlogin__helpers { flex-wrap: wrap; justify-content: space-between; }
+    .vlogin .vlogin__recovery-actions { width: auto; }
+    .vlogin__security-note { gap: 8px; margin-top: 20px; }
+    .vlogin__security-note strong { font-size: 11px; }
+    .vlogin__security-note small { font-size: 9px; }
+}
+@media (max-width: 360px) {
+    .vlp .vlp__hero { padding-inline: 16px; }
+    .vlp .vlp__title { font-size: 27px; }
+    .vlp .vlp__brand strong { font-size: 20px; }
+    .vlp .vlp__util-lang svg { width: 17px; }
+    .vlogin .vlogin__header { padding-inline: 12px; }
+    .vlogin .vlogin__header-brand strong { font-size: 19px; }
+    .vlogin .vlogin__header-brand img { width: 28px; height: 28px; }
+    .vlogin .vlogin__header-actions .vlogin__util-lang { min-width: 86px; gap: 6px; padding-inline: 9px; }
+    .vlogin .vlogin__form-pane, .vlogin[dir='rtl'] .vlogin__form-pane { padding-inline: 18px; }
+    .vlogin .vlogin__body { padding-inline: 12px; }
+}
+@media (min-width: 901px) and (max-height: 800px) {
+    .vlogin .vlogin__header { height: 70px; padding-block: 12px; }
+    .vlogin .vlogin__body { padding-top: 8px; padding-bottom: 12px; }
+    .vlogin .vlogin__form-pane { padding: 24px 32px; }
+    .vlogin .vlogin__form-brand img { width: 36px; height: 36px; }
+    .vlogin .vlogin__form-brand span { font-size: 27px; }
+    .vlogin .vlogin__form-descriptor { margin: 4px 0 14px; font-size: 11px; }
+    .vlogin .vlogin__form-header { margin-bottom: 16px; }
+    .vlogin .vlogin__form-header h1 { font-size: 26px; }
+    .vlogin .vlogin__subtitle { font-size: 13px; }
+    .vlogin .vlogin__field { margin-bottom: 12px; }
+    .vlogin .vlogin__helpers { margin-bottom: 10px; }
+    .vlogin .vlogin__divider { margin-block: 12px; }
+    .vlogin .vlogin__security-note { margin-top: 16px; }
+    .vlogin .vlogin__visual { padding-top: 22px; }
+    .vlogin .vlogin__visual-title, .vlogin[dir='ltr'] .vlogin__visual-title { font-size: clamp(36px, 3vw, 46px); }
+    .vlogin .vlogin__visual-desc { font-size: 16px; }
+    .vlogin .vlogin__benefits { margin-top: 20px; }
+    .vlogin .vlogin__benefits span { width: 56px; height: 54px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .vlp *, .vlp *::before, .vlp *::after, .vlogin *, .vlogin *::before, .vlogin *::after { animation: none !important; transition-duration: .01ms !important; }
+}
+
+/* Available viewport space, including shorter windows and browser zoom. */
+.vlp .vlp__copy, .vlp .vlp__stage, .vlogin .vlogin__visual,
+.vlogin .vlogin__form-pane, .vlogin .vlogin__form-inner { min-width: 0; }
+.vlp .vlp__line { flex-wrap: wrap; white-space: normal; }
+.vlp .vlp__word { max-width: 100%; }
+.vlp .vlp__word-in { overflow-wrap: anywhere; }
+.vlp .vlp__title { width: 100%; }
+.vlp .vlp__eyebrow { max-width: 100%; }
+.vlp__hero-summary strong { white-space: normal; overflow-wrap: anywhere; }
+.vlogin .vlogin__header, .vlogin .vlogin__page-footer { flex-shrink: 0; }
+.vlogin .vlogin__page-footer { gap: 8px 16px; padding-block: 0 6px; }
+.vlogin .vlogin__page-footer button { min-height: 32px; }
+.vlogin .vlogin__passkey { white-space: normal; }
+.vlogin .vlogin__subtitle { line-height: 1.6; }
+.vlogin .vlogin__form-pane h1 { line-height: 1.3; }
+
+@media (min-width: 901px) {
+    .vlp { --public-header-space: 106px; }
+    .vlp .vlp__hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.14fr) minmax(0, .86fr);
+        column-gap: clamp(24px, 3vw, 64px);
+        align-items: center;
+        min-height: calc(100svh - var(--public-header-space));
+        padding-inline: clamp(28px, 5vw, 96px);
+        padding-block: clamp(24px, 4svh, 48px);
+    }
+    .vlp .vlp__copy, .vlp[dir='rtl'] .vlp__copy, .vlp[dir='ltr'] .vlp__copy {
+        grid-column: 1; grid-row: 1; width: 100%; margin: 0; max-width: none;
+    }
+    .vlp .vlp__stage {
+        grid-column: 2; grid-row: 1; position: relative; inset: auto;
+        align-self: end; justify-self: center; width: 100%; max-width: 580px; margin: 0;
+    }
+    .vlp .vlp__title { font-size: clamp(38px, min(4.4vw, 8svh), 76px); line-height: 1.2; }
+    .vlp[dir='ltr'] .vlp__title { font-size: clamp(34px, min(3.65vw, 7.3svh), 64px); line-height: 1.17; }
+    .vlp .vlp__description { font-size: clamp(16px, min(1.25vw, 2.5svh), 21px); }
+    .vlp .vlp__capabilities { gap: 10px; }
+    .vlp__capability-icon { width: clamp(52px, 4.5vw, 76px); height: clamp(52px, 7.5svh, 70px); }
+    .vlp__capabilities li { font-size: clamp(10px, .75vw, 12px); }
+    .vlp__hero-summary { gap: 0; padding: 18px 10px; }
+    .vlp__hero-summary > div { gap: 8px; padding-inline: 7px; }
+    .vlp__hero-summary strong { font-size: clamp(11px, .9vw, 15px); }
+    .vlp__hero-summary svg { width: 28px; }
+    .vlogin .vlogin__header { height: 72px; padding-block: 12px; }
+    .vlogin .vlogin__body { padding-block: 8px 12px; align-items: center; }
+    .vlogin .vlogin__card {
+        grid-template-columns: minmax(0, 1fr) clamp(390px, 35vw, 540px);
+        gap: clamp(28px, 5vw, 86px); align-items: stretch;
+    }
+    .vlogin .vlogin__visual, .vlogin[dir='rtl'] .vlogin__visual {
+        padding-block: clamp(20px, 4svh, 46px) 120px;
+        padding-inline: clamp(0px, 3vw, 52px) 0;
+    }
+    .vlogin .vlogin__visual-title, .vlogin[dir='ltr'] .vlogin__visual-title {
+        font-size: clamp(32px, min(3.4vw, 6.6svh), 58px);
+    }
+    .vlogin .vlogin__visual-desc { font-size: clamp(15px, 1.15vw, 20px); }
+    .vlogin .vlogin__benefits { gap: 12px; }
+    .vlogin .vlogin__benefits strong { font-size: clamp(10px, .8vw, 12px); }
+    .vlogin .vlogin__form-pane, .vlogin[dir='rtl'] .vlogin__form-pane {
+        padding: clamp(22px, 3.5svh, 36px) clamp(24px, 2.5vw, 40px);
+    }
+    .vlogin .vlogin__form-descriptor { margin: 6px 0 16px; font-size: 12px; }
+    .vlogin .vlogin__form-header { margin-bottom: 20px; }
+    .vlogin .vlogin__form-header h1 { font-size: 28px; }
+    .vlogin .vlogin__subtitle { font-size: 14px; }
+    .vlogin .vlogin__field { margin-bottom: 14px; }
+    .vlogin .vlogin__helpers { margin-bottom: 12px; }
+    .vlogin .vlogin__submit { min-height: 52px; }
+    .vlogin .vlogin__divider { margin-block: 12px; }
+    .vlogin .vlogin__security-note { margin-top: 18px; }
+}
+
+@media (min-width: 901px) and (max-height: 850px) {
+    .vlp { --public-header-space: 88px; }
+    .vlp__masthead { padding-top: 12px; }
+    .vlp .vlp__header { min-height: 72px; padding-block: 8px; border-radius: 24px; }
+    .vlp .vlp__header-signin { min-height: 48px; }
+    .vlp .vlp__util-service { height: 48px; }
+    .vlp .vlp__hero { padding-block: 22px; }
+    .vlp .vlp__eyebrow { font-size: 12px; padding-block: 7px; margin-bottom: 14px; }
+    .vlp .vlp__title { margin-bottom: 14px; line-height: 1.15; }
+    .vlp .vlp__description { line-height: 1.65; margin-bottom: 20px; }
+    .vlp .vlp__button--large, .vlp .vlp__explore { min-height: 52px; padding: 10px 22px; font-size: 14px; }
+    .vlp .vlp__capabilities { margin-top: 24px; }
+    .vlp__hero-summary { margin-top: 24px; padding-block: 14px; }
+    .vlp .vlp__stage { padding: 34px 12px 12px; }
+    .vlp .vlp__wl-topbar { padding-block: 12px; min-height: 54px; }
+    .vlp .vlp__wl-row { padding-block: 10px; }
+    .vlp .vlp__wl-footer { padding-block: 10px; }
+    .vlogin .vlogin__header { height: 60px; padding-block: 8px; }
+    .vlogin .vlogin__header-brand img { width: 38px; height: 38px; }
+    .vlogin .vlogin__header-brand strong { font-size: 26px; }
+    .vlogin .vlogin__body { padding-block: 6px; }
+    .vlogin .vlogin__form-pane, .vlogin[dir='rtl'] .vlogin__form-pane { padding: 18px 28px; border-radius: 24px; }
+    .vlogin .vlogin__form-brand img { width: 32px; height: 32px; }
+    .vlogin .vlogin__form-brand span { font-size: 27px; }
+    .vlogin .vlogin__form-descriptor { margin: 4px 0 10px; font-size: 11px; }
+    .vlogin .vlogin__form-header { margin-bottom: 14px; }
+    .vlogin .vlogin__form-header h1 { font-size: 25px; margin-bottom: 4px; }
+    .vlogin .vlogin__subtitle { font-size: 13px; }
+    .vlogin .vlogin__field { margin-bottom: 12px; }
+    .vlogin .vlogin__field > label { font-size: 13px; margin-bottom: 5px; }
+    .vlogin .vlogin__input-wrap { min-height: 48px; border-radius: 13px; }
+    .vlogin .vlogin__input-wrap input { height: 46px; padding-block: 8px; }
+    .vlogin .vlogin__helpers { margin-bottom: 8px; gap: 8px; }
+    .vlogin .vlogin__remember, .vlogin .vlogin__help-btn { min-height: 34px; }
+    .vlogin .vlogin__submit, .vlogin .vlogin__passkey { min-height: 48px; border-radius: 13px; }
+    .vlogin .vlogin__divider { margin-block: 10px; }
+    .vlogin .vlogin__passkey-note { line-height: 1.5; margin-top: 6px; }
+    .vlogin .vlogin__security-note { margin-top: 12px; }
+    .vlogin .vlogin__security-note > span { width: 40px; height: 40px; }
+    .vlogin .vlogin__visual, .vlogin[dir='rtl'] .vlogin__visual { padding-block: 20px 105px; }
+    .vlogin .vlogin__benefits span { width: 56px; height: 54px; }
+    .vlogin .vlogin__benefits strong {
+        padding: 3px 6px; border-radius: 7px;
+        background: color-mix(in srgb, var(--vlp-paper) 88%, transparent);
+    }
+    .vlogin .vlogin__scene-summary { bottom: 8px; }
+    .vlogin .vlogin__scene-summary > div { padding: 12px; }
+    .vlogin .vlogin__scene-summary-icon { width: 42px; height: 42px; }
+    .vlogin .vlogin__scene-summary strong { font-size: 17px; }
+}
+
+@media (min-width: 901px) and (max-width: 1200px) {
+    .vlp .vlp__hero { grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); column-gap: 24px; }
+    .vlp .vlp__capabilities { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px 10px; }
+    .vlp__capabilities li { flex-direction: row; text-align: start; gap: 7px; }
+    .vlp__capability-icon { width: 42px; height: 44px; border-radius: 13px; flex: none; }
+    .vlp__capability-icon svg { width: 23px; }
+    .vlp__hero-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 0; }
+    .vlp__hero-summary > div:nth-child(3) { border-inline-start: 0; }
+    .vlp .vlp__wl-topbar, .vlp .vlp__wl-row, .vlp .vlp__wl-cols { padding-inline: 10px; }
+    .vlp .vlp__wl-thumb { display: none; }
+    .vlp .vlp__wl-modality span:not(:first-child) { overflow-wrap: anywhere; }
+    .vlp .vlp__wl-row { grid-template-columns: minmax(0, 1fr) minmax(0, .8fr) auto; }
+    .vlp .vlp__wl-cols { grid-template-columns: minmax(0, 1fr) minmax(0, .8fr) auto; }
+    .vlogin .vlogin__visual, .vlogin[dir='rtl'] .vlogin__visual { padding-inline: 0; }
+    .vlogin .vlogin__scene-summary { grid-template-columns: 1fr; max-width: 260px; }
+    .vlogin .vlogin__scene-summary > div:nth-child(n+2) { display: none; }
+}
+
+@media (max-width: 900px) {
+    .vlp .vlp__hero { min-height: 0; }
+    .vlp .vlp__title { width: auto; max-width: 100%; }
+    .vlp .vlp__line { justify-content: center; }
+    .vlp[dir='ltr'] .vlp__title { font-size: clamp(28px, 5.5vw, 49px); line-height: 1.2; }
+    .vlp .vlp__stage { margin-top: 40px; }
+    .vlogin .vlogin__header { height: 68px; }
+    .vlogin .vlogin__body { padding-block: 12px 20px; }
+    .vlogin .vlogin__form-descriptor { margin-bottom: 16px; }
+    .vlogin .vlogin__form-header { margin-bottom: 20px; }
+    .vlogin .vlogin__input-wrap input { font-size: 16px; }
+    .vlogin .vlogin__page-footer { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+    .vlogin .vlogin__page-footer button { min-height: 44px; }
+}
+
+@media (max-height: 500px) and (max-width: 1100px) {
+    .vlogin .vlogin__visual, .vlogin[dir='rtl'] .vlogin__visual { display: none; }
+    .vlogin .vlogin__card { display: block; width: 100%; max-width: 540px; margin-inline: auto; }
+    .vlogin .vlogin__body { align-items: flex-start; }
+    .vlogin .vlogin__header { height: 60px; }
+    .vlogin .vlogin__form-pane, .vlogin[dir='rtl'] .vlogin__form-pane { padding: 22px 28px; }
+}

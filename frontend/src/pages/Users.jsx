@@ -26,7 +26,8 @@ import {
     UserPlus,
     UsersRound,
     UserX,
-    XCircle
+    XCircle,
+    Lock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -36,7 +37,7 @@ import {
     useUpdateStaffMutation
 } from '../store/api';
 import { selectCurrentUser } from '../store/authSlice';
-import { Button, ConfirmDialog, EmptyState, Input, Modal, Select, Skeleton, PageHeader, MetricCard } from '../components/ui';
+import { Button, ConfirmDialog, EmptyState, Input, Modal, PageHeader, Pagination, Select, Skeleton } from '../components/ui';
 import { getErrorMessage } from '../utils/getErrorMessage';
 
 const ROLE_CATALOG = [
@@ -60,10 +61,15 @@ const strongPasswordPattern = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/;
 
 const Users = () => {
     const { t, i18n } = useTranslation('admin');
+    const isArabic = i18n.language === 'ar';
     const navigate = useNavigate();
     const currentUser = useSelector(selectCurrentUser);
-    const locale = i18n.language === 'ar' ? 'ar-EG' : 'en-EG';
-    const { data: staff = [], isLoading, isError, refetch } = useGetStaffQuery();
+    const locale = isArabic ? 'ar-EG' : 'en-EG';
+    const permissions = useMemo(() => new Set(currentUser?.permissions || []), [currentUser?.permissions]);
+    const isSuperAdmin = ['Developer', 'Admin'].includes(currentUser?.role);
+    const canViewStaff = isSuperAdmin || permissions.has('VIEW_STAFF') || currentUser?.role === 'HR';
+    const canViewAudit = isSuperAdmin || permissions.has('VIEW_AUDIT_TRAILS');
+    const { data: staff = [], isLoading, isFetching, isError, refetch } = useGetStaffQuery();
     const [createStaff, { isLoading: isCreating }] = useCreateStaffMutation();
     const [updateStaff, { isLoading: isUpdating }] = useUpdateStaffMutation();
     const [deleteStaff, { isLoading: isDeleting }] = useDeleteStaffMutation();
@@ -75,6 +81,8 @@ const Users = () => {
     const [roleFilter, setRoleFilter] = useState('all');
     const [statusFilter, setStatusFilter] = useState('all');
     const [riskFilter, setRiskFilter] = useState('all');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
 
     const {
         register,
@@ -152,6 +160,12 @@ const Users = () => {
         });
     }, [roleFilter, roleProfiles, riskFilter, searchTerm, staff, statusFilter, t]);
 
+    const totalPages = Math.ceil(filteredStaff.length / pageSize) || 1;
+    const paginatedStaff = useMemo(() => {
+        const start = (currentPage - 1) * pageSize;
+        return filteredStaff.slice(start, start + pageSize);
+    }, [currentPage, filteredStaff, pageSize]);
+
     const hasFilters = Boolean(searchTerm || roleFilter !== 'all' || statusFilter !== 'all' || riskFilter !== 'all');
 
     const clearFilters = () => {
@@ -159,6 +173,7 @@ const Users = () => {
         setRoleFilter('all');
         setStatusFilter('all');
         setRiskFilter('all');
+        setCurrentPage(1);
     };
 
     const openCreate = () => {
@@ -258,107 +273,151 @@ const Users = () => {
             risk: t(`users.risk.${roleProfiles[user.role]?.risk || 'standard'}`),
             created_at: user.created_at || ''
         }));
-        downloadCsv(`rcms-users-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+        downloadCsv(`VIARA-users-${new Date().toISOString().slice(0, 10)}.csv`, rows);
         toast.success(t('users.messages.exported', { count: filteredStaff.length }));
     };
 
     const formRoleProfile = roleProfiles[selectedFormRole];
 
     return (
-        <div className="space-y-6">
+        <main className="mx-auto max-w-[1600px] space-y-6 pb-12">
             <PageHeader
                 icon={UsersRound}
                 eyebrowIcon={ShieldCheck}
                 eyebrow={t('users.eyebrow')}
                 title={t('users.title')}
                 description={t('users.description')}
-                actions={
-                    <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
-                        <button type="button" onClick={exportUsers} title={t('users.actions.export')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 hover:text-teal-700 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/15 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-teal-300">
-                            <Download size={18} />{t('users.actions.export')}
+                actions={(
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        {canViewStaff && (
+                            <button
+                                type="button"
+                                onClick={() => navigate('/hr?tab=directory')}
+                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-cyan-500/30 bg-cyan-50/70 px-4 text-xs font-black text-cyan-800 shadow-2xs transition hover:bg-cyan-100 dark:border-cyan-900/50 dark:bg-cyan-950/40 dark:text-cyan-300"
+                            >
+                                <Briefcase size={15} className="text-cyan-600 dark:text-cyan-400" />
+                                <span>{isArabic ? 'دليل الموظفين (HR)' : 'Employee Directory'}</span>
+                            </button>
+                        )}
+                        {canViewAudit && (
+                            <button
+                                type="button"
+                                onClick={() => navigate('/audit-logs')}
+                                className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-50/70 px-4 text-xs font-black text-emerald-800 shadow-2xs transition hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-300"
+                            >
+                                <ShieldCheck size={15} className="text-emerald-600 dark:text-emerald-400" />
+                                <span>{isArabic ? 'سجل الأمان' : 'Security Audit'}</span>
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={() => navigate('/user-activity')}
+                            className="inline-flex h-10 items-center gap-2 rounded-xl border border-teal-500/30 bg-teal-50/70 px-4 text-xs font-black text-teal-800 shadow-2xs transition hover:bg-teal-100 dark:border-teal-900/50 dark:bg-teal-950/40 dark:text-teal-300"
+                        >
+                            <Activity size={15} className="text-teal-600 dark:text-teal-400" />
+                            <span>{isArabic ? 'لوحة النشاط' : 'Activity'}</span>
                         </button>
-                        <button type="button" onClick={openCreate} title={t('users.actions.add')} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-950 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-500/20 dark:bg-white dark:text-slate-950 dark:hover:bg-teal-100">
-                            <UserPlus size={18} />{t('users.actions.add')}
+                        <button
+                            type="button"
+                            onClick={exportUsers}
+                            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200/80 bg-white px-4 text-xs font-black text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-teal-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
+                        >
+                            <Download size={15} />
+                            <span>{t('users.actions.export')}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={openCreate}
+                            className="inline-flex h-10 items-center gap-2 rounded-xl bg-teal-600 px-5 text-xs font-black text-white shadow-xs transition hover:bg-teal-500 active:scale-95"
+                        >
+                            <UserPlus size={15} />
+                            <span>{t('users.actions.add')}</span>
                         </button>
                     </div>
-                }
-            >
-                <div className="mt-4 flex flex-wrap gap-2">
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">{t('users.header.staffRoles', { count: STAFF_ROLES.length })}</span>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">{t('users.header.portalRoles', { count: MANAGED_OUTSIDE_USERS.length })}</span>
-                    {summary.missingRoles.length > 0 && (
-                        <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">{t('users.header.uncovered', { count: summary.missingRoles.length })}</span>
-                    )}
-                </div>
-            </PageHeader>
+                )}
+                metrics={[
+                    { key: 'total', label: t('users.metrics.total'), value: summary.total, icon: UsersRound, tone: 'teal', detail: t('users.metrics.roles', { count: summary.roleCount }), loading: isLoading, error: isError },
+                    { key: 'active', label: t('users.metrics.active'), value: summary.active, icon: UserCheck, tone: 'emerald', detail: t('users.metrics.activeDetail'), loading: isLoading, error: isError },
+                    { key: 'disabled', label: t('users.metrics.disabled'), value: summary.disabled, icon: XCircle, tone: 'rose', detail: t('users.metrics.disabledDetail'), loading: isLoading, error: isError },
+                    { key: 'critical', label: t('users.metrics.critical'), value: summary.critical, icon: ShieldAlert, tone: 'violet', detail: t('users.metrics.criticalDetail'), loading: isLoading, error: isError },
+                ]}
+                metricsLabel={t('users.metrics.label')}
+                meta={isFetching && <span className="text-xs font-bold text-teal-700 dark:text-teal-300">{isArabic ? 'جارٍ تحديث السجل…' : 'Refreshing records…'}</span>}
+            />
 
-            <section className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-label={t('users.metrics.label')}>
-                <MetricCard icon={UsersRound} label={t('users.metrics.total')} value={summary.total} detail={t('users.metrics.roles', { count: summary.roleCount })} tone="cyan" />
-                <MetricCard icon={UserCheck} label={t('users.metrics.active')} value={summary.active} detail={t('users.metrics.activeDetail')} tone="emerald" />
-                <MetricCard icon={XCircle} label={t('users.metrics.disabled')} value={summary.disabled} detail={t('users.metrics.disabledDetail')} tone="rose" />
-                <MetricCard icon={ShieldAlert} label={t('users.metrics.critical')} value={summary.critical} detail={t('users.metrics.criticalDetail')} tone="violet" />
-            </section>
-
-            <section className="rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50 sm:p-5">
+            {/* Role Coverage Pills */}
+            <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                 <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h2 className="font-bold text-slate-950 dark:text-white">{t('users.coverage.title')}</h2>
-                        <p className="mt-1 text-sm text-slate-500">{t('users.coverage.description')}</p>
+                        <h2 className="text-sm font-black text-slate-900 dark:text-white">{t('users.coverage.title')}</h2>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('users.coverage.description')}</p>
                     </div>
-                    <span className="inline-flex w-fit items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         <ShieldCheck size={14} />{t('users.coverage.managedRoles', { count: STAFF_ROLES.length })}
                     </span>
                 </div>
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
                     {roleCoverage.map(role => (
                         <button
                             key={role.id}
                             type="button"
-                            title={t('users.coverage.filterByRole', { role: roleLabel(role.id, t) })}
-                            onClick={() => setRoleFilter(role.id)}
-                            className={`group rounded-2xl border p-4 text-start transition hover:-translate-y-0.5 hover:shadow-lg hover:shadow-cyan-900/5 ${roleFilter === role.id ? 'border-cyan-300 bg-cyan-50/70 dark:border-cyan-700 dark:bg-cyan-950/30' : 'border-slate-200/60 bg-slate-50/30 hover:border-cyan-200 dark:border-slate-800/65 dark:bg-slate-900/10 dark:hover:border-cyan-850'}`}
+                            onClick={() => { setRoleFilter(role.id); setCurrentPage(1); }}
+                            className={`rounded-2xl border p-3 text-start transition ${roleFilter === role.id
+                                    ? 'border-teal-500/50 bg-teal-500/10 dark:bg-teal-950/30 ring-1 ring-teal-500/30'
+                                    : 'border-slate-100 bg-slate-50/70 hover:border-slate-200 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:border-slate-700'
+                                }`}
                         >
-                            <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-center justify-between gap-2">
                                 <RoleBadge role={role.id} label={roleLabel(role.id, t)} compact />
-                                <span className="text-xl font-black text-slate-950 dark:text-white">{role.active}</span>
+                                <span className="text-base font-black text-slate-900 dark:text-white">{role.active}</span>
                             </div>
-                            <p className="mt-3 line-clamp-2 min-h-[40px] text-sm leading-5 text-slate-500">{t(`users.scope.${role.scope}`)}</p>
-                            <div className="mt-3 flex items-center justify-between gap-2 text-xs font-bold">
+                            <div className="mt-2 flex items-center justify-between text-[11px] font-bold text-slate-400">
                                 <span className={riskClass(role.risk)}>{t(`users.risk.${role.risk}`)}</span>
-                                <span className="text-slate-400">{t('users.coverage.totalAccounts', { count: role.total })}</span>
+                                <span>{role.total} {isArabic ? 'حساب' : 'total'}</span>
                             </div>
                         </button>
                     ))}
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50 sm:p-5">
+            {/* Filter Deck */}
+            <section className="rounded-3xl border border-slate-200/80 bg-white/90 p-5 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                 <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                        <h2 className="font-bold text-slate-950 dark:text-white">{t('users.directory.title')}</h2>
-                        <p className="mt-1 text-sm text-slate-500">{t('users.directory.description')}</p>
+                        <h2 className="text-sm font-black text-slate-900 dark:text-white">{t('users.directory.title')}</h2>
+                        <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">{t('users.directory.description')}</p>
                     </div>
                     <div className="flex items-center gap-3">
-                        <span className="rounded-full bg-cyan-50 px-3 py-1 text-xs font-bold text-cyan-800 dark:bg-cyan-900/20 dark:text-cyan-400">{t('users.filters.results', { shown: filteredStaff.length, total: staff.length })}</span>
-                        {hasFilters && <button type="button" onClick={clearFilters} title={t('users.filters.reset')} className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-rose-600"><FilterX size={14} />{t('users.filters.reset')}</button>}
+                        <span className="rounded-full bg-teal-500/10 px-3 py-1 text-xs font-bold text-teal-800 dark:text-teal-300">
+                            {t('users.filters.results', { shown: filteredStaff.length, total: staff.length })}
+                        </span>
+                        {hasFilters && (
+                            <button type="button" onClick={clearFilters} className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-rose-600">
+                                <FilterX size={14} />{t('users.filters.reset')}
+                            </button>
+                        )}
                     </div>
                 </div>
-                <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_220px_190px_190px]">
-                    <label className="relative block">
-                        <span className="sr-only">{t('users.filters.searchLabel')}</span>
-                        <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <input value={searchTerm} onChange={event => setSearchTerm(event.target.value)} placeholder={t('users.filters.search')} className="h-11 w-full rounded-xl border border-slate-200/60 bg-slate-50/30 ps-10 pe-3 text-sm outline-none transition focus:border-cyan-600 focus:bg-white focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700/60 dark:bg-slate-900/30 dark:focus:border-cyan-500 dark:focus:bg-slate-900" />
-                    </label>
-                    <FilterSelect value={roleFilter} onChange={setRoleFilter} label={t('users.filters.role')}>
+                <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_200px_180px_180px]">
+                    <div className="relative">
+                        <Search className="absolute start-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                            value={searchTerm}
+                            onChange={event => { setSearchTerm(event.target.value); setCurrentPage(1); }}
+                            placeholder={t('users.filters.search')}
+                            className="h-10 w-full rounded-xl border border-slate-200/80 bg-slate-50/50 ps-10 pe-3 text-xs font-bold outline-hidden transition focus:border-teal-500 focus:bg-white dark:border-slate-800 dark:bg-slate-950/40 dark:focus:border-teal-500"
+                        />
+                    </div>
+                    <FilterSelect value={roleFilter} onChange={(v) => { setRoleFilter(v); setCurrentPage(1); }} label={t('users.filters.role')}>
                         <option value="all">{t('users.filters.allRoles')}</option>
                         {STAFF_ROLES.map(role => <option key={role} value={role}>{roleLabel(role, t)}</option>)}
                     </FilterSelect>
-                    <FilterSelect value={statusFilter} onChange={setStatusFilter} label={t('users.filters.status')}>
+                    <FilterSelect value={statusFilter} onChange={(v) => { setStatusFilter(v); setCurrentPage(1); }} label={t('users.filters.status')}>
                         <option value="all">{t('users.filters.allStatuses')}</option>
                         <option value="active">{t('users.status.active')}</option>
                         <option value="disabled">{t('users.status.disabled')}</option>
                     </FilterSelect>
-                    <FilterSelect value={riskFilter} onChange={setRiskFilter} label={t('users.filters.risk')}>
+                    <FilterSelect value={riskFilter} onChange={(v) => { setRiskFilter(v); setCurrentPage(1); }} label={t('users.filters.risk')}>
                         <option value="all">{t('users.filters.allRisks')}</option>
                         <option value="critical">{t('users.risk.critical')}</option>
                         <option value="sensitive">{t('users.risk.sensitive')}</option>
@@ -367,32 +426,21 @@ const Users = () => {
                 </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200/60 bg-white/70 shadow-sm backdrop-blur-xl dark:border-slate-800/60 dark:bg-slate-900/50">
+            {/* Table & Content */}
+            <section className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
                 {isLoading ? (
-                    <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">{[1, 2, 3, 4, 5, 6].map(item => <Skeleton key={item} variant="card" className="h-44" />)}</div>
+                    <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-3">
+                        {[1, 2, 3, 4, 5, 6].map(item => <Skeleton key={item} variant="card" className="h-44" />)}
+                    </div>
                 ) : isError ? (
                     <EmptyState icon={Shield} title={t('users.states.errorTitle')} description={t('users.states.errorDescription')} actionLabel={t('users.actions.retry')} onAction={refetch} />
                 ) : filteredStaff.length === 0 ? (
                     <EmptyState icon={Shield} title={t('users.states.emptyTitle')} description={hasFilters ? t('users.states.filteredEmpty') : t('users.states.emptyDescription')} actionLabel={hasFilters ? t('users.filters.reset') : t('users.actions.add')} onAction={hasFilters ? clearFilters : openCreate} />
                 ) : (
                     <>
-                        <div className="divide-y divide-slate-100 dark:divide-slate-800 lg:hidden">
-                            {filteredStaff.map(user => (
-                                <UserMobileCard
-                                    key={user.user_id}
-                                    user={user}
-                                    t={t}
-                                    locale={locale}
-                                    roleProfile={roleProfiles[user.role]}
-                                    onViewDetails={() => navigate(`/users/${user.user_id}`)}
-                                    onEdit={() => openEdit(user)}
-                                    onDelete={() => canMutateUser(user) ? setDeleteUser(user) : toast.error(t('users.messages.protectedDenied', 'Only a Developer can change protected accounts.'))}
-                                />
-                            ))}
-                        </div>
-                        <div className="hidden overflow-x-auto lg:block">
-                            <table className="min-w-[1040px] w-full text-start text-sm">
-                                <thead className="border-b border-slate-200 bg-slate-50/90 dark:border-slate-800 dark:bg-slate-900/50">
+                        <div className="overflow-x-auto">
+                            <table className="min-w-[980px] w-full text-start text-xs font-bold">
+                                <thead className="border-b border-slate-100 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/40">
                                     <tr>
                                         <TableHead>{t('users.table.user')}</TableHead>
                                         <TableHead>{t('users.table.role')}</TableHead>
@@ -403,29 +451,30 @@ const Users = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                    {filteredStaff.map(user => {
+                                    {paginatedStaff.map(user => {
                                         const profile = roleProfiles[user.role] || {};
                                         return (
-                                            <tr key={user.user_id} className="transition hover:bg-cyan-50/35 dark:hover:bg-cyan-900/20">
-                                                <td className="px-5 py-4">
+                                            <tr key={user.user_id} className="transition hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                                                <td className="px-5 py-3.5">
                                                     <UserIdentity user={user} onClick={() => navigate(`/users/${user.user_id}`)} />
                                                 </td>
-                                                <td className="px-5 py-4">
-                                                    <div className="space-y-2">
+                                                <td className="px-5 py-3.5">
+                                                    <div className="space-y-1">
                                                         <RoleBadge role={user.role} label={roleLabel(user.role, t)} />
-                                                        <p className="text-xs font-semibold text-slate-400">{t(`users.groups.${profile.group || 'operations'}`)}</p>
+                                                        <p className="text-[10px] font-semibold text-slate-400">{t(`users.groups.${profile.group || 'operations'}`)}</p>
                                                     </div>
                                                 </td>
-                                                <td className="px-5 py-4">
-                                                    <div className="max-w-[260px]">
+                                                <td className="px-5 py-3.5">
+                                                    <div className="max-w-[240px]">
                                                         <span className={riskClass(profile.risk || 'standard')}>{t(`users.risk.${profile.risk || 'standard'}`)}</span>
-                                                        <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-500">{t(`users.scope.${profile.scope || 'frontDesk'}`)}</p>
+                                                        <p className="mt-1 line-clamp-1 text-[11px] font-semibold text-slate-500">{t(`users.scope.${profile.scope || 'frontDesk'}`)}</p>
                                                     </div>
                                                 </td>
-                                                <td className="px-5 py-4"><StatusBadge active={user.is_active} t={t} /></td>
-                                                <td className="px-5 py-4 text-slate-500">{formatCreatedAt(user.created_at, locale, t)}</td>
-                                                <td className="px-5 py-4">
+                                                <td className="px-5 py-3.5"><StatusBadge active={user.is_active} t={t} /></td>
+                                                <td className="px-5 py-3.5 text-slate-500">{formatCreatedAt(user.created_at, locale, t)}</td>
+                                                <td className="px-5 py-3.5">
                                                     <div className="flex justify-end gap-1">
+                                                        <IconButton label={isArabic ? 'الملف الوظيفي بالموارد البشرية (HR)' : 'View HR Employment Profile'} icon={Briefcase} onClick={() => navigate('/hr?tab=directory')} tone="teal" />
                                                         <IconButton label={t('users.actions.viewDetails', 'View Details & Movements')} icon={Eye} onClick={() => navigate(`/users/${user.user_id}`)} tone="teal" />
                                                         <IconButton label={t('users.actions.copyEmail')} icon={Copy} onClick={() => copyText(user.email, t)} tone="slate" disabled={!user.email} />
                                                         <IconButton label={t('users.actions.edit')} icon={Edit2} onClick={() => openEdit(user)} tone="cyan" disabled={!canMutateUser(user)} />
@@ -438,6 +487,23 @@ const Users = () => {
                                 </tbody>
                             </table>
                         </div>
+
+                        {/* Interactive Pagination Footer */}
+                        <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 text-xs font-bold text-slate-500 dark:border-slate-800 sm:flex-row">
+                            <div className="flex items-center gap-2">
+                                <span>{isArabic ? 'عرض' : 'Showing'}</span>
+                                <select
+                                    value={pageSize}
+                                    onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                                    className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                                >
+                                    {[10, 20, 50].map(s => <option key={s} value={s}>{s}</option>)}
+                                </select>
+                                <span>{isArabic ? `من إجمالي ${filteredStaff.length} مستخدم` : `of ${filteredStaff.length} users`}</span>
+                            </div>
+
+                            <Pagination currentPage={currentPage} pageCount={totalPages} onPageChange={setCurrentPage} isRtl={isArabic} compact />
+                        </div>
                     </>
                 )}
             </section>
@@ -446,11 +512,19 @@ const Users = () => {
                 <form onSubmit={handleSubmit(submitUser)} className="space-y-5">
                     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
                         <div className="space-y-4">
-                            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4 text-sm leading-6 text-cyan-900 dark:border-cyan-900/50 dark:bg-cyan-950/30 dark:text-cyan-100">{editingUser ? t('users.form.editHint') : t('users.form.createHint')}</div>
+                            <div className="rounded-2xl border border-teal-500/20 bg-teal-500/10 p-4 text-xs font-bold text-teal-900 dark:text-teal-200">
+                                {editingUser ? t('users.form.editHint') : t('users.form.createHint')}
+                            </div>
                             <div className="grid gap-4 sm:grid-cols-2">
-                                <div className="sm:col-span-2"><Input id="staff-full-name" label={t('users.form.fullName')} placeholder={t('users.form.fullNamePlaceholder')} error={errors.fullName?.message} {...register('fullName', { required: t('users.form.fullNameRequired'), minLength: { value: 3, message: t('users.form.fullNameLength') } })} /></div>
-                                <div className="sm:col-span-2"><Input id="staff-email" type="email" label={t('users.form.email')} placeholder="user@rcms.com" error={errors.email?.message} {...register('email', { required: t('users.form.emailRequired') })} /></div>
-                                <div className="sm:col-span-2"><Select label={t('users.form.role')} placeholder={t('users.form.rolePlaceholder')} error={errors.role} {...register('role', { required: t('users.form.roleRequired') })} options={assignableRoles.map(role => ({ value: role, label: roleLabel(role, t) }))} /></div>
+                                <div className="sm:col-span-2">
+                                    <Input id="staff-full-name" label={t('users.form.fullName')} placeholder={t('users.form.fullNamePlaceholder')} error={errors.fullName?.message} {...register('fullName', { required: t('users.form.fullNameRequired'), minLength: { value: 3, message: t('users.form.fullNameLength') } })} />
+                                </div>
+                                <div className="sm:col-span-2">
+                                    <Input id="staff-email" type="email" label={t('users.form.email')} placeholder="user@viara.health" error={errors.email?.message} {...register('email', { required: t('users.form.emailRequired') })} />
+                                </div>
+                                <div className="sm:col-span-2">
+                                    <Select label={t('users.form.role')} placeholder={t('users.form.rolePlaceholder')} error={errors.role} {...register('role', { required: t('users.form.roleRequired') })} options={assignableRoles.map(role => ({ value: role, label: roleLabel(role, t) }))} />
+                                </div>
                                 {editingUser && <Select label={t('users.form.status')} {...register('isActive')} options={[{ value: 'true', label: t('users.status.active') }, { value: 'false', label: t('users.status.disabled') }]} />}
                                 <div className="sm:col-span-2 space-y-2">
                                     <div className="flex items-end gap-2">
@@ -473,31 +547,25 @@ const Users = () => {
                                             <span className="hidden sm:inline">{t('users.actions.generatePassword')}</span>
                                         </Button>
                                     </div>
-                                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-                                        <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium dark:bg-slate-800">Min 8 chars</span>
-                                        <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium dark:bg-slate-800">1 Uppercase (A-Z)</span>
-                                        <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium dark:bg-slate-800">1 Lowercase (a-z)</span>
-                                        <span className="rounded-md bg-slate-100 px-2 py-0.5 font-medium dark:bg-slate-800">1 Number (0-9)</span>
-                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <aside className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/40">
-                            <p className="text-xs font-bold uppercase tracking-[.16em] text-slate-400">{t('users.form.rolePreview')}</p>
+                        <aside className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/40">
+                            <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{t('users.form.rolePreview')}</p>
                             {formRoleProfile ? (
                                 <div className="mt-4 space-y-4">
                                     <RoleBadge role={formRoleProfile.id} label={roleLabel(formRoleProfile.id, t)} />
                                     <div>
-                                        <p className="text-sm font-bold text-slate-950 dark:text-white">{t(`users.groups.${formRoleProfile.group}`)}</p>
-                                        <p className="mt-1 text-sm leading-6 text-slate-500">{t(`users.scope.${formRoleProfile.scope}`)}</p>
+                                        <p className="text-xs font-black text-slate-900 dark:text-white">{t(`users.groups.${formRoleProfile.group}`)}</p>
+                                        <p className="mt-1 text-xs font-semibold text-slate-500">{t(`users.scope.${formRoleProfile.scope}`)}</p>
                                     </div>
-                                    <div className="rounded-xl bg-white/80 p-3 dark:bg-slate-900">
-                                        <p className="text-xs font-bold text-slate-400">{t('users.form.riskLevel')}</p>
-                                        <span className={`mt-2 ${riskClass(formRoleProfile.risk)}`}>{t(`users.risk.${formRoleProfile.risk}`)}</span>
+                                    <div className="rounded-xl bg-white p-3 dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
+                                        <p className="text-[10px] font-bold text-slate-400">{t('users.form.riskLevel')}</p>
+                                        <span className={`mt-1.5 ${riskClass(formRoleProfile.risk)}`}>{t(`users.risk.${formRoleProfile.risk}`)}</span>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-700">{t('users.form.selectRolePreview')}</div>
+                                <div className="mt-4 rounded-xl border border-dashed border-slate-300 p-4 text-xs font-semibold text-slate-500 dark:border-slate-700">{t('users.form.selectRolePreview')}</div>
                             )}
                         </aside>
                     </div>
@@ -512,18 +580,18 @@ const Users = () => {
             </Modal>
 
             <ConfirmDialog isOpen={Boolean(deleteUser)} onClose={() => setDeleteUser(null)} onConfirm={confirmDelete} title={t('users.delete.title')} message={t('users.delete.message', { name: deleteUser?.full_name || '' })} confirmText={t('users.actions.delete')} variant="danger" isLoading={isDeleting} />
-        </div>
+        </main>
     );
 };
 
 const FilterSelect = ({ value, onChange, label, children }) => (
-    <select value={value} onChange={event => onChange(event.target.value)} className="h-11 rounded-xl border border-slate-200/60 bg-white/85 px-3 text-sm font-semibold text-slate-700 outline-none focus:border-cyan-600 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700/60 dark:bg-slate-900/80 dark:text-slate-205 dark:focus:border-cyan-500" aria-label={label}>
+    <select value={value} onChange={event => onChange(event.target.value)} className="h-10 rounded-xl border border-slate-200/80 bg-white px-3 text-xs font-bold text-slate-700 outline-hidden focus:border-teal-500 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200" aria-label={label}>
         {children}
     </select>
 );
 
 const TableHead = ({ children, align = 'start' }) => (
-    <th className={`px-5 py-3.5 text-xs font-bold uppercase tracking-[.1em] text-slate-500 ${align === 'end' ? 'text-end' : 'text-start'}`}>{children}</th>
+    <th className={`px-5 py-3 text-[10px] font-black uppercase tracking-wider text-slate-400 dark:text-slate-500 ${align === 'end' ? 'text-end' : 'text-start'}`}>{children}</th>
 );
 
 const UserIdentity = ({ user, onClick }) => (
@@ -531,74 +599,70 @@ const UserIdentity = ({ user, onClick }) => (
         onClick={onClick}
         className={`flex min-w-0 items-center gap-3 ${onClick ? 'cursor-pointer group' : ''}`}
     >
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 font-black text-teal-800 transition group-hover:scale-105 dark:text-teal-300">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-300 font-black border border-teal-500/30 transition group-hover:scale-105">
             {initials(user.full_name)}
         </span>
         <div className="min-w-0">
-            <p className="truncate font-bold text-slate-950 transition group-hover:text-teal-600 dark:text-white dark:group-hover:text-teal-400">{user.full_name}</p>
-            <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-slate-500"><Mail size={13} />{user.email}</p>
+            <p className="truncate font-black text-slate-900 transition group-hover:text-teal-600 dark:text-white dark:group-hover:text-teal-400">{user.full_name}</p>
+            <p className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] font-semibold text-slate-400"><Mail size={12} />{user.email}</p>
         </div>
     </div>
-);
-
-const UserMobileCard = ({ user, t, locale, roleProfile = {}, onViewDetails, onEdit, onDelete }) => (
-    <article className={`p-5 ${user.is_active ? '' : 'bg-slate-50/70 dark:bg-slate-900/40'}`}>
-        <div className="flex items-start justify-between gap-3">
-            <UserIdentity user={user} onClick={onViewDetails} />
-            <StatusBadge active={user.is_active} t={t} />
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-            <RoleBadge role={user.role} label={roleLabel(user.role, t)} />
-            <span className={riskClass(roleProfile.risk || 'standard')}>{t(`users.risk.${roleProfile.risk || 'standard'}`)}</span>
-        </div>
-        <p className="mt-3 text-sm leading-6 text-slate-500">{t(`users.scope.${roleProfile.scope || 'frontDesk'}`)}</p>
-        <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4 text-xs text-slate-400 dark:border-slate-800">
-            <span className="inline-flex items-center gap-1.5"><CalendarClock size={13} />{formatCreatedAt(user.created_at, locale, t)}</span>
-            <div className="flex gap-1">
-                <IconButton label={t('users.actions.viewDetails', 'View Details & Movements')} icon={Eye} onClick={onViewDetails} tone="teal" />
-                <IconButton label={t('users.actions.copyEmail')} icon={Copy} onClick={() => copyText(user.email, t)} tone="slate" disabled={!user.email} />
-                <IconButton label={t('users.actions.edit')} icon={Edit2} onClick={onEdit} tone="cyan" />
-                <IconButton label={t('users.actions.delete')} icon={Trash2} onClick={onDelete} tone="rose" />
-            </div>
-        </div>
-    </article>
 );
 
 const RoleBadge = ({ role, label, compact = false }) => {
     const Icon = ROLE_CATALOG.find(item => item.id === role)?.icon || Shield;
     const style = {
-        Admin: 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-400',
-        Developer: 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-400',
-        Radiologist: 'bg-cyan-50 text-cyan-800 dark:bg-cyan-900/20 dark:text-cyan-400',
-        Technician: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400',
-        Nurse: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400',
-        Receptionist: 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400',
-        Cashier: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400',
-        Accountant: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400',
-        Insurance_Staff: 'bg-sky-50 text-sky-700 dark:bg-sky-900/20 dark:text-sky-400',
-        HR: 'bg-fuchsia-50 text-fuchsia-700 dark:bg-fuchsia-900/20 dark:text-fuchsia-400',
-        Marketing: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400'
+        Admin: 'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30',
+        Developer: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30',
+        Radiologist: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border-cyan-500/30',
+        Technician: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30',
+        Nurse: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30',
+        Receptionist: 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30',
+        Cashier: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30',
+        Accountant: 'bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30',
+        Insurance_Staff: 'bg-sky-500/10 text-sky-700 dark:text-sky-300 border-sky-500/30',
+        HR: 'bg-fuchsia-500/10 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-500/30',
+        Marketing: 'bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/30'
     }[role] || 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
-    return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${style}`}><Icon size={compact ? 12 : 13} />{label}</span>;
+    return <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10.5px] font-black ${style}`}><Icon size={compact ? 11 : 12} />{label}</span>;
 };
 
-const StatusBadge = ({ active, t }) => <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${active ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'}`}>{active ? <CheckCircle2 size={13} /> : <UserX size={13} />}{active ? t('users.status.active') : t('users.status.disabled')}</span>;
+const StatusBadge = ({ active, t }) => (
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10.5px] font-black ${active ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700'}`}>
+        {active ? <CheckCircle2 size={12} /> : <UserX size={12} />}
+        {active ? t('users.status.active') : t('users.status.disabled')}
+    </span>
+);
 
-const IconButton = ({ label, icon: Icon, onClick, tone, disabled = false }) => <button type="button" onClick={onClick} aria-label={label} title={label} disabled={disabled} className={`flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-40 ${tone === 'rose' ? 'hover:bg-rose-50 hover:text-rose-700 focus-visible:ring-rose-300 dark:hover:bg-rose-900/30 dark:hover:text-rose-400 dark:focus-visible:ring-rose-800' : tone === 'slate' ? 'hover:bg-slate-100 hover:text-slate-700 focus-visible:ring-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-200 dark:focus-visible:ring-slate-700' : 'hover:bg-cyan-50 hover:text-cyan-800 focus-visible:ring-cyan-300 dark:hover:bg-cyan-900/30 dark:hover:text-cyan-400 dark:focus-visible:ring-cyan-800'}`}><Icon size={16} /></button>;
+const IconButton = ({ label, icon: Icon, onClick, tone, disabled = false }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        title={label}
+        disabled={disabled}
+        className={`flex h-8 w-8 items-center justify-center rounded-xl text-slate-400 transition disabled:opacity-40 ${tone === 'rose'
+                ? 'hover:bg-rose-500/10 hover:text-rose-700'
+                : tone === 'slate'
+                    ? 'hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800'
+                    : 'hover:bg-teal-500/10 hover:text-teal-700 dark:hover:text-teal-300'
+            }`}
+    >
+        <Icon size={15} />
+    </button>
+);
 
 const riskClass = (risk) => {
     const classes = {
-        critical: 'inline-flex rounded-full bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 dark:bg-rose-900/20 dark:text-rose-400',
-        sensitive: 'inline-flex rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700 dark:bg-amber-900/20 dark:text-amber-400',
-        standard: 'inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+        critical: 'inline-flex rounded-full bg-rose-500/10 border border-rose-500/30 px-2 py-0.5 text-[10px] font-black text-rose-700 dark:text-rose-300',
+        sensitive: 'inline-flex rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-black text-amber-700 dark:text-amber-300',
+        standard: 'inline-flex rounded-full bg-slate-100 border border-slate-200 px-2 py-0.5 text-[10px] font-black text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
     };
     return classes[risk] || classes.standard;
 };
 
 const initials = (name = '') => name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || '-';
-
 const roleLabel = (role, t) => t(`users.roles.${role}`, { defaultValue: role });
-
 const formatCreatedAt = (value, locale, t) => value
     ? new Date(value).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' })
     : t('users.table.unknownDate');
@@ -606,7 +670,7 @@ const formatCreatedAt = (value, locale, t) => value
 const generateTemporaryPassword = () => {
     const suffix = Math.random().toString(36).slice(2, 8);
     const number = Math.floor(100 + Math.random() * 900);
-    return `Rcms${number}${suffix}A`;
+    return `VIARA${number}${suffix}A`;
 };
 
 const copyText = async (value, t) => {

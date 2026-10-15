@@ -9,8 +9,8 @@
  * Key design decisions
  * ────────────────────
  * • Zero GPU required — inference runs on provider infrastructure.
- * • De-identification enforced: only the rendered JPEG pixel data is sent;
- *   no patient name, MRN, DOB or other PHI is included in the request.
+ * • Cloud previews require explicitly de-identified DICOM sources. Tag checks
+ *   are a gate, not a replacement for a validated pixel de-identification process.
  * • Exponential backoff on 429/503 (1 s → 2 s → 4 s, up to 3 attempts).
  * • Optional round-robin API key rotation via GEMINI_API_KEY_1/2/3 to
  *   multiply the free-tier daily quota.
@@ -23,19 +23,20 @@
 const logger = require('../config/logger');
 const { GEMINI_DEFAULT_MODEL, OPENAI_DEFAULT_MODEL, normalizeGeminiModel } = require('./aiModelPolicy');
 const { validateCustomAiEndpointUrl } = require('../utils/customAiEndpointUrl');
+const pLimit = require('p-limit');
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
-const GEMINI_MODEL        = GEMINI_DEFAULT_MODEL;
-const GEMINI_API_BASE     = 'https://generativelanguage.googleapis.com/v1beta/models';
-const OPENROUTER_BASE     = 'https://openrouter.ai/api/v1/chat/completions';
-const OPENROUTER_MODEL    = 'openrouter/auto';   // auto-selects best free vision model
-const OPENAI_BASE         = 'https://api.openai.com/v1/chat/completions';
-const FETCH_TIMEOUT_MS    = 30_000;
-const MAX_RETRY_ATTEMPTS  = 3;
+const GEMINI_MODEL = GEMINI_DEFAULT_MODEL;
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const OPENROUTER_BASE = 'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_MODEL = 'openrouter/auto';   // auto-selects best free vision model
+const OPENAI_BASE = 'https://api.openai.com/v1/chat/completions';
+const FETCH_TIMEOUT_MS = 30_000;
+const MAX_RETRY_ATTEMPTS = 3;
 const BASE_RETRY_DELAY_MS = 1_000;
 const MAX_PROVIDER_RETRY_DELAY_MS = 60_000;
-const MAX_IMAGE_BYTES     = 4 * 1024 * 1024;     // 4 MB — Gemini inline limit
+const MAX_IMAGE_BYTES = 4 * 1024 * 1024;     // 4 MB — Gemini inline limit
 const MAX_TOTAL_IMAGE_BYTES = 12 * 1024 * 1024;
 const DEFAULT_GEMINI_IMAGE_LIMIT = 12;
 const DEFAULT_OPENROUTER_IMAGE_LIMIT = 8;
@@ -116,18 +117,21 @@ const normalizeOpenAiCompatibleChatUrl = (value) => {
 
 /**
  * Builds a structured radiology analysis prompt.
- * The response MUST be valid JSON matching the RCMS workerResultSchema.
+ * The response MUST be valid JSON matching the VIARA workerResultSchema.
  */
+const safeCloudContext = (context) => ({
+    modality: ['CT', 'MR', 'MRI', 'CR', 'DX', 'US', 'MG', 'NM', 'PT', 'XA', 'RF', 'SC'].includes(String(context.modality).toUpperCase()) ? String(context.modality).toUpperCase() : 'Unknown',
+    bodyPart: /^(head|brain|neck|chest|abdomen|pelvis|spine|knee|shoulder|hand|foot|ankle|hip|elbow|wrist|breast)$/i.test(String(context.bodyPart)) ? String(context.bodyPart).toLowerCase() : 'Unknown'
+});
 const buildRadiologyPrompt = (context = {}) => {
-    const modality  = context.modality  || 'Unknown';
-    const examType  = context.examType  || 'Unknown';
-    const bodyPart  = context.bodyPart  || 'Unknown';
-    const clinInd   = context.clinicalIndication || 'Not provided';
+    const { modality, bodyPart } = safeCloudContext(context);
+    const examType = 'Free-text exam description withheld';
+    const clinInd = 'Free-text clinical indication withheld';
     const images = context.images || [];
     const totalImageCount = Number(context.totalImageCount || images.length);
     const seriesCount = Number(context.seriesCount || 0);
     const imageManifest = images.map((image, index) => (
-        `  Image ${index + 1}: series ${image.seriesNumber ?? '-'} (${image.seriesDescription || image.modality || 'Unspecified'}), instance ${image.instanceNumber ?? '-'}`
+        `  Image ${index + 1}: series ${Number.isSafeInteger(Number(image.seriesNumber)) ? Number(image.seriesNumber) : '-'}, instance ${Number.isSafeInteger(Number(image.instanceNumber)) ? Number(image.instanceNumber) : '-'}`
     ));
 
     return [
@@ -196,16 +200,15 @@ const buildRadiologyPrompt = (context = {}) => {
  * Uses structured DICOM metadata instead of pixel data.
  */
 const buildTextOnlyPrompt = (context = {}) => {
-    const modality  = context.modality  || 'Unknown';
-    const examType  = context.examType  || 'Unknown';
-    const bodyPart  = context.bodyPart  || 'Unknown';
-    const clinInd   = context.clinicalIndication || 'Not provided';
+    const { modality, bodyPart } = safeCloudContext(context);
+    const examType = 'Free-text exam description withheld';
+    const clinInd = 'Free-text clinical indication withheld';
     const imageCount = context.imageCount || 'Unknown';
     const seriesCount = context.seriesCount || 'Unknown';
 
     return [
         'You are an expert radiologist performing a preliminary AI-assisted analysis based on structured DICOM exam metadata.',
-        'No pixel image is available — analyse the clinical context and metadata to produce a structured preliminary report.',
+        'No pixel image is available. Do not infer, suggest, or invent any imaging findings from metadata or prevalence.',
         '',
         'DICOM Exam Metadata:',
         `  Modality: ${modality}`,
@@ -220,18 +223,9 @@ const buildTextOnlyPrompt = (context = {}) => {
             success: true,
             status: 'Completed',
             resultType: 'AI metadata-based screening',
-            summary: '<2-4 sentence preliminary clinical overview based on the exam metadata>',
-            findings: [
-                {
-                    label: '<expected or common finding for this exam type>',
-                    present: true,
-                    confidence: 0.5,
-                    location: '<anatomical location or null>',
-                    description: '<1-2 sentence description based on expected findings for this modality/body part>',
-                    evidence: []
-                }
-            ],
-            impression: '<concise radiological impression based on the exam type and clinical indication>',
+            summary: 'No pixel images were analyzed. Metadata-only output is non-diagnostic; radiologist image review is required.',
+            findings: [],
+            impression: '',
             limitations: [
                 'IMPORTANT: No pixel image was analysed — this report is based on exam metadata only. Direct image review is mandatory.',
                 'AI-generated preliminary draft. A licensed radiologist must review all source images before report sign-off.',
@@ -256,9 +250,10 @@ const buildTextOnlyPrompt = (context = {}) => {
         '',
         'Rules:',
         '- Fill __PROVIDER__ and __MODEL__ with the actual provider/model identifiers.',
-        '- Set confidence values appropriately low (0.3-0.6) since no image was analysed.',
+        '- Do not assign confidence values or generate findings when no image was analysed.',
         '- quality.diagnostic MUST be false since no image was reviewed.',
-        '- NEVER claim findings you cannot see — base everything on the clinical indication and modality context.',
+        '- quality.supported MUST be false. Return an empty findings array and an empty impression.',
+        '- Do not create a clinical overview from prevalence, clinical indication, modality, or body part.',
         '- NEVER include patient names, IDs, or any identifying information.',
     ].join('\n');
 };
@@ -316,11 +311,11 @@ const withRetry = async (fn, options = {}) => {
             const isNetworkError =
                 !err?.status &&
                 (String(err?.message).includes('fetch failed') ||
-                 String(err?.message).includes('UND_ERR') ||
-                 String(err?.message).includes('ENOTFOUND') ||
-                 String(err?.message).includes('ECONNREFUSED') ||
-                 String(err?.message).includes('timeout') ||
-                 isAbortError(err));
+                    String(err?.message).includes('UND_ERR') ||
+                    String(err?.message).includes('ENOTFOUND') ||
+                    String(err?.message).includes('ECONNREFUSED') ||
+                    String(err?.message).includes('timeout') ||
+                    isAbortError(err));
             const isTransient =
                 err?.status === 503 ||
                 err?.code === 'REQUEST_TIMEOUT' ||
@@ -399,13 +394,14 @@ const createOpenAiHttpError = async (response) => {
  * Fetches a rendered JPEG preview of a DICOM instance from Orthanc.
  * Returns { base64: string, mimeType: string }.
  *
- * Privacy: This endpoint returns rendered pixels only — no DICOM metadata,
- * no patient identifiers. Safe to send to external cloud APIs.
+ * Privacy: rendered pixels can contain identifiers. Verify source privacy tags
+ * before fetching a preview for a cloud provider.
  *
  * @param {string} orthancInstanceId  e.g. "a1b2c3d4-..."
  * @param {object} auth               { url, username, password }
  */
 const fetchDicomPreviewAsBase64 = async (orthancInstanceId, auth) => {
+    await require('./cloudImagePrivacyService').assertCloudImagePrivacy(orthancInstanceId, auth);
     const previewUrl = `${auth.url.replace(/\/+$/, '')}/instances/${orthancInstanceId}/preview`;
     const basicAuth = Buffer.from(`${auth.username}:${auth.password}`).toString('base64');
     const timeoutMs = Math.max(
@@ -624,8 +620,8 @@ const requestOpenRouterCompletion = async (body, apiKey) => {
         headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiKey}`,
-            'HTTP-Referer': 'https://github.com/rcms',
-            'X-Title': 'RCMS Radiology AI'
+            'HTTP-Referer': 'https://github.com/VIARA',
+            'X-Title': 'VIARA Radiology AI'
         },
         body: JSON.stringify(body)
     }, getProviderTimeoutMs());
@@ -650,21 +646,21 @@ const requestOpenRouterCompletion = async (body, apiKey) => {
 };
 
 const buildOpenRouterAnalysisBody = (images, prompt, model, maxTokens) => ({
-        model,
-        messages: [{
-            role: 'user',
-            content: [
-                { type: 'text', text: prompt },
-                ...images.map(({ base64, mimeType }) => ({
-                    type: 'image_url',
-                    image_url: { url: `data:${mimeType};base64,${base64}` }
-                }))
-            ]
-        }],
-        response_format: { type: 'json_object' },
-        temperature: 0.1,
-        max_tokens: maxTokens
-    });
+    model,
+    messages: [{
+        role: 'user',
+        content: [
+            { type: 'text', text: prompt },
+            ...images.map(({ base64, mimeType }) => ({
+                type: 'image_url',
+                image_url: { url: `data:${mimeType};base64,${base64}` }
+            }))
+        ]
+    }],
+    response_format: { type: 'json_object' },
+    temperature: 0.1,
+    max_tokens: maxTokens
+});
 
 const parseOpenRouterChoice = (data) => {
     const choice = data?.choices?.[0] || {};
@@ -820,7 +816,7 @@ const callCustomCloudVision = async (base64Image, mimeType, prompt, apiKey, base
         max_tokens: 2048
     };
 
-    const safeBaseUrl = validateCustomAiEndpointUrl(baseUrl);
+    const safeBaseUrl = await validateCustomAiEndpointUrl(baseUrl);
     const url = `${safeBaseUrl.replace(/\/+$/, '')}/chat/completions`;
     const headers = { 'Content-Type': 'application/json' };
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
@@ -852,40 +848,45 @@ const callCustomCloudVision = async (base64Image, mimeType, prompt, apiKey, base
 
 /**
  * Normalises the raw JSON response from any cloud provider into the shape
- * expected by the RCMS `workerResultSchema` (Zod).
+ * expected by the VIARA `workerResultSchema` (Zod).
  *
  * Fills in mandatory fields that the model may have omitted.
  */
 const normaliseResult = (raw, providerName, modelName, analysisContext = {}) => {
+    raw = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
     // Provider identity is execution metadata and must not come from model output.
     const provider = String(providerName);
     const model = String(modelName);
 
-    const findings = (Array.isArray(raw.findings) ? raw.findings : []).map((f) => ({
-        label:       String(f.label        || 'Unspecified signal').trim(),
-        present:     f.present !== false,
-        confidence:  typeof f.confidence === 'number' ? Math.min(1, Math.max(0, f.confidence)) : null,
-        location:    f.location  ? String(f.location).trim()  : null,
+    const analyzedImages = analysisContext.images || [];
+    const hasPixelImages = analyzedImages.length > 0;
+    const findings = (hasPixelImages && Array.isArray(raw.findings) ? raw.findings : []).map((f) => ({
+        label: String(f.label || 'Unspecified signal').trim(),
+        present: f.present !== false,
+        confidence: typeof f.confidence === 'number' ? Math.min(1, Math.max(0, f.confidence)) : null,
+        location: f.location ? String(f.location).trim() : null,
         description: f.description ? String(f.description).trim() : '',
-        evidence:    Array.isArray(f.evidence) ? f.evidence.filter(Number.isInteger) : []
+        evidence: Array.isArray(f.evidence) ? f.evidence.filter(Number.isInteger) : []
     }));
 
-    const analyzedImages = analysisContext.images || [];
     const selection = analysisContext.selection || {};
     const totalImageCount = Number(analysisContext.totalImageCount || analyzedImages.length);
     const totalSeriesCount = Number(analysisContext.totalSeriesCount || 0);
     const analyzedSeriesCount = new Set(analyzedImages.map((image) => image.seriesInstanceUid)).size;
     const completePixelCoverage = analyzedImages.length > 0 && analyzedImages.length >= totalImageCount;
     const quality = {
-        diagnostic:          raw?.quality?.diagnostic         !== false,
-        supported:           raw?.quality?.supported          !== false,
-        modality:            String(raw?.quality?.modality    || 'Unknown'),
-        views:               Array.isArray(raw?.quality?.views) ? raw.quality.views : [],
-        imageCountAnalyzed: analyzedImages.length || Number(raw?.quality?.imageCountAnalyzed || 0)
+        diagnostic: hasPixelImages && raw?.quality?.diagnostic === true,
+        supported: hasPixelImages && raw?.quality?.supported === true,
+        modality: String(raw?.quality?.modality || 'Unknown'),
+        views: Array.isArray(raw?.quality?.views) ? raw.quality.views : [],
+        imageCountAnalyzed: hasPixelImages ? analyzedImages.length : 0
     };
 
     const limitations = [
         ...(Array.isArray(raw.limitations) ? raw.limitations.map(String) : []),
+        ...(!hasPixelImages
+            ? ['No pixel images were analyzed. This metadata-only result is non-diagnostic and must not be used to infer imaging findings.']
+            : []),
         ...(raw?.provenance?.structuredOutputRecovery
             ? ['The provider response required automatic structured-output recovery; verify all generated findings against the source images.']
             : []),
@@ -896,19 +897,21 @@ const normaliseResult = (raw, providerName, modelName, analysisContext = {}) => 
     ].filter((v, i, arr) => arr.indexOf(v) === i); // deduplicate
 
     return {
-        success:    true,
-        status:     'Completed',
-        resultType: String(raw.resultType || 'AI screening'),
-        summary:    String(raw.summary    || raw.impression || '').trim() || 'AI analysis completed.',
+        success: true,
+        status: 'Completed',
+        resultType: hasPixelImages ? String(raw.resultType || 'AI screening') : 'metadata_only_screening',
+        summary: hasPixelImages
+            ? (String(raw.summary || raw.impression || '').trim() || 'AI analysis completed.')
+            : 'No pixel images were analyzed. Metadata-only output is non-diagnostic; radiologist image review is required.',
         findings,
-        impression: String(raw.impression || raw.summary || '').trim(),
+        impression: hasPixelImages ? String(raw.impression || raw.summary || '').trim() : '',
         limitations,
         quality,
         model: {
             provider,
-            name:     model,
+            name: model,
             revision: String(raw?.model?.revision || '1.0'),
-            backend:  'cloud-api'
+            backend: 'cloud-api'
         },
         evidence: analyzedImages.map((image) => ({
             seriesInstanceUid: String(image.seriesInstanceUid),
@@ -919,7 +922,7 @@ const normaliseResult = (raw, providerName, modelName, analysisContext = {}) => 
             ...(raw.provenance && typeof raw.provenance === 'object' && !Array.isArray(raw.provenance)
                 ? raw.provenance
                 : {}),
-            mode: 'cloud-vision-api',
+            mode: hasPixelImages ? 'cloud-vision-api' : 'metadata-only-analysis',
             provider,
             model,
             declaredModel: raw?.model || null,
@@ -949,11 +952,17 @@ const normaliseResult = (raw, providerName, modelName, analysisContext = {}) => 
  * Resolve Orthanc credentials from environment variables.
  * The auth object is used only to fetch the pixel-rendered JPEG preview.
  */
-const getOrthancAuth = () => ({
-    url:      process.env.ORTHANC_URL || process.env.ORTHANC_API_URL || 'http://orthanc:8042',
-    username: process.env.ORTHANC_USERNAME || 'orthanc',
-    password: process.env.ORTHANC_PASSWORD || 'orthanc'
-});
+const getOrthancAuth = () => {
+    const password = process.env.ORTHANC_PASSWORD;
+    if (!password) {
+        throw new Error('ORTHANC_PASSWORD is required but not set');
+    }
+    return {
+        url: process.env.ORTHANC_URL || process.env.ORTHANC_API_URL || 'http://orthanc:8042',
+        username: process.env.ORTHANC_USERNAME || 'VIARA',
+        password
+    };
+};
 
 /**
  * Analyses a study using a de-identified JPEG preview and Gemini or OpenRouter.
@@ -967,7 +976,7 @@ const getOrthancAuth = () => ({
  * @returns {Promise<object>} Normalised result matching workerResultSchema
  */
 const analyzeStudy = async (payload, options = {}) => {
-    const study  = payload.study  || {};
+    const study = payload.study || {};
     const series = payload.series || [];
 
     const provider = options.provider || 'cloud-gemini';
@@ -1011,7 +1020,18 @@ const analyzeStudy = async (payload, options = {}) => {
         let totalInlineBytes = 0;
         const inlineByteLimit = getMaxTotalInlineImageBytes();
         imageCoverage = { ...imageCoverage, inlineByteLimit };
-        for (const [index, instance] of selectedInstances.entries()) {
+
+        // Fetch previews concurrently with a bounded concurrency limit.
+        const CONCURRENCY = Number(process.env.PACS_AI_FETCH_CONCURRENCY || 4);
+        const limit = pLimit(CONCURRENCY);
+
+        const fetchResults = await Promise.allSettled(
+            selectedInstances.map((instance) => limit(() => fetchDicomPreviewAsBase64(instance.orthancId, getOrthancAuth())))
+        );
+
+        for (let index = 0; index < selectedInstances.length; index++) {
+            const instance = selectedInstances[index];
+            const result = fetchResults[index];
             logger.info('[CloudVision] Fetching sampled DICOM preview', {
                 current: index + 1,
                 total: selectedInstances.length,
@@ -1019,8 +1039,16 @@ const analyzeStudy = async (payload, options = {}) => {
                 series_instance_uid: instance.seriesInstanceUid,
                 instance_number: instance.instanceNumber
             });
+            if (result.status === 'rejected') {
+                imageCoverage.skippedRenderCount += 1;
+                logger.warn('[CloudVision] Sampled DICOM preview could not be rendered; continuing with remaining images', {
+                    orthanc_id: instance.orthancId,
+                    error: result.reason?.message || String(result.reason)
+                });
+                continue;
+            }
             try {
-                const image = await fetchDicomPreviewAsBase64(instance.orthancId, getOrthancAuth());
+                const image = result.value;
                 const inlineBytes = image.inlineByteLength || Buffer.byteLength(image.base64 || '', 'ascii');
                 if (images.length && totalInlineBytes + inlineBytes > inlineByteLimit) {
                     imageCoverage.omittedByByteBudget = selectedInstances.length - index;
@@ -1050,13 +1078,19 @@ const analyzeStudy = async (payload, options = {}) => {
                 }
             } catch (error) {
                 imageCoverage.skippedRenderCount += 1;
-                logger.warn('[CloudVision] Sampled DICOM preview could not be rendered; continuing with remaining images', {
+                logger.warn('[CloudVision] Sampled DICOM preview could not be processed; continuing with remaining images', {
                     orthanc_id: instance.orthancId,
                     error: error.message
                 });
             }
         }
-        if (!images.length) throw new Error('Orthanc could not render any sampled DICOM previews for cloud analysis');
+        if (!images.length) {
+            const privacyFailure = fetchResults.find(result => result.status === 'rejected'
+                && ['CLOUD_IMAGE_PRIVACY_REQUIRED', 'CLOUD_IMAGE_PIXEL_PRIVACY_UNVERIFIED']
+                    .includes(result.reason?.code));
+            if (privacyFailure) throw privacyFailure.reason;
+            throw new Error('Orthanc could not render any sampled DICOM previews for cloud analysis');
+        }
         imageCoverage = {
             ...imageCoverage,
             analyzedInlineBytes: totalInlineBytes,
@@ -1136,7 +1170,7 @@ const analyzeStudy = async (payload, options = {}) => {
 
     } else if (provider === 'cloud-custom') {
         if (!baseUrl) throw new Error('Custom provider selected but no Base URL is configured');
-        const safeBaseUrl = validateCustomAiEndpointUrl(baseUrl);
+        const safeBaseUrl = await validateCustomAiEndpointUrl(baseUrl);
         const key = apiKey || ''; // custom endpoint may not require key
         const targetModel = modelName || 'custom-vision-model';
 
@@ -1278,5 +1312,6 @@ module.exports = {
     isConfigured,
     geminiRotator,
     selectRepresentativeInstances,
-    normalizeOpenAiCompatibleChatUrl
+    normalizeOpenAiCompatibleChatUrl,
+    normaliseResult
 };

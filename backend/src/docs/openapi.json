@@ -1,0 +1,630 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "VIARA Enterprise Radiology & Hospital ERP API",
+    "version": "1.0.0",
+    "description": "Enterprise-grade REST API specification for VIARA Radiology Information System (RIS), PACS DICOM Archive, AI Diagnostics, and Financial ERP.",
+    "contact": {
+      "name": "VIARA Engineering Team",
+      "url": "https://viara.health"
+    },
+    "license": {
+      "name": "Proprietary Healthcare License"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Current Backend API Host"
+    },
+    {
+      "url": "http://localhost:3000/api",
+      "description": "Local Development Server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Standard user authentication JWT token"
+      },
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Machine-to-Machine integration token (Authorization: Bearer VIARA_live_...)"
+      },
+      "CsrfToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-csrf-token",
+        "description": "Anti-CSRF protection token"
+      }
+    },
+    "schemas": {
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean" },
+          "message": { "type": "string" }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "message": { "type": "string" },
+          "statusCode": { "type": "integer" }
+        }
+      },
+      "Patient": {
+        "type": "object",
+        "properties": {
+          "patient_id": { "type": "string", "format": "uuid" },
+          "mrn": { "type": "string", "example": "MRN-2026-0041" },
+          "full_name": { "type": "string", "example": "Ahmed Mostafa" },
+          "gender": { "type": "string", "enum": ["Male", "Female", "Other"] },
+          "date_of_birth": { "type": "string", "format": "date", "example": "1985-04-12" },
+          "phone": { "type": "string", "example": "+201001234567" },
+          "is_confidential": { "type": "boolean", "default": false },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["patient_id", "mrn", "full_name"]
+      },
+      "Examination": {
+        "type": "object",
+        "properties": {
+          "exam_id": { "type": "string", "format": "uuid" },
+          "appointment_id": { "type": "string", "format": "uuid" },
+          "patient_id": { "type": "string", "format": "uuid" },
+          "order_number": { "type": "string", "example": "ORD-20260912-A1B2C" },
+          "status": { "type": "string", "enum": ["Scheduled", "Checked-in", "In Progress", "Completed", "Reporting", "Finalized", "Cancelled"] },
+          "queue_stage": { "type": "string", "enum": ["Scheduled", "Arrived", "Payment Pending", "Prep Pending", "Ready for Exam", "In Exam", "Images Ready", "Images Delivered", "Reporting", "Finalized", "Delivered", "Cancelled"] },
+          "priority": { "type": "string", "enum": ["Routine", "Urgent", "Emergency"] },
+          "is_on_hold": { "type": "boolean", "default": false },
+          "hold_reason": { "type": "string", "nullable": true },
+          "implant_safety_status": { "type": "string", "enum": ["Safe", "At Risk", "Unknown"] },
+          "pregnancy_safety_status": { "type": "string", "enum": ["Safe", "At Risk", "Unknown"] },
+          "renal_safety_status": { "type": "string", "enum": ["Safe", "At Risk", "Unknown"] }
+        },
+        "required": ["exam_id", "order_number", "patient_id", "status"]
+      },
+      "Appointment": {
+        "type": "object",
+        "properties": {
+          "appointment_id": { "type": "string", "format": "uuid" },
+          "patient_id": { "type": "string", "format": "uuid" },
+          "modality_id": { "type": "integer" },
+          "start_time": { "type": "string", "format": "date-time" },
+          "end_time": { "type": "string", "format": "date-time" },
+          "status": { "type": "string", "enum": ["Scheduled", "Confirmed", "Checked-in", "Completed", "Cancelled", "No-Show"] },
+          "order_number": { "type": "string" },
+          "priority": { "type": "string", "enum": ["Routine", "Urgent", "Emergency"] }
+        },
+        "required": ["appointment_id", "patient_id", "modality_id", "start_time", "end_time"]
+      },
+      "Invoice": {
+        "type": "object",
+        "properties": {
+          "invoice_id": { "type": "string", "format": "uuid" },
+          "invoice_number": { "type": "string", "example": "INV-2026-0091" },
+          "patient_id": { "type": "string", "format": "uuid" },
+          "subtotal_amount": { "type": "number", "example": 1500.00 },
+          "discount_amount": { "type": "number", "example": 100.00 },
+          "tax_amount": { "type": "number", "example": 196.00 },
+          "insurance_covered_amount": { "type": "number", "example": 1200.00 },
+          "patient_payable_amount": { "type": "number", "example": 396.00 },
+          "paid_amount": { "type": "number", "example": 396.00 },
+          "balance_amount": { "type": "number", "example": 0.00 },
+          "invoice_status": { "type": "string", "enum": ["Draft", "Issued", "Partial", "Paid", "Voided", "Refunded"] }
+        },
+        "required": ["invoice_id", "invoice_number", "patient_id", "invoice_status"]
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "payment_id": { "type": "string", "format": "uuid" },
+          "invoice_id": { "type": "string", "format": "uuid" },
+          "amount": { "type": "number", "example": 396.00 },
+          "method": { "type": "string", "enum": ["Cash", "Card", "Credit Card", "Wallet", "Bank Transfer", "Installment", "Insurance", "Corporate"] },
+          "payment_reference": { "type": "string", "nullable": true },
+          "transaction_date": { "type": "string", "format": "date-time" }
+        },
+        "required": ["payment_id", "invoice_id", "amount", "method"]
+      },
+      "Refund": {
+        "type": "object",
+        "properties": {
+          "refund_id": { "type": "string", "format": "uuid" },
+          "invoice_id": { "type": "string", "format": "uuid" },
+          "payment_id": { "type": "string", "format": "uuid", "nullable": true },
+          "amount": { "type": "number", "example": 200.00 },
+          "method": { "type": "string", "example": "Card" },
+          "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected", "Processed", "Failed"] },
+          "reason": { "type": "string" },
+          "failure_reason": { "type": "string", "nullable": true }
+        },
+        "required": ["refund_id", "invoice_id", "amount", "status"]
+      },
+      "ExamReport": {
+        "type": "object",
+        "properties": {
+          "report_id": { "type": "string", "format": "uuid" },
+          "exam_id": { "type": "string", "format": "uuid" },
+          "doctor_id": { "type": "string", "format": "uuid" },
+          "clinical_findings": { "type": "string" },
+          "impression": { "type": "string" },
+          "recommendations": { "type": "string" },
+          "digital_signature_hash": { "type": "string" },
+          "is_finalized": { "type": "boolean" },
+          "is_amended": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["report_id", "exam_id", "clinical_findings", "impression"]
+      },
+      "SafetyScreening": {
+        "type": "object",
+        "properties": {
+          "screening_id": { "type": "string", "format": "uuid" },
+          "exam_id": { "type": "string", "format": "uuid" },
+          "template_id": { "type": "string", "format": "uuid" },
+          "answers": { "type": "object" },
+          "contraindication_detected": { "type": "boolean" },
+          "is_on_hold": { "type": "boolean" },
+          "screened_by": { "type": "string", "format": "uuid" },
+          "screened_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["screening_id", "exam_id", "contraindication_detected"]
+      }
+    }
+  },
+  "paths": {
+    "/v1/health": {
+      "get": {
+        "summary": "Health and Readiness Status",
+        "description": "Returns operational state of backend services, PostgreSQL connection pool, and storage systems.",
+        "responses": {
+          "200": {
+            "description": "System Healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "OK" },
+                    "version": { "type": "string", "example": "v1" },
+                    "database": { "type": "string", "example": "connected" }
+                  }
+                }
+              }
+            }
+          },
+          "503": { "description": "Database or service unavailable" }
+        }
+      }
+    },
+    "/patients": {
+      "get": {
+        "summary": "List Patients",
+        "description": "Retrieve paginated list of patients with search, blind index hashing, and role-scoped permissions.",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "Search keyword (MRN, Name, Phone)" },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "sortBy", "in": "query", "schema": { "type": "string", "default": "created_at" } },
+          { "name": "sortOrder", "in": "query", "schema": { "type": "string", "enum": ["asc", "desc"], "default": "desc" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated Patients Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "patients": { "type": "array", "items": { "$ref": "#/components/schemas/Patient" } },
+                    "total": { "type": "integer" },
+                    "page": { "type": "integer" },
+                    "totalPages": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Register New Patient",
+        "security": [{ "BearerAuth": [] }, { "CsrfToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "fullName": { "type": "string" },
+                  "gender": { "type": "string", "enum": ["Male", "Female", "Other"] },
+                  "dateOfBirth": { "type": "string", "format": "date" },
+                  "phone": { "type": "string" },
+                  "isConfidential": { "type": "boolean", "default": false }
+                },
+                "required": ["fullName", "gender", "phone"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Patient Registered",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Patient" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/appointments": {
+      "get": {
+        "summary": "List Appointments",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "date", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "modalityId", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of appointments",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Appointment" } }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Appointment & Order",
+        "security": [{ "BearerAuth": [] }, { "CsrfToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "patientId": { "type": "string", "format": "uuid" },
+                  "modalityId": { "type": "integer" },
+                  "examTypeId": { "type": "integer" },
+                  "startTime": { "type": "string", "format": "date-time" },
+                  "endTime": { "type": "string", "format": "date-time" },
+                  "priority": { "type": "string", "enum": ["Routine", "Urgent", "Emergency"] },
+                  "clinicalIndication": { "type": "string" }
+                },
+                "required": ["patientId", "modalityId", "examTypeId", "startTime", "endTime"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Appointment created and scheduled",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Appointment" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/clinical/safety/{examId}": {
+      "post": {
+        "summary": "Submit Clinical Safety Screening",
+        "description": "Evaluates patient contraindications (pacemaker, implants, contrast allergy, low eGFR) and automatically triggers exam hold when danger exists.",
+        "security": [{ "BearerAuth": [] }, { "CsrfToken": [] }],
+        "parameters": [
+          { "name": "examId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "templateId": { "type": "string", "format": "uuid" },
+                  "answers": {
+                    "type": "object",
+                    "properties": {
+                      "pacemaker": { "type": "boolean" },
+                      "metallic_implants": { "type": "boolean" },
+                      "contrast_allergy": { "type": "boolean" },
+                      "pregnancy": { "type": "boolean" },
+                      "egfr": { "type": "number" }
+                    }
+                  }
+                },
+                "required": ["templateId", "answers"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Safety evaluation recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "contraindicationDetected": { "type": "boolean" },
+                    "isOnHold": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/display/board": {
+      "get": {
+        "summary": "Waiting Room Display Board Data",
+        "description": "Privacy-compliant live case sequence for waiting-room TV monitors with support for order-only display.",
+        "responses": {
+          "200": {
+            "description": "Live Display Board payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "center": { "type": "object" },
+                    "rooms": { "type": "array", "items": { "type": "object" } },
+                    "broadcastCalls": { "type": "array", "items": { "type": "object" } },
+                    "summary": { "type": "object" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/display/call": {
+      "post": {
+        "summary": "Broadcast Patient Call-out",
+        "description": "Broadcasts a live room call to staff and waiting room monitors with distributed SSE synchronization.",
+        "security": [{ "BearerAuth": [] }, { "CsrfToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "orderNumber": { "type": "string", "example": "ORD-20260912-A1B2C" },
+                  "roomName": { "type": "string", "example": "CT Scanner 1" },
+                  "modalityId": { "type": "integer" }
+                },
+                "required": ["orderNumber"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Call broadcasted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "call": { "type": "object" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pacs/mwl/regenerate": {
+      "post": {
+        "summary": "Regenerate DICOM Modality Worklists",
+        "description": "Generates natural DICOM .wl worklist files for modality consoles based on the RIS schedule.",
+        "security": [{ "BearerAuth": [] }, { "CsrfToken": [] }],
+        "responses": {
+          "200": {
+            "description": "Worklist status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "written": { "type": "integer" },
+                    "pruned": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/realtime/stream": {
+      "get": {
+        "summary": "Server-Sent Events (SSE) Real-Time Stream",
+        "description": "Subscribes to distributed real-time notifications, chat messages, and TV board call-outs via native SSE.",
+        "parameters": [
+          { "name": "token", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Single-use SSE session token obtained via /auth/sse-token" }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE event stream",
+            "content": {
+              "text/event-stream": {
+                "schema": { "type": "string" }
+              }
+            }
+          },
+          "401": { "description": "Invalid or expired SSE session token" }
+        }
+      }
+    },
+    "/invoices": {
+      "get": {
+        "summary": "List Invoices",
+        "description": "Retrieves paginated financial invoices scoped by branch, patient, or status.",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "patientId", "in": "query", "schema": { "type": "string", "format": "uuid" } },
+          { "name": "status", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of invoices",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "invoices": { "type": "array", "items": { "$ref": "#/components/schemas/Invoice" } },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Generate Invoice",
+        "security": [{ "BearerAuth": [] }, { "CsrfToken": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "patientId": { "type": "string", "format": "uuid" },
+                  "examIds": { "type": "array", "items": { "type": "string", "format": "uuid" } },
+                  "discountAmount": { "type": "number", "default": 0 }
+                },
+                "required": ["patientId", "examIds"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invoice created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Invoice" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/exams/{id}/report": {
+      "get": {
+        "summary": "Get Radiology Exam Report",
+        "security": [{ "BearerAuth": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Radiology report data",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ExamReport" }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update or Amend Exam Report",
+        "security": [{ "BearerAuth": [] }, { "CsrfToken": [] }],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "findings": { "type": "string" },
+                  "impression": { "type": "string" },
+                  "recommendations": { "type": "string" },
+                  "isFinalized": { "type": "boolean" }
+                },
+                "required": ["findings", "impression"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Report saved successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ExamReport" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pacs/worklist": {
+      "get": {
+        "summary": "DICOM Modality Worklist (MWL) Queries",
+        "description": "Query scheduled exams mapped to DICOM Modality Worklist attributes.",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "MWL query results",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/insurance/claims": {
+      "get": {
+        "summary": "List Insurance Claims",
+        "description": "Retrieve insurance claims with branch scoping and status filtering.",
+        "security": [{ "BearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Insurance claims list",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "type": "object" } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

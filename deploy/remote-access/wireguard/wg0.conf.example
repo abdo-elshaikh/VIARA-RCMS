@@ -1,0 +1,35 @@
+# VIARA WireGuard server interface (Tier B — clinical remote access).
+#
+# Install as /etc/wireguard/wg0.conf with mode 0600, then:
+#   sudo systemctl enable --now wg-quick@wg0
+# Generate keys first — see README.md. Replace every <PLACEHOLDER>.
+#
+# Only the UDP ListenPort needs to be reachable. Do not open the clinical HTTPS
+# port to the public internet; clients reach ris.example.org over this tunnel.
+
+[Interface]
+Address = 10.20.0.1/24
+ListenPort = 51820
+PrivateKey = <SERVER_PRIVATE_KEY>
+
+# Keep the tunnel interface tight: no forwarding beyond the clinical subnet.
+# PostUp/PostDown manage NAT only if the clinical host needs to reach other
+# on-prem subnets; remove these lines for a pure overlay.
+# PostUp   = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+# PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+# --- Radiologist devices (one block per device) ---
+# Each device also needs an mTLS client certificate; see ../nginx/clinical-edge.conf.
+
+[Peer]
+# RAD-01 — reading station
+PublicKey = <RAD01_PUBLIC_KEY>
+AllowedIPs = 10.20.0.11/32
+# PersistentKeepalive helps devices behind NAT stay reachable for renewal pings.
+PersistentKeepalive = 25
+
+# [Peer]
+# RAD-02 — reading station
+# PublicKey = <RAD02_PUBLIC_KEY>
+# AllowedIPs = 10.20.0.12/32
+# PersistentKeepalive = 25

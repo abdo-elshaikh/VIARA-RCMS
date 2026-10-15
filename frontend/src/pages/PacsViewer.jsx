@@ -1,4 +1,4 @@
-import {
+import React, {
     memo,
     useCallback,
     useEffect,
@@ -9,61 +9,92 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-    ArrowLeft,
+    Activity,
+    AlertCircle,
     AlertTriangle,
     Archive,
+    ArrowLeft,
+    Bookmark,
     CalendarDays,
-    ChevronDown,
+    Camera,
     Check,
+    ChevronDown,
+    ChevronLeft,
+    ChevronRight,
+    ChevronUp,
+    Clock,
+    Columns,
     Copy,
     Disc,
     Download,
     ExternalLink,
+    Eye,
+    EyeOff,
+    FileCheck2,
+    FileSpreadsheet,
     FileText,
+    Filter,
+    FlipHorizontal,
+    FlipVertical,
+    Globe,
+    Grid,
+    HardDrive,
     Hash,
+    HelpCircle,
     Image as ImageIcon,
     ImageOff,
     Info,
+    Laptop,
+    Layers,
+    LayoutGrid,
     ListFilter,
     Loader2,
+    Lock,
     Maximize2,
     Minimize2,
     Monitor,
-    RefreshCw,
-    Server,
-    ShieldAlert,
-    ShieldCheck,
-    UserRound,
-    WifiOff,
-    X,
-    Play,
+    Move,
     Pause,
-    SkipBack,
-    SkipForward,
+    Play,
+    Printer,
+    RefreshCw,
+    Repeat,
     RotateCcw,
     RotateCw,
-    FlipHorizontal,
-    FlipVertical,
-    ZoomIn,
-    ZoomOut,
-    Move,
-    SunMedium,
-    Ruler,
-    Sparkles,
-    Layers,
-    Grid,
+    Rows,
+    Search,
+    Send,
+    Server,
+    Settings,
+    Share2,
+    ShieldAlert,
+    ShieldCheck,
+    SkipBack,
+    SkipForward,
     Sliders,
+    Sparkles,
+    Square,
     Star,
-    Compass,
-    Eye,
-    ChevronLeft,
-    ChevronRight,
-    Search
+    Stethoscope,
+    Tag,
+    Trash2,
+    User,
+    UserRound,
+    Volume2,
+    WifiOff,
+    X,
+    Zap,
+    ZoomIn,
+    ZoomOut
 } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { useSelector } from 'react-redux';
+import { selectCurrentToken } from '../store/authSlice';
 import { authenticatedFetch, downloadAuthenticatedFile } from '../utils/authenticatedFetch';
 import { analyzeStudyDisplaySets, groupInstancesBySeries } from '../utils/analyzeDisplaySets';
+import { useGetPacsConfigQuery } from '../store/api';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 const OHIF_BASE = import.meta.env.VITE_OHIF_URL || '';
 
 const RETRY_DELAYS_MS = [2000, 4000, 8000, 15000];
@@ -71,62 +102,41 @@ const SLOW_LOAD_WARN_MS = 12000;
 const COPY_FEEDBACK_MS = 1600;
 const VIEWER_SESSION_TIMEOUT_MS = 10000;
 
-// Window / Level Presets for DICOM modalities
-const WL_PRESETS = [
-    { id: 'default', label: 'Default / Full', width: 400, level: 40 },
-    { id: 'soft_tissue', label: 'Soft Tissue (W:400 L:40)', width: 400, level: 40 },
-    { id: 'bone', label: 'Bone (W:2000 L:300)', width: 2000, level: 300 },
-    { id: 'lung', label: 'Lung (W:1500 L:-600)', width: 1500, level: -600 },
-    { id: 'brain', label: 'Brain (W:80 L:40)', width: 80, level: 40 },
-    { id: 'abdomen', label: 'Abdomen (W:350 L:40)', width: 350, level: 40 }
-];
-
 const EXPORT_OPTIONS = [
     {
         id: 'dicom',
         icon: Archive,
         titleKey: 'pacs.viewer.exportDicomTitle',
-        titleDefault: 'DICOM archive',
+        titleDefault: 'DICOM Study Archive (.zip)',
         detailKey: 'pacs.viewer.exportDicomDetail',
-        detailDefault: 'Original study files in a ZIP archive for diagnostic interchange.',
+        detailDefault: 'Original full resolution DICOM files for clinical archiving or PACS interchange.',
         filenameSuffix: 'dicom.zip'
     },
     {
         id: 'images',
         icon: ImageIcon,
         titleKey: 'pacs.viewer.exportImagesTitle',
-        titleDefault: 'Rendered images',
+        titleDefault: 'High-Res Rendered Images (.zip)',
         detailKey: 'pacs.viewer.exportImagesDetail',
-        detailDefault: 'JPEG/PNG review images with a manifest for non-DICOM recipients.',
+        detailDefault: 'Clinical JPEG/PNG images for patient consultation, printing, or referring doctors.',
         filenameSuffix: 'images.zip'
-    },
-    {
-        id: 'cd',
-        icon: Disc,
-        titleKey: 'pacs.viewer.exportCdTitle',
-        titleDefault: 'CD media package',
-        detailKey: 'pacs.viewer.exportCdDetail',
-        detailDefault: 'DICOMDIR-compatible media ZIP ready to write to disc.',
-        filenameSuffix: 'cd-media.zip'
     }
 ];
 
-const SURFACE =
-    'border border-white/10 bg-[#0b111d]/95 shadow-2xl shadow-black/45 backdrop-blur-xl';
-const PANEL =
-    'border border-white/10 bg-[#090f1a]/96 shadow-xl shadow-black/35 backdrop-blur-xl';
-const ICON_BUTTON =
-    'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-slate-400 transition duration-150 hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 disabled:cursor-not-allowed disabled:opacity-40';
-const TOOL_BUTTON = (active) =>
-    `relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-xs font-bold transition duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 ${
-        active
-            ? 'bg-cyan-400 text-slate-950 shadow-md shadow-cyan-500/20'
-            : 'text-slate-400 hover:bg-white/[0.08] hover:text-white'
-    }`;
-const PRIMARY_BUTTON =
-    'inline-flex min-h-9 items-center justify-center gap-2 rounded-md bg-cyan-400 px-4 text-xs font-black text-slate-950 transition hover:bg-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50';
-const SECONDARY_BUTTON =
-    'inline-flex min-h-9 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[0.045] px-4 text-xs font-bold text-slate-200 transition hover:border-white/20 hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50';
+const KEYBOARD_SHORTCUTS = [
+    { key: 'P', desc: 'Pan / Drag tool (preview)', descAr: 'أداة التحريك والسحب' },
+    { key: 'Z', desc: 'Zoom tool (preview)', descAr: 'أداة التكبير والتصغير' },
+    { key: 'O', desc: 'Toggle DICOM 4-Corner Overlays', descAr: 'إظهار/إخفاء معلومات الزوايا' },
+    { key: 'Space / C', desc: 'Play / Pause Cine loop', descAr: 'تشغيل/إيقاف العرض الحركي Cine' },
+    { key: '← / →', desc: 'Previous / Next frame slice', descAr: 'الشريحة السابقة / التالية' },
+    { key: 'S', desc: 'Toggle Series drawer', descAr: 'إظهار/إخفاء درج السلاسل' },
+    { key: 'Tab', desc: 'Toggle Clinical Report & DICOM Inspector', descAr: 'فتح التقرير السريري وفاحص DICOM' },
+    { key: 'K', desc: 'Bookmark Key Image frame', descAr: 'تمييز صورة رئيسية (Key Image)' },
+    { key: 'F', desc: 'Toggle Fullscreen Mode', descAr: 'ملء الشاشة' },
+    { key: 'R', desc: 'Reset Viewport Zoom & Pan', descAr: 'إعادة ضبط العرض' },
+    { key: '?', desc: 'Show Keyboard Shortcuts guide', descAr: 'دليل اختصارات لوحة المفاتيح' },
+    { key: 'Esc', desc: 'Close dialogs / drawers', descAr: 'إغلاق النوافذ المنبثقة' }
+];
 
 const normalizeUidList = (value = '') =>
     String(value)
@@ -136,16 +146,42 @@ const normalizeUidList = (value = '') =>
 
 const getDicomValue = (dataset, tag) => dataset?.[tag]?.Value?.[0] ?? '';
 
-const normalizePatientName = (value) => {
-    if (typeof value === 'object' && value?.Alphabetic) return value.Alphabetic;
-    if (typeof value === 'string') return value.replace(/\^/g, ' ').trim();
-    return '';
+const cleanDicomText = (value) => {
+    if (!value) return '';
+    let text = '';
+    if (typeof value === 'object' && value !== null) {
+        text = value.Alphabetic || value.Ideographic || value.Phonetic || '';
+    } else if (typeof value === 'string') {
+        text = value;
+    }
+    text = String(text || '').replace(/\^/g, ' ').replace(/\s+/g, ' ').trim();
+    if (/[ØÙ][\u0080-\u00BF]/.test(text)) {
+        try {
+            const repaired = decodeURIComponent(escape(text));
+            if (repaired && !repaired.includes('\uFFFD')) {
+                text = repaired;
+            }
+        } catch {
+            // retain text
+        }
+    }
+    return text;
 };
+
+const normalizePatientName = (value) => cleanDicomText(value);
 
 const formatDicomDate = (value) => {
     const raw = String(value || '');
     if (!/^\d{8}$/.test(raw)) return raw || '-';
     return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`;
+};
+
+const formatDicomTime = (value) => {
+    const raw = String(value || '').split('.')[0];
+    if (raw.length >= 6) {
+        return `${raw.slice(0, 2)}:${raw.slice(2, 4)}:${raw.slice(4, 6)}`;
+    }
+    return raw || '';
 };
 
 const getSessionErrorMessage = (status, fallback, t) => {
@@ -198,7 +234,15 @@ const safeDownloadStem = (value, fallback = 'pacs-case') => {
     return stem || fallback;
 };
 
-const PacsViewer = () => {
+const ICON_BTN = 'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-300 transition-all duration-150 hover:bg-white/10 hover:text-white focus-visible:outline-none active:scale-95 disabled:cursor-not-allowed disabled:opacity-40';
+const TOOL_BTN = (active) =>
+    `relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold transition-all duration-150 focus-visible:outline-none ${
+        active
+            ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 shadow-lg shadow-teal-500/30 ring-2 ring-teal-400/50 font-black'
+            : 'text-slate-300 hover:bg-white/10 hover:text-white'
+    }`;
+
+export const PacsViewer = () => {
     const { t, i18n } = useTranslation('common');
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
@@ -207,8 +251,6 @@ const PacsViewer = () => {
     const sessionAbortRef = useRef(null);
     const metadataAbortRef = useRef(null);
     const retryTimerRef = useRef(null);
-    const slowLoadTimerRef = useRef(null);
-    const copyTimerRef = useRef(null);
 
     const requestedStudyUids =
         searchParams.get('StudyInstanceUIDs') ||
@@ -243,13 +285,16 @@ const PacsViewer = () => {
     const lang = (i18n.resolvedLanguage || i18n.language || 'en').split('-')[0];
     const isRtl = i18n.dir?.() === 'rtl';
 
-    // State Variables
+    // Core Workstation State
     const [resolvedStudyUids, setResolvedStudyUids] = useState('');
     const [viewerAuthorized, setViewerAuthorized] = useState(false);
-    const [orderContext, setOrderContext] = useState(null);
+    const [viewerToken, setViewerToken] = useState('');
+    const currentAuthToken = useSelector(selectCurrentToken);
+    const effectiveAuthToken = viewerToken || currentAuthToken || '';
+    const [sessionOrderContext, setOrderContext] = useState(null);
     const [caseDetails, setCaseDetails] = useState(null);
-    const [metadataState, setMetadataState] = useState('idle');
     const [rawInstances, setRawInstances] = useState([]);
+    const [metadataState, setMetadataState] = useState('idle');
     const [qualityReport, setQualityReport] = useState(null);
     const [qualityState, setQualityState] = useState('idle');
     const [sessionState, setSessionState] = useState('pending');
@@ -259,34 +304,60 @@ const PacsViewer = () => {
     const [viewerRevision, setViewerRevision] = useState(0);
     const [showSlowHint, setShowSlowHint] = useState(false);
     const [drawerOpen, setDrawerOpen] = useState(false);
-    const [sidebarOpen, setSidebarOpen] = useState(true);
-    const [copied, setCopied] = useState(false);
+    const [activeDrawerTab, setActiveDrawerTab] = useState('report');
+    const [sidebarOpen, setSidebarOpen] = useState(
+        !OHIF_BASE && typeof window !== 'undefined' && window.innerWidth >= 768
+    );
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
     const [isOnline, setIsOnline] = useState(
         typeof navigator === 'undefined' ? true : navigator.onLine
     );
 
-    // Diagnostic Interactive Tools State
-    const [activeTool, setActiveTool] = useState('pan'); // 'pan' | 'zoom' | 'wl' | 'ruler' | 'angle' | 'magnifier'
-    const [activePreset, setActivePreset] = useState('default');
-    const [gridMode, setGridMode] = useState('1x1'); // '1x1' | '1x2' | '2x2'
+    // The native renderer is a preview fallback; diagnostic tools are provided by OHIF.
+    const [activeTool, setActiveTool] = useState('pan');
+    const [gridMode, setGridMode] = useState('1x1');
+    const [syncScroll, setSyncScroll] = useState(true);
+    const [showOverlays, setShowOverlays] = useState(true);
+    const [activeViewportIndex, setActiveViewportIndex] = useState(0);
     const [selectedSeriesUid, setSelectedSeriesUid] = useState('');
     const [activeFrameIndex, setActiveFrameIndex] = useState(0);
     const [isCinePlaying, setIsCinePlaying] = useState(false);
-    const [cineFps, setCineFps] = useState(10);
+    const [cineFps, setCineFps] = useState(15);
+    const [cineLoopMode, setCineLoopMode] = useState('loop');
     const [keyImages, setKeyImages] = useState(new Set());
-    const [showAiOverlay, setShowAiOverlay] = useState(true);
+    const [bookmarksStatus, setBookmarksStatus] = useState('loading');
+    const bookmarkVersionRef = useRef({ uid: '', version: 0, loaded: false, saving: false });
+    const keyImagesRef = useRef(new Set());
+    const [selectedStudyUid, setSelectedStudyUid] = useState('');
+    const [currentStudyExamId, setCurrentStudyExamId] = useState(null);
     const [exportPanelOpen, setExportPanelOpen] = useState(false);
     const [selectedExportStudyUid, setSelectedExportStudyUid] = useState('');
     const [exportState, setExportState] = useState({ status: 'idle', format: '', error: '' });
+    const [seriesSearch, setSeriesSearch] = useState('');
+    const [reportData, setReportData] = useState(null);
+    const [externalViewersModalOpen, setExternalViewersModalOpen] = useState(false);
+
+    const { data: pacsConfig } = useGetPacsConfigQuery();
 
     const studyUids = requestedStudyUids || resolvedStudyUids;
     const studyUidList = useMemo(() => normalizeUidList(studyUids), [studyUids]);
+    const activeStudyUid = studyUidList.includes(selectedStudyUid) ? selectedStudyUid : studyUidList[0];
+    const orderContext = !activeStudyUid || sessionOrderContext?.study_instance_uid === activeStudyUid ? sessionOrderContext : null;
 
     // Group Instances by Series
     const seriesGroups = useMemo(() => {
-        return groupInstancesBySeries(rawInstances);
+        return groupInstancesBySeries(rawInstances, { expandFrames: true });
     }, [rawInstances]);
+
+    const filteredSeriesGroups = useMemo(() => {
+        if (!seriesSearch.trim()) return seriesGroups;
+        const term = seriesSearch.trim().toLowerCase();
+        return seriesGroups.filter((s, idx) => {
+            const text = `${s.seriesDescription || ''} ${s.modality || ''} ${s.seriesNumber || idx + 1}`.toLowerCase();
+            return text.includes(term);
+        });
+    }, [seriesGroups, seriesSearch]);
 
     const activeSeries = useMemo(() => {
         if (!seriesGroups.length) return null;
@@ -307,9 +378,11 @@ const PacsViewer = () => {
             StudyInstanceUIDs: studyUids,
             lang
         });
-        return `${base}/viewer?${query.toString()}`;
-    }, [lang, studyUids, viewerAuthorized]);
+        const fragment = new URLSearchParams({ viaraToken: viewerToken, parentOrigin: window.location.origin });
+        return `${base}/viewer?${query.toString()}#${fragment}`;
+    }, [lang, studyUids, viewerAuthorized, viewerToken]);
 
+    // Fetch Viewer Session
     const startSession = useCallback(
         async ({ retry = false, resetContext = false } = {}) => {
             if (!OHIF_BASE && !requestedUidList.length && !hasOrderLocator) return;
@@ -329,6 +402,8 @@ const PacsViewer = () => {
                 setResolvedStudyUids('');
                 setOrderContext(null);
                 setCaseDetails(null);
+                setRawInstances([]);
+                setReportData(null);
                 setMetadataState('idle');
             }
 
@@ -357,6 +432,7 @@ const PacsViewer = () => {
                 }
 
                 const data = await response.json();
+                setViewerToken(data.viewerToken || '');
                 const resolvedUids = data.studyInstanceUids?.length
                     ? data.studyInstanceUids
                     : requestedUidList;
@@ -404,56 +480,47 @@ const PacsViewer = () => {
     );
 
     useEffect(() => {
+        if (sessionState !== 'ready') return undefined;
+        const controller = new AbortController();
+        const timer = window.setInterval(async () => {
+            try {
+                const response = await authenticatedFetch(`${API_BASE}/pacs/viewer-session`, {
+                    method: 'POST', signal: controller.signal,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ studyInstanceUids: studyUidList })
+                });
+                if (!response.ok) throw new Error('Imaging session renewal failed');
+                const data = await response.json();
+                iframeRef.current?.contentWindow?.postMessage({ type: 'viara:viewer-token', token: data.viewerToken }, new URL(OHIF_BASE, window.location.origin).origin);
+            } catch (error) { if (error.name !== 'AbortError') { setSessionError(error.message); setSessionState('error'); } }
+        }, 8 * 60 * 1000);
+        return () => { controller.abort(); window.clearInterval(timer); };
+    }, [sessionState, studyUidList]);
+
+    useEffect(() => {
+        if (!viewerUrl) return undefined;
+        const expectedOrigin = new URL(viewerUrl, window.location.origin).origin;
+        const receiveStatus = (event) => {
+            if (event.origin !== expectedOrigin || event.source !== iframeRef.current?.contentWindow || event.data?.type !== 'viara:viewer-status') return;
+            if (event.data.state === 'ready') {
+                setIframeLoaded(true);
+                setShowSlowHint(false);
+            } else if (event.data.state === 'error') {
+                setSessionError(String(event.data.message || 'Imaging data could not be loaded'));
+                setSessionState('error');
+            }
+        };
+        window.addEventListener('message', receiveStatus);
+        return () => window.removeEventListener('message', receiveStatus);
+    }, [viewerUrl]);
+
+    useEffect(() => {
         const timer = window.setTimeout(
             () => startSession({ resetContext: true }),
             0
         );
         return () => window.clearTimeout(timer);
     }, [requestKey, startSession]);
-
-    useEffect(() => {
-        if (
-            sessionState !== 'error' ||
-            retryCount >= RETRY_DELAYS_MS.length ||
-            !isOnline
-        ) {
-            return undefined;
-        }
-
-        const delay = RETRY_DELAYS_MS[retryCount];
-        retryTimerRef.current = setTimeout(() => {
-            setRetryCount((count) => count + 1);
-            startSession({ retry: true });
-        }, delay);
-
-        return () => clearTimeout(retryTimerRef.current);
-    }, [isOnline, retryCount, sessionState, startSession]);
-
-    useEffect(() => {
-        clearTimeout(slowLoadTimerRef.current);
-        if (sessionState === 'ready' && !iframeLoaded) {
-            slowLoadTimerRef.current = setTimeout(
-                () => setShowSlowHint(true),
-                SLOW_LOAD_WARN_MS
-            );
-        }
-        return () => clearTimeout(slowLoadTimerRef.current);
-    }, [iframeLoaded, sessionState, viewerRevision]);
-
-    useEffect(() => {
-        const goOnline = () => {
-            setIsOnline(true);
-            if (sessionState === 'error') startSession();
-        };
-        const goOffline = () => setIsOnline(false);
-
-        window.addEventListener('online', goOnline);
-        window.addEventListener('offline', goOffline);
-        return () => {
-            window.removeEventListener('online', goOnline);
-            window.removeEventListener('offline', goOffline);
-        };
-    }, [sessionState, startSession]);
 
     // Fetch DICOM Study Metadata & Instances
     useEffect(() => {
@@ -463,9 +530,15 @@ const PacsViewer = () => {
         const controller = new AbortController();
         metadataAbortRef.current = controller;
         setMetadataState('loading');
+        setCurrentStudyExamId(null);
+        setRawInstances([]);
+        setCaseDetails(null);
+        setSelectedSeriesUid('');
+        setActiveFrameIndex(0);
+        setIsCinePlaying(false);
 
         fetchDicomJson(
-            `${API_BASE}/pacs/dicom-web/studies?StudyInstanceUID=${encodeURIComponent(studyUidList[0])}`,
+            `${API_BASE}/pacs/dicom-web/studies?StudyInstanceUID=${encodeURIComponent(activeStudyUid)}`,
             { signal: controller.signal }
         )
             .then(async (data) => {
@@ -478,20 +551,23 @@ const PacsViewer = () => {
                 const patientName = normalizePatientName(getDicomValue(study, '00100010'));
 
                 setCaseDetails({
-                    patientName: patientName || t('pacs.viewer.unknown', { defaultValue: 'Unknown patient' }),
-                    patientId: getDicomValue(study, '00100020') || '-',
+                    patientName: patientName || orderContext?.patient_name || t('pacs.viewer.unknown', { defaultValue: 'Patient' }),
+                    patientId: getDicomValue(study, '00100020') || orderContext?.mrn || '-',
                     accessionNumber: getDicomValue(study, '00080050') || accessionParam || orderContext?.order_number || '-',
                     studyDate: formatDicomDate(getDicomValue(study, '00080020')),
+                    studyTime: formatDicomTime(getDicomValue(study, '00080030')),
                     modality: getDicomValue(study, '00080060') || getDicomValue(study, '00080061') || orderContext?.modality_name || '-',
                     studyDescription: getDicomValue(study, '00081030') || orderContext?.exam_type_name || '-',
+                    institutionName: getDicomValue(study, '00080080') || 'VIARA Medical Imaging',
                     seriesCount: Number(getDicomValue(study, '00201206')) || null,
-                    imageCount: Number(getDicomValue(study, '00201208')) || null
+                    imageCount: Number(getDicomValue(study, '00201208')) || null,
+                    rawStudyTags: study
                 });
 
                 // Fetch series instance metadata for native viewport fallback
                 try {
                     const instancesData = await fetchDicomJson(
-                        `${API_BASE}/pacs/dicom-web/studies/${encodeURIComponent(studyUidList[0])}/instances`,
+                        `${API_BASE}/pacs/dicom-web/studies/${encodeURIComponent(activeStudyUid)}/metadata`,
                         { signal: controller.signal }
                     );
                     setRawInstances(Array.isArray(instancesData) ? instancesData : []);
@@ -506,7 +582,27 @@ const PacsViewer = () => {
             });
 
         return () => controller.abort();
-    }, [accessionParam, orderContext, sessionState, studyUidList, t]);
+    }, [accessionParam, orderContext, sessionState, activeStudyUid, studyUidList.length, t]);
+
+    // Fetch Clinical Report Data if Exam ID is available
+    useEffect(() => {
+        const effectiveExamId = currentStudyExamId || (activeStudyUid === studyUidList[0] ? (examIdParam || orderContext?.exam_id) : null);
+        setReportData(null);
+        if (!effectiveExamId) return undefined;
+        const controller = new AbortController();
+
+        authenticatedFetch(`${API_BASE}/exams/${effectiveExamId}`, { signal: controller.signal })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+                if (!controller.signal.aborted) setReportData(data ? { ...(data.exam || data),
+                    findings: (data.exam || data).report_sections?.findings || (data.exam || data).findings || '',
+                    impression: (data.exam || data).report_sections?.impression || (data.exam || data).impression || '',
+                    status: (data.exam || data).report_status || ''
+                } : null);
+            })
+            .catch(() => {});
+        return () => controller.abort();
+    }, [examIdParam, orderContext?.exam_id, currentStudyExamId, activeStudyUid, studyUidList]);
 
     // Analyze Series Display Sets for Geometry Warnings
     useEffect(() => {
@@ -519,7 +615,7 @@ const PacsViewer = () => {
         const controller = new AbortController();
         setQualityState('loading');
 
-        analyzeStudyDisplaySets(studyUidList[0], { signal: controller.signal })
+        analyzeStudyDisplaySets(activeStudyUid, { signal: controller.signal })
             .then((report) => {
                 if (controller.signal.aborted) return;
                 setQualityReport(report);
@@ -530,17 +626,7 @@ const PacsViewer = () => {
             });
 
         return () => controller.abort();
-    }, [sessionState, studyUidList]);
-
-    useEffect(() => {
-        if (!studyUidList.length) {
-            setSelectedExportStudyUid('');
-            return;
-        }
-        setSelectedExportStudyUid((current) => (
-            current && studyUidList.includes(current) ? current : studyUidList[0]
-        ));
-    }, [studyUidList]);
+    }, [sessionState, activeStudyUid, studyUidList.length]);
 
     // Fullscreen Handling
     useEffect(() => {
@@ -557,7 +643,7 @@ const PacsViewer = () => {
                 await document.exitFullscreen?.();
             }
         } catch {
-            // Fullscreen blocked by policy
+            // Fullscreen policy fallback
         }
     }, []);
 
@@ -567,84 +653,146 @@ const PacsViewer = () => {
         setViewerRevision((revision) => revision + 1);
     }, []);
 
+    useEffect(() => {
+        if (!activeStudyUid || metadataState !== 'ready' || !seriesGroups.length) return undefined;
+        const controller = new AbortController();
+        const store = { uid: activeStudyUid, version: 0, loaded: false, saving: false };
+        bookmarkVersionRef.current = store;
+        keyImagesRef.current = new Set();
+        setKeyImages(new Set());
+        setBookmarksStatus('loading');
+        authenticatedFetch(`${API_BASE}/pacs/studies/${encodeURIComponent(activeStudyUid)}/bookmarks`, { signal: controller.signal })
+            .then(async response => {
+                if (!response.ok) throw new Error('Key-image bookmarks could not be loaded');
+                const data = await response.json();
+                if (controller.signal.aborted || bookmarkVersionRef.current !== store) return;
+                const selected = new Set();
+                for (const image of data.keyImages || []) {
+                    const series = seriesGroups.find(group => group.seriesInstanceUid === image.seriesInstanceUid);
+                    const frameIndex = series?.instances.findIndex(instance => getDicomValue(instance, '00080018') === image.sopInstanceUid && (instance.__frameNumber || 1) === image.frameNumber);
+                    if (frameIndex >= 0) selected.add(`${image.seriesInstanceUid}_${frameIndex}`);
+                }
+                store.version = data.version;
+                setCurrentStudyExamId(data.examId || null);
+                store.loaded = true;
+                keyImagesRef.current = selected;
+                setKeyImages(selected);
+                setBookmarksStatus('saved');
+            }).catch(error => { if (error.name !== 'AbortError') setBookmarksStatus('error'); });
+        return () => { controller.abort(); store.loaded = false; };
+    }, [activeStudyUid, metadataState, seriesGroups]);
+
+    const toggleKeyImage = useCallback(async (seriesUid, frameIdx) => {
+        const store = bookmarkVersionRef.current;
+        if (!store.loaded || store.uid !== activeStudyUid) { toast.error('Key-image bookmarks are unavailable. Reload the study before editing.'); return; }
+        if (store.saving) return;
+        const next = new Set(keyImagesRef.current);
+        const key = `${seriesUid}_${frameIdx}`;
+        if (next.has(key)) next.delete(key); else next.add(key);
+        const images = [...next].map(value => {
+            const [uid, index] = value.split('_');
+            const instance = seriesGroups.find(group => group.seriesInstanceUid === uid)?.instances[Number(index)];
+            return { seriesInstanceUid: uid, sopInstanceUid: getDicomValue(instance, '00080018'), frameNumber: instance?.__frameNumber || 1 };
+        });
+        store.saving = true;
+        setBookmarksStatus('saving');
+        try {
+            const response = await authenticatedFetch(`${API_BASE}/pacs/studies/${encodeURIComponent(activeStudyUid)}/bookmarks`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ keyImages: images, version: store.version })
+            });
+            if (!response.ok) throw new Error(response.status === 409 ? 'Bookmarks changed in another tab. Reload this study.' : 'Key-image bookmark could not be saved');
+            const data = await response.json();
+            if (bookmarkVersionRef.current !== store) return;
+            store.version = data.version;
+            keyImagesRef.current = next;
+            setKeyImages(next);
+            setBookmarksStatus('saved');
+        } catch (error) { if (bookmarkVersionRef.current === store) { setBookmarksStatus('error'); toast.error(error.message); } }
+        finally { store.saving = false; }
+    }, [activeStudyUid, seriesGroups]);
+
     // Cine Loop Animation Timer
     useEffect(() => {
         if (!isCinePlaying || activeInstances.length <= 1) return undefined;
-        const intervalMs = Math.max(30, Math.round(1000 / cineFps));
+        const intervalMs = Math.max(16, Math.round(1000 / cineFps));
         const timer = setInterval(() => {
             setActiveFrameIndex(idx => (idx + 1) % activeInstances.length);
         }, intervalMs);
         return () => clearInterval(timer);
-    }, [isCinePlaying, activeInstances.length, cineFps]);
+    }, [isCinePlaying, activeInstances.length, cineFps, cineLoopMode]);
 
-    // PACS Keyboard Hotkeys
+    // Keyboard Shortcuts
     useEffect(() => {
         const onKeyDown = (event) => {
             const activeTag = document.activeElement?.tagName;
-            if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+            if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') return;
+            if (event.ctrlKey || event.metaKey || event.altKey) return;
 
             const key = event.key.toLowerCase();
             if (key === 'f') {
                 event.preventDefault();
                 toggleFullscreen();
-            } else if (key === 'i') {
-                event.preventDefault();
-                setDrawerOpen(open => !open);
-            } else if (key === 'r') {
-                event.preventDefault();
-                if (sessionState === 'ready') reloadViewer();
-                else if (sessionState === 'error') startSession();
             } else if (key === 'p') {
                 event.preventDefault();
                 setActiveTool('pan');
             } else if (key === 'z') {
                 event.preventDefault();
                 setActiveTool('zoom');
-            } else if (key === 'w') {
+            } else if (key === 'o') {
                 event.preventDefault();
-                setActiveTool('wl');
-            } else if (key === 'm') {
+                setShowOverlays(v => !v);
+            } else if (key === 'k') {
                 event.preventDefault();
-                setActiveTool('ruler');
-            } else if (key === 'c') {
-                event.preventDefault();
-                setIsCinePlaying(p => !p);
+                toggleKeyImage(selectedSeriesUid || activeSeries?.seriesInstanceUid, activeFrameIndex);
             } else if (key === 's') {
                 event.preventDefault();
                 setSidebarOpen(s => !s);
-            } else if (key === 'Escape') {
+            } else if (key === 'tab') {
+                event.preventDefault();
+                setDrawerOpen(d => !d);
+            } else if (key === ' ' || key === 'c') {
+                event.preventDefault();
+                setIsCinePlaying(p => !p);
+            } else if (key === 'arrowright' || key === 'arrowdown') {
+                if (activeInstances.length > 1) {
+                    event.preventDefault();
+                    setActiveFrameIndex(idx => (idx + 1) % activeInstances.length);
+                }
+            } else if (key === 'arrowleft' || key === 'arrowup') {
+                if (activeInstances.length > 1) {
+                    event.preventDefault();
+                    setActiveFrameIndex(idx => (idx - 1 + activeInstances.length) % activeInstances.length);
+                }
+            } else if (key === 'escape') {
                 setDrawerOpen(false);
+                setShortcutsModalOpen(false);
+                setExportPanelOpen(false);
+                setExternalViewersModalOpen(false);
             }
         };
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [reloadViewer, sessionState, startSession, toggleFullscreen]);
+    }, [activeFrameIndex, activeInstances.length, activeSeries, selectedSeriesUid, toggleFullscreen, toggleKeyImage]);
 
-    useEffect(
-        () => () => {
-            sessionAbortRef.current?.abort();
-            metadataAbortRef.current?.abort();
-            clearTimeout(retryTimerRef.current);
-            clearTimeout(slowLoadTimerRef.current);
-            clearTimeout(copyTimerRef.current);
-        },
-        []
-    );
-
-    const copyStudyUids = useCallback(async () => {
-        if (!studyUids || !navigator.clipboard) return;
-        try {
-            await navigator.clipboard.writeText(studyUids);
-            clearTimeout(copyTimerRef.current);
-            setCopied(true);
-            copyTimerRef.current = setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
-        } catch {
-            setCopied(false);
-        }
-    }, [studyUids]);
+    useEffect(() => {
+        const onShortcutsKey = (event) => {
+            const activeTag = document.activeElement?.tagName;
+            if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') return;
+            if (event.key !== '?') return;
+            event.preventDefault();
+            event.stopPropagation();
+            setShortcutsModalOpen(open => !open);
+        };
+        window.addEventListener('keydown', onShortcutsKey, true);
+        return () => window.removeEventListener('keydown', onShortcutsKey, true);
+    }, []);
 
     const exitViewer = useCallback(() => {
+        if (window.opener && !window.opener.closed && window.history.length <= 1) {
+            window.close();
+            return;
+        }
         if (examIdParam) {
             navigate(`/reports/editor/${encodeURIComponent(examIdParam)}`);
             return;
@@ -657,10 +805,10 @@ const PacsViewer = () => {
     }, [examIdParam, navigate]);
 
     const openReport = useCallback(() => {
-        if (examIdParam) {
-            navigate(`/reports/editor/${encodeURIComponent(examIdParam)}`);
-        }
-    }, [examIdParam, navigate]);
+        const examId = currentStudyExamId || (activeStudyUid === studyUidList[0] ? (examIdParam || orderContext?.exam_id) : null);
+        if (examId) navigate(`/reports/editor/${encodeURIComponent(examId)}`);
+        else toast.error('No examination report is linked to this study.');
+    }, [currentStudyExamId, activeStudyUid, studyUidList, examIdParam, orderContext?.exam_id, navigate]);
 
     const openStandaloneViewer = useCallback(() => {
         if (!viewerUrl) return;
@@ -688,12 +836,14 @@ const PacsViewer = () => {
                 `${baseName}-${option.filenameSuffix}`
             );
             setExportState({ status: 'done', format, error: '' });
+            toast.success('Study exported successfully');
         } catch (error) {
             setExportState({
                 status: 'error',
                 format,
                 error: error?.message || t('pacs.viewer.exportFailed', { defaultValue: 'Export failed. Try again.' })
             });
+            toast.error('Export failed');
         }
     }, [
         caseDetails,
@@ -705,27 +855,28 @@ const PacsViewer = () => {
         t
     ]);
 
-    const toggleKeyImage = useCallback((frameIdx) => {
-        setKeyImages(prev => {
-            const next = new Set(prev);
-            if (next.has(frameIdx)) next.delete(frameIdx);
-            else next.add(frameIdx);
-            return next;
-        });
-    }, []);
-
     const showLoading = sessionState === 'pending' || (sessionState === 'ready' && Boolean(OHIF_BASE) && !iframeLoaded);
     const isAutoRetrying = retryCount > 0 && (sessionState === 'pending' || (sessionState === 'error' && retryCount < RETRY_DELAYS_MS.length));
     const retriesExhausted = sessionState === 'error' && retryCount >= RETRY_DELAYS_MS.length;
 
-    const patientLabel = caseDetails?.patientName || orderContext?.patient_name || t('pacs.viewer.patient', { defaultValue: 'Patient' });
-    const studyLabel = caseDetails?.studyDescription || orderContext?.exam_type_name || orderContext?.modality_name || t('pacs.viewer.title', { defaultValue: 'Diagnostic Image Viewer' });
-    const qualityCount = qualityReport?.flaggedSeries?.length || 0;
+    const patientLabel = cleanDicomText(caseDetails?.patientName || orderContext?.patient_name) || t('pacs.viewer.patient', { defaultValue: 'Patient' });
+    const viewerTitle = OHIF_BASE
+        ? t('pacs.viewer.title', { defaultValue: 'PACS Image Viewer' })
+        : t('pacs.viewer.previewTitle', { defaultValue: 'Image Preview (non-diagnostic)' });
+    const studyLabel = cleanDicomText(caseDetails?.studyDescription || orderContext?.exam_type_name || orderContext?.modality_name) || viewerTitle;
+    const gridLayoutClass = useMemo(() => {
+        if (gridMode === '1x2') return 'grid-cols-2 grid-rows-1';
+        if (gridMode === '2x1') return 'grid-cols-1 grid-rows-2';
+        if (gridMode === '2x2') return 'grid-cols-2 grid-rows-2';
+        return 'grid-cols-1 grid-rows-1';
+    }, [gridMode]);
+
+    const activeKeyImage = keyImages.has(`${selectedSeriesUid || activeSeries?.seriesInstanceUid}_${activeFrameIndex}`);
 
     if (!studyUids && !hasOrderLocator) {
         return (
             <ViewerShell
-                title={t('pacs.viewer.title', { defaultValue: 'Diagnostic Image Viewer' })}
+                title={viewerTitle}
                 subtitle={t('pacs.viewer.noStudy', { defaultValue: 'No study selected' })}
                 onBack={exitViewer}
                 backLabel={t('actions.back', { defaultValue: 'Back' })}
@@ -735,9 +886,13 @@ const PacsViewer = () => {
                     title={t('pacs.viewer.noStudy', { defaultValue: 'No imaging study selected' })}
                     detail={t('pacs.viewer.noStudyHelp', { defaultValue: 'Open the viewer from a worklist examination that has images available.' })}
                 >
-                    <button type="button" onClick={() => navigate('/worklist')} className={PRIMARY_BUTTON}>
-                        <ListFilter size={15} />
-                        {t('pacs.viewer.goToWorklist', { defaultValue: 'Open worklist' })}
+                    <button
+                        type="button"
+                        onClick={() => navigate('/worklist')}
+                        className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-600 px-7 text-sm font-bold text-slate-950 shadow-lg shadow-teal-500/25 transition hover:brightness-110"
+                    >
+                        <ListFilter size={17} />
+                        {t('pacs.viewer.goToWorklist', { defaultValue: 'Open Worklist' })}
                     </button>
                 </StatePanel>
             </ViewerShell>
@@ -747,7 +902,7 @@ const PacsViewer = () => {
     if (!isOnline) {
         return (
             <ViewerShell
-                title={t('pacs.viewer.title', { defaultValue: 'Diagnostic Image Viewer' })}
+                title={viewerTitle}
                 subtitle={orderContext?.order_number || studyUids}
                 onBack={exitViewer}
                 backLabel={t('actions.back', { defaultValue: 'Back' })}
@@ -757,9 +912,10 @@ const PacsViewer = () => {
                     title={t('pacs.viewer.offline', { defaultValue: 'Archive connection lost' })}
                     detail={t('pacs.viewer.offlineHelp', { defaultValue: 'The study will resume automatically when the network connection returns.' })}
                 >
-                    <StatusBadge tone="amber" icon={Loader2} spinning>
-                        {t('pacs.viewer.waitingForNetwork', { defaultValue: 'Waiting for network' })}
-                    </StatusBadge>
+                    <div className="inline-flex items-center gap-2 rounded-full border border-amber-400/25 bg-amber-400/10 px-5 py-2.5 text-xs font-bold text-amber-300">
+                        <Loader2 size={15} className="animate-spin" />
+                        {t('pacs.viewer.waitingForNetwork', { defaultValue: 'Waiting for network...' })}
+                    </div>
                 </StatePanel>
             </ViewerShell>
         );
@@ -768,7 +924,7 @@ const PacsViewer = () => {
     if (retriesExhausted) {
         return (
             <ViewerShell
-                title={t('pacs.viewer.title', { defaultValue: 'Diagnostic Image Viewer' })}
+                title={viewerTitle}
                 subtitle={orderContext?.order_number || studyUids}
                 onBack={exitViewer}
                 backLabel={t('actions.back', { defaultValue: 'Back' })}
@@ -780,12 +936,20 @@ const PacsViewer = () => {
                     detail={sessionError}
                 >
                     <div className="flex flex-wrap items-center justify-center gap-3">
-                        <button type="button" onClick={() => startSession()} className={PRIMARY_BUTTON}>
-                            <RefreshCw size={15} />
+                        <button
+                            type="button"
+                            onClick={() => startSession()}
+                            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-600 px-6 text-sm font-bold text-slate-950 shadow-lg shadow-teal-500/25 transition hover:brightness-110"
+                        >
+                            <RefreshCw size={16} />
                             {t('pacs.viewer.retry', { defaultValue: 'Try again' })}
                         </button>
-                        <button type="button" onClick={() => navigate('/worklist')} className={SECONDARY_BUTTON}>
-                            <ListFilter size={15} />
+                        <button
+                            type="button"
+                            onClick={() => navigate('/worklist')}
+                            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.05] px-6 text-sm font-bold text-slate-200 transition hover:bg-white/10"
+                        >
+                            <ListFilter size={16} />
                             {t('pacs.viewer.goToWorklist', { defaultValue: 'Return to worklist' })}
                         </button>
                     </div>
@@ -795,212 +959,186 @@ const PacsViewer = () => {
     }
 
     return (
-        <main className="fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#050914] text-slate-100 antialiased select-none">
-            {/* Top PACS Diagnostic Control Bar */}
-            <ViewerToolbar
+        <main className="fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#050914] text-slate-100 antialiased select-none font-sans">
+            {/* Top Medical Workstation Header & Command Palette */}
+            <WorkstationHeader
                 patientLabel={patientLabel}
                 studyLabel={studyLabel}
                 accession={caseDetails?.accessionNumber || orderContext?.order_number || '-'}
                 modality={caseDetails?.modality || orderContext?.modality_name || '-'}
+                patientId={caseDetails?.patientId || orderContext?.mrn || '-'}
+                studyDate={caseDetails?.studyDate || '-'}
+                nativePreview={!OHIF_BASE}
                 loading={showLoading || isAutoRetrying}
                 retrying={isAutoRetrying}
                 activeTool={activeTool}
                 setActiveTool={setActiveTool}
-                activePreset={activePreset}
-                setActivePreset={setActivePreset}
                 gridMode={gridMode}
                 setGridMode={setGridMode}
+                syncScroll={syncScroll}
+                setSyncScroll={setSyncScroll}
+                showOverlays={showOverlays}
+                setShowOverlays={setShowOverlays}
                 sidebarOpen={sidebarOpen}
                 setSidebarOpen={setSidebarOpen}
                 isCinePlaying={isCinePlaying}
                 setIsCinePlaying={setIsCinePlaying}
-                cineFps={cineFps}
-                setCineFps={setCineFps}
                 onExit={exitViewer}
-                onOpenReport={openReport}
-                canOpenReport={Boolean(examIdParam)}
-                onReload={reloadViewer}
-                onToggleInfo={() => setDrawerOpen((open) => !open)}
-                infoOpen={drawerOpen}
+                onToggleDrawer={() => setDrawerOpen(open => !open)}
+                drawerOpen={drawerOpen}
+                onOpenShortcuts={() => setShortcutsModalOpen(true)}
                 onToggleFullscreen={toggleFullscreen}
                 isFullscreen={isFullscreen}
-                onOpenExternal={openStandaloneViewer}
+                onOpenExternal={OHIF_BASE ? openStandaloneViewer : null}
+                onOpenExternalViewers={() => setExternalViewersModalOpen(true)}
                 onOpenExport={() => setExportPanelOpen(true)}
                 exportBusy={exportState.status === 'running'}
-                qualityCount={qualityCount}
+                activeKeyImage={activeKeyImage}
+                onToggleActiveKeyImage={() => toggleKeyImage(selectedSeriesUid || activeSeries?.seriesInstanceUid, activeFrameIndex)}
                 t={t}
+                isRtl={isRtl}
             />
 
-            {/* Central Viewport Area with Series Thumbnail Carousel */}
-            <div className="relative flex min-h-0 flex-1 overflow-hidden bg-[#050914]">
-                {/* Series Thumbnail Carousel Sidebar */}
-                {sidebarOpen && (
-                    <aside className="z-20 hidden w-72 shrink-0 flex-col overflow-hidden border-e border-white/10 bg-[#080d17]/98 shadow-2xl shadow-black/40 md:flex">
-                        <div className="flex min-h-14 items-center justify-between border-b border-white/10 px-4">
-                            <span className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em] text-cyan-300">
-                                <Layers size={14} />
-                                {t('pacs.viewer.series', { defaultValue: 'Series' })} ({seriesGroups.length || 1})
-                            </span>
-                            <button
-                                type="button"
-                                onClick={() => setSidebarOpen(false)}
-                                className={ICON_BUTTON}
-                                title={t('actions.close', { defaultValue: 'Close' })}
-                            >
-                                <ChevronLeft size={16} />
-                            </button>
-                        </div>
-                        <div className="border-b border-white/10 px-4 py-3">
-                            <div className="grid grid-cols-2 gap-2 text-[11px]">
-                                <MetricTile label={t('pacs.viewer.images', { defaultValue: 'Images' })} value={rawInstances.length || caseDetails?.imageCount || '-'} />
-                                <MetricTile label={t('pacs.viewer.modality', { defaultValue: 'Modality' })} value={caseDetails?.modality || orderContext?.modality_name || '-'} />
+            {(studyUidList.length > 1 || !OHIF_BASE) && (
+                <div className="flex shrink-0 items-center gap-3 border-b border-white/10 bg-slate-950 px-4 py-2 text-xs">
+                    {studyUidList.length > 1 && <label className="flex items-center gap-2">
+                        {t('pacs.viewer.studyDetails', { defaultValue: 'Study details' })}
+                        <select value={activeStudyUid || ''} onChange={event => { setSelectedStudyUid(event.target.value); setSelectedExportStudyUid(event.target.value); }} className="max-w-80 rounded border border-white/20 bg-slate-900 p-1">
+                            {studyUidList.map((uid, index) => <option key={uid} value={uid}>{t('pacs.viewer.studyNumber', { defaultValue: 'Study {{number}}', number: index + 1 })} ? {uid}</option>)}
+                        </select>
+                    </label>}
+                    {!OHIF_BASE && <span className={bookmarksStatus === 'error' ? 'text-amber-300' : 'text-slate-400'} aria-live="polite">
+                        {t(`pacs.viewer.bookmarks.${bookmarksStatus}`, { defaultValue: `Key images: ${bookmarksStatus}` })}
+                    </span>}
+                </div>
+            )}
+            {/* Central Diagnostic Workspace Container */}
+            <div className="relative flex min-h-0 flex-1 overflow-hidden bg-[#02050e]">
+                {/* Left Collapsible Series & Study Navigator Drawer */}
+                {!OHIF_BASE && <SeriesSidebar
+                    open={sidebarOpen}
+                    onClose={() => setSidebarOpen(false)}
+                    seriesGroups={seriesGroups}
+                    filteredSeriesGroups={filteredSeriesGroups}
+                    activeSeries={activeSeries}
+                    onSelectSeries={(seriesUid) => {
+                        setSelectedSeriesUid(seriesUid);
+                        setActiveFrameIndex(0);
+                    }}
+                    seriesSearch={seriesSearch}
+                    onSeriesSearchChange={setSeriesSearch}
+                    studyUid={activeStudyUid}
+                    rawInstances={rawInstances}
+                    caseDetails={caseDetails}
+                    keyImages={keyImages}
+                    t={t}
+                    isRtl={isRtl}
+                />}
+
+                {/* Primary Multi-Viewport View Area (isolated in LTR for medical Cornerstone/OHIF accuracy) */}
+                <section className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-black" dir="ltr">
+                    {!OHIF_BASE && (
+                        <div className="z-10 flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-[#090f1c] px-4">
+                            <div className="flex min-w-0 items-center gap-3">
+                                <span className="inline-flex h-8 min-w-8 shrink-0 items-center justify-center rounded-lg border border-teal-400/20 bg-teal-400/10 px-1.5 font-mono text-[10px] font-black text-teal-300">
+                                    {activeSeries?.modality || 'DICOM'}
+                                </span>
+                                <div className="min-w-0">
+                                    <p className="truncate text-xs font-semibold text-white">
+                                        {cleanDicomText(activeSeries?.seriesDescription) ||
+                                            t('pacs.viewer.seriesNumber', {
+                                                defaultValue: 'Series #{{number}}',
+                                                number: activeSeries?.seriesNumber || 1
+                                            })}
+                                    </p>
+                                    <p className="text-[10px] text-slate-500">
+                                        {t('pacs.viewer.frameCount', {
+                                            defaultValue: '{{count}} frames',
+                                            count: activeInstances.length
+                                        })}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                                <span
+                                    className="inline-flex rounded-lg border border-amber-300/20 bg-amber-300/10 px-2 py-1 text-[10px] font-bold text-amber-200"
+                                    title={t('pacs.viewer.previewOnlyDisclaimer', {
+                                        defaultValue: 'Preview only — not for diagnostic interpretation or measurement.'
+                                    })}
+                                >
+                                    {t('pacs.viewer.previewOnly', { defaultValue: 'Preview only' })}
+                                </span>
                             </div>
                         </div>
-                        <div className="flex-1 space-y-2 overflow-y-auto p-3">
-                            {seriesGroups.length === 0 ? (
-                                <div className="rounded-md border border-dashed border-white/10 p-4 text-center text-xs text-slate-500">
-                                    {t('pacs.viewer.noSeriesDetected', { defaultValue: 'No DICOM series detected' })}
-                                </div>
-                            ) : (
-                                seriesGroups.map((s, idx) => {
-                                    const isSelected = (activeSeries?.seriesInstanceUid === s.seriesInstanceUid) || (!selectedSeriesUid && idx === 0);
-                                    return (
-                                        <button
-                                            key={s.seriesInstanceUid}
-                                            type="button"
-                                            onClick={() => {
-                                                setSelectedSeriesUid(s.seriesInstanceUid);
-                                                setActiveFrameIndex(0);
-                                            }}
-                                            className={`group w-full rounded-md border p-3 text-start transition-all ${
-                                                isSelected
-                                                    ? 'border-cyan-400/70 bg-cyan-400/10 text-white ring-1 ring-cyan-400/30'
-                                                    : 'border-white/10 bg-white/[0.025] text-slate-400 hover:border-white/20 hover:bg-white/[0.055] hover:text-slate-200'
-                                            }`}
-                                        >
-                                            <div className="mb-3 flex aspect-[16/9] items-center justify-center rounded-md border border-white/10 bg-black/45">
-                                                <Monitor size={24} className={isSelected ? 'text-cyan-300' : 'text-slate-600 group-hover:text-slate-400'} />
-                                            </div>
-                                            <div className="flex items-center justify-between gap-2 text-[11px] font-bold">
-                                                <span className="rounded bg-cyan-400/15 px-1.5 py-0.5 text-[10px] text-cyan-300">
-                                                    {s.modality || 'DICOM'}
-                                                </span>
-                                                <span className="text-slate-500">{t('pacs.viewer.seriesNumber', { defaultValue: 'Series #{{number}}', number: s.seriesNumber || idx + 1 })}</span>
-                                            </div>
-                                            <p className="mt-2 truncate text-xs font-bold text-slate-100">
-                                                {s.seriesDescription || `Series ${idx + 1}`}
-                                            </p>
-                                            <p className="mt-1 text-[10px] text-slate-500">
-                                                {t('pacs.viewer.imageFrames', { defaultValue: '{{count}} images / frames', count: s.instances?.length || 1 })}
-                                            </p>
-                                        </button>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </aside>
-                )}
-
-                {/* Main Viewing Viewport */}
-                <section className="relative flex flex-1 flex-col overflow-hidden bg-black">
-                    {!sidebarOpen && (
-                        <button
-                            type="button"
-                            onClick={() => setSidebarOpen(true)}
-                            className="absolute start-3 top-3 z-30 hidden h-10 items-center gap-2 rounded-md border border-white/10 bg-[#080d17]/95 px-3 text-xs font-black text-slate-200 shadow-xl backdrop-blur-xl transition hover:border-cyan-400/40 hover:text-white md:inline-flex"
-                            title={t('pacs.viewer.showSeries', { defaultValue: 'Show series' })}
-                        >
-                            <Layers size={15} className="text-cyan-300" />
-                            {t('pacs.viewer.series', { defaultValue: 'Series' })}
-                        </button>
                     )}
-                    {/* Embedded OHIF Viewport Mode */}
+                    {/* Embedded OHIF Viewport Mode (when external OHIF configured) */}
                     {OHIF_BASE && (sessionState === 'ready' || isAutoRetrying) && viewerUrl ? (
                         <iframe
                             ref={iframeRef}
                             key={`${viewerUrl}:${viewerRevision}`}
-                            title={t('pacs.viewer.title', { defaultValue: 'Diagnostic Image Viewer' })}
+                            title={viewerTitle}
                             src={viewerUrl}
-                            onLoad={() => {
-                                setIframeLoaded(true);
-                                setShowSlowHint(false);
-                            }}
+                            onLoad={() => setShowSlowHint(false)}
                             onError={() => setShowSlowHint(true)}
                             className="absolute inset-0 h-full w-full border-0 bg-black"
                             allow="fullscreen; clipboard-read; clipboard-write"
                             referrerPolicy="no-referrer"
                         />
                     ) : (
-                        /* Native HTML5 DICOM/Image Viewer Viewport Fallback */
-                        <NativeCanvasViewport
-                            activeSeries={activeSeries}
-                            activeFrameIndex={activeFrameIndex}
-                            activeTool={activeTool}
-                            activePreset={activePreset}
-                            gridMode={gridMode}
-                            isKeyImage={keyImages.has(activeFrameIndex)}
-                            onToggleKeyImage={() => toggleKeyImage(activeFrameIndex)}
-                            showAiOverlay={showAiOverlay}
-                            qualityReport={qualityReport}
-                        />
-                    )}
-
-                    {/* Cine Playback Scrubber Bar (when images exist) */}
-                    {activeInstances.length > 1 && (
-                        <div className="absolute bottom-16 start-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-md border border-white/10 bg-[#080d17]/92 px-3 py-2 shadow-2xl backdrop-blur-xl sm:bottom-5 sm:px-4">
-                            <button
-                                type="button"
-                                onClick={() => setIsCinePlaying(p => !p)}
-                                className="flex h-8 w-8 items-center justify-center rounded-md bg-cyan-400 text-slate-950 hover:bg-cyan-300"
-                                title={isCinePlaying ? t('pacs.viewer.pauseCine', { defaultValue: 'Pause cine' }) : t('pacs.viewer.playCine', { defaultValue: 'Play cine' })}
-                            >
-                                {isCinePlaying ? <Pause size={15} /> : <Play size={15} className="ms-0.5" />}
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setActiveFrameIndex(idx => (idx - 1 + activeInstances.length) % activeInstances.length)}
-                                className="text-slate-400 hover:text-white"
-                                title={t('pacs.viewer.previousFrame', { defaultValue: 'Previous frame' })}
-                            >
-                                <SkipBack size={15} />
-                            </button>
-                            <span className="font-mono text-xs font-bold text-slate-300">
-                                {activeFrameIndex + 1} / {activeInstances.length}
-                            </span>
-                            <button
-                                type="button"
-                                onClick={() => setActiveFrameIndex(idx => (idx + 1) % activeInstances.length)}
-                                className="text-slate-400 hover:text-white"
-                                title={t('pacs.viewer.nextFrame', { defaultValue: 'Next frame' })}
-                            >
-                                <SkipForward size={15} />
-                            </button>
-                            <div className="ms-2 hidden items-center gap-1.5 border-s border-white/10 ps-3 text-xs text-slate-400 sm:flex">
-                                <span>FPS:</span>
-                                <input
-                                    type="range"
-                                    min="1"
-                                    max="30"
-                                    value={cineFps}
-                                    onChange={e => setCineFps(Number(e.target.value))}
-                                    className="h-1 w-16 cursor-pointer appearance-none rounded-md bg-slate-800 accent-cyan-400"
+                        /* Non-diagnostic rendered-image preview fallback */
+                        <div className={`grid min-h-0 flex-1 gap-1 p-1 ${gridLayoutClass}`}>
+                            {gridMode === '1x1' ? (
+                                <NativeCanvasViewport
+                                    studyUid={activeStudyUid}
+                                    activeSeries={activeSeries}
+                                    activeFrameIndex={activeFrameIndex}
+                                    onFrameChange={setActiveFrameIndex}
+                                    activeTool={activeTool}
+                                    gridMode={gridMode}
+                                    showOverlays={showOverlays}
+                                    isActiveViewport={true}
+                                    t={t}
                                 />
-                                <span className="font-mono text-[10px] font-bold text-cyan-300">{cineFps}</span>
-                            </div>
+                            ) : (
+                                Array.from({ length: gridMode === '2x2' ? 4 : 2 }).map((_, idx) => {
+                                    const seriesForViewport = seriesGroups[idx % (seriesGroups.length || 1)] || activeSeries;
+                                    return (
+                                        <NativeCanvasViewport
+                                            key={idx}
+                                            studyUid={activeStudyUid}
+                                            activeSeries={seriesForViewport}
+                                            activeFrameIndex={syncScroll ? activeFrameIndex : 0}
+                                            onFrameChange={syncScroll ? setActiveFrameIndex : undefined}
+                                            activeTool={activeTool}
+                                            gridMode={gridMode}
+                                            showOverlays={showOverlays}
+                                            isActiveViewport={activeViewportIndex === idx}
+                                            onSelectViewport={() => setActiveViewportIndex(idx)}
+                                            t={t}
+                                        />
+                                    );
+                                })
+                            )}
                         </div>
                     )}
 
-                    <ViewportStatusBar
-                        accession={caseDetails?.accessionNumber || orderContext?.order_number || '-'}
-                        activeSeries={activeSeries}
-                        frameIndex={activeFrameIndex}
-                        framesCount={activeInstances.length}
-                        metadataState={metadataState}
-                        qualityCount={qualityCount}
-                        sessionState={sessionState}
-                        t={t}
-                    />
+                    {/* Bottom Cine Playback Scrubber Deck */}
+                    {!OHIF_BASE && activeInstances.length > 1 && (
+                        <CinePlaybackBar
+                            isPlaying={isCinePlaying}
+                            onTogglePlay={() => setIsCinePlaying(p => !p)}
+                            currentIndex={activeFrameIndex}
+                            totalFrames={activeInstances.length}
+                            onSeek={setActiveFrameIndex}
+                            fps={cineFps}
+                            onFpsChange={setCineFps}
+                            loopMode={cineLoopMode}
+                            onToggleLoopMode={() => setCineLoopMode(m => m === 'loop' ? 'bounce' : 'loop')}
+                            t={t}
+                        />
+                    )}
 
+                    {/* Loading & Synchronization State Overlay */}
                     <LoadingOverlay
                         visible={showLoading || isAutoRetrying}
                         phase={
@@ -1018,23 +1156,27 @@ const PacsViewer = () => {
                 </section>
             </div>
 
-            {/* Mobile Footer Toolbar */}
-            <MobileViewerToolbar
-                loading={showLoading || isAutoRetrying}
-                onOpenReport={openReport}
-                canOpenReport={Boolean(examIdParam)}
-                onReload={reloadViewer}
-                onToggleInfo={() => setDrawerOpen((open) => !open)}
-                infoOpen={drawerOpen}
-                onToggleFullscreen={toggleFullscreen}
-                isFullscreen={isFullscreen}
-                onOpenExternal={openStandaloneViewer}
-                onOpenExport={() => setExportPanelOpen(true)}
-                exportBusy={exportState.status === 'running'}
-                qualityCount={qualityCount}
+            {/* Slide-out Integrated Clinical Workstation Drawer */}
+            <ClinicalWorkstationDrawer
+                open={drawerOpen}
+                onClose={() => setDrawerOpen(false)}
+                activeTab={activeDrawerTab}
+                onTabChange={setActiveDrawerTab}
+                caseDetails={caseDetails}
+                orderContext={orderContext}
+                reportData={reportData}
+                rawInstances={rawInstances}
+                qualityReport={qualityReport}
+                qualityState={qualityState}
+                studyUidList={studyUidList}
+                keyImages={keyImages}
+                activeSeries={activeSeries}
+                onOpenReportEditor={openReport}
                 t={t}
+                isRtl={isRtl}
             />
 
+            {/* Modal Export Case Studio */}
             <ExportCasePanel
                 open={exportPanelOpen}
                 onClose={() => setExportPanelOpen(false)}
@@ -1050,30 +1192,536 @@ const PacsViewer = () => {
                 t={t}
             />
 
-            {/* Slide-out Diagnostic Info Drawer */}
-            <InfoDrawer
-                open={drawerOpen}
-                onClose={() => setDrawerOpen(false)}
+            {/* Keyboard Shortcuts Visual Cheat Sheet Modal */}
+            <KeyboardShortcutsModal
+                open={shortcutsModalOpen}
+                onClose={() => setShortcutsModalOpen(false)}
+                shortcuts={KEYBOARD_SHORTCUTS}
+                t={t}
                 isRtl={isRtl}
-                studyUidList={studyUidList}
-                lang={lang}
-                sessionState={sessionState}
-                copied={copied}
-                onCopy={copyStudyUids}
-                caseDetails={caseDetails}
-                orderContext={orderContext}
-                metadataState={metadataState}
-                qualityReport={qualityReport}
-                qualityState={qualityState}
+            />
+
+            {/* External Viewers & Monitors Modal */}
+            <ExternalViewersModal
+                open={externalViewersModalOpen}
+                onClose={() => setExternalViewersModalOpen(false)}
+                viewerUrl={viewerUrl}
+                studyUid={studyUidList[0] || requestedUidList[0] || ''}
+                accession={caseDetails?.accessionNumber || orderContext?.order_number || ''}
+                patientId={caseDetails?.patientId || orderContext?.mrn || ''}
+                pacsConfig={pacsConfig}
+                onExportDicom={() => exportCase('dicom')}
+                isRtl={isRtl}
                 t={t}
             />
         </main>
     );
 };
 
-// Native Canvas Engine Component (HTML5/Canvas Fallback Viewer)
-const NativeCanvasViewport = memo(({ activeSeries, activeFrameIndex, activeTool, activePreset, gridMode, isKeyImage, onToggleKeyImage, showAiOverlay, qualityReport }) => {
-    const canvasRef = useRef(null);
+// Top Primary Workstation Command Bar
+const WorkstationHeader = memo(({
+    patientLabel,
+    studyLabel,
+    accession,
+    modality,
+    patientId,
+    studyDate,
+    nativePreview,
+    loading,
+    retrying,
+    activeTool,
+    setActiveTool,
+    gridMode,
+    setGridMode,
+    syncScroll,
+    setSyncScroll,
+    showOverlays,
+    setShowOverlays,
+    sidebarOpen,
+    setSidebarOpen,
+    isCinePlaying,
+    setIsCinePlaying,
+    onExit,
+    onToggleDrawer,
+    drawerOpen,
+    onOpenShortcuts,
+    onToggleFullscreen,
+    isFullscreen,
+    onOpenExternal,
+    onOpenExternalViewers,
+    onOpenExport,
+    exportBusy,
+    activeKeyImage,
+    onToggleActiveKeyImage,
+    t,
+    isRtl = false
+}) => {
+    return (
+        <header className="relative z-30 flex min-h-[68px] shrink-0 items-center justify-between gap-3 border-b border-white/[0.08] bg-[#080e1b] px-3 sm:px-4">
+            {/* Left Zone: Back, Series Toggle, Clinical Identity */}
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                <button
+                    type="button"
+                    onClick={onExit}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] text-slate-300 transition hover:border-white/20 hover:bg-white/[0.08] hover:text-white"
+                    title={t('actions.back', { defaultValue: 'Back to Worklist' })}
+                >
+                    <ArrowLeft size={18} className={isRtl ? 'rotate-180' : ''} />
+                </button>
+
+                {nativePreview && <button
+                    type="button"
+                    onClick={() => setSidebarOpen(!sidebarOpen)}
+                    className={TOOL_BTN(sidebarOpen)}
+                    title={t('pacs.viewer.toggleSeries', { defaultValue: 'Toggle Series Drawer (S)' })}
+                    aria-pressed={sidebarOpen}
+                >
+                    <Layers size={17} />
+                </button>}
+
+                <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                        <h1 className="truncate text-sm font-bold tracking-tight text-white sm:text-base">
+                            {cleanDicomText(patientLabel)}
+                        </h1>
+                        <span className="hidden rounded-md border border-teal-400/20 bg-teal-400/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-teal-200 sm:inline-flex">
+                            {modality}
+                        </span>
+                        <span
+                            className={`inline-flex h-2 w-2 shrink-0 rounded-full ${loading ? 'animate-pulse bg-amber-400' : 'bg-emerald-400'}`}
+                            title={loading
+                                ? t('pacs.viewer.connecting', { defaultValue: 'Connecting' })
+                                : t('pacs.viewer.connected', { defaultValue: 'Connected' })}
+                        />
+                    </div>
+                    <p className="mt-0.5 flex min-w-0 items-center gap-1.5 truncate text-[11px] text-slate-400">
+                        <span className="truncate">{cleanDicomText(studyLabel)}</span>
+                        <span className="text-slate-700">·</span>
+                        <span className="shrink-0 font-mono text-slate-300">{patientId}</span>
+                        <span className="text-slate-700">·</span>
+                        <span className="shrink-0 font-mono text-teal-300/90">{accession}</span>
+                        {studyDate && studyDate !== '-' && <>
+                            <span className="text-slate-700">·</span>
+                            <span className="hidden shrink-0 sm:inline">{studyDate}</span>
+                        </>}
+                    </p>
+                </div>
+            </div>
+
+            {/* The built-in renderer is preview-only; diagnostic controls belong to OHIF. */}
+            {nativePreview &&             <div className="hidden shrink-0 items-center gap-1 rounded-xl border border-white/[0.08] bg-black/30 p-1 lg:flex">
+                {/* Navigation Tools */}
+                <button
+                    type="button"
+                    onClick={() => setActiveTool('pan')}
+                    className={TOOL_BTN(activeTool === 'pan')}
+                    title={t('pacs.viewer.panTool', { defaultValue: 'Pan / Drag (P)' })}
+                >
+                    <Move size={16} />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setActiveTool('zoom')}
+                    className={TOOL_BTN(activeTool === 'zoom')}
+                    title={t('pacs.viewer.zoomTool', { defaultValue: 'Zoom Tool (Z)' })}
+                >
+                    <ZoomIn size={16} />
+                </button>
+
+                <span className="mx-0.5 h-4 w-px bg-white/10" />
+
+                {/* Viewport Grid Layouts */}
+                <button
+                    type="button"
+                    onClick={() => setGridMode('1x1')}
+                    className={TOOL_BTN(gridMode === '1x1')}
+                    title={t('pacs.viewer.singleViewport', { defaultValue: '1x1 Single Viewport' })}
+                >
+                    <Square size={14} />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setGridMode('1x2')}
+                    className={TOOL_BTN(gridMode === '1x2')}
+                    title={t('pacs.viewer.dualViewport', { defaultValue: '1x2 Dual Horizontal' })}
+                >
+                    <Columns size={14} />
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setGridMode('2x2')}
+                    className={TOOL_BTN(gridMode === '2x2')}
+                    title={t('pacs.viewer.quadViewport', { defaultValue: '2x2 Quad Grid' })}
+                >
+                    <LayoutGrid size={14} />
+                </button>
+
+                {gridMode !== '1x1' && <>
+                    <span className="mx-0.5 h-4 w-px bg-white/10" />
+                    <button
+                        type="button"
+                        onClick={() => setSyncScroll(value => !value)}
+                        className={TOOL_BTN(syncScroll)}
+                        title={t('pacs.viewer.syncScroll', { defaultValue: 'Synchronize series scrolling' })}
+                        aria-pressed={syncScroll}
+                    >
+                        <Repeat size={14} />
+                    </button>
+                </>}
+
+                <span className="mx-0.5 h-4 w-px bg-white/10" />
+
+                {/* Overlays & Cine */}
+                <button
+                    type="button"
+                    onClick={() => setShowOverlays(v => !v)}
+                    className={TOOL_BTN(showOverlays)}
+                    title={t('pacs.viewer.toggleOverlays', { defaultValue: 'Toggle Overlays (O)' })}
+                >
+                    {showOverlays ? <Eye size={15} /> : <EyeOff size={15} />}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setIsCinePlaying(p => !p)}
+                    className={TOOL_BTN(isCinePlaying)}
+                    title={isCinePlaying ? t('pacs.viewer.cinePause', { defaultValue: 'Pause Cine (Space)' }) : t('pacs.viewer.cinePlay', { defaultValue: 'Play Cine (Space)' })}
+                >
+                    {isCinePlaying ? <Pause size={15} /> : <Play size={15} />}
+                </button>
+            </div>}
+
+            {/* Right Zone: Key Images, Clinical Drawer, Export, Shortcuts, Fullscreen */}
+            <div className="flex shrink-0 items-center gap-1">
+                {retrying && (
+                    <span className="hidden items-center gap-1.5 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-1.5 text-[11px] font-bold text-amber-200 xl:inline-flex">
+                        <Loader2 size={13} className="animate-spin" />
+                        {t('pacs.viewer.retrying', { defaultValue: 'Retrying...' })}
+                    </span>
+                )}
+
+                {/* Native preview frame selection is not synchronized with OHIF's viewport. */}
+                {nativePreview && <button
+                    type="button"
+                    onClick={onToggleActiveKeyImage}
+                    className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-all ${
+                        activeKeyImage
+                            ? 'border-amber-400 bg-amber-400/25 text-amber-300 shadow-md shadow-amber-400/20'
+                            : 'border-white/10 bg-white/[0.04] text-slate-400 hover:border-amber-400/40 hover:text-amber-300'
+                    }`}
+                    title={t('pacs.viewer.keyImage', { defaultValue: 'Bookmark Key Image (K)' })}
+                >
+                    <Star size={16} className={activeKeyImage ? 'fill-amber-400' : ''} />
+                </button>}
+
+                {/* Integrated Clinical Drawer Launcher */}
+                <button
+                    type="button"
+                    onClick={onToggleDrawer}
+                    className={`inline-flex h-9 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-bold transition-all ${
+                        drawerOpen
+                            ? 'border-teal-400 bg-teal-500/25 text-white shadow-lg shadow-teal-500/25 ring-1 ring-teal-400/50'
+                            : 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 shadow-sm'
+                    }`}
+                    title={t('pacs.viewer.report', { defaultValue: 'Clinical Report & DICOM Inspector (Tab)' })}
+                >
+                    <FileText size={15} />
+                    <span className="hidden sm:inline">
+                        {t('pacs.viewer.report', { defaultValue: 'Report' })}
+                    </span>
+                </button>
+
+                {/* Export Study Package */}
+                <button
+                    type="button"
+                    onClick={onOpenExport}
+                    disabled={loading || exportBusy}
+                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 text-xs font-bold text-slate-200 transition hover:border-teal-400/40 hover:bg-white/10 disabled:opacity-40"
+                    title={t('pacs.viewer.exportCase', { defaultValue: 'Export Study' })}
+                >
+                    {exportBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                    <span className="hidden md:inline">{t('pacs.viewer.export', { defaultValue: 'Export' })}</span>
+                </button>
+
+                {/* External Viewers & Standalone Window Launcher */}
+                <button
+                    type="button"
+                    onClick={onOpenExternalViewers || onOpenExternal}
+                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-500/10 px-2.5 text-xs font-bold text-teal-300 transition hover:border-teal-400/60 hover:bg-teal-500/20 hover:text-white"
+                    title={t('pacs.viewer.externalViewersTitle', { defaultValue: 'External DICOM Viewers & Monitors (Weasis, RadiAnt, Stone, Detached)' })}
+                >
+                    <Monitor size={14} />
+                    <span className="hidden xl:inline">{t('pacs.viewer.viewOptions', { defaultValue: 'Viewers' })}</span>
+                </button>
+
+                {/* Shortcuts Modal Guide */}
+                <button
+                    type="button"
+                    onClick={onOpenShortcuts}
+                    className={ICON_BTN}
+                    title={t('pacs.viewer.shortcutsGuide', { defaultValue: 'Keyboard Shortcuts Guide (?)' })}
+                >
+                    <HelpCircle size={17} />
+                </button>
+
+                {/* Fullscreen */}
+                <button
+                    type="button"
+                    onClick={onToggleFullscreen}
+                    className={ICON_BTN}
+                    title={isFullscreen ? t('pacs.viewer.exitFullscreenShortcut', { defaultValue: 'Exit Fullscreen (F)' }) : t('pacs.viewer.fullscreenShortcut', { defaultValue: 'Fullscreen (F)' })}
+                >
+                    {isFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+                </button>
+            </div>
+        </header>
+    );
+});
+WorkstationHeader.displayName = 'WorkstationHeader';
+
+// Left-Side Collapsible Series Drawer
+const SeriesSidebar = memo(({
+    open,
+    onClose,
+    seriesGroups,
+    filteredSeriesGroups,
+    activeSeries,
+    onSelectSeries,
+    seriesSearch,
+    onSeriesSearchChange,
+    studyUid,
+    rawInstances,
+    caseDetails,
+    keyImages,
+    t,
+    isRtl = false
+}) => {
+    if (!open) return null;
+
+    const imageCount = seriesGroups.reduce(
+        (total, series) => total + (series.instances?.length || 0),
+        0
+    ) || caseDetails?.imageCount || rawInstances.length || 0;
+    const seriesCount = seriesGroups.length;
+
+    return (
+        <aside className="absolute inset-y-0 start-0 z-20 flex h-full w-[min(21rem,88vw)] shrink-0 flex-col overflow-hidden border-e border-white/[0.08] bg-[#080e1b] shadow-2xl md:relative md:w-[21rem]">
+            <div className="border-b border-white/[0.08] px-3.5 pb-3 pt-4">
+                <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <Layers size={15} className="shrink-0 text-teal-300" />
+                            <h2 className="text-sm font-bold text-white">
+                                {t('pacs.viewer.seriesLabel', { defaultValue: 'Study Series' })}
+                            </h2>
+                        </div>
+                        <p className="mt-1 ps-[23px] text-[11px] text-slate-500">
+                            {t('pacs.viewer.seriesSummary', {
+                                defaultValue: '{{seriesCount}} series · {{imageCount}} images',
+                                seriesCount,
+                                imageCount
+                            })}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                        title={t('actions.close', { defaultValue: 'Close' })}
+                    >
+                        <ChevronLeft size={16} className={isRtl ? 'rotate-180' : ''} />
+                    </button>
+                </div>
+
+                <div className="relative mt-3">
+                    <Search size={13} className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                    <input
+                        type="text"
+                        value={seriesSearch}
+                        onChange={(e) => onSeriesSearchChange(e.target.value)}
+                        placeholder={t('pacs.viewer.filterSeries', { defaultValue: 'Search series' })}
+                        aria-label={t('pacs.viewer.filterSeries', { defaultValue: 'Search series' })}
+                        className="h-9 w-full rounded-lg border border-white/10 bg-[#050914] ps-9 pe-8 text-xs text-slate-200 placeholder-slate-500 outline-none transition focus:border-teal-400/50 focus:ring-2 focus:ring-teal-400/10"
+                    />
+                    {seriesSearch && (
+                        <button
+                            type="button"
+                            onClick={() => onSeriesSearchChange('')}
+                            className="absolute end-2.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-500 hover:text-white"
+                            aria-label={t('actions.clear', { defaultValue: 'Clear search' })}
+                        >
+                            <X size={12} />
+                        </button>
+                    )}
+                </div>
+                <p className="mt-2 text-[10px] text-slate-500">
+                    {t('pacs.viewer.seriesResults', {
+                        defaultValue: 'Showing {{visible}} of {{total}}',
+                        visible: filteredSeriesGroups.length,
+                        total: seriesCount
+                    })}
+                </p>
+            </div>
+
+            <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2.5">
+                {filteredSeriesGroups.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-6 text-center">
+                        <ImageOff size={24} className="mx-auto text-slate-600" />
+                        <p className="mt-2 text-xs font-bold text-slate-400">
+                            {seriesSearch
+                                ? t('pacs.viewer.noMatchingSeries', { defaultValue: 'No series match filter' })
+                                : t('pacs.viewer.noSeriesDetected', { defaultValue: 'No DICOM series detected' })}
+                        </p>
+                    </div>
+                ) : (
+                    filteredSeriesGroups.map((series, idx) => {
+                        const isSelected = activeSeries?.seriesInstanceUid === series.seriesInstanceUid;
+                        const frameCount = series.instances?.length || 1;
+                        const seriesKeyCount = Array.from(keyImages).filter(k => k.startsWith(`${series.seriesInstanceUid}_`)).length;
+
+                        return (
+                            <button
+                                key={series.seriesInstanceUid || idx}
+                                type="button"
+                                onClick={() => onSelectSeries(series.seriesInstanceUid)}
+                                aria-pressed={isSelected}
+                                className={`group relative w-full overflow-hidden rounded-xl border p-2.5 text-start transition ${
+                                    isSelected
+                                        ? 'border-teal-400/50 bg-teal-400/[0.07] text-white ring-1 ring-teal-400/15'
+                                        : 'border-white/[0.07] bg-white/[0.02] text-slate-400 hover:border-white/15 hover:bg-white/[0.045] hover:text-slate-200'
+                                }`}
+                            >
+                                {isSelected && <span className="absolute inset-y-2 start-0 w-0.5 rounded-full bg-teal-300" />}
+                                <div className="flex items-center gap-2.5">
+                                    <SeriesThumbnail series={series} studyUid={studyUid} t={t} />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <p className={`line-clamp-2 text-xs font-semibold leading-4 ${isSelected ? 'text-white' : 'text-slate-200'}`}>
+                                                {cleanDicomText(series.seriesDescription) ||
+                                                    t('pacs.viewer.seriesNumber', { defaultValue: 'Series #{{number}}', number: series.seriesNumber || idx + 1 })}
+                                            </p>
+                                            {seriesKeyCount > 0 && (
+                                                <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-300/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-200" title={t('pacs.viewer.keyImages', { defaultValue: 'Key images' })}>
+                                                    <Star size={10} className="fill-amber-300" />
+                                                    {seriesKeyCount}
+                                                </span>
+                                            )}
+                                        </div>
+                                                    <p className="mt-1.5 flex items-center gap-1 text-[10px] text-slate-500">
+                                            <ImageIcon size={11} />
+                                            <span className="font-mono text-slate-300">{frameCount}</span>
+                                            {t('pacs.viewer.frames', { defaultValue: 'frames' })}
+                                            {isSelected && <span className="ms-auto font-medium text-teal-200">{t('pacs.viewer.activeSeries', { defaultValue: 'Selected' })}</span>}
+                                        </p>
+                                    </div>
+                                </div>
+                            </button>
+                        );
+                    })
+                )}
+            </div>
+
+        </aside>
+    );
+});
+SeriesSidebar.displayName = 'SeriesSidebar';
+
+const SeriesThumbnail = memo(({ series, studyUid, t }) => {
+    const containerRef = useRef(null);
+    const [imageUrl, setImageUrl] = useState('');
+    const [failed, setFailed] = useState(false);
+    const instance = series.instances?.[0];
+    const sopUid = instance ? getDicomValue(instance, '00080018') : '';
+    const frame = instance?.__frameNumber || 1;
+
+    useEffect(() => {
+        if (!studyUid || !sopUid || !series.seriesInstanceUid) {
+            setFailed(true);
+            return undefined;
+        }
+
+        const controller = new AbortController();
+        let objectUrl;
+        const loadThumbnail = () => {
+            const url = `${API_BASE}/pacs/dicom-web/studies/${encodeURIComponent(studyUid)}/series/${encodeURIComponent(series.seriesInstanceUid)}/instances/${encodeURIComponent(sopUid)}/frames/${frame}/rendered`;
+            authenticatedFetch(url, { signal: controller.signal })
+                .then((response) => {
+                    if (!response.ok) throw new Error(`Series preview failed (${response.status})`);
+                    return response.blob();
+                })
+                .then((blob) => {
+                    if (controller.signal.aborted) return;
+                    objectUrl = URL.createObjectURL(blob);
+                    setImageUrl(objectUrl);
+                })
+                .catch((error) => {
+                    if (error.name !== 'AbortError') setFailed(true);
+                });
+        };
+
+        if (typeof IntersectionObserver === 'undefined') {
+            loadThumbnail();
+        } else {
+            const observer = new IntersectionObserver(([entry]) => {
+                if (!entry.isIntersecting) return;
+                observer.disconnect();
+                loadThumbnail();
+            }, { rootMargin: '120px' });
+            if (containerRef.current) observer.observe(containerRef.current);
+            else loadThumbnail();
+            return () => {
+                observer.disconnect();
+                controller.abort();
+                if (objectUrl) URL.revokeObjectURL(objectUrl);
+            };
+        }
+
+        return () => {
+            controller.abort();
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [frame, series.seriesInstanceUid, sopUid, studyUid]);
+
+    return (
+        <div
+            ref={containerRef}
+            className="relative h-[4.25rem] w-[5.25rem] shrink-0 overflow-hidden rounded-lg border border-white/[0.08] bg-black"
+            aria-label={t('pacs.viewer.seriesThumbnail', { defaultValue: 'Series preview' })}
+        >
+            {imageUrl ? (
+                <img
+                    src={imageUrl}
+                    alt=""
+                    className="h-full w-full object-contain"
+                    draggable={false}
+                />
+            ) : (
+                <div className="flex h-full w-full items-center justify-center">
+                    {failed
+                        ? <ImageOff size={17} className="text-slate-600" />
+                        : <Loader2 size={16} className="animate-spin text-slate-600" />}
+                </div>
+            )}
+            <span className="absolute inset-x-0 bottom-0 truncate bg-black/70 px-1.5 py-0.5 text-center font-mono text-[9px] font-bold text-slate-200">
+                {series.modality || 'DICOM'} · #{series.seriesNumber || '—'}
+            </span>
+        </div>
+    );
+});
+SeriesThumbnail.displayName = 'SeriesThumbnail';
+
+// Native Canvas Engine Component
+const NativeCanvasViewport = memo(({
+    studyUid,
+    activeSeries,
+    activeFrameIndex = 0,
+    onFrameChange,
+    activeTool = 'pan',
+    gridMode = '1x1',
+    showOverlays = true,
+    isActiveViewport = true,
+    onSelectViewport,
+    t
+}) => {
     const [zoom, setZoom] = useState(1.0);
     const [pan, setPan] = useState({ x: 0, y: 0 });
     const [rotation, setRotation] = useState(0);
@@ -1082,10 +1730,34 @@ const NativeCanvasViewport = memo(({ activeSeries, activeFrameIndex, activeTool,
     const [invert, setInvert] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
     const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-    const [measurements, setMeasurements] = useState([]);
-    const [currentRuler, setCurrentRuler] = useState(null);
+    const [imageError, setImageError] = useState(false);
+    const [imageUrl, setImageUrl] = useState('');
 
-    const presetObj = WL_PRESETS.find(p => p.id === activePreset) || WL_PRESETS[0];
+    // Resolve Image URL for Current Frame
+    useEffect(() => {
+        const instances = activeSeries?.instances || [];
+        const instance = instances[activeFrameIndex] || instances[0];
+        const seriesUid = activeSeries?.seriesInstanceUid;
+        const sopUid = instance ? getDicomValue(instance, '00080018') : null;
+
+        if (studyUid && seriesUid && sopUid) {
+            const frame = instance.__frameNumber || 1;
+            const url = `${API_BASE}/pacs/dicom-web/studies/${encodeURIComponent(studyUid)}/series/${encodeURIComponent(seriesUid)}/instances/${encodeURIComponent(sopUid)}/frames/${frame}/rendered`;
+            const controller = new AbortController();
+            let objectUrl;
+            authenticatedFetch(url, { signal: controller.signal })
+                .then(response => { if (!response.ok) throw new Error('Preview failed'); return response.blob(); })
+                .then(blob => { if (!controller.signal.aborted) { objectUrl = URL.createObjectURL(blob); setImageUrl(objectUrl); } })
+                .catch(error => { if (error.name !== 'AbortError') setImageError(true); });
+            setImageUrl('');
+            setImageError(false);
+            return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
+        } else {
+            setImageUrl('');
+            setImageError(false);
+        }
+        return undefined;
+    }, [activeFrameIndex, activeSeries, studyUid]);
 
     const resetTransforms = () => {
         setZoom(1.0);
@@ -1094,485 +1766,500 @@ const NativeCanvasViewport = memo(({ activeSeries, activeFrameIndex, activeTool,
         setFlipH(false);
         setFlipV(false);
         setInvert(false);
-        setMeasurements([]);
     };
 
     const handleMouseDown = (e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        if (onSelectViewport) onSelectViewport();
 
-        if (activeTool === 'ruler') {
-            setCurrentRuler({ startX: x, startY: y, endX: x, endY: y });
-        } else {
-            setIsDragging(true);
-            setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-        }
+        setIsDragging(true);
+        setDragStart({ x: e.clientX, y: e.clientY });
     };
 
     const handleMouseMove = (e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        if (isDragging) {
+            const dx = e.clientX - dragStart.x;
+            const dy = e.clientY - dragStart.y;
 
-        if (activeTool === 'ruler' && currentRuler) {
-            setCurrentRuler(prev => ({ ...prev, endX: x, endY: y }));
-        } else if (isDragging) {
-            if (activeTool === 'pan' || activeTool === 'pointer') {
-                setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
+            if (activeTool === 'pan') {
+                setPan(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+                setDragStart({ x: e.clientX, y: e.clientY });
             } else if (activeTool === 'zoom') {
-                const delta = e.movementY * -0.01;
-                setZoom(z => Math.max(0.2, Math.min(8.0, z + delta)));
+                const delta = dy * -0.01;
+                setZoom(z => Math.max(0.1, Math.min(10.0, z + delta)));
+                setDragStart({ x: e.clientX, y: e.clientY });
             }
         }
     };
 
-    const handleMouseUp = () => {
-        if (activeTool === 'ruler' && currentRuler) {
-            const dx = currentRuler.endX - currentRuler.startX;
-            const dy = currentRuler.endY - currentRuler.startY;
-            const distancePx = Math.sqrt(dx * dx + dy * dy);
-            if (distancePx > 5) {
-                setMeasurements(prev => [...prev, { ...currentRuler, distanceMm: (distancePx * 0.264).toFixed(1) }]);
-            }
-            setCurrentRuler(null);
-        }
-        setIsDragging(false);
-    };
+    const handleMouseUp = () => setIsDragging(false);
 
     const handleWheel = (e) => {
         e.preventDefault();
-        const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-        setZoom(z => Math.max(0.2, Math.min(8.0, z * zoomFactor)));
+        if (e.ctrlKey) {
+            const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+            setZoom(z => Math.max(0.1, Math.min(10.0, z * zoomFactor)));
+        } else if (onFrameChange && activeSeries?.instances?.length > 1) {
+            const direction = e.deltaY > 0 ? 1 : -1;
+            const total = activeSeries.instances.length;
+            onFrameChange((activeFrameIndex + direction + total) % total);
+        }
     };
 
     return (
         <div
-            className="relative flex h-full w-full flex-1 cursor-crosshair items-center justify-center overflow-hidden bg-[#030711]"
+            className={`relative flex h-full w-full flex-1 cursor-grab items-center justify-center overflow-hidden bg-black ${
+                isActiveViewport ? 'ring-1 ring-teal-500/50' : ''
+            }`}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
             onWheel={handleWheel}
         >
-            {/* Viewport Overlay Indicators */}
-            <div className="pointer-events-none absolute start-3 top-3 z-10 max-w-[calc(100%-1.5rem)] space-y-0.5 rounded-md border border-white/10 bg-[#080d17]/85 px-3 py-2 font-mono text-[11px] font-bold text-cyan-300 shadow-xl backdrop-blur-md sm:max-w-md">
-                <p className="truncate">{activeSeries?.seriesDescription || 'DICOM Viewport'}</p>
-                <p className="truncate text-[10px] text-slate-400">Modality: {activeSeries?.modality || 'CR'} | Preset: {presetObj.label}</p>
+            {/* Keep only viewport-specific details here; patient and study identity stays in the header. */}
+            {showOverlays && (
+                <div className="pointer-events-none absolute start-3 bottom-3 z-10 rounded-lg border border-white/10 bg-[#070d1a]/85 px-2.5 py-1.5 font-mono text-[10px] font-semibold text-slate-300 shadow-lg backdrop-blur-md">
+                    {t('pacs.viewer.viewTransformStatus', {
+                        defaultValue: 'Zoom {{zoom}}% · Rotation {{rotation}}°',
+                        zoom: Math.round(zoom * 100),
+                        rotation
+                    })}
+                    {invert && <span className="ms-2 text-amber-200">{t('pacs.viewer.inverted', { defaultValue: 'Inverted' })}</span>}
+                </div>
+            )}
+
+            {/* Quick Viewport Floating Action Dial */}
+            <div className="absolute end-3.5 bottom-16 z-20 hidden items-center gap-1 rounded-2xl border border-white/10 bg-[#070d1a]/90 p-1 shadow-2xl backdrop-blur-md md:flex">
+                <button type="button" onClick={() => setZoom(z => Math.max(0.1, z - 0.1))} className={ICON_BTN} title="Zoom Out">
+                    <ZoomOut size={14} />
+                </button>
+                <button type="button" onClick={() => setZoom(z => Math.min(10, z + 0.1))} className={ICON_BTN} title="Zoom In">
+                    <ZoomIn size={14} />
+                </button>
+                <button type="button" onClick={() => setRotation(r => (r + 90) % 360)} className={ICON_BTN} title="Rotate 90°">
+                    <RotateCw size={14} />
+                </button>
+                <button type="button" onClick={() => setFlipH(f => !f)} className={TOOL_BTN(flipH)} title="Flip Horizontal">
+                    <FlipHorizontal size={14} />
+                </button>
+                <button type="button" onClick={() => setFlipV(f => !f)} className={TOOL_BTN(flipV)} title="Flip Vertical">
+                    <FlipVertical size={14} />
+                </button>
+                <button type="button" onClick={() => setInvert(i => !i)} className={TOOL_BTN(invert)} title="Invert Color">
+                    <Eye size={14} />
+                </button>
+                <button type="button" onClick={resetTransforms} className={ICON_BTN} title="Reset Transforms (R)">
+                    <RotateCcw size={14} />
+                </button>
             </div>
 
-            <div className="pointer-events-none absolute end-3 top-16 z-10 space-y-0.5 rounded-md border border-white/10 bg-[#080d17]/85 px-3 py-2 text-end font-mono text-[10px] font-bold text-slate-400 shadow-xl backdrop-blur-md sm:top-3">
-                <p>Zoom: {Math.round(zoom * 100)}%</p>
-                <p>Rot: {rotation} deg | Invert: {invert ? 'ON' : 'OFF'}</p>
-            </div>
-
-            {/* Controls Bar Overlay */}
-            <div className="absolute start-1/2 top-3 z-10 hidden -translate-x-1/2 items-center gap-1 rounded-md border border-white/10 bg-[#080d17]/90 px-2 py-1 shadow-xl backdrop-blur-md md:flex">
-                <button type="button" onClick={() => setZoom(z => Math.min(8, z + 0.2))} className={ICON_BUTTON} title="Zoom In"><ZoomIn size={15} /></button>
-                <button type="button" onClick={() => setZoom(z => Math.max(0.2, z - 0.2))} className={ICON_BUTTON} title="Zoom Out"><ZoomOut size={15} /></button>
-                <button type="button" onClick={() => setRotation(r => (r + 90) % 360)} className={ICON_BUTTON} title="Rotate 90 deg"><RotateCw size={15} /></button>
-                <button type="button" onClick={() => setFlipH(f => !f)} className={ICON_BUTTON} title="Flip Horizontal"><FlipHorizontal size={15} /></button>
-                <button type="button" onClick={() => setFlipV(f => !f)} className={ICON_BUTTON} title="Flip Vertical"><FlipVertical size={15} /></button>
-                <button type="button" onClick={() => setInvert(i => !i)} className={ICON_BUTTON} title="Invert Colors"><Eye size={15} /></button>
-                <button type="button" onClick={onToggleKeyImage} className={`${ICON_BUTTON} ${isKeyImage ? 'text-amber-400' : ''}`} title="Mark Key Image"><Star size={15} className={isKeyImage ? 'fill-amber-400' : ''} /></button>
-                <button type="button" onClick={resetTransforms} className={ICON_BUTTON} title="Reset Viewport"><RotateCcw size={15} /></button>
-            </div>
-
-            {/* Diagnostic Interactive Grid Display */}
+            {/* Canvas Viewport Image Box */}
             <div
                 className="relative flex items-center justify-center transition-transform duration-75"
                 style={{
                     transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom}) rotate(${rotation}deg) scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`,
-                    filter: `${invert ? 'invert(1)' : ''} contrast(${presetObj.width > 1000 ? 1.5 : 1.1}) brightness(${presetObj.level > 100 ? 1.2 : 1.0})`
+                    filter: invert ? 'invert(1)' : 'none'
                 }}
             >
-                <div className="relative flex items-center justify-center rounded-md border border-white/15 bg-[#0b111d] p-6 shadow-2xl sm:p-8">
-                    <div className="flex flex-col items-center justify-center p-8 text-center text-slate-500 sm:p-12">
-                        <Monitor size={56} className="animate-pulse text-cyan-300" />
-                        <p className="mt-4 font-mono text-sm font-bold text-slate-200">
-                            {activeSeries?.seriesDescription || 'Diagnostic Series Viewport'}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-400">
-                            Active Frame: #{activeFrameIndex + 1} | W: {presetObj.width} L: {presetObj.level}
-                        </p>
+                {imageUrl && !imageError ? (
+                    <img
+                        src={imageUrl}
+                        alt={t('pacs.viewer.previewFrameAlt', { defaultValue: 'DICOM image preview frame' })}
+                        onError={() => setImageError(true)}
+                        className="max-h-[85vh] max-w-[85vw] object-contain shadow-2xl"
+                        draggable={false}
+                    />
+                ) : (
+                    /* Preview fallback when no rendered frame is available */
+                    <div className="flex min-h-[min(45vh,24rem)] w-[min(90%,32rem)] items-center justify-center rounded-xl border border-white/10 bg-[#091224] p-6">
+                        <div className="flex flex-col items-center justify-center text-center">
+                            {imageError
+                                ? <ImageOff size={36} className="text-slate-500" />
+                                : <Loader2 size={32} className="animate-spin text-teal-300" />}
+                            <p className="mt-4 text-sm font-semibold text-slate-200">
+                                {imageError
+                                    ? t('pacs.viewer.previewLoadFailed', { defaultValue: 'Preview image is unavailable' })
+                                    : t('pacs.viewer.loadingImages', { defaultValue: 'Loading image preview...' })}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                                {t('pacs.viewer.previewFrame', { defaultValue: 'Frame {{number}}', number: activeFrameIndex + 1 })}
+                            </p>
+                        </div>
                     </div>
-                </div>
+                )}
 
-                {/* SVG Measurement Annotations Layer */}
-                <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
-                    {measurements.map((m, idx) => (
-                        <g key={idx}>
-                            <line x1={m.startX} y1={m.startY} x2={m.endX} y2={m.endY} stroke="#00f2fe" strokeWidth="2" strokeDasharray="3,3" />
-                            <circle cx={m.startX} cy={m.startY} r="3" fill="#00f2fe" />
-                            <circle cx={m.endX} cy={m.endY} r="3" fill="#00f2fe" />
-                            <text x={(m.startX + m.endX) / 2} y={(m.startY + m.endY) / 2 - 6} fill="#00f2fe" fontSize="11" fontWeight="bold" textAnchor="middle">
-                                {m.distanceMm} mm
-                            </text>
-                        </g>
-                    ))}
-                    {currentRuler && (
-                        <g>
-                            <line x1={currentRuler.startX} y1={currentRuler.startY} x2={currentRuler.endX} y2={currentRuler.endY} stroke="#00f2fe" strokeWidth="2" />
-                        </g>
-                    )}
-                </svg>
             </div>
         </div>
     );
 });
 NativeCanvasViewport.displayName = 'NativeCanvasViewport';
 
-const MetricTile = memo(({ label, value }) => (
-    <div className="min-w-0 rounded-md border border-white/10 bg-white/[0.035] px-3 py-2">
-        <p className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{label}</p>
-        <p className="mt-1 truncate font-mono text-xs font-black text-slate-100">{value}</p>
-    </div>
-));
-MetricTile.displayName = 'MetricTile';
-
-const ViewportStatusBar = memo(({
-    accession,
-    activeSeries,
-    frameIndex,
-    framesCount,
-    metadataState,
-    qualityCount,
-    sessionState,
+// Cine Playback Timeline Bar
+const CinePlaybackBar = memo(({
+    isPlaying,
+    onTogglePlay,
+    currentIndex,
+    totalFrames,
+    onSeek,
+    fps,
+    onFpsChange,
+    loopMode,
+    onToggleLoopMode,
     t
 }) => {
-    const stateLabel = sessionState === 'ready'
-        ? t('pacs.viewer.connected', { defaultValue: 'Connected' })
-        : t('pacs.viewer.connecting', { defaultValue: 'Connecting' });
-    const metadataLabel = metadataState === 'ready'
-        ? t('pacs.viewer.metadataReady', { defaultValue: 'Metadata ready' })
-        : metadataState === 'loading'
-            ? t('pacs.viewer.metadataLoading', { defaultValue: 'Metadata loading' })
-            : t('pacs.viewer.metadataPending', { defaultValue: 'Metadata pending' });
-
     return (
-        <div className="pointer-events-none absolute inset-x-3 bottom-3 z-20 hidden items-center justify-between gap-3 rounded-md border border-white/10 bg-[#080d17]/82 px-3 py-2 text-[11px] font-bold text-slate-300 shadow-xl backdrop-blur-md md:flex">
-            <div className="flex min-w-0 items-center gap-3">
-                <span className="inline-flex items-center gap-1.5 text-cyan-300">
-                    <Server size={13} />
-                    {stateLabel}
-                </span>
-                <span className="h-4 w-px bg-white/10" />
-                <span className="truncate font-mono text-slate-400">
-                    {t('pacs.viewer.accessionShort', { defaultValue: 'ACC' })}: {accession}
-                </span>
-                <span className="hidden truncate text-slate-500 lg:inline">
-                    {activeSeries?.seriesDescription || t('pacs.viewer.noSeries', { defaultValue: 'No series selected' })}
+        <div className="absolute bottom-12 start-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-2xl border border-white/10 bg-[#070d1a]/95 px-4 py-2.5 shadow-2xl backdrop-blur-2xl">
+            {/* Play/Pause Button */}
+            <button
+                type="button"
+                onClick={onTogglePlay}
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 shadow-lg shadow-teal-500/25 transition hover:brightness-110"
+                title={isPlaying ? t('pacs.viewer.cinePause', { defaultValue: 'Pause (Space)' }) : t('pacs.viewer.cinePlay', { defaultValue: 'Play (Space)' })}
+            >
+                {isPlaying ? <Pause size={16} /> : <Play size={16} className="ms-0.5" />}
+            </button>
+
+            {/* Step Back */}
+            <button
+                type="button"
+                onClick={() => onSeek((currentIndex - 1 + totalFrames) % totalFrames)}
+                className="text-slate-400 hover:text-white"
+                title="Previous Frame (←)"
+            >
+                <SkipBack size={16} />
+            </button>
+
+            {/* Scrubber Range Slider */}
+            <div className="flex items-center gap-2">
+                <input
+                    type="range"
+                    min="0"
+                    max={Math.max(0, totalFrames - 1)}
+                    value={currentIndex}
+                    onChange={(e) => onSeek(Number(e.target.value))}
+                    className="h-1.5 w-36 cursor-pointer appearance-none rounded-full bg-slate-800 accent-teal-400 sm:w-56"
+                />
+                <span className="font-mono text-xs font-bold text-slate-200">
+                    {currentIndex + 1} <span className="text-slate-500">/ {totalFrames}</span>
                 </span>
             </div>
-            <div className="flex shrink-0 items-center gap-3">
-                <span className="font-mono text-slate-400">
-                    {Math.min(frameIndex + 1, framesCount || 1)} / {framesCount || 1}
-                </span>
-                <span className="h-4 w-px bg-white/10" />
-                <span className="text-slate-500">{metadataLabel}</span>
-                {qualityCount > 0 && (
-                    <>
-                        <span className="h-4 w-px bg-white/10" />
-                        <span className="inline-flex items-center gap-1 text-amber-300">
-                            <AlertTriangle size={13} />
-                            {qualityCount}
-                        </span>
-                    </>
+
+            {/* Step Forward */}
+            <button
+                type="button"
+                onClick={() => onSeek((currentIndex + 1) % totalFrames)}
+                className="text-slate-400 hover:text-white"
+                title="Next Frame (→)"
+            >
+                <SkipForward size={16} />
+            </button>
+
+            {/* FPS Speed Control */}
+            <div className="hidden items-center gap-1.5 border-s border-white/10 ps-3 sm:flex">
+                <span className="text-xs font-bold text-slate-400">FPS:</span>
+                <input
+                    type="range"
+                    min="1"
+                    max="60"
+                    value={fps}
+                    onChange={(e) => onFpsChange(Number(e.target.value))}
+                    className="h-1.5 w-16 cursor-pointer appearance-none rounded-full bg-slate-800 accent-teal-400"
+                />
+                <span className="font-mono text-xs font-black text-teal-300">{fps}</span>
+            </div>
+
+            {/* Loop Mode */}
+            <button
+                type="button"
+                onClick={onToggleLoopMode}
+                className={`hidden rounded-xl p-1.5 text-xs font-bold transition sm:inline-flex ${
+                    loopMode === 'bounce' ? 'bg-teal-500/20 text-teal-300' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Toggle Loop Mode"
+            >
+                <Repeat size={14} />
+            </button>
+        </div>
+    );
+});
+CinePlaybackBar.displayName = 'CinePlaybackBar';
+
+// Integrated Slide-Out Clinical Workstation Drawer
+const ClinicalWorkstationDrawer = memo(({
+    open,
+    onClose,
+    activeTab,
+    onTabChange,
+    caseDetails,
+    orderContext,
+    reportData,
+    rawInstances,
+    qualityReport,
+    qualityState,
+    studyUidList,
+    keyImages = new Set(),
+    activeSeries,
+    onOpenReportEditor,
+    t,
+    isRtl
+}) => {
+    const [tagSearch, setTagSearch] = useState('');
+
+    const tagsList = useMemo(() => {
+        const rawStudy = caseDetails?.rawStudyTags || {};
+        const list = [];
+        Object.entries(rawStudy).forEach(([tag, obj]) => {
+            const vr = obj?.vr || '';
+            const val = Array.isArray(obj?.Value) ? obj.Value.join(', ') : JSON.stringify(obj?.Value || '');
+            list.push({ tag, vr, val });
+        });
+        return list;
+    }, [caseDetails?.rawStudyTags]);
+
+    const filteredTags = useMemo(() => {
+        if (!tagSearch.trim()) return tagsList;
+        const term = tagSearch.trim().toLowerCase();
+        return tagsList.filter(t => t.tag.toLowerCase().includes(term) || t.val.toLowerCase().includes(term));
+    }, [tagsList, tagSearch]);
+
+    if (!open) return null;
+
+    return (
+        <aside className="fixed inset-y-0 end-0 z-50 flex w-full max-w-xl flex-col border-s border-white/10 bg-[#070d1a]/98 shadow-2xl backdrop-blur-2xl">
+            {/* Header & Tab Bar */}
+            <div className="border-b border-white/10 bg-white/[0.02] p-4">
+                <div className="flex items-center justify-between gap-3">
+                    <div>
+                        <h2 className="text-base font-black text-white">
+                            {t('pacs.viewer.studyDetailsTitle', { defaultValue: 'Clinical Workstation' })}
+                        </h2>
+                        <p className="text-xs font-semibold text-slate-400">
+                            {caseDetails?.patientName || 'Patient'} • {caseDetails?.accessionNumber || '-'}
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-xl border border-white/10 bg-white/[0.05] p-2 text-slate-400 hover:bg-white/10 hover:text-white"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+
+                {/* Tab Selectors */}
+                <div className="mt-4 grid grid-cols-4 gap-1 rounded-2xl border border-white/10 bg-black/40 p-1">
+                    <button
+                        type="button"
+                        onClick={() => onTabChange('report')}
+                        className={`rounded-xl py-2 text-xs font-bold transition ${
+                            activeTab === 'report' ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 font-black shadow' : 'text-slate-400 hover:text-white'
+                        }`}
+                    >
+                        {t('pacs.viewer.tabReport', { defaultValue: 'Report' })}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onTabChange('key_images')}
+                        className={`rounded-xl py-2 text-xs font-bold transition ${
+                            activeTab === 'key_images' ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 font-black shadow' : 'text-slate-400 hover:text-white'
+                        }`}
+                    >
+                        Key ({keyImages.size})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onTabChange('dicom_tags')}
+                        className={`rounded-xl py-2 text-xs font-bold transition ${
+                            activeTab === 'dicom_tags' ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 font-black shadow' : 'text-slate-400 hover:text-white'
+                        }`}
+                    >
+                        {t('pacs.viewer.tabDicomTags', { defaultValue: 'Tags' })}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onTabChange('ai_quality')}
+                        className={`rounded-xl py-2 text-xs font-bold transition ${
+                            activeTab === 'ai_quality' ? 'bg-gradient-to-r from-teal-500 to-emerald-500 text-slate-950 font-black shadow' : 'text-slate-400 hover:text-white'
+                        }`}
+                    >
+                        {t('pacs.viewer.tabAiQuality', { defaultValue: 'AI / QA' })}
+                    </button>
+                </div>
+            </div>
+
+            {/* Tab Body */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {activeTab === 'report' && (
+                    <div className="space-y-4">
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Report Status</span>
+                                <span className="rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-xs font-bold text-emerald-300">
+                                    {reportData?.status || t('pacs.viewer.reportUnavailable', { defaultValue: 'No report available' })}
+                                </span>
+                            </div>
+                            <h3 className="mt-2 text-sm font-black text-white">
+                                {reportData?.exam_type_name || orderContext?.exam_type_name || 'Diagnostic Imaging Study'}
+                            </h3>
+                            <p className="mt-1 text-xs text-slate-400">
+                                Radiologist: {reportData?.radiologist_name || '-'}
+                            </p>
+                        </div>
+
+                        {/* Report Sections */}
+                        {reportData?.findings && (
+                            <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-teal-300">Findings</h4>
+                                <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-slate-200">
+                                    {reportData.findings}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Impression Callout */}
+                        <div className="rounded-2xl border border-teal-500/40 bg-teal-500/10 p-4">
+                            <h4 className="text-xs font-black uppercase tracking-wider text-teal-300">Impression & Conclusion</h4>
+                            <p className="mt-2 whitespace-pre-wrap text-xs font-bold leading-relaxed text-white">
+                                {reportData?.impression || t('pacs.viewer.noImpression', { defaultValue: 'No clinical impression has been recorded.' })}
+                            </p>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={onOpenReportEditor}
+                            className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-teal-500 to-emerald-600 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-teal-500/25 transition hover:brightness-110"
+                        >
+                            <FileText size={16} />
+                            {t('pacs.viewer.openReport', { defaultValue: 'Open in Full Report Editor' })}
+                        </button>
+                    </div>
                 )}
+
+                {activeTab === 'key_images' && (
+                    <div className="space-y-3">
+                        {keyImages.size === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-white/10 bg-black/20 p-8 text-center">
+                                <Star size={24} className="mx-auto text-slate-600" />
+                                <p className="mt-2 text-xs font-bold text-slate-400">No key images bookmarked yet</p>
+                                <p className="mt-1 text-[11px] text-slate-500">Press 'K' or click the star button on any important frame.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 gap-3">
+                                {Array.from(keyImages).map(key => {
+                                    const [seriesUid, frameIdx] = key.split('_');
+                                    return (
+                                        <div key={key} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                                            <div className="flex items-center justify-between">
+                                                <span className="font-mono text-xs font-bold text-teal-300">Frame #{Number(frameIdx) + 1}</span>
+                                                <Star size={14} className="fill-amber-400 text-amber-400" />
+                                            </div>
+                                            <p className="mt-1 truncate text-[11px] text-slate-400">{activeSeries?.seriesDescription || 'Series'}</p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'dicom_tags' && (
+                    <div className="space-y-3">
+                        <div className="relative">
+                            <Search size={14} className="absolute start-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                            <input
+                                type="text"
+                                value={tagSearch}
+                                onChange={(e) => setTagSearch(e.target.value)}
+                                placeholder={t('pacs.viewer.searchTags', { defaultValue: 'Search DICOM tags...' })}
+                                className="h-9 w-full rounded-xl border border-white/10 bg-black/50 ps-9 pe-3 text-xs font-medium text-slate-200 placeholder-slate-500 outline-none focus:border-teal-400/60"
+                            />
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-black/40 overflow-hidden">
+                            <table className="w-full text-start text-xs">
+                                <thead className="border-b border-white/10 bg-white/[0.03] text-slate-400 font-bold">
+                                    <tr>
+                                        <th className="p-2.5 text-start">Tag</th>
+                                        <th className="p-2.5 text-start">VR</th>
+                                        <th className="p-2.5 text-start">Value</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-white/5 font-mono text-[11px]">
+                                    {filteredTags.slice(0, 100).map(({ tag, vr, val }) => (
+                                        <tr key={tag} className="hover:bg-white/[0.04]">
+                                            <td className="p-2.5 font-bold text-teal-300">({tag.slice(0, 4)},{tag.slice(4)})</td>
+                                            <td className="p-2.5 text-slate-500">{vr}</td>
+                                            <td className="p-2.5 text-slate-200 max-w-[200px] truncate">{val}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'ai_quality' && (
+                    <div className="space-y-4">
+                        <div className="rounded-2xl border border-white/10 bg-white/[0.025] p-4">
+                            <h4 className="flex items-center gap-2 text-xs font-black uppercase text-teal-300">
+                                <Sparkles size={16} />
+                                Automated Quality & Geometry Inspection
+                            </h4>
+                            <p className="mt-2 text-xs text-slate-300">
+                                {qualityReport?.summary || 'No geometry inconsistencies, missing slices, or acquisition warnings detected across series stacks.'}
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </aside>
+    );
+});
+ClinicalWorkstationDrawer.displayName = 'ClinicalWorkstationDrawer';
+
+// Keyboard Shortcuts Cheat Sheet Modal
+const KeyboardShortcutsModal = memo(({ open, onClose, shortcuts, t, isRtl = false }) => {
+    if (!open) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md" onClick={onClose}>
+            <div
+                className="w-full max-w-lg rounded-3xl border border-white/15 bg-[#070d1a] p-6 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                    <div className="flex items-center gap-2.5">
+                        <HelpCircle size={20} className="text-teal-400" />
+                        <h2 className="text-base font-black text-white">
+                            {t('pacs.viewer.shortcuts', { defaultValue: 'Keyboard Shortcuts Guide' })}
+                        </h2>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-xl p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+
+                <div className="mt-4 grid max-h-[60vh] grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+                    {shortcuts.map(({ key, desc, descAr }) => (
+                        <div key={key} className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.025] px-3.5 py-2.5">
+                            <span className="text-xs font-semibold text-slate-300">{isRtl ? (descAr || desc) : desc}</span>
+                            <kbd className="rounded-lg border border-teal-500/40 bg-teal-500/15 px-2 py-0.5 font-mono text-[11px] font-black text-teal-300">
+                                {key}
+                            </kbd>
+                        </div>
+                    ))}
+                </div>
             </div>
         </div>
     );
 });
-ViewportStatusBar.displayName = 'ViewportStatusBar';
+KeyboardShortcutsModal.displayName = 'KeyboardShortcutsModal';
 
-// Primary PACS Diagnostic Floating Toolbar
-const ViewerToolbar = memo(
-    ({
-        patientLabel,
-        studyLabel,
-        accession,
-        modality,
-        loading,
-        retrying,
-        activeTool,
-        setActiveTool,
-        activePreset,
-        setActivePreset,
-        gridMode,
-        setGridMode,
-        sidebarOpen,
-        setSidebarOpen,
-        isCinePlaying,
-        setIsCinePlaying,
-        onExit,
-        onOpenReport,
-        canOpenReport,
-        onReload,
-        onToggleInfo,
-        infoOpen,
-        onToggleFullscreen,
-        isFullscreen,
-        onOpenExternal,
-        onOpenExport,
-        exportBusy,
-        qualityCount,
-        t
-    }) => (
-        <header className="relative z-30 flex min-h-16 shrink-0 items-center gap-3 border-b border-white/10 bg-[#080d17]/98 px-3 shadow-2xl shadow-black/25 backdrop-blur-xl sm:px-4">
-            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-                <button
-                    type="button"
-                    onClick={onExit}
-                    className={ICON_BUTTON}
-                    aria-label={t('actions.back', { defaultValue: 'Back' })}
-                    title={t('actions.back', { defaultValue: 'Back' })}
-                >
-                    <ArrowLeft size={18} />
-                </button>
-
-                <button
-                    type="button"
-                    onClick={() => setSidebarOpen(!sidebarOpen)}
-                    className={`${TOOL_BUTTON(sidebarOpen)} hidden md:inline-flex`}
-                    title={t('pacs.viewer.toggleSeries', { defaultValue: 'Toggle series sidebar (S)' })}
-                >
-                    <Layers size={16} />
-                </button>
-
-                <div className="hidden h-5 w-px bg-white/10 sm:block" />
-
-                <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                        <h1 className="truncate text-sm font-black text-white">
-                            {patientLabel}
-                        </h1>
-                        <span className="hidden rounded-md bg-cyan-400/15 px-1.5 py-0.5 text-[10px] font-black uppercase text-cyan-300 sm:inline-block">
-                            {modality}
-                        </span>
-                    </div>
-                    <p className="truncate text-[11px] font-medium text-slate-400">
-                        {studyLabel} <span className="text-slate-600">|</span> {t('pacs.viewer.accessionShort', { defaultValue: 'ACC' })}: {accession}
-                    </p>
-                </div>
-            </div>
-
-            {/* Center Diagnostic Tools Toolbar */}
-            <div className="hidden items-center gap-1 rounded-md border border-white/10 bg-white/[0.045] p-1 lg:flex">
-                <button type="button" onClick={() => setActiveTool('pan')} className={TOOL_BUTTON(activeTool === 'pan')} title={t('pacs.viewer.panTool', { defaultValue: 'Pan tool (P)' })}><Move size={16} /></button>
-                <button type="button" onClick={() => setActiveTool('zoom')} className={TOOL_BUTTON(activeTool === 'zoom')} title={t('pacs.viewer.zoomTool', { defaultValue: 'Zoom tool (Z)' })}><ZoomIn size={16} /></button>
-                <button type="button" onClick={() => setActiveTool('wl')} className={TOOL_BUTTON(activeTool === 'wl')} title={t('pacs.viewer.windowLevelTool', { defaultValue: 'Window / level (W)' })}><SunMedium size={16} /></button>
-                <button type="button" onClick={() => setActiveTool('ruler')} className={TOOL_BUTTON(activeTool === 'ruler')} title={t('pacs.viewer.rulerTool', { defaultValue: 'Ruler measurement (M)' })}><Ruler size={16} /></button>
-                
-                {/* W/L Preset Dropdown Selector */}
-                <select
-                    value={activePreset}
-                    onChange={e => setActivePreset(e.target.value)}
-                    className="h-8 max-w-44 rounded-md border border-white/10 bg-[#101827] px-2 text-[11px] font-bold text-slate-200 outline-none focus:ring-1 focus:ring-cyan-400"
-                >
-                    {WL_PRESETS.map(p => (
-                        <option key={p.id} value={p.id}>{p.label}</option>
-                    ))}
-                </select>
-
-                <div className="mx-1 h-4 w-px bg-white/10" />
-
-                {/* Viewport Grid Layout Selector */}
-                <button type="button" onClick={() => setGridMode('1x1')} className={TOOL_BUTTON(gridMode === '1x1')} title={t('pacs.viewer.singleViewport', { defaultValue: 'Single viewport (1x1)' })}><Grid size={15} /></button>
-                <button type="button" onClick={() => setGridMode('1x2')} className={TOOL_BUTTON(gridMode === '1x2')} title={t('pacs.viewer.dualViewport', { defaultValue: 'Dual viewport (1x2)' })}><Sliders size={15} /></button>
-            </div>
-
-            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-                {canOpenReport && (
-                    <button
-                        type="button"
-                        onClick={onOpenReport}
-                        className={PRIMARY_BUTTON}
-                        title={t('pacs.viewer.openReport', { defaultValue: 'Open report editor' })}
-                    >
-                        <FileText size={15} />
-                        <span className="hidden sm:inline">
-                            {t('pacs.viewer.report', { defaultValue: 'Report' })}
-                        </span>
-                    </button>
-                )}
-
-                <button
-                    type="button"
-                    onClick={onOpenExport}
-                    disabled={loading || exportBusy}
-                    className={SECONDARY_BUTTON}
-                    title={t('pacs.viewer.exportCase', { defaultValue: 'Export case' })}
-                >
-                    {exportBusy ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-                    <span className="hidden xl:inline">
-                        {t('pacs.viewer.export', { defaultValue: 'Export' })}
-                    </span>
-                    <ChevronDown size={13} className="hidden xl:inline opacity-70" />
-                </button>
-
-                <button
-                    type="button"
-                    onClick={onReload}
-                    disabled={loading}
-                    className={ICON_BUTTON}
-                    title={t('actions.refresh', { defaultValue: 'Reload viewer (R)' })}
-                >
-                    <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-                </button>
-
-                <button
-                    type="button"
-                    onClick={onOpenExternal}
-                    disabled={loading}
-                    className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70 disabled:cursor-not-allowed disabled:opacity-40 sm:inline-flex"
-                    title={t('pacs.viewer.openStandalone', { defaultValue: 'Open standalone viewer' })}
-                >
-                    <ExternalLink size={16} />
-                </button>
-
-                <button
-                    type="button"
-                    onClick={onToggleInfo}
-                    className={TOOL_BUTTON(infoOpen)}
-                    title={t('pacs.viewer.info', { defaultValue: 'Study Details (I)' })}
-                >
-                    <Info size={16} />
-                    {qualityCount > 0 && (
-                        <span className="absolute -top-1 -end-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-500 text-[9px] font-bold text-white">
-                            {qualityCount}
-                        </span>
-                    )}
-                </button>
-
-                <button
-                    type="button"
-                    onClick={onToggleFullscreen}
-                    className={ICON_BUTTON}
-                    title={isFullscreen
-                        ? t('pacs.viewer.exitFullscreenShortcut', { defaultValue: 'Exit fullscreen (F)' })
-                        : t('pacs.viewer.fullscreenShortcut', { defaultValue: 'Fullscreen (F)' })}
-                >
-                    {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                </button>
-            </div>
-        </header>
-    )
-);
-ViewerToolbar.displayName = 'ViewerToolbar';
-
-const MobileViewerToolbar = memo(
-    ({
-        loading,
-        onOpenReport,
-        canOpenReport,
-        onReload,
-        onToggleInfo,
-        infoOpen,
-        onToggleFullscreen,
-        isFullscreen,
-        onOpenExternal,
-        onOpenExport,
-        exportBusy,
-        t
-    }) => (
-        <footer className="flex h-14 shrink-0 items-center justify-around border-t border-white/10 bg-[#080d17]/98 px-2 shadow-2xl shadow-black/30 backdrop-blur-xl lg:hidden">
-            {canOpenReport && (
-                <button type="button" onClick={onOpenReport} className={ICON_BUTTON} title={t('pacs.viewer.report', { defaultValue: 'Report' })}>
-                    <FileText size={18} />
-                </button>
-            )}
-            <button type="button" onClick={onReload} disabled={loading} className={ICON_BUTTON} title={t('actions.refresh', { defaultValue: 'Reload' })}>
-                <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-            </button>
-            <button type="button" onClick={onOpenExport} disabled={loading || exportBusy} className={ICON_BUTTON} title={t('pacs.viewer.exportCase', { defaultValue: 'Export case' })}>
-                {exportBusy ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}
-            </button>
-            <button type="button" onClick={onOpenExternal} disabled={loading} className={ICON_BUTTON} title={t('pacs.viewer.openStandalone', { defaultValue: 'Open standalone viewer' })}>
-                <ExternalLink size={18} />
-            </button>
-            <button type="button" onClick={onToggleInfo} className={TOOL_BUTTON(infoOpen)} title={t('pacs.viewer.caseDetails', { defaultValue: 'Case details' })}>
-                <Info size={18} />
-            </button>
-            <button type="button" onClick={onToggleFullscreen} className={ICON_BUTTON} title={isFullscreen
-                ? t('pacs.viewer.exitFullscreen', { defaultValue: 'Exit fullscreen' })
-                : t('pacs.viewer.fullscreen', { defaultValue: 'Fullscreen' })}>
-                {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-            </button>
-        </footer>
-    )
-);
-MobileViewerToolbar.displayName = 'MobileViewerToolbar';
-
-const ViewerShell = memo(
-    ({ title, subtitle, onBack, backLabel, children }) => (
-        <main className="fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col overflow-hidden bg-[#050914] text-slate-100">
-            <header className="relative z-10 flex min-h-16 shrink-0 items-center gap-3 border-b border-white/10 bg-[#080d17]/98 px-3 shadow-2xl shadow-black/25 backdrop-blur-xl sm:px-5">
-                <button type="button" onClick={onBack} className={ICON_BUTTON} aria-label={backLabel} title={backLabel}>
-                    <ArrowLeft size={18} />
-                </button>
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-cyan-400/10 text-cyan-300 ring-1 ring-cyan-400/20">
-                    <Monitor size={18} />
-                </span>
-                <div className="min-w-0">
-                    <h1 className="truncate text-sm font-black text-white">{title}</h1>
-                    <p className="mt-0.5 truncate font-mono text-[11px] font-medium text-slate-500">{subtitle || '-'}</p>
-                </div>
-            </header>
-            {children}
-        </main>
-    )
-);
-ViewerShell.displayName = 'ViewerShell';
-
-const StatePanel = memo(
-    ({ icon: Icon, title, detail, tone = 'teal', children }) => {
-        const toneClasses = tone === 'rose' ? 'bg-rose-500/10 text-rose-300 ring-rose-500/20' : 'bg-cyan-400/10 text-cyan-300 ring-cyan-400/20';
-        return (
-            <section className="relative z-10 flex flex-1 items-center justify-center overflow-y-auto p-4 sm:p-8">
-                <div className={`w-full max-w-lg rounded-md p-5 text-center sm:p-8 ${SURFACE}`}>
-                    <span className={`mx-auto flex h-14 w-14 items-center justify-center rounded-md ring-1 sm:h-16 sm:w-16 ${toneClasses}`}>
-                        <Icon size={26} />
-                    </span>
-                    <h2 className="mt-5 text-lg font-black text-white sm:mt-6 sm:text-xl">{title}</h2>
-                    <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-400">{detail}</p>
-                    {children && <div className="mt-7">{children}</div>}
-                </div>
-            </section>
-        );
-    }
-);
-StatePanel.displayName = 'StatePanel';
-
-const LoadingOverlay = memo(
-    ({ visible, phase, retryCount, showSlowHint, onReloadViewer, t }) => {
-        if (!visible) return null;
-        return (
-            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-black/72 p-6 text-white backdrop-blur-sm animate-in fade-in duration-200">
-                <div className="rounded-md border border-white/10 bg-[#080d17]/92 px-8 py-7 text-center shadow-2xl shadow-black/50">
-                <Loader2 size={36} className="mx-auto animate-spin text-cyan-300" />
-                <h3 className="mt-4 text-base font-black">
-                    {phase === 'authorizing' ? t('pacs.viewer.authorizing', { defaultValue: 'Authorizing viewer session...' }) : t('pacs.viewer.loadingImages', { defaultValue: 'Loading diagnostic images...' })}
-                </h3>
-                <p className="mx-auto mt-1 max-w-xs text-xs text-slate-400">
-                    {t('pacs.viewer.loadingDetail', { defaultValue: 'Fetching DICOM data from archive' })}
-                </p>
-                </div>
-            </div>
-        );
-    }
-);
-LoadingOverlay.displayName = 'LoadingOverlay';
-
-const StatusBadge = memo(({ tone = 'teal', icon: Icon, spinning = false, children }) => {
-    const toneClasses = tone === 'rose' ? 'border-rose-500/20 bg-rose-500/10 text-rose-300' : tone === 'amber' ? 'border-amber-500/20 bg-amber-500/10 text-amber-300' : 'border-cyan-400/20 bg-cyan-400/10 text-cyan-300';
-    return (
-        <span className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1 text-[11px] font-bold ${toneClasses}`}>
-            {Icon && <Icon size={12} className={spinning ? 'animate-spin' : ''} />}
-            {children}
-        </span>
-    );
-});
-StatusBadge.displayName = 'StatusBadge';
-
+// Case Export Dialog
 const ExportCasePanel = memo(({
     open,
     onClose,
@@ -1589,232 +2276,435 @@ const ExportCasePanel = memo(({
 }) => {
     if (!open) return null;
 
-    const busy = exportState.status === 'running';
-    const activeOption = EXPORT_OPTIONS.find(option => option.id === exportState.format);
-    const activeFormatLabel = activeOption
-        ? t(activeOption.titleKey, { defaultValue: activeOption.titleDefault })
-        : t('pacs.viewer.case', { defaultValue: 'case' });
-    const ready = Boolean(selectedStudyUid || studyUidList[0]);
-    const accession = caseDetails?.accessionNumber || orderContext?.order_number || '-';
-
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/72 p-3 backdrop-blur-sm sm:p-4">
-            <section className={`flex max-h-[92dvh] w-full max-w-3xl flex-col overflow-hidden rounded-md text-slate-100 ${PANEL}`}>
-                <header className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
-                    <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-300">
-                            {t('pacs.viewer.exportCase', { defaultValue: 'Export case' })}
-                        </p>
-                        <h2 className="mt-1 text-base font-black text-white">
-                            {caseDetails?.patientName || orderContext?.patient_name || t('pacs.viewer.patient', { defaultValue: 'Patient' })}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-md" onClick={onClose}>
+            <div
+                className="w-full max-w-md rounded-3xl border border-white/15 bg-[#070d1a] p-6 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                    <div className="flex items-center gap-2.5">
+                        <Download size={20} className="text-teal-400" />
+                        <h2 className="text-base font-black text-white">
+                            {t('pacs.viewer.exportCase', { defaultValue: 'Export Study Package' })}
                         </h2>
-                        <p className="mt-1 truncate font-mono text-[11px] text-zinc-500">
-                            {t('pacs.viewer.exportSummary', {
-                                defaultValue: 'ACC {{accession}} | {{seriesCount}} series | {{imageCount}} images',
-                                accession,
-                                seriesCount: seriesCount || '-',
-                                imageCount: instanceCount || '-'
-                            })}
-                        </p>
                     </div>
-                    <button type="button" onClick={onClose} className={ICON_BUTTON} title={t('actions.close', { defaultValue: 'Close' })}>
-                        <X size={16} />
+                    <button type="button" onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-white/10 hover:text-white">
+                        <X size={18} />
                     </button>
-                </header>
-
-                <div className="border-b border-white/10 px-5 py-3">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <label className="text-[10px] font-black uppercase tracking-[0.14em] text-zinc-500" htmlFor="pacs-export-study">
-                            {t('pacs.viewer.exportStudyTarget', { defaultValue: 'Export target' })}
-                        </label>
-                        {studyUidList.length > 1 ? (
-                            <select
-                                id="pacs-export-study"
-                                value={selectedStudyUid || studyUidList[0] || ''}
-                                onChange={(event) => onStudyChange(event.target.value)}
-                                disabled={busy}
-                                className="min-h-9 rounded-md border border-white/10 bg-[#101827] px-3 font-mono text-[11px] text-slate-200 outline-none focus:ring-2 focus:ring-cyan-400/60 disabled:opacity-50"
-                            >
-                                {studyUidList.map((uid, index) => (
-                                    <option key={uid} value={uid}>
-                                        {t('pacs.viewer.studyOption', {
-                                            defaultValue: 'Study {{number}} - {{uid}}',
-                                            number: index + 1,
-                                            uid
-                                        })}
-                                    </option>
-                                ))}
-                            </select>
-                        ) : (
-                            <span className="max-w-full truncate rounded-md border border-white/10 bg-[#101827] px-3 py-2 font-mono text-[11px] text-slate-300">
-                                {selectedStudyUid || studyUidList[0] || '-'}
-                            </span>
-                        )}
-                    </div>
                 </div>
 
-                <div className="grid gap-3 overflow-y-auto p-4 sm:grid-cols-3">
-                    {EXPORT_OPTIONS.map((option) => {
-                        const Icon = option.icon;
-                        const active = exportState.format === option.id && busy;
+                <div className="mt-4 space-y-3">
+                    {EXPORT_OPTIONS.map((opt) => {
+                        const Icon = opt.icon;
                         return (
                             <button
-                                key={option.id}
+                                key={opt.id}
                                 type="button"
-                                onClick={() => onExport(option.id)}
-                                disabled={!ready || busy}
-                                className="flex min-h-44 flex-col items-start rounded-md border border-white/10 bg-white/[0.035] p-4 text-start transition hover:border-cyan-400/40 hover:bg-cyan-400/10 disabled:cursor-not-allowed disabled:opacity-50"
+                                onClick={() => onExport(opt.id)}
+                                disabled={exportState.status === 'running'}
+                                className="group flex w-full items-center gap-3.5 rounded-2xl border border-white/10 bg-white/[0.025] p-3.5 text-start transition hover:border-teal-400/40 hover:bg-teal-500/10 disabled:opacity-40"
                             >
-                                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-cyan-400/10 text-cyan-300 ring-1 ring-cyan-400/20">
-                                    {active ? <Loader2 size={18} className="animate-spin" /> : <Icon size={18} />}
-                                </span>
-                                <span className="mt-4 text-sm font-black text-white">
-                                    {t(option.titleKey, { defaultValue: option.titleDefault })}
-                                </span>
-                                <span className="mt-2 flex-1 text-xs leading-5 text-zinc-400">
-                                    {t(option.detailKey, { defaultValue: option.detailDefault })}
-                                </span>
-                                <span className="mt-4 inline-flex items-center gap-1.5 text-[11px] font-black text-cyan-300">
-                                    <Download size={13} />
-                                    {option.id === 'cd'
-                                        ? t('pacs.viewer.prepareCd', { defaultValue: 'Prepare CD package' })
-                                        : t('pacs.viewer.download', { defaultValue: 'Download' })}
-                                </span>
+                                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-teal-500/15 text-teal-300">
+                                    <Icon size={20} />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-bold text-white group-hover:text-teal-300">{opt.titleDefault}</p>
+                                    <p className="mt-0.5 text-xs text-slate-400">{opt.detailDefault}</p>
+                                </div>
                             </button>
                         );
                     })}
                 </div>
-
-                <div className="border-t border-white/10 bg-white/[0.025] px-5 py-4">
-                    <div className="flex gap-3 rounded-md border border-amber-400/20 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
-                        <Disc size={16} className="mt-0.5 shrink-0 text-amber-300" />
-                        <p>
-                            {t('pacs.viewer.cdBurnHelp', {
-                                defaultValue: 'CD export downloads a DICOMDIR-compatible media package. Write the extracted package to disc using the workstation burner so the DICOMDIR remains at the disc root.'
-                            })}
-                        </p>
-                    </div>
-
-                    {exportState.status === 'done' && (
-                        <p className="mt-3 flex items-center gap-2 text-xs font-bold text-cyan-300">
-                            <Check size={14} />
-                            {t('pacs.viewer.exportReady', { defaultValue: 'Export download started.' })}
-                        </p>
-                    )}
-                    {exportState.status === 'error' && (
-                        <p className="mt-3 flex items-center gap-2 text-xs font-bold text-rose-300">
-                            <AlertTriangle size={14} />
-                            {exportState.error}
-                        </p>
-                    )}
-                    {busy && (
-                        <p className="mt-3 flex items-center gap-2 text-xs font-bold text-zinc-300">
-                            <Loader2 size={14} className="animate-spin text-cyan-300" />
-                            {t('pacs.viewer.exportPreparing', {
-                                defaultValue: 'Preparing {{format}} export. Large studies can take a moment.',
-                                format: activeFormatLabel
-                            })}
-                        </p>
-                    )}
-                </div>
-            </section>
+            </div>
         </div>
     );
 });
 ExportCasePanel.displayName = 'ExportCasePanel';
 
-const InfoDrawer = memo(
-    ({
-        open,
-        onClose,
-        isRtl,
-        studyUidList,
-        copied,
-        onCopy,
-        caseDetails,
-        orderContext,
-        metadataState,
-        qualityReport,
-        t
-    }) => {
-        if (!open) return null;
+// External Viewers & Workstation Display Options Modal
+const ExternalViewersModal = memo(({
+    open,
+    onClose,
+    viewerUrl,
+    studyUid,
+    accession,
+    patientId,
+    pacsConfig,
+    onExportDicom,
+    isRtl = false,
+    t
+}) => {
+    const [copiedKey, setCopiedKey] = useState('');
 
-        return (
-            <aside className="fixed bottom-14 end-0 top-16 z-40 w-[22rem] max-w-[92vw] space-y-5 overflow-y-auto border-s border-white/10 bg-[#080d17]/98 p-5 shadow-2xl shadow-black/50 backdrop-blur-xl animate-in slide-in-from-end duration-200 lg:bottom-0">
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                    <h3 className="flex items-center gap-2 text-sm font-black text-white">
-                        <Info size={16} className="text-cyan-300" />
-                        {t('pacs.viewer.studyDetailsTitle', { defaultValue: 'Study details & DICOM metadata' })}
-                    </h3>
-                    <button type="button" onClick={onClose} className={ICON_BUTTON} title={t('actions.close', { defaultValue: 'Close' })}>
-                        <X size={16} />
+    if (!open) return null;
+
+    const dicomWebBaseUrl = `${window.location.origin}/api/pacs/dicom-web`;
+
+    const orthancBaseUrl = pacsConfig?.orthanc_api_url ? pacsConfig.orthanc_api_url.replace(/\/+$/, '') : '';
+    const stoneViewerUrl = studyUid && orthancBaseUrl ? `${orthancBaseUrl}/stone-webviewer/index.html?study=${encodeURIComponent(studyUid)}` : '';
+
+    const customViewerTemplate = pacsConfig?.pacs_external_viewer_url || '';
+    const customViewerUrl = customViewerTemplate && studyUid
+        ? customViewerTemplate
+            .replace(/\{studyUid\}/g, encodeURIComponent(studyUid))
+            .replace(/\{accession\}/g, encodeURIComponent(accession || ''))
+            .replace(/\{patientId\}/g, encodeURIComponent(patientId || ''))
+            .replace(/\{token\}/g, '')
+        : '';
+
+    const handleCopy = (text, key) => {
+        if (!text) return;
+        navigator.clipboard?.writeText(text);
+        setCopiedKey(key);
+        toast.success(t('common:copied', { defaultValue: isRtl ? 'تم النسخ إلى الحافظة' : 'Copied to clipboard' }));
+        setTimeout(() => setCopiedKey(''), 2000);
+    };
+
+    const handleOpenWindow = (url) => {
+        if (!url) return;
+        const win = window.open(url, '_blank', 'noopener,noreferrer');
+        win?.focus?.();
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md" onClick={onClose}>
+            <div
+                className="w-full max-w-xl rounded-3xl border border-white/15 bg-[#070d1a] p-6 shadow-2xl overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                    <div className="flex items-center gap-2.5">
+                        <Monitor size={22} className="text-teal-400" />
+                        <div>
+                            <h2 className="text-base font-black text-white">
+                                {isRtl ? 'خيارات عارض الصور والمحطات الخارجية' : 'External Viewers & Display Options'}
+                            </h2>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                                {isRtl ? 'فتح الفحص في عارض خارجي أو شاشة تشخيصية منفصلة' : 'Launch study in desktop workstations or dedicated medical monitors'}
+                            </p>
+                        </div>
+                    </div>
+                    <button type="button" onClick={onClose} className="rounded-xl p-1.5 text-slate-400 hover:bg-white/10 hover:text-white">
+                        <X size={18} />
                     </button>
                 </div>
 
-                {/* Patient & Study Summary */}
-                <div className="space-y-3 rounded-md border border-white/10 bg-white/[0.035] p-3.5 text-xs">
-                    <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">{t('pacs.viewer.patientName', { defaultValue: 'Patient Name' })}</span>
-                        <span className="font-bold text-white">{caseDetails?.patientName || orderContext?.patient_name || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">{t('pacs.viewer.patientIdMrn', { defaultValue: 'Patient ID / MRN' })}</span>
-                        <span className="font-mono text-zinc-300">{caseDetails?.patientId || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">{t('pacs.viewer.accessionNumber', { defaultValue: 'Accession #' })}</span>
-                        <span className="font-mono text-zinc-300">{caseDetails?.accessionNumber || orderContext?.order_number || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">{t('pacs.viewer.studyDate', { defaultValue: 'Study Date' })}</span>
-                        <span className="font-mono text-zinc-300">{caseDetails?.studyDate || '-'}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                        <span className="text-zinc-400">{t('pacs.viewer.modality', { defaultValue: 'Modality' })}</span>
-                        <span className="font-bold text-cyan-300">{caseDetails?.modality || '-'}</span>
-                    </div>
-                </div>
-
-                {/* DICOM Study UID & Copy Action */}
-                <div className="space-y-2">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">StudyInstanceUID</span>
-                    <div className="flex items-center gap-2 rounded-md border border-white/10 bg-[#101827] p-2 text-xs font-mono">
-                        <span className="truncate flex-1 text-zinc-300">{studyUidList[0] || '-'}</span>
-                        <button type="button" onClick={onCopy} className="text-zinc-400 hover:text-white" title={t('pacs.viewer.copyStudyUid', { defaultValue: 'Copy Study UID' })}>
-                            {copied ? <Check size={14} className="text-cyan-300" /> : <Copy size={14} />}
-                        </button>
-                    </div>
-                </div>
-
-                {/* Quality Geometry Advisory Warnings */}
-                {qualityReport?.flaggedSeries?.length > 0 && (
-                    <div className="space-y-2 border-t border-white/10 pt-4">
-                        <span className="flex items-center gap-1.5 text-xs font-bold text-rose-400">
-                            <AlertTriangle size={14} />
-                            {t('pacs.viewer.geometryWarnings', {
-                                defaultValue: 'Geometry warnings ({{count}})',
-                                count: qualityReport.flaggedSeries.length
-                            })}
-                        </span>
-                        <div className="space-y-2">
-                            {qualityReport.flaggedSeries.map((s, i) => (
-                                <div key={i} className="space-y-1 rounded-md border border-rose-500/20 bg-rose-500/10 p-2.5 text-xs text-rose-300">
-                                    <p className="font-bold">
-                                        {t('pacs.viewer.seriesNumber', {
-                                            defaultValue: 'Series #{{number}}',
-                                            number: s.seriesNumber || i + 1
-                                        })} - {s.seriesDescription || t('pacs.viewer.seriesLabel', { defaultValue: 'Series' })}
-                                    </p>
-                                        <p className="text-[10px] text-rose-400">{s.warnings?.join(', ')}</p>
+                <div className="mt-4 max-h-[70vh] space-y-3 overflow-y-auto pe-1">
+                    {/* 1. OHIF Detached Window (Multi-Monitor Diagnostic Setup) */}
+                    {viewerUrl && (
+                        <div className="group rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-teal-400/40 hover:bg-white/[0.04]">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-teal-500/15 text-teal-300">
+                                        <Monitor size={20} />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="text-sm font-bold text-white">
+                                                {isRtl ? 'OHIF Diagnostic Viewer (نافذة منفصلة)' : 'OHIF Diagnostic Viewer (Detached Window)'}
+                                            </h3>
+                                            <span className="rounded-md border border-teal-500/30 bg-teal-500/10 px-2 py-0.5 text-[10px] font-bold text-teal-300">
+                                                {isRtl ? 'شاشات متعددة' : 'Multi-Monitor'}
+                                            </span>
+                                        </div>
+                                        <p className="mt-1 text-xs text-slate-400">
+                                            {isRtl
+                                                ? 'فتح عارض OHIF بكامل طاقته في نافذة منبثقة مستقلة للشاشات الطبية التشخيصية (Barco / Eizo / 4K).'
+                                                : 'Opens full OHIF workstation in a dedicated window for multi-monitor PACS reading setups.'}
+                                        </p>
+                                    </div>
                                 </div>
-                            ))}
+                                <button
+                                    type="button"
+                                    onClick={() => handleOpenWindow(viewerUrl)}
+                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-teal-500 px-3.5 py-2 text-xs font-bold text-slate-950 transition hover:bg-teal-400 shadow-md shadow-teal-500/20"
+                                >
+                                    <ExternalLink size={14} />
+                                    <span>{isRtl ? 'فتح النافذة' : 'Launch'}</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 2. Weasis Desktop DICOM Viewer */}
+                    <div className="group rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-sky-400/40 hover:bg-white/[0.04]">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/15 text-sky-300">
+                                    <Laptop size={20} />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-sm font-bold text-white">
+                                            {isRtl ? 'Weasis Medical Viewer (سطح المكتب)' : 'Weasis Medical Viewer (Desktop)'}
+                                        </h3>
+                                        <span className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-300">
+                                            {t('pacs.viewer.weasisAuthenticated', { defaultValue: isRtl ? 'استعلام موثّق' : 'Authenticated query' })}
+                                        </span>
+                                    </div>
+                                    <p className="mt-1 text-xs text-slate-400">
+                                        {t('pacs.viewer.weasisSetupHelp', {
+                                            defaultValue: isRtl
+                                                ? 'أضف مصدر DICOMweb في Weasis من File > Preferences > DICOM node list باستخدام عنوان المصدر أدناه. أنشئ رمز API للقراءة فقط من إدارة الرموز في ملفك الشخصي، وأضفه كترويسة Authorization: Bearer داخل إعداد Weasis. استخدم Query/Retrieve وابحث بمعرّف الدراسة، ثم ألغِ الرمز عندما لا تحتاجه. لا يوضع الرمز في رابط.'
+                                                : 'Add a DICOMweb node in Weasis (File > Preferences > DICOM node list) with the URL below. Create a read-only API token in your profile token settings and store it in Weasis as an Authorization: Bearer header. Use Query/Retrieve to search by the study UID, then revoke the token when no longer needed. The token is never placed in a link.'
+                                        })}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <code dir="ltr" className="min-w-0 flex-1 break-all rounded-lg border border-white/10 bg-black/20 px-2.5 py-2 text-[11px] text-slate-300">
+                                {dicomWebBaseUrl}
+                            </code>
+                            <button
+                                type="button"
+                                onClick={() => handleCopy(dicomWebBaseUrl, 'weasis-url')}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-2 text-[11px] font-semibold text-slate-300 transition hover:border-sky-400/40 hover:text-sky-300"
+                            >
+                                {copiedKey === 'weasis-url' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                <span>{copiedKey === 'weasis-url' ? t('common:copied', { defaultValue: isRtl ? 'تم النسخ' : 'Copied' }) : t('pacs.viewer.copyDicomWebUrl', { defaultValue: isRtl ? 'نسخ عنوان DICOMweb' : 'Copy DICOMweb URL' })}</span>
+                            </button>
+                            {studyUid && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleCopy(studyUid, 'weasis-study')}
+                                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-2 text-[11px] font-semibold text-slate-300 transition hover:border-sky-400/40 hover:text-sky-300"
+                                >
+                                    {copiedKey === 'weasis-study' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                                    <span>{copiedKey === 'weasis-study' ? t('common:copied', { defaultValue: isRtl ? 'تم النسخ' : 'Copied' }) : t('pacs.viewer.copyStudyUid', { defaultValue: isRtl ? 'نسخ معرّف الدراسة' : 'Copy study UID' })}</span>
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Weasis ViewerHub setup */}
+                        <div className="mt-3 rounded-xl border border-sky-500/20 bg-sky-950/30 p-3 text-xs text-sky-200/90">
+                            <div className="flex items-center gap-1.5 font-bold text-sky-300 mb-1.5">
+                                <Info size={14} />
+                                <span>{isRtl ? 'فتح Weasis مباشرة عبر تسجيل دخول موحّد:' : 'Direct Weasis launch with single sign-on:'}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-300 leading-relaxed">
+                                {isRtl
+                                    ? 'اضبط Weasis ViewerHub/Gateway على تمرير DICOMweb إلى VIARA باستخدام OAuth/OIDC. بعد ضبط قالب ViewerHub في إعدادات PACS، استخدم زر التشغيل في بطاقة العارض الخارجي أدناه. لا تنسخ رمز جلسة VIARA إلى Weasis ولا تضعه في رابط.'
+                                    : 'Configure Weasis ViewerHub/Gateway to proxy DICOMweb to VIARA using OAuth/OIDC. Once the ViewerHub launch template is set in PACS Settings, use the launch button in the external viewer card below. Do not copy a VIARA session token into Weasis or place it in a URL.'}
+                            </p>
                         </div>
                     </div>
-                )}
-            </aside>
-        );
-    }
+
+                    {/* 3. RadiAnt DICOM Viewer & Local Workstation */}
+                    <div className="group rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-emerald-400/40 hover:bg-white/[0.04]">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-300">
+                                    <HardDrive size={20} />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-sm font-bold text-white">
+                                            {isRtl ? 'RadiAnt DICOM Viewer / محطة العمل المحلية' : 'RadiAnt DICOM Viewer / Local Station'}
+                                        </h3>
+                                        <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                                            DICOM Archive
+                                        </span>
+                                    </div>
+                                    <p className="mt-1 text-xs text-slate-400">
+                                        {isRtl
+                                            ? 'تنزيل حزمة DICOM الكاملة للفحص كملف Zip لفتحه وسحبه مباشرة في برنامج RadiAnt أو Horos أو OsiriX.'
+                                            : 'Download full DICOM package to open or drag-and-drop directly into RadiAnt, Horos, or OsiriX.'}
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={onExportDicom}
+                                className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-3.5 py-2 text-xs font-bold text-emerald-300 transition hover:bg-emerald-500/25"
+                            >
+                                <Download size={14} />
+                                <span>{isRtl ? 'تنزيل لـ RadiAnt' : 'Download Zip'}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* 4. Orthanc Stone Web Viewer */}
+                    {stoneViewerUrl && (
+                        <div className="group rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-amber-400/40 hover:bg-white/[0.04]">
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-3">
+                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300">
+                                        <Globe size={20} />
+                                    </div>
+                                    <div>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="text-sm font-bold text-white">
+                                                {isRtl ? 'Orthanc Stone Web Viewer' : 'Orthanc Stone Web Viewer'}
+                                            </h3>
+                                            <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                                                Zero-Footprint
+                                            </span>
+                                        </div>
+                                        <p className="mt-1 text-xs text-slate-400">
+                                            {isRtl
+                                                ? 'عارض ويب خفيف وسريع مدمج مع Orthanc، مناسب للمراجعة السريعة بدون متطلبات WebGL عالية.'
+                                                : 'Fast, lightweight zero-footprint web viewer served directly by Orthanc PACS engine.'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => handleOpenWindow(stoneViewerUrl)}
+                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-500/15 px-3.5 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-500/25"
+                                >
+                                    <ExternalLink size={14} />
+                                    <span>{isRtl ? 'فتح العارض' : 'Open'}</span>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 5. Custom Web Viewer (from PACS Settings) */}
+                    <div className="group rounded-2xl border border-white/10 bg-white/[0.02] p-4 transition hover:border-indigo-400/40 hover:bg-white/[0.04]">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-500/15 text-indigo-300">
+                                    <Share2 size={20} />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="text-sm font-bold text-white">
+                                            {isRtl ? 'Weasis ViewerHub / عارض خارجي' : 'Weasis ViewerHub / External Viewer'}
+                                        </h3>
+                                        <span className="rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold text-indigo-300">
+                                            {customViewerUrl ? 'Configured' : 'Optional'}
+                                        </span>
+                                    </div>
+                                    <p className="mt-1 text-xs text-slate-400">
+                                        {customViewerUrl
+                                            ? (isRtl ? `الرابط المضبوط: ${customViewerUrl.slice(0, 48)}...` : `Target: ${customViewerUrl.slice(0, 48)}...`)
+                                            : (isRtl ? 'اضبط قالب ViewerHub المصادق عليه في إعدادات PACS لفتح Weasis مباشرة عبر تسجيل الدخول الموحّد.' : 'Configure the authenticated ViewerHub launch template in PACS Settings to open Weasis directly through single sign-on.')}
+                                    </p>
+                                </div>
+                            </div>
+                            {customViewerUrl ? (
+                                <button
+                                    type="button"
+                                    onClick={() => handleOpenWindow(customViewerUrl)}
+                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-indigo-500 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-indigo-400 shadow-md shadow-indigo-500/20"
+                                >
+                                    <ExternalLink size={14} />
+                                    <span>{isRtl ? 'فتح' : 'Launch'}</span>
+                                </button>
+                            ) : (
+                                <a
+                                    href="/admin/pacs-settings"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.05] px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-teal-400/50 hover:text-white"
+                                >
+                                    <Settings size={13} />
+                                    <span>{isRtl ? 'ضبط الرابط' : 'Configure'}</span>
+                                </a>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Footer Info & Quick Study UID Copy */}
+                <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4 text-xs text-slate-400">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-mono text-[11px] text-slate-500 truncate max-w-[260px]">
+                            UID: {studyUid || '-'}
+                        </span>
+                        {studyUid && (
+                            <button
+                                type="button"
+                                onClick={() => handleCopy(studyUid, 'uid')}
+                                className="rounded-md border border-white/10 bg-white/[0.04] p-1 text-slate-400 hover:text-white"
+                                title={isRtl ? 'نسخ معرف الفحص' : 'Copy Study UID'}
+                            >
+                                {copiedKey === 'uid' ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                            </button>
+                        )}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-bold text-slate-300 hover:bg-white/10 hover:text-white"
+                    >
+                        {t('common:actions.close', { defaultValue: isRtl ? 'إغلاق' : 'Close' })}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+});
+ExternalViewersModal.displayName = 'ExternalViewersModal';
+
+// Generic Viewer Shell
+const ViewerShell = ({ title, subtitle, onBack, backLabel, children }) => (
+    <main className="fixed inset-0 z-50 flex h-screen w-screen flex-col bg-[#050914] text-slate-100 antialiased font-sans">
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/10 bg-[#070d1a] px-4">
+            <div className="flex items-center gap-3">
+                <button
+                    type="button"
+                    onClick={onBack}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/10 hover:text-white"
+                >
+                    <ArrowLeft size={18} />
+                </button>
+                <div>
+                    <h1 className="text-sm font-black text-white">{title}</h1>
+                    {subtitle && <p className="text-xs text-slate-400">{subtitle}</p>}
+                </div>
+            </div>
+        </header>
+        <div className="flex flex-1 items-center justify-center p-4">{children}</div>
+    </main>
 );
-InfoDrawer.displayName = 'InfoDrawer';
+
+// State Feedback Panel
+const StatePanel = ({ icon: Icon, tone = 'slate', title, detail, children }) => (
+    <div className="flex max-w-md flex-col items-center justify-center rounded-3xl border border-white/10 bg-[#070d1a] p-8 text-center shadow-2xl">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-teal-500/15 text-teal-400">
+            <Icon size={32} />
+        </div>
+        <h2 className="mt-4 text-base font-black text-white">{title}</h2>
+        <p className="mt-2 text-xs leading-relaxed text-slate-400">{detail}</p>
+        {children && <div className="mt-6">{children}</div>}
+    </div>
+);
+
+// Loading Spinner Overlay
+const LoadingOverlay = memo(({ visible, phase, retryCount, showSlowHint, onReloadViewer, t }) => {
+    if (!visible) return null;
+
+    return (
+        <div className="pointer-events-none absolute inset-0 z-40 flex flex-col items-center justify-center bg-black/80 p-4 backdrop-blur-md">
+            <div className="flex flex-col items-center rounded-3xl border border-white/10 bg-[#070d1a]/90 p-8 shadow-2xl">
+                <Loader2 size={36} className="animate-spin text-teal-400" />
+                <p className="mt-4 text-sm font-bold text-white">
+                    {phase === 'retrying'
+                        ? t('pacs.viewer.reconnecting', { defaultValue: 'Reconnecting study...', n: retryCount })
+                        : phase === 'authorizing'
+                            ? t('pacs.viewer.authorizing', { defaultValue: 'Authorizing PACS session...' })
+                            : t('pacs.viewer.loadingImages', { defaultValue: 'Loading diagnostic slices...' })}
+                </p>
+                {showSlowHint && (
+                    <div className="mt-4 max-w-xs text-center text-xs text-slate-400">
+                        <p>{t('pacs.viewer.slowLoadHint', { defaultValue: 'Taking longer than usual for high-volume series.' })}</p>
+                        <button
+                            type="button"
+                            onClick={onReloadViewer}
+                            className="pointer-events-auto mt-2 inline-flex items-center gap-1 text-teal-300 hover:underline font-bold"
+                        >
+                            <RefreshCw size={12} />
+                            {t('pacs.viewer.retry', { defaultValue: 'Reload' })}
+                        </button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+});
+LoadingOverlay.displayName = 'LoadingOverlay';
 
 export default PacsViewer;

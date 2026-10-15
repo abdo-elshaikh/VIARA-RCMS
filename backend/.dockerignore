@@ -7,6 +7,10 @@ coverage
 logs
 uploads
 backups
+*.log
+*.pyc
+__pycache__
+.pytest_cache
 .git
 .github
 docs

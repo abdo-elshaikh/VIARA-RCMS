@@ -1,0 +1,434 @@
+/**
+ * Unified database migration and seed runner.
+ * Usage:
+ *   node database/migrate.js              # apply pending migrations after schema
+ *   node database/migrate.js --fresh      # drop schema, apply schema + all migrations
+ *   node database/migrate.js --seed       # run seeds after migrations
+ *   node database/migrate.js --fresh --seed
+ */
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { createRequire } = require('module');
+
+const localBackendPackage = path.join(__dirname, '../backend/package.json');
+const runtimePackage = path.join(process.cwd(), 'package.json');
+const backendRequire = createRequire(fs.existsSync(localBackendPackage) ? localBackendPackage : runtimePackage);
+const { Pool } = backendRequire('pg');
+
+const rootEnvPath = path.join(__dirname, '../.env');
+const backendEnvPath = path.join(__dirname, '../backend/.env');
+const envPath = fs.existsSync(rootEnvPath) ? rootEnvPath : backendEnvPath;
+backendRequire('dotenv').config({ path: envPath });
+
+if (!process.env.DATABASE_URL && process.env.POSTGRES_USER && process.env.POSTGRES_PASSWORD) {
+    const user = encodeURIComponent(process.env.POSTGRES_USER || 'VIARA');
+    const password = encodeURIComponent(process.env.POSTGRES_PASSWORD);
+    const database = encodeURIComponent(process.env.POSTGRES_DB || 'VIARA');
+    const port = process.env.POSTGRES_PORT || '5432';
+    process.env.DATABASE_URL = `postgresql://${user}:${password}@127.0.0.1:${port}/${database}`;
+}
+
+const MIGRATION_FILES = [
+    '001_add_roles.sql',
+    '002_add_notifications.sql',
+    '003_add_inventory.sql',
+    '004_expand_appointments.sql',
+    '005_add_exam_types.sql',
+    '100_performance_indexes.sql',
+    '006_dashboard_indexes.sql',
+    '007_fix_user_roles_enum.sql',
+    '008_fix_appointment_overlap.sql',
+    '009_patient_auth_and_search.sql',
+    '010_refresh_tokens.sql',
+    '011_user_profile_fields.sql',
+    '012_patient_engagement_fields.sql',
+    '013_extend_patient_demographics.sql',
+    '014_scheduling_enhancements.sql',
+    '015_referring_doctors.sql',
+    '016_order_management.sql',
+    '017_patient_queue_management.sql',
+    '018_billing_cashier.sql',
+    '019_insurance_contracts_claims.sql',
+    '020_reporting_typing_workflow.sql',
+    '021_result_delivery_management.sql',
+    '022_patient_portal_online_access.sql',
+    '023_doctor_portal.sql',
+    '024_notifications_expanded.sql',
+    '025_advanced_inventory.sql',
+    '026_equipment_management.sql',
+    '027_financial_management.sql',
+    '028_hr_management.sql',
+    '029_crm_marketing.sql',
+    '030_security_events_and_roles.sql',
+    '102_encrypt_pii_fields.sql',
+    '031_portal_schema_consistency.sql',
+    '103_refresh_token_audit.sql',
+    '032_notification_preferences_consistency.sql',
+    '104_performance_indexes.sql',
+    '101_reporting_indices.sql',
+    '033_expand_rbac_permissions.sql',
+    '034_invoice_payment_discounts.sql',
+    '035_patient_anonymized_status.sql',
+    '036_refund_review_workflow.sql',
+    '037_refund_cashier_shift.sql',
+    '038_tamper_evident_audit.sql',
+    '039_patient_merge_lineage.sql',
+    '040_financial_integrity.sql',
+    '041_claim_status_history.sql',
+    '042_encrypt_notification_content.sql',
+    '043_user_preferences.sql',
+    '044_refresh_session_metadata.sql',
+    '045_api_access_tokens.sql',
+    '046_split_refund_permissions.sql',
+    '047_add_cashier_role.sql',
+    '048_payment_governance.sql',
+    '049_examination_catalog_governance.sql',
+    '050_machine_status_consistency.sql',
+    '051_reception_cashier_permissions.sql',
+    '052_pacs_imaging.sql',
+    '053_modality_dicom_config.sql',
+    '054_system_settings.sql',
+    '055_pacs_permissions.sql',
+    '056_pacs_quarantine_legacy_schema.sql',
+    '057_case_report_permissions.sql',
+    '058_seed_report_templates.sql',
+    '059_seed_more_report_templates.sql',
+    '060_inventory_supply_pricing.sql',
+    '061_queue_governance.sql',
+    '062_reception_supply_permissions.sql',
+    '063_ai_report_drafts.sql',
+    '064_pacs_ai_analysis_jobs.sql',
+    '065_follow_up_cases.sql',
+    '066_financial_reporting_v2.sql',
+    '067_financial_integrity_constraints.sql',
+    '068_financial_journal_backfill.sql',
+    '069_reconcile_invoice_item_totals.sql',
+    '070_claim_written_off_at.sql',
+    '071_realtime_chat_and_messaging.sql',
+    '072_notification_delivery_receipts.sql',
+    '073_marketing_campaign_delivery_controls.sql',
+    '074_marketing_campaign_content.sql',
+    '075_add_developer_role.sql',
+    '076_developer_permissions.sql',
+    '077_audit_classification.sql',
+    '078_privacy_workflow_hardening.sql',
+    '079_privacy_export_retention_indexes.sql',
+    '080_radiologist_report_ai_permissions.sql',
+    '081_chat_rich_messages.sql',
+    '082_insurance_contract_integrity.sql',
+    '083_payroll_deductions_penalties.sql',
+    // Historical 083 remains immutable; clean its placeholder on new installs
+    // before 117 enforces positive payroll rule rates.
+    '186_fresh_payroll_default_rule.sql',
+    '084_payroll_finance_posting.sql',
+    '085_add_audit_change_columns.sql',
+    '086_structured_audit_events.sql',
+    '087_audit_governance_permissions.sql',
+    '088_payroll_control_hardening.sql',
+    '089_payroll_rule_approval_workflow.sql',
+    '090_notifications_hardening.sql',
+    '091_partial_payment_exceptions.sql',
+    '092_final_delivery_full_payment.sql',
+    '093_portal_login_lockout.sql',
+    '094_move_startup_schema_changes.sql',
+    '095_notification_permissions_and_routing.sql',
+    '096_notification_templates_new_events.sql',
+    '097_notification_missing_audience_policies.sql',
+    '098_integration_hardening.sql',
+    '105_cleanup_duplicate_constraints.sql',
+    '106_exclusion_constraint_appointments.sql',
+    '107_rename_duplicate_migrations_tracking.sql',
+    '108_pacs_reconciliation_queue.sql',
+    '109_appointment_idempotency_keys.sql',
+    '110_expense_idempotency_key.sql',
+    '111_waitlist_integrity.sql',
+    '112_single_session_tracking.sql',
+    '113_ensure_core_rbac_permissions.sql',
+    '114_financial_branch_integrity.sql',
+    '115_reception_integrity.sql',
+    '116_audit_alert_idempotency.sql',
+    '117_hr_payroll_integrity.sql',
+    '118_attendance_stale_session_guard.sql',
+    '119_staff_passkeys.sql',
+    '120_waitlist_lifecycle_enhancements.sql',
+    '121_secure_chat_channels.sql',
+    '122_notification_preferences_owner_security.sql',
+    '123_notification_contract_fixes.sql',
+    '124_equipment_and_critical_notifications.sql',
+    '125_notification_retention_indexes.sql',
+    '126_portal_inapp_notification_contract.sql',
+    '127_notification_recipient_timezones.sql',
+    '128_quarantine_legacy_global_notifications.sql',
+    '129_break_glass_governance.sql',
+    '130_clinical_task_assignments.sql',
+    '131_notification_workflow_completion.sql',
+    '132_integration_failure_notification_contract.sql',
+    '133_clinical_task_assignment_audit_hardening.sql',
+    '134_integrations_hardening_and_credentials.sql',
+    '135_break_glass_legacy_reason_cleanup.sql',
+    '136_queue_timing_contract.sql',
+    '137_integration_health_governance.sql',
+    '138_queue_open_hold_backfill.sql',
+    '139_integration_disabled_health_backfill.sql',
+    '140_reception_work_items.sql',
+    '141_rooms_and_clinical_integrity.sql',
+    '142_display_board_announcements.sql',
+    '143_reception_operations_hardening.sql',
+    '144_clinical_payment_exception_workflow.sql',
+    '145_insurance_deductions_and_policies.sql',
+    '146_leave_cancellation.sql',
+    '147_payroll_branch_adjustment_integrity.sql',
+    '148_refund_hardening.sql',
+    '149_payroll_lifecycle_notifications.sql',
+    '150_shift_lifecycle_notifications.sql',
+    '151_payroll_skipped_employees.sql',
+    '152_hr_leave_balances_credentials.sql',
+    '153_shift_rooms.sql',
+    '154_shift_modality_column.sql',
+    '155_drop_shift_modality.sql',
+    '156_advanced_attendance_system.sql',
+    '157_staff_shift_requests_and_evaluations.sql',
+    '158_public_portal_security_and_booking.sql',
+    '159_attendance_auto_absent_notification.sql',
+    '160_fix_operational_role_permissions.sql',
+    '161_rbac_governance_alignment.sql',
+    '162_emergency_access_revoked_notification.sql',
+    '163_hot_path_indexes.sql',
+    '164_notification_dead_letters.sql',
+    '165_notification_contract_repairs.sql',
+    '166_notification_arabic_templates.sql',
+    '167_attendance_notification_contract_repairs.sql',
+    '168_exam_completion_and_deferred_reporting.sql',
+    '169_repair_exam_completion_queue_stage.sql',
+    '170_remove_legacy_exam_queue_stage_check.sql',
+    '171_end_of_shift_pending_exam_notification.sql',
+    '172_notification_contract_final_repairs.sql',
+    '173_attendance_break_tracking_and_shift_handover.sql',
+    '174_restore_bilingual_notification_templates.sql',
+    '175_polish_generated_arabic_notifications.sql',
+    '176_notification_template_render_guard.sql',
+    '177_appointment_reminder_without_order_number.sql',
+    '178_exam_status_notification_context.sql',
+    '179_sync_nurse_system_default_permissions.sql',
+    '180_fix_clinical_queue_stations.sql',
+    '181_reception_supervisor_assignments.sql',
+    '182_staff_supervision_workflow.sql',
+    '183_bind_refresh_tokens_to_sessions.sql',
+    '184_portal_builder.sql',
+    '185_reconcile_workflow_role_permissions.sql',
+    '186_shift_request_notification_contract.sql',
+    '187_audit_schema_alignment.sql',
+    '188_portal_message_access_control.sql',
+    '189_pacs_reliability.sql',
+    '190_pacs_viewer_bookmarks.sql',
+    '191_pacs_measurement_drafts.sql',
+    '192_system_updates_management.sql',
+    '193_password_reset_tokens.sql',
+    '194_payroll_compensation_expansion.sql',
+    '195_report_version_signature_metadata.sql',
+    '196_critical_result_reminder_policy.sql',
+    '197_critical_result_admin_followup_tasks.sql',
+    '198_equipment_soft_delete_columns.sql',
+    '199_unified_branches_and_memberships.sql',
+    '200_display_call_events_branch.sql',
+    '201_chat_and_notifications_branch.sql',
+    '202_exam_branch_transfers.sql',
+    '203_branch_document_numbering.sql',
+    '204_emergency_access_cross_branch.sql',
+    '205_report_version_branch_context.sql',
+    '206_multibranch_row_level_security.sql',
+    '207_branch_membership_and_rls_hardening.sql',
+    '208_signed_branch_context.sql',
+    '209_portal_and_service_rls_context.sql'
+];
+
+const SEED_FILES = [
+    'seed-rbac.sql',
+    'seed.sql',
+    'seed-demo-modules.sql'
+];
+
+const checksum = (sql) => crypto.createHash('sha256').update(sql).digest('hex');
+
+const requireFiles = (files, directory, kind) => files.map((filename) => {
+    const filePath = path.join(directory, filename);
+    if (!fs.existsSync(filePath)) {
+        throw new Error(`Missing ${kind} file: ${filePath}`);
+    }
+    return { filename, filePath, sql: fs.readFileSync(filePath, 'utf8') };
+});
+
+const applySqlFile = async (client, migration, label) => {
+    console.log(`  → ${label}`);
+    // Keep historical files/checksums intact, but never execute their optional
+    // demo inserts in production. Already applied migrations are left untouched.
+    const demoMarkers = {
+        '001_add_roles.sql': '-- Seed new users',
+        '003_add_inventory.sql': '-- Seed some initial items'
+    };
+    const marker = process.env.NODE_ENV === 'production' && demoMarkers[migration.filename];
+    const sql = marker ? migration.sql.slice(0, migration.sql.indexOf(marker)) : migration.sql;
+    if (marker && !migration.sql.includes(marker)) {
+        throw new Error(`Missing expected demo seed boundary: ${migration.filename}`);
+    }
+    await client.query(sql);
+};
+
+const ensureMigrationTable = async (client, migrations) => {
+    await client.query('BEGIN');
+    try {
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                filename VARCHAR(255) PRIMARY KEY,
+                checksum VARCHAR(64),
+                applied_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        await client.query('ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum VARCHAR(64)');
+
+        const applied = await client.query('SELECT filename, checksum FROM schema_migrations ORDER BY filename');
+        const migrationsByName = new Map(migrations.map((migration) => [migration.filename, migration]));
+        for (const row of applied.rows) {
+            if (row.checksum) continue;
+            const migration = migrationsByName.get(row.filename);
+            if (!migration) {
+                throw new Error(`Cannot checksum legacy migration not present in the manifest: ${row.filename}`);
+            }
+            await client.query(
+                'UPDATE schema_migrations SET checksum = $2 WHERE filename = $1 AND checksum IS NULL',
+                [row.filename, checksum(migration.sql)]
+            );
+        }
+
+        await client.query('ALTER TABLE schema_migrations ALTER COLUMN checksum SET NOT NULL');
+        await client.query('COMMIT');
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+};
+
+const runMigrations = async (pool, { fresh = false } = {}) => {
+    const migrations = requireFiles(MIGRATION_FILES, path.join(__dirname, 'migrations'), 'migration');
+    const schema = fresh
+        ? requireFiles(['schema.sql'], __dirname, 'schema')[0]
+        : null;
+    const client = await pool.connect();
+    let lockAcquired = false;
+    try {
+        const { getContextKey } = backendRequire('./src/utils/branchContextProof');
+        getContextKey();
+        if (!process.env.APP_DB_PASSWORD || !/^[a-f0-9]{64}$/i.test(process.env.APP_DB_PASSWORD)) {
+            throw new Error('APP_DB_PASSWORD must be generated as 32 random bytes in hexadecimal before migration');
+        }
+        await client.query("SELECT pg_advisory_lock(hashtext('VIARA_schema_migrations'))");
+        lockAcquired = true;
+
+        if (fresh) {
+            console.log('🧹 Dropping public schema...');
+            await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
+            console.log('🏗️  Applying schema.sql...');
+            await applySqlFile(client, schema, 'schema.sql');
+        }
+
+        await ensureMigrationTable(client, migrations);
+
+        for (const migration of migrations) {
+            const migrationChecksum = checksum(migration.sql);
+            const applied = await client.query(
+                'SELECT checksum FROM schema_migrations WHERE filename = $1',
+                [migration.filename]
+            );
+            if (applied.rows.length > 0) {
+                if (applied.rows[0].checksum !== migrationChecksum) {
+                    throw new Error(
+                        `Applied migration checksum mismatch: ${migration.filename}. `
+                        + 'Never edit an applied migration; add a new numbered migration instead.'
+                    );
+                }
+                continue;
+            }
+
+            console.log(`📦 Applying migration: ${migration.filename}`);
+            await client.query('BEGIN');
+            try {
+                await applySqlFile(client, migration, migration.filename);
+                if (migration.filename === '208_signed_branch_context.sql') {
+                    const { getContextKey } = backendRequire('./src/utils/branchContextProof');
+                    await client.query('INSERT INTO public.branch_context_signing_key(singleton, secret) VALUES(TRUE, $1) ON CONFLICT(singleton) DO UPDATE SET secret = EXCLUDED.secret', [getContextKey()]);
+                }
+                await client.query(
+                    'INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)',
+                    [migration.filename, migrationChecksum]
+                );
+                await client.query('COMMIT');
+            } catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            }
+        }
+
+        await client.query('INSERT INTO public.branch_context_signing_key(singleton, secret) VALUES(TRUE, $1) ON CONFLICT(singleton) DO UPDATE SET secret = EXCLUDED.secret', [getContextKey()]);
+        const appPassword = process.env.APP_DB_PASSWORD;
+        if (!appPassword || !/^[a-f0-9]{64}$/i.test(appPassword)) throw new Error('APP_DB_PASSWORD must be generated as 32 random bytes in hexadecimal');
+        const passwordSql = await client.query("SELECT format('ALTER ROLE rcms_app_user LOGIN PASSWORD %L', $1::text) AS sql", [appPassword]);
+        await client.query(passwordSql.rows[0].sql);
+        console.log('✅ Migrations complete.');
+    } finally {
+        if (lockAcquired) {
+            await client.query("SELECT pg_advisory_unlock(hashtext('VIARA_schema_migrations'))");
+        }
+        client.release();
+    }
+};
+
+const runSeeds = async (pool) => {
+    // Production bootstrap must not create demo users, stock or financial data.
+    const seedFiles = process.env.NODE_ENV === 'production'
+        ? ['seed-rbac.sql']
+        : SEED_FILES;
+    const seeds = requireFiles(seedFiles, __dirname, 'seed');
+    const client = await pool.connect();
+    try {
+        for (const seed of seeds) {
+            console.log(`🌱 Applying seed: ${seed.filename}`);
+            await applySqlFile(client, seed, seed.filename);
+        }
+        console.log('✅ Seeds complete.');
+    } finally {
+        client.release();
+    }
+};
+
+async function main() {
+    const args = process.argv.slice(2);
+    const fresh = args.includes('--fresh');
+    const seed = args.includes('--seed');
+
+    if (!process.env.DATABASE_URL) {
+        throw new Error('DATABASE_URL is required but not set');
+    }
+
+    const pool = new Pool({
+        connectionString: process.env.DATABASE_URL
+    });
+
+    try {
+        await runMigrations(pool, { fresh });
+        if (seed || fresh) {
+            await runSeeds(pool);
+        }
+    } catch (err) {
+        console.error('❌ Migration failed:', err.message);
+        process.exit(1);
+    } finally {
+        await pool.end();
+    }
+}
+
+if (require.main === module) {
+    main();
+}
+
+module.exports = { MIGRATION_FILES, SEED_FILES, runMigrations, runSeeds };

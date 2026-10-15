@@ -4,14 +4,15 @@ export const toDateInput = (date = new Date()) => {
     return value.toISOString().slice(0, 10);
 };
 
-export const getRange = (anchorDate, viewMode) => {
+export const getRange = (anchorDate, viewMode, firstDayOfWeek = 1) => {
     const anchor = new Date(`${anchorDate}T00:00:00`);
     const start = new Date(anchor);
     const end = new Date(anchor);
 
     if (viewMode === 'week') {
         const day = start.getDay();
-        const diff = day === 0 ? -6 : 1 - day;
+        const normalizedFirstDay = [0, 1, 6].includes(Number(firstDayOfWeek)) ? Number(firstDayOfWeek) : 1;
+        const diff = -((day - normalizedFirstDay + 7) % 7);
         start.setDate(start.getDate() + diff);
         end.setTime(start.getTime());
         end.setDate(start.getDate() + 6);

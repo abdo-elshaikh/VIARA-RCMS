@@ -56,9 +56,10 @@ const REPORT_OPTIONS = [
     { id: 'closures', key: 'closures', label: 'Financial closures' },
 ];
 
-const AdvancedFinancialReports = () => {
+const AdvancedFinancialReports = ({ dateRange: externalDateRange, onDateRangeChange }) => {
     const { t, i18n } = useTranslation('workspace');
     const [dateRange, setDateRange] = useState({ startDate: monthStart(), endDate: today() });
+    const activeDateRange = externalDateRange || dateRange;
     const [period, setPeriod] = useState('month');
     const [reportType, setReportType] = useState('executive');
     const [categoryFilter, setCategoryFilter] = useState('all');
@@ -68,17 +69,21 @@ const AdvancedFinancialReports = () => {
     const percent = useCallback((value) => pct(value, language), [language]);
     const numberLabel = useCallback((value) => count(value, language), [language]);
     const reportOptionLabel = useCallback((option) => t(`finance.reports.types.${option.key}`, { defaultValue: option.label }), [t]);
+    const updateDateRange = (nextRange, preset = 'custom') => {
+        setDateRange(nextRange);
+        onDateRangeChange?.(nextRange, preset);
+    };
 
     const rangeParams = useMemo(() => ({
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
+        startDate: activeDateRange.startDate,
+        endDate: activeDateRange.endDate,
         groupBy: period
-    }), [dateRange, period]);
+    }), [activeDateRange.endDate, activeDateRange.startDate, period]);
     const expensesQuery = useGetExpensesQuery(rangeParams);
     const plQuery = useGetProfitAndLossQuery(rangeParams);
     const taxQuery = useGetTaxSummaryQuery(rangeParams);
     const commissionsQuery = useGetDoctorCommissionsQuery(rangeParams);
-    const receivablesQuery = useGetReceivablesAgingQuery({ asOfDate: dateRange.endDate });
+    const receivablesQuery = useGetReceivablesAgingQuery({ asOfDate: activeDateRange.endDate });
     const cashierQuery = useGetCashierReconciliationQuery(rangeParams);
     const closuresQuery = useGetFinancialClosuresQuery(rangeParams);
     const plSeriesQuery = useGetProfitAndLossSeriesQuery(rangeParams);
@@ -105,12 +110,24 @@ const AdvancedFinancialReports = () => {
     // key so a single trend table/row carries both accrual (revenue, expenses,
     // commission, net profit, margin) and cash (net cash flow) columns per period.
     const trend = useMemo(() => {
+        const plByDate = new Map(plSeries.map((row) => [row.date, row]));
         const cashByDate = new Map(cashFlowSeries.map((row) => [row.date, row]));
-        return plSeries.map((row) => ({
-            ...row,
-            net_cash_flow: number(cashByDate.get(row.date)?.net_cash_flow),
-        }));
-    }, [plSeries, cashFlowSeries]);
+        const dates = new Set([...plByDate.keys(), ...cashByDate.keys()]);
+        return [...dates].sort().map((dateKey) => {
+            const row = plByDate.get(dateKey) || {};
+            return {
+                date: dateKey,
+                group_by: row.group_by || cashByDate.get(dateKey)?.group_by || period,
+                basis: row.basis || 'accrual',
+                net_revenue: number(row.net_revenue),
+                operating_expenses: number(row.operating_expenses),
+                commission_expense: number(row.commission_expense),
+                net_profit: number(row.net_profit),
+                net_margin: number(row.net_margin),
+                net_cash_flow: number(cashByDate.get(dateKey)?.net_cash_flow),
+            };
+        });
+    }, [plSeries, cashFlowSeries, period]);
     const discountItems = useMemo(() => discount.items || [], [discount.items]);
 
     const categories = useMemo(() => {
@@ -351,9 +368,15 @@ const AdvancedFinancialReports = () => {
 
     const report = useMemo(() => ({
         title: reportOptionLabel(selectedReportOption),
-        subtitle: `${date(dateRange.startDate)} - ${date(dateRange.endDate)} | ${t('finance.reports.accrualBasis', { defaultValue: 'Accrual performance' })} | ${categoryLabel}`,
+        subtitle: `${date(activeDateRange.startDate)} - ${date(activeDateRange.endDate)} | ${t('finance.reports.accrualBasis', { defaultValue: 'Accrual performance' })} | ${categoryLabel}`,
         generatedAt: new Date().toLocaleString(localeFor(language)),
         filename: `financial-${reportType}`,
+        exportLabels: {
+            generatedAt: t('finance.reports.exportLabels.generatedAt', { defaultValue: 'Generated at' }),
+            summary: t('finance.reports.exportLabels.summary', { defaultValue: 'Summary' }),
+            metric: t('finance.reports.exportLabels.metric', { defaultValue: 'Metric' }),
+            value: t('finance.reports.exportLabels.value', { defaultValue: 'Value' }),
+        },
         summary: [
             { label: t('finance.reports.metrics.grossRevenue', { defaultValue: 'Gross revenue' }), value: money(analytics.grossRevenue) },
             { label: t('finance.reports.metrics.netProfit', { defaultValue: 'Net profit' }), value: money(analytics.netProfit) },
@@ -364,7 +387,7 @@ const AdvancedFinancialReports = () => {
             { label: t('finance.reports.metrics.cashierVariance', { defaultValue: 'Cashier variance' }), value: money(analytics.cashierVariance) },
         ],
         sections: selectedSections,
-    }), [analytics, categoryLabel, date, dateRange.endDate, dateRange.startDate, language, money, percent, reportOptionLabel, reportType, selectedReportOption, selectedSections, t]);
+    }), [analytics, categoryLabel, date, activeDateRange.endDate, activeDateRange.startDate, language, money, percent, reportOptionLabel, reportType, selectedReportOption, selectedSections, t]);
 
     const exportReport = async (format) => {
         try {
@@ -414,15 +437,18 @@ const AdvancedFinancialReports = () => {
                             <button
                                 key={option}
                                 type="button"
-                                onClick={() => { setPeriod(option); setDateRange(presetRange(option)); }}
+                                onClick={() => {
+                                    setPeriod(option);
+                                    updateDateRange(presetRange(option), { day: 'today', month: 'thisMonth', year: 'thisYear' }[option]);
+                                }}
                                 className={`min-w-14 flex-1 rounded-lg px-2 text-xs font-black transition ${period === option ? 'bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-600 hover:bg-white/70 dark:text-slate-300 dark:hover:bg-slate-800/70'}`}
                             >
                                 {t(`finance.reports.periods.${option}`, { defaultValue: option[0].toUpperCase() + option.slice(1) })}
                             </button>
                         ))}
                     </div>
-                    <DateInput label={t('finance.pl.startDate')} value={dateRange.startDate} max={dateRange.endDate} onChange={(value) => setDateRange((current) => ({ ...current, startDate: value }))} />
-                    <DateInput label={t('finance.pl.endDate')} value={dateRange.endDate} min={dateRange.startDate} onChange={(value) => setDateRange((current) => ({ ...current, endDate: value }))} />
+                    <DateInput label={t('finance.pl.startDate')} value={activeDateRange.startDate} max={activeDateRange.endDate} onChange={(value) => updateDateRange({ ...activeDateRange, startDate: value })} />
+                    <DateInput label={t('finance.pl.endDate')} value={activeDateRange.endDate} min={activeDateRange.startDate} onChange={(value) => updateDateRange({ ...activeDateRange, endDate: value })} />
                     <select value={reportType} onChange={(event) => setReportType(event.target.value)} aria-label={t('finance.reports.reportType', { defaultValue: 'Report type' })} className="h-9 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
                         {REPORT_OPTIONS.map((option) => <option key={option.id} value={option.id}>{reportOptionLabel(option)}</option>)}
                     </select>
@@ -514,10 +540,10 @@ const ReportPreview = ({ report, t, sectionCount, numberLabel }) => (
                     <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                         <table className="min-w-full text-start text-xs">
                             <thead className="bg-slate-50 text-slate-500 dark:bg-slate-950/45 dark:text-slate-400">
-                                <tr>{section.columns.map((column) => <th key={column.key} className="px-2.5 py-2 text-start font-black uppercase tracking-wider">{column.header}</th>)}</tr>
+                                <tr>{section.columns.map((column) => <th key={column.key} className="px-2.5 py-2 text-start font-black uppercase tracking-wider whitespace-nowrap">{column.header}</th>)}</tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                {section.rows.length ? section.rows.map((row, index) => <tr key={`${section.title}-${index}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/45">{section.columns.map((column) => <td key={column.key} className="px-2.5 py-2 font-semibold text-slate-700 dark:text-slate-300">{row[column.key]}</td>)}</tr>) : <tr><td className="px-3 py-4 text-center font-bold text-slate-400" colSpan={section.columns.length}>{t('finance.reports.noRecords', { defaultValue: 'No records' })}</td></tr>}
+                                {section.rows.length ? section.rows.map((row, index) => <tr key={`${section.title}-${index}`} className="hover:bg-slate-50 dark:hover:bg-slate-800/45">{section.columns.map((column) => <td key={column.key} className="px-2.5 py-2 font-semibold text-slate-700 dark:text-slate-300 whitespace-nowrap">{row[column.key]}</td>)}</tr>) : <tr><td className="px-3 py-4 text-center font-bold text-slate-400" colSpan={section.columns.length}>{t('finance.reports.noRecords', { defaultValue: 'No records' })}</td></tr>}
                             </tbody>
                         </table>
                     </div>

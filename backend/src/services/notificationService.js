@@ -25,12 +25,53 @@ const transporter = process.env.SMTP_HOST
 
 // ─── Template engine ─────────────────────────────────────────────────────────
 
+const getTemplateValue = (variables, path) => String(path || '')
+    .split('.')
+    .filter(Boolean)
+    .reduce((value, key) => (value !== null && value !== undefined ? value[key] : undefined), variables);
+
+const formatTemplateValue = (value) => {
+    if (value === null || value === undefined) return '';
+    if (typeof value === 'object') return JSON.stringify(value);
+    return String(value);
+};
+
 /**
- * Replace {{variable}} placeholders with values from the variables object.
+ * Render the deliberately small notification-template language without eval.
+ * Supported forms are {{path.to.value}}, {{value || "fallback"}}, and
+ * {{#if value}}...{{/if}}. Unknown or unsupported expressions are removed so
+ * template source is never exposed to a recipient.
  */
 const renderTemplate = (text, variables = {}) => {
     if (!text) return '';
-    return text.replace(/\{\{(\w+)\}\}/g, (_, key) => variables[key] ?? '');
+
+    let rendered = String(text);
+    const conditionalPattern = /\{\{#if\s+([\w.-]+)\}\}([\s\S]*?)\{\{\/if\}\}/g;
+    let previous;
+    let iterations = 0;
+    do {
+        previous = rendered;
+        rendered = rendered.replace(conditionalPattern, (_, path, content) => (
+            getTemplateValue(variables, path) ? content : ''
+        ));
+        iterations += 1;
+    } while (rendered !== previous && iterations < 10 && rendered.includes('{{#if'));
+
+    rendered = rendered.replace(
+        /\{\{\s*([\w.-]+)\s*\|\|\s*(["'])(.*?)\2\s*\}\}/g,
+        (_, path, _quote, fallback) => {
+            const value = getTemplateValue(variables, path);
+            return value === null || value === undefined || value === ''
+                ? fallback
+                : formatTemplateValue(value);
+        }
+    );
+
+    rendered = rendered.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_, path) => (
+        formatTemplateValue(getTemplateValue(variables, path))
+    ));
+
+    return rendered.replace(/\{\{[\s\S]*?\}\}/g, '');
 };
 
 const getAudienceType = (context = {}) => {
@@ -38,16 +79,95 @@ const getAudienceType = (context = {}) => {
     if (context.patientId) return 'Patient';
     if (context.doctorId || context.referringDoctorId) return 'Doctor';
     if (context.recipientUserId || context.audienceRole) return 'Staff';
-    return 'Global';
+    return null;
 };
 
-const getNotificationContextValues = (context = {}) => [
-    context.doctorId || context.referringDoctorId || null,
-    context.recipientUserId || null,
-    getAudienceType(context),
-    context.audienceRole || null,
-    context.priority || 'Normal'
-];
+const getNotificationContextValues = (context = {}) => {
+    const audienceType = getAudienceType(context);
+    if (!audienceType) {
+        throw new Error('Persisted notifications require an explicit audience');
+    }
+    return [
+        context.doctorId || context.referringDoctorId || null,
+        context.recipientUserId || null,
+        audienceType,
+        context.audienceRole || null,
+        context.priority || 'Normal'
+    ];
+};
+
+const computeActionUrl = (item = {}, context = {}) => {
+    if (context.actionUrl) return context.actionUrl;
+    if (item.action_url) return item.action_url;
+
+    const event = String(item.event_type || context.eventType || '').toUpperCase();
+    const entityId = item.entity_id || context.entityId;
+    const patientId = item.patient_id || context.patientId;
+    const audienceType = item.audience_type || getAudienceType(context);
+    const audienceRole = item.audience_role || context.audienceRole || '';
+
+    if (event === 'SHIFT_CLOSED_WITH_PENDING_EXAMS') {
+        return item.variables?.review_url || context.variables?.review_url || '/reception?tab=end-of-day';
+    }
+
+    if (audienceType === 'Patient') {
+        if (event.includes('REPORT') || event.includes('RESULT') || event.includes('EXAM')) {
+            return entityId
+                ? `/patient/dashboard?tab=records&examId=${encodeURIComponent(entityId)}`
+                : '/patient/dashboard?tab=records';
+        }
+        if (event.includes('INVOICE') || event.includes('PAYMENT') || event.includes('BILLING') || event.includes('REFUND')) {
+            return '/patient/dashboard?tab=invoices';
+        }
+        if (event.includes('APPOINTMENT') || event.includes('WAITLIST') || event.includes('BOOKING')) {
+            return '/patient/dashboard?tab=requests';
+        }
+        if (event.includes('DOCUMENT')) return '/patient/dashboard?tab=documents';
+        if (event.includes('CHAT') || event.includes('MESSAGE')) return '/patient/dashboard?tab=messages';
+        return '/patient/dashboard?tab=notifications';
+    }
+
+    if (audienceType === 'Doctor') {
+        if (event.includes('REPORT') || event.includes('RESULT') || event.includes('EXAM') || event.includes('CRITICAL')) {
+            return entityId
+                ? `/doctor/dashboard?tab=cases&examId=${encodeURIComponent(entityId)}`
+                : '/doctor/dashboard?tab=cases';
+        }
+        if (event.includes('CHAT') || event.includes('MESSAGE')) return '/doctor/dashboard?tab=messages';
+        return '/doctor/dashboard?tab=notifications';
+    }
+
+    if (event.includes('PARTIALPAYMENTEXCEPTION')) {
+        if (audienceRole === 'Nurse') return '/nurse';
+        if (audienceRole === 'Technician') return '/modality';
+        if (audienceRole === 'Accountant' || audienceRole === 'Admin') return '/approvals';
+        if (audienceRole === 'Cashier') return '/reception?tab=cashier';
+        return '/reception?tab=schedule';
+    }
+
+    if (event.includes('STAT') || event.includes('CRITICAL') || event.includes('EXAM') || event.includes('REPORT')) {
+        return entityId ? `/worklist?examId=${entityId}` : '/worklist';
+    }
+    if (event.includes('INVOICE') || event.includes('PAYMENT') || event.includes('BILLING') || event.includes('REFUND')) {
+        return entityId ? `/reception?tab=cashier&invoiceId=${entityId}` : '/reception';
+    }
+    if (event.includes('APPOINTMENT') || event.includes('WAITLIST') || event.includes('BOOKING')) {
+        return entityId ? `/appointments?appointmentId=${entityId}` : '/appointments';
+    }
+    if (event.includes('INVENTORY') || event.includes('STOCK') || event.includes('EXPIRY')) {
+        return '/inventory';
+    }
+    if (event.includes('EQUIPMENT') || event.includes('MAINTENANCE') || event.includes('DOWNTIME')) {
+        return '/equipment';
+    }
+    if (event.includes('PAYROLL')) {
+        return '/payroll';
+    }
+    if (patientId) {
+        return `/patients?patientId=${patientId}`;
+    }
+    return null;
+};
 
 // ─── Realtime Push Dispatcher ────────────────────────────────────────────────
 
@@ -63,7 +183,7 @@ const notifyClients = async (db, notificationId) => {
         if (rows.length === 0) return;
 
         const notification = rows[0];
-        
+
         // Decrypt values if encrypted
         const { decrypt } = require('../utils/crypto');
         const decryptStored = value => {
@@ -75,15 +195,18 @@ const notifyClients = async (db, notificationId) => {
             }
         };
 
+        const actionUrl = computeActionUrl(notification);
+
         const decryptedPayload = {
             ...notification,
             recipient: decryptStored(notification.recipient),
             subject: decryptStored(notification.subject),
-            content: decryptStored(notification.content)
+            content: decryptStored(notification.content),
+            action_url: actionUrl
         };
 
         const realtimeService = require('./realtimeService');
-        
+
         // Push notification in real-time
         if (notification.channel === 'InApp') {
             if (notification.recipient_user_id) {
@@ -96,12 +219,27 @@ const notifyClients = async (db, notificationId) => {
                 realtimeService.sendToPatient(notification.patient_id, 'NEW_NOTIFICATION', decryptedPayload);
             } else if (notification.referring_doctor_id) {
                 realtimeService.sendToDoctor(notification.referring_doctor_id, 'NEW_NOTIFICATION', decryptedPayload);
+            } else if (notification.audience_type === 'Global') {
+                // Keep realtime delivery aligned with getMyNotifications(): Global
+                // in-app notifications are visible only to administrators. Use
+                // role dispatch so the event also reaches other app instances.
+                for (const role of ['Admin', 'Developer']) {
+                    realtimeService.sendToRole(role, 'NEW_NOTIFICATION', decryptedPayload);
+                }
             } else {
-                realtimeService.broadcastToStaff('NEW_NOTIFICATION', decryptedPayload);
+                console.warn('[NotificationRealtimePushSkipped] In-app notification has no explicit audience', notification.notification_id);
             }
         } else {
-            // Email/SMS/WhatsApp logs update
-            realtimeService.broadcastToStaff('NOTIFICATION_LOG_UPDATE', decryptedPayload);
+            // External-channel delivery logs may contain patient contact details and
+            // message bodies. Staff clients only need a cache-invalidation signal;
+            // never broadcast the decrypted record itself.
+            realtimeService.broadcastToStaff('NOTIFICATION_LOG_UPDATE', {
+                notification_id: notification.notification_id,
+                channel: notification.channel,
+                status: notification.status,
+                event_type: notification.event_type,
+                created_at: notification.created_at
+            });
         }
     } catch (err) {
         console.error('[NotificationRealtimePushError]', err.message);
@@ -113,13 +251,15 @@ const notifyClients = async (db, notificationId) => {
 const sendEmail = async (to, subject, body, db, context = {}) => {
     const resolvedSubject = renderTemplate(subject, context.variables || {});
     const resolvedBody = renderTemplate(body, context.variables || {});
+    let notificationContextValues = null;
 
     try {
+        notificationContextValues = db ? getNotificationContextValues(context) : null;
         if (process.env.NODE_ENV === 'production' && !process.env.SMTP_HOST) {
             throw new Error('Email provider is not configured');
         }
         const info = await transporter.sendMail({
-            from: `"${process.env.CENTER_NAME || 'RCMS'}" <${process.env.SMTP_FROM || 'noreply@rcms.com'}>`,
+            from: `"${process.env.CENTER_NAME || 'VIARA'}" <${process.env.SMTP_FROM || 'noreply@VIARA.com'}>`,
             to,
             subject: resolvedSubject,
             text: resolvedBody
@@ -142,7 +282,7 @@ const sendEmail = async (to, subject, body, db, context = {}) => {
                 context.eventType || null,
                 context.entityId || null,
                 context.patientId || null,
-                ...getNotificationContextValues(context)
+                ...notificationContextValues
             ]);
             const notificationId = result.rows[0].notification_id;
             await notifyClients(db, notificationId);
@@ -150,7 +290,7 @@ const sendEmail = async (to, subject, body, db, context = {}) => {
         }
         return { success: true, messageId: info.messageId };
     } catch (error) {
-        if (db) {
+        if (db && notificationContextValues) {
             const result = await db.query(`
                 INSERT INTO notifications
                     (recipient, type, channel, subject, content, status, event_type, entity_id, patient_id,
@@ -160,7 +300,7 @@ const sendEmail = async (to, subject, body, db, context = {}) => {
             `, [
                 encrypt(to), encrypt(resolvedSubject), encrypt(resolvedBody),
                 context.eventType || null, context.entityId || null, context.patientId || null,
-                ...getNotificationContextValues(context),
+                ...notificationContextValues,
                 error.message
             ]);
             const notificationId = result.rows[0]?.notification_id;
@@ -172,34 +312,36 @@ const sendEmail = async (to, subject, body, db, context = {}) => {
 
 const sendSms = async (to, body, db, context = {}) => {
     const resolvedBody = renderTemplate(body, context.variables || {});
-
-    const provider = process.env.SMS_PROVIDER?.toLowerCase();
-    const accountSid = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_TOKEN;
-    const from = process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_FROM;
     let success = false;
     let errorMsg = null;
-    let isStub = false;
     let providerMessageId = null;
+    let isStub = false;
+    let notificationContextValues = null;
 
-    if (!provider) {
-        if (process.env.NODE_ENV === 'production') {
-            errorMsg = 'SMS provider is not configured';
-        } else {
-            console.log('[SMS_STUB] Redacted development notification');
-            success = true;
-            isStub = true;
-        }
-    } else if (provider !== 'twilio') {
-        errorMsg = `Unsupported SMS provider: ${provider}`;
-    } else if (!accountSid || !authToken || !from) {
-        errorMsg = 'Twilio SMS is configured but required credentials are missing';
-    } else {
+    try {
+        notificationContextValues = db ? getNotificationContextValues(context) : null;
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+
+    if (db) {
         try {
-            const message = await twilio(accountSid, authToken, { timeout: 10000, autoRetry: true, maxRetries: 2 })
-                .messages.create({ body: resolvedBody, from, to });
-            providerMessageId = message.sid || null;
-            success = true;
+            const IntegrationService = require('../services/integrationService');
+            const integrationService = new IntegrationService(db);
+            const result = await integrationService.sendSMS(to, resolvedBody, {
+                idempotencyKey: context.idempotencyKey,
+                eventType: context.eventType,
+                entityId: context.entityId,
+                patientId: context.patientId,
+                recipientUserId: context.recipientUserId,
+                audienceType: context.audienceType,
+                audienceRole: context.audienceRole,
+                priority: context.priority
+            });
+            success = result.success;
+            errorMsg = result.error;
+            providerMessageId = result.providerMessageId;
+            isStub = result.deduped;
         } catch (error) {
             errorMsg = error.message;
         }
@@ -215,12 +357,12 @@ const sendSms = async (to, body, db, context = {}) => {
                  referring_doctor_id, recipient_user_id, audience_type, audience_role, priority,
                  error_message, provider_message_id, sent_at)
             VALUES ($1, $2, 'SMS', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                    CASE WHEN $4 = 'Sent' THEN NOW() ELSE NULL END)
+                    CASE WHEN $4::text = 'Sent' THEN NOW() ELSE NULL END)
             RETURNING notification_id
         `, [
             encrypt(to), notifType, encrypt(resolvedBody), status,
             context.eventType || null, context.entityId || null, context.patientId || null,
-            ...getNotificationContextValues(context),
+            ...notificationContextValues,
             errorMsg, providerMessageId
         ]);
         const notificationId = result.rows[0]?.notification_id;
@@ -232,35 +374,36 @@ const sendSms = async (to, body, db, context = {}) => {
 
 const sendWhatsApp = async (to, body, db, context = {}) => {
     const resolvedBody = renderTemplate(body, context.variables || {});
-    const provider = process.env.WHATSAPP_PROVIDER?.toLowerCase();
-    const accountSid = process.env.TWILIO_ACCOUNT_SID || process.env.TWILIO_SID;
-    const authToken = process.env.TWILIO_AUTH_TOKEN || process.env.TWILIO_TOKEN;
-    const configuredFrom = process.env.TWILIO_WHATSAPP_FROM || process.env.TWILIO_FROM_NUMBER || process.env.TWILIO_FROM;
     let success = false;
     let errorMsg = null;
-    let isStub = false;
     let providerMessageId = null;
+    let isStub = false;
+    let notificationContextValues = null;
 
-    if (!provider) {
-        if (process.env.NODE_ENV === 'production') {
-            errorMsg = 'WhatsApp provider is not configured';
-        } else {
-            console.log('[WhatsApp_STUB] Redacted development notification');
-            success = true;
-            isStub = true;
-        }
-    } else if (provider !== 'twilio') {
-        errorMsg = `Unsupported WhatsApp provider: ${provider}`;
-    } else if (!accountSid || !authToken || !configuredFrom) {
-        errorMsg = 'Twilio WhatsApp is configured but required credentials are missing';
-    } else {
+    try {
+        notificationContextValues = db ? getNotificationContextValues(context) : null;
+    } catch (error) {
+        return { success: false, error: error.message };
+    }
+
+    if (db) {
         try {
-            const from = configuredFrom.startsWith('whatsapp:') ? configuredFrom : `whatsapp:${configuredFrom}`;
-            const recipient = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
-            const message = await twilio(accountSid, authToken, { timeout: 10000, autoRetry: true, maxRetries: 2 })
-                .messages.create({ body: resolvedBody, from, to: recipient });
-            providerMessageId = message.sid || null;
-            success = true;
+            const IntegrationService = require('../services/integrationService');
+            const integrationService = new IntegrationService(db);
+            const result = await integrationService.sendWhatsApp(to, resolvedBody, {
+                idempotencyKey: context.idempotencyKey,
+                eventType: context.eventType,
+                entityId: context.entityId,
+                patientId: context.patientId,
+                recipientUserId: context.recipientUserId,
+                audienceType: context.audienceType,
+                audienceRole: context.audienceRole,
+                priority: context.priority
+            });
+            success = result.success;
+            errorMsg = result.error;
+            providerMessageId = result.providerMessageId;
+            isStub = result.deduped;
         } catch (error) {
             errorMsg = error.message;
         }
@@ -276,12 +419,12 @@ const sendWhatsApp = async (to, body, db, context = {}) => {
                  referring_doctor_id, recipient_user_id, audience_type, audience_role, priority,
                  error_message, provider_message_id, sent_at)
             VALUES ($1, $2, 'WhatsApp', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                    CASE WHEN $4 = 'Sent' THEN NOW() ELSE NULL END)
+                    CASE WHEN $4::text = 'Sent' THEN NOW() ELSE NULL END)
             RETURNING notification_id
         `, [
             encrypt(to), notifType, encrypt(resolvedBody), status,
             context.eventType || null, context.entityId || null, context.patientId || null,
-            ...getNotificationContextValues(context),
+            ...notificationContextValues,
             errorMsg, providerMessageId
         ]);
         const notificationId = result.rows[0]?.notification_id;
@@ -296,6 +439,7 @@ const sendInApp = async (to, subject, body, db, context = {}) => {
     const resolvedBody = renderTemplate(body, context.variables || {});
 
     try {
+        const notificationContextValues = db ? getNotificationContextValues(context) : null;
         if (db) {
             const result = await db.query(`
                 INSERT INTO notifications
@@ -310,7 +454,7 @@ const sendInApp = async (to, subject, body, db, context = {}) => {
                 context.eventType || null,
                 context.entityId || null,
                 context.patientId || null,
-                ...getNotificationContextValues(context)
+                ...notificationContextValues
             ]);
             const notificationId = result.rows[0].notification_id;
             await notifyClients(db, notificationId);
@@ -327,12 +471,12 @@ const sendInApp = async (to, subject, body, db, context = {}) => {
 const dispatch = async (channel, to, subject, body, db, context = {}) => {
     if (!to) return { success: false, error: 'No recipient contact' };
     switch (channel) {
-        case 'Email':    return sendEmail(to, subject, body, db, context);
-        case 'SMS':      return sendSms(to, body, db, context);
+        case 'Email': return sendEmail(to, subject, body, db, context);
+        case 'SMS': return sendSms(to, body, db, context);
         case 'WhatsApp': return sendWhatsApp(to, body, db, context);
-        case 'InApp':    return sendInApp(to, subject, body, db, context);
-        default:         return { success: false, error: `Unknown channel: ${channel}` };
+        case 'InApp': return sendInApp(to, subject, body, db, context);
+        default: return { success: false, error: `Unknown channel: ${channel}` };
     }
 };
 
-module.exports = { sendEmail, sendSms, sendWhatsApp, sendInApp, dispatch, renderTemplate, notifyClients };
+module.exports = { sendEmail, sendSms, sendWhatsApp, sendInApp, dispatch, renderTemplate, notifyClients, computeActionUrl };

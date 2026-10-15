@@ -2,15 +2,20 @@ const realtimeService = require('../services/realtimeService');
 const { AppError } = require('../middleware/errorHandler');
 const { decrypt } = require('../utils/crypto');
 const { cleanupUploadedFiles, parseAttachments } = require('../utils/chatAttachmentUpload');
+const { triggerEventForRole } = require('../services/notificationJobService');
 
 const allowedMessageKinds = new Set(['text', 'sticker', 'attachment']);
+const externalInboxRoles = new Set(['Admin', 'Receptionist', 'Marketing', 'Developer']);
+const MAX_MESSAGE_LENGTH = 4000;
 
 const sanitizeText = (value) => String(value || '').replace(/<\/?[^>]+(>|$)/g, '').trim();
 
 const getRichMessagePayload = (req) => {
     const body = typeof req.body?.body === 'string' ? sanitizeText(req.body.body) : '';
     const attachments = parseAttachments(req.files || []);
-    const requestedKind = typeof req.body?.messageKind === 'string' ? req.body.messageKind : 'text';
+    const requestedKind = typeof (req.body?.messageKind || req.body?.message_kind) === 'string'
+        ? (req.body.messageKind || req.body.message_kind)
+        : 'text';
     const messageKind = attachments.length > 0
         ? 'attachment'
         : allowedMessageKinds.has(requestedKind)
@@ -19,6 +24,9 @@ const getRichMessagePayload = (req) => {
 
     if (!body && attachments.length === 0) {
         throw new AppError('Message body or attachment is required', 400);
+    }
+    if (body.length > MAX_MESSAGE_LENGTH) {
+        throw new AppError(`Message body must not exceed ${MAX_MESSAGE_LENGTH} characters`, 400);
     }
 
     return { body, messageKind, attachments };
@@ -89,7 +97,24 @@ const sendPortalMessage = (db) => async (req, res, next) => {
         };
 
         // Notify staff (reception/admins) in real-time
-        realtimeService.broadcastToStaff('NEW_PATIENT_MESSAGE_ALERT', payload);
+        realtimeService.broadcastToStaffMatching(
+            client => externalInboxRoles.has(client.role),
+            'NEW_PATIENT_MESSAGE_ALERT',
+            payload
+        );
+
+        const notificationPayload = {
+            entityType: 'Message',
+            entityId: message.message_id,
+            priority: 'Normal',
+            variables: {
+                sender_name: fullName || 'Patient',
+                message_preview: body ? (body.length > 100 ? `${body.slice(0, 97)}...` : body) : 'Attachment'
+            }
+        };
+        for (const role of externalInboxRoles) {
+            triggerEventForRole(db, 'ChatMessageReceived', role, notificationPayload).catch(() => {});
+        }
 
         res.status(201).json(payload);
     } catch (error) {

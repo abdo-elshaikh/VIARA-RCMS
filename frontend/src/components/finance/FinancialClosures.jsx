@@ -6,14 +6,14 @@ import { useCreateFinancialClosureMutation, useFinalizeFinancialClosureMutation,
 import { formatFinancialCurrency, formatFinancialDate, toFinancialDateInput } from '../../utils/financialFormat';
 import ConfirmDialog from '../ui/ConfirmDialog';
 
-const FinancialClosures = () => {
+const FinancialClosures = ({ dateRange }) => {
     const { t, i18n } = useTranslation('workspace');
     const [statusFilter, setStatusFilter] = useState('');
     const [closureDate, setClosureDate] = useState(toFinancialDateInput());
     const [showForm, setShowForm] = useState(false);
     const [finalizeTarget, setFinalizeTarget] = useState(null);
 
-    const queryArgs = useMemo(() => (statusFilter ? { status: statusFilter } : {}), [statusFilter]);
+    const queryArgs = useMemo(() => ({ ...dateRange, ...(statusFilter ? { status: statusFilter } : {}) }), [statusFilter, dateRange]);
     const { data: closures = [], isLoading, isError } = useGetFinancialClosuresQuery(queryArgs);
     const [createClosure, { isLoading: creating }] = useCreateFinancialClosureMutation();
     const [finalizeClosure, { isLoading: finalizing }] = useFinalizeFinancialClosureMutation();
@@ -41,12 +41,12 @@ const FinancialClosures = () => {
     };
 
     return (
-        <div className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/80 shadow-xl shadow-slate-200/30 backdrop-blur-xl dark:border-white/10 dark:bg-[#07111f]/80 dark:shadow-none">
+    <div className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/90 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90">
             {/* Header */}
-            <div className="flex flex-col gap-4 border-b border-slate-100/80 bg-slate-50/50 p-5 dark:border-white/5 dark:bg-white/5 sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6 dark:border-slate-800 dark:bg-slate-950/30">
                 <div className="flex items-start gap-4">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700 ring-1 ring-violet-200 shadow-md dark:bg-violet-500/20 dark:text-violet-300 dark:ring-violet-500/30">
-                        <Lock size={22} />
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-700 dark:text-violet-300">
+                        <Lock size={20} />
                     </span>
                     <div>
                         <h2 className="text-lg font-black tracking-tight text-slate-900 dark:text-white sm:text-xl">
@@ -136,9 +136,9 @@ const FinancialClosures = () => {
             ) : (
                 <>
                     <div className="divide-y divide-slate-100/80 dark:divide-white/5 md:hidden">
-                        {closures.map((closure) => (
+                        {closures.map((closure, idx) => (
                             <ClosureCard
-                                key={closure.closure_id}
+                                key={closure.closure_id || closure.id || `${closure.closure_date}-${idx}`}
                                 closure={closure}
                                 onFinalize={() => setFinalizeTarget(closure)}
                                 finalizing={finalizing}
@@ -165,9 +165,9 @@ const FinancialClosures = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-100/80 dark:divide-white/5">
-                                {closures.map((closure) => (
+                                {closures.map((closure, idx) => (
                                     <ClosureRow
-                                        key={closure.closure_id}
+                                        key={closure.closure_id || closure.id || `${closure.closure_date}-${idx}`}
                                         closure={closure}
                                         onFinalize={() => setFinalizeTarget(closure)}
                                         finalizing={finalizing}

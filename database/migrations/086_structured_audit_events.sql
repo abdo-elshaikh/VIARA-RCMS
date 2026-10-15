@@ -6,7 +6,7 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-SET LOCAL rcms.audit_maintenance = 'on';
+SET LOCAL VIARA.audit_maintenance = 'on';
 
 ALTER TABLE system_logs
     ADD COLUMN IF NOT EXISTS audit_hash_version SMALLINT NOT NULL DEFAULT 1,
@@ -112,14 +112,14 @@ CREATE INDEX IF NOT EXISTS idx_audit_alerts_patient_time
     ON audit_alerts (patient_id, created_at DESC)
     WHERE patient_id IS NOT NULL;
 
-CREATE OR REPLACE FUNCTION rcms_chain_audit_log()
+CREATE OR REPLACE FUNCTION VIARA_chain_audit_log()
 RETURNS TRIGGER AS $$
 DECLARE
     last_hash VARCHAR(64);
     hash_version SMALLINT;
     structured_payload TEXT;
 BEGIN
-    PERFORM pg_advisory_xact_lock(hashtext('rcms_system_logs_chain'));
+    PERFORM pg_advisory_xact_lock(hashtext('VIARA_system_logs_chain'));
     SELECT entry_hash INTO last_hash
     FROM system_logs
     ORDER BY log_id DESC
