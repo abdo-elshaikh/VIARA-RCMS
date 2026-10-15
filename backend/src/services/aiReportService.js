@@ -289,149 +289,185 @@ const callGemini = async ({ model, apiKey, systemPrompt, userContent, maxTokens 
     };
 
     return withRetry(async () => {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120_000);
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
 
-        if (!response.ok) {
-            const msg = await providerErrorMessage(response, 'Gemini');
-            logger.error('AI provider (gemini) returned an error', { status: response.status });
-            const err = new AppError(msg, response.status === 429 ? 429 : 502);
-            err.status = response.status;
+            if (!response.ok) {
+                const msg = await providerErrorMessage(response, 'Gemini');
+                logger.error('AI provider (gemini) returned an error', { status: response.status });
+                const err = new AppError(msg, response.status === 429 ? 429 : 502);
+                err.status = response.status;
+                throw err;
+            }
+
+            const data = await response.json();
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            return text.trim();
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') {
+                throw new AppError('AI provider request timed out after 120 seconds', 504);
+            }
             throw err;
         }
-
-        const data = await response.json();
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        return text.trim();
     });
 };
 
 const callAnthropic = async ({ baseUrl, model, apiKey, systemPrompt, userContent, maxTokens = 2000 }) => {
     return withRetry(async () => {
-        const response = await fetch(baseUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-api-key': apiKey,
-                'anthropic-version': '2023-06-01',
-            },
-            body: JSON.stringify({
-                model,
-                max_tokens: maxTokens,
-                system: systemPrompt,
-                messages: [{ role: 'user', content: userContent }],
-            }),
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120_000);
+        try {
+            const response = await fetch(baseUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey,
+                    'anthropic-version': '2023-06-01',
+                },
+                body: JSON.stringify({
+                    model,
+                    max_tokens: maxTokens,
+                    system: systemPrompt,
+                    messages: [{ role: 'user', content: userContent }],
+                }),
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
 
-        if (!response.ok) {
-            const msg = await providerErrorMessage(response, 'Anthropic');
-            logger.error('AI provider (anthropic) returned an error', { status: response.status });
-            const err = new AppError(msg, response.status === 429 ? 429 : 502);
-            err.status = response.status;
+            if (!response.ok) {
+                const msg = await providerErrorMessage(response, 'Anthropic');
+                logger.error('AI provider (anthropic) returned an error', { status: response.status });
+                const err = new AppError(msg, response.status === 429 ? 429 : 502);
+                err.status = response.status;
+                throw err;
+            }
+
+            const raw = await response.text();
+            let data;
+            try {
+                data = raw ? JSON.parse(raw) : {};
+            } catch {
+                logger.error('AI provider (anthropic) returned non-JSON response', {
+                    status: response.status,
+                    baseUrl,
+                    preview: raw.slice(0, 120)
+                });
+                throw new AppError('AI provider returned a non-JSON response. Check the provider and base URL.', 502);
+            }
+            const text = Array.isArray(data.content)
+                ? data.content.filter((part) => part.type === 'text').map((part) => part.text).join('').trim()
+                : '';
+            return text;
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') {
+                throw new AppError('AI provider request timed out after 120 seconds', 504);
+            }
             throw err;
         }
-
-        const raw = await response.text();
-        let data;
-        try {
-            data = raw ? JSON.parse(raw) : {};
-        } catch {
-            logger.error('AI provider (anthropic) returned non-JSON response', {
-                status: response.status,
-                baseUrl,
-                preview: raw.slice(0, 120)
-            });
-            throw new AppError('AI provider returned a non-JSON response. Check the provider and base URL.', 502);
-        }
-        const text = Array.isArray(data.content)
-            ? data.content.filter((part) => part.type === 'text').map((part) => part.text).join('').trim()
-            : '';
-        return text;
     });
 };
 
 const callOpenAiCompatible = async ({ provider, baseUrl, model, apiKey, systemPrompt, userContent, maxTokens = 2000, jsonMode = false }) => {
     if (baseUrl) await validateCustomAiEndpointUrl(baseUrl);
     return withRetry(async () => {
-        const isCurrentOpenAiModel = provider === 'openai' && /^gpt-5\.(?:[4-9]|\d{2,})(?:-|$)/i.test(String(model));
-        const nativeJsonMode = jsonMode
-            && provider !== 'custom'
-            && !(provider === 'openrouter' && String(model).toLowerCase() === 'openrouter/free');
-        const requestBody = {
-            model,
-            ...(isCurrentOpenAiModel
-                ? { max_completion_tokens: maxTokens, reasoning_effort: 'none' }
-                : { max_tokens: maxTokens, temperature: 0.1 }),
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: userContent },
-            ],
-            ...(nativeJsonMode ? { response_format: { type: 'json_object' } } : {})
-        };
-        const response = await fetch(baseUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${apiKey}`,
-                ...(provider === 'openrouter' ? {
-                    'HTTP-Referer': 'https://github.com/VIARA',
-                    'X-Title': 'VIARA Radiology Reports'
-                } : {})
-            },
-            body: JSON.stringify(requestBody),
-            ...(provider === 'custom' ? { redirect: 'error' } : {}),
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120_000);
+        try {
+            const isCurrentOpenAiModel = provider === 'openai' && /^gpt-5\.(?:[4-9]|\d{2,})(?:-|$)/i.test(String(model));
+            const nativeJsonMode = jsonMode
+                && provider !== 'custom'
+                && !(provider === 'openrouter' && String(model).toLowerCase() === 'openrouter/free');
+            const requestBody = {
+                model,
+                ...(isCurrentOpenAiModel
+                    ? { max_completion_tokens: maxTokens, reasoning_effort: 'none' }
+                    : { max_tokens: maxTokens, temperature: 0.1 }),
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userContent },
+                ],
+                ...(nativeJsonMode ? { response_format: { type: 'json_object' } } : {})
+            };
+            const response = await fetch(baseUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${apiKey}`,
+                    ...(provider === 'openrouter' ? {
+                        'HTTP-Referer': 'https://github.com/VIARA',
+                        'X-Title': 'VIARA Radiology Reports'
+                    } : {})
+                },
+                body: JSON.stringify(requestBody),
+                ...(provider === 'custom' ? { redirect: 'error' } : {}),
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
 
-        if (!response.ok) {
-            const msg = await providerErrorMessage(response, model || 'OpenAI-compatible');
-            logger.error('AI provider (openai) returned an error', { status: response.status });
-            const err = new AppError(msg, response.status === 429 ? 429 : 502);
-            err.status = response.status;
+            if (!response.ok) {
+                const msg = await providerErrorMessage(response, model || 'OpenAI-compatible');
+                logger.error('AI provider (openai) returned an error', { status: response.status });
+                const err = new AppError(msg, response.status === 429 ? 429 : 502);
+                err.status = response.status;
+                throw err;
+            }
+
+            const raw = await response.text();
+            let data;
+            try {
+                data = raw ? JSON.parse(raw) : {};
+            } catch {
+                logger.error('AI provider (openai-compatible) returned non-JSON response', {
+                    status: response.status,
+                    baseUrl,
+                    preview: raw.slice(0, 120)
+                });
+                throw new AppError('AI provider returned a non-JSON response. Check the provider and base URL.', 502);
+            }
+
+            const choice = data?.choices?.[0] || {};
+            const content = choice?.message?.content;
+            const output = typeof content === 'string'
+                ? content.trim()
+                : Array.isArray(content)
+                    ? content
+                        .map((part) => typeof part === 'string' ? part : part?.text || part?.content || '')
+                        .join('')
+                        .trim()
+                    : '';
+            if (output) return output;
+
+            const providerMessage = data?.error?.message || choice?.error?.message || choice?.message?.refusal;
+            logger.warn('[AIReport] OpenAI-compatible provider returned an empty completion', {
+                provider,
+                model,
+                finishReason: choice?.finish_reason || null,
+                nativeFinishReason: choice?.native_finish_reason || null,
+                hasProviderError: Boolean(providerMessage)
+            });
+            throw new AppError(
+                providerMessage
+                    ? `AI provider returned no report content: ${String(providerMessage).slice(0, 160)}`
+                    : 'AI provider returned no report content. Select a specific report model or try again.',
+                502
+            );
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') {
+                throw new AppError('AI provider request timed out after 120 seconds', 504);
+            }
             throw err;
         }
-
-        const raw = await response.text();
-        let data;
-        try {
-            data = raw ? JSON.parse(raw) : {};
-        } catch {
-            logger.error('AI provider (openai-compatible) returned non-JSON response', {
-                status: response.status,
-                baseUrl,
-                preview: raw.slice(0, 120)
-            });
-            throw new AppError('AI provider returned a non-JSON response. Check the provider and base URL.', 502);
-        }
-
-        const choice = data?.choices?.[0] || {};
-        const content = choice?.message?.content;
-        const output = typeof content === 'string'
-            ? content.trim()
-            : Array.isArray(content)
-                ? content
-                    .map((part) => typeof part === 'string' ? part : part?.text || part?.content || '')
-                    .join('')
-                    .trim()
-                : '';
-        if (output) return output;
-
-        const providerMessage = data?.error?.message || choice?.error?.message || choice?.message?.refusal;
-        logger.warn('[AIReport] OpenAI-compatible provider returned an empty completion', {
-            provider,
-            model,
-            finishReason: choice?.finish_reason || null,
-            nativeFinishReason: choice?.native_finish_reason || null,
-            hasProviderError: Boolean(providerMessage)
-        });
-        throw new AppError(
-            providerMessage
-                ? `AI provider returned no report content: ${String(providerMessage).slice(0, 160)}`
-                : 'AI provider returned no report content. Select a specific report model or try again.',
-            502
-        );
     });
 };
 
