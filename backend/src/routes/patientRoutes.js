@@ -104,6 +104,7 @@ module.exports = function patientRoutes(pool, auditService) {
     // Patient clinical examination history
     router.get('/:id/history',
         authenticateToken,
+        auditRead(auditService, { resourceTable: 'patients' }),
         patientDataLimiter,
         authorizeRole(['Receptionist', 'Admin', 'Radiologist', 'Nurse']),
         getPatientHistory(pool)
@@ -112,6 +113,7 @@ module.exports = function patientRoutes(pool, auditService) {
     // Patient visits consolidated billing statement
     router.get('/:id/visits-statement',
         authenticateToken,
+        auditRead(auditService, { resourceTable: 'patients' }),
         patientDataLimiter,
         authorizeRole(['Receptionist', 'Admin', 'Accountant', 'Cashier', 'Radiologist', 'Nurse']),
         (req, res, next) => {
